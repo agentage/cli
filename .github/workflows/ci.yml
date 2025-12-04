@@ -8,6 +8,7 @@ on:
 
 jobs:
   build-and-test:
+    name: 🏗️ Build & Test
     runs-on: ubuntu-latest
 
     strategy:
@@ -15,33 +16,34 @@ jobs:
         node-version: [20.x, 22.x]
 
     steps:
-      - uses: actions/checkout@v6
+      - name: 📥 Checkout code
+        uses: actions/checkout@v6
 
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: 🔧 Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          cache: "npm"
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: npm ci
 
-      - name: Type check
+      - name: 🔍 Type check
         run: npm run type-check
 
-      - name: Lint
+      - name: 🔍 Lint
         run: npm run lint
 
-      - name: Build
+      - name: 🏗️ Build
         run: npm run build
 
-      - name: Test
+      - name: 🧪 Test
         run: npm test
 
-      - name: Test coverage
+      - name: 📊 Test coverage
         run: npm run test:coverage
 
-      - name: Upload coverage reports
+      - name: 📤 Upload coverage reports
         uses: codecov/codecov-action@v5
         if: matrix.node-version == '20.x'
         with:
