@@ -1,0 +1,20 @@
+# Source files
+src/
+*.test.ts
+
+# Config files
+tsconfig.json
+jest.config.js
+eslint.config.js
+
+# Coverage
+coverage/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
