@@ -9,7 +9,7 @@ const packageJson = JSON.parse(
 // Mock the index module to avoid import.meta issues in Jest
 jest.mock('./index.js', () => ({
   version: packageJson.version,
-  greet: () => 'Hello from AgentKit CLI!',
+  greet: (): string => 'Hello from AgentKit CLI!',
 }));
 
 import { greet, version } from './index.js';
