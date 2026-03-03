@@ -181,6 +181,7 @@ describe('config utils', () => {
         registry: { url: 'https://agentage.io' },
         deviceId: 'abc123',
       });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((result as any).auth).toBeUndefined();
     });
   });
