@@ -4,7 +4,7 @@ import {
   pollForToken,
   requestDeviceCode,
 } from '../services/auth.service.js';
-import { getRegistryUrl, loadConfig, saveConfig } from '../utils/config.js';
+import { getRegistryUrl, loadAuth, saveAuth } from '../utils/config.js';
 
 /**
  * Login command - authenticate via device authorization flow
@@ -12,8 +12,8 @@ import { getRegistryUrl, loadConfig, saveConfig } from '../utils/config.js';
 export const loginCommand = async (): Promise<void> => {
   try {
     // Check if already logged in
-    const config = await loadConfig();
-    if (config.auth?.token) {
+    const auth = await loadAuth();
+    if (auth.token) {
       console.log(
         chalk.yellow('⚠️  Already logged in.'),
         'Run',
@@ -65,19 +65,13 @@ export const loginCommand = async (): Promise<void> => {
       deviceCode.expires_in
     );
 
-    // Reload config to get any changes made during auth (e.g., deviceId)
-    const currentConfig = await loadConfig();
-
-    // Save token to config
-    await saveConfig({
-      ...currentConfig,
-      auth: {
-        token: tokenResponse.access_token,
-        user: tokenResponse.user,
-        expiresAt: tokenResponse.expires_in
-          ? new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString()
-          : undefined,
-      },
+    // Save token to auth.json (config.json with deviceId/registry is untouched)
+    await saveAuth({
+      token: tokenResponse.access_token,
+      user: tokenResponse.user,
+      expiresAt: tokenResponse.expires_in
+        ? new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString()
+        : undefined,
     });
 
     console.log();

@@ -1,9 +1,10 @@
-import { mkdir, readFile, rm, writeFile } from 'fs/promises';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { homedir } from 'os';
-import type { AgentageConfig } from '../types/config.types.js';
+import type { AppConfig, AuthFileConfig } from '../types/config.types.js';
 import {
-  clearConfig,
+  clearAuth,
   DEFAULT_REGISTRY_URL,
+  getAuthPath,
   getAuthStatus,
   getAuthToken,
   getConfigDir,
@@ -11,8 +12,10 @@ import {
   getDeviceId,
   getRegistryUrl,
   isTokenExpired,
-  loadConfig,
-  saveConfig,
+  loadAppConfig,
+  loadAuth,
+  saveAppConfig,
+  saveAuth,
 } from './config.js';
 
 // Mock fs/promises
@@ -22,14 +25,12 @@ jest.mock('os');
 const mockMkdir = mkdir as jest.MockedFunction<typeof mkdir>;
 const mockReadFile = readFile as jest.MockedFunction<typeof readFile>;
 const mockWriteFile = writeFile as jest.MockedFunction<typeof writeFile>;
-const mockRm = rm as jest.MockedFunction<typeof rm>;
 const mockHomedir = homedir as jest.MockedFunction<typeof homedir>;
 
 describe('config utils', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockHomedir.mockReturnValue('/home/testuser');
-    // Clear environment variables
     delete process.env.AGENTAGE_REGISTRY_URL;
     delete process.env.AGENTAGE_AUTH_TOKEN;
   });
@@ -46,17 +47,110 @@ describe('config utils', () => {
     });
   });
 
-  describe('loadConfig', () => {
-    it('returns parsed config when file exists', async () => {
-      const config: AgentageConfig = {
-        auth: {
-          token: 'test-token',
-          user: { id: '123', email: 'test@example.com' },
-        },
+  describe('getAuthPath', () => {
+    it('returns the correct auth file path', () => {
+      expect(getAuthPath()).toBe('/home/testuser/.agentage/auth.json');
+    });
+  });
+
+  describe('loadAuth', () => {
+    it('returns parsed auth when file exists', async () => {
+      const auth: AuthFileConfig = {
+        token: 'test-token',
+        expiresAt: '2030-01-01T00:00:00.000Z',
+        user: { id: '123', email: 'test@example.com' },
+      };
+      mockReadFile.mockResolvedValue(JSON.stringify(auth));
+
+      const result = await loadAuth();
+
+      expect(result).toEqual(auth);
+      expect(mockReadFile).toHaveBeenCalledWith(
+        '/home/testuser/.agentage/auth.json',
+        'utf-8'
+      );
+    });
+
+    it('returns empty object when file does not exist', async () => {
+      mockReadFile.mockRejectedValue(new Error('ENOENT'));
+
+      const result = await loadAuth();
+
+      expect(result).toEqual({});
+    });
+
+    it('returns empty object when file contains invalid JSON', async () => {
+      mockReadFile.mockResolvedValue('not json');
+
+      const result = await loadAuth();
+
+      expect(result).toEqual({});
+    });
+  });
+
+  describe('saveAuth', () => {
+    it('creates directory and writes auth.json', async () => {
+      mockMkdir.mockResolvedValue(undefined);
+      mockWriteFile.mockResolvedValue(undefined);
+
+      const auth: AuthFileConfig = {
+        token: 'my-token',
+        user: { id: '1', email: 'a@b.com' },
+      };
+
+      await saveAuth(auth);
+
+      expect(mockMkdir).toHaveBeenCalledWith('/home/testuser/.agentage', {
+        recursive: true,
+      });
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/home/testuser/.agentage/auth.json',
+        JSON.stringify(auth, null, 2),
+        'utf-8'
+      );
+    });
+  });
+
+  describe('clearAuth', () => {
+    it('writes empty object to auth.json', async () => {
+      mockWriteFile.mockResolvedValue(undefined);
+
+      await clearAuth();
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/home/testuser/.agentage/auth.json',
+        JSON.stringify({}, null, 2),
+        'utf-8'
+      );
+    });
+
+    it('does not touch config.json', async () => {
+      mockWriteFile.mockResolvedValue(undefined);
+
+      await clearAuth();
+
+      expect(mockWriteFile).toHaveBeenCalledTimes(1);
+      const writtenPath = mockWriteFile.mock.calls[0][0] as string;
+      expect(writtenPath).toContain('auth.json');
+      expect(writtenPath).not.toContain('config.json');
+    });
+
+    it('ignores errors gracefully', async () => {
+      mockWriteFile.mockRejectedValue(new Error('ENOENT'));
+
+      await expect(clearAuth()).resolves.not.toThrow();
+    });
+  });
+
+  describe('loadAppConfig', () => {
+    it('returns parsed app config when file exists', async () => {
+      const config: AppConfig = {
+        registry: { url: 'https://agentage.io' },
+        deviceId: 'abc123',
       };
       mockReadFile.mockResolvedValue(JSON.stringify(config));
 
-      const result = await loadConfig();
+      const result = await loadAppConfig();
 
       expect(result).toEqual(config);
       expect(mockReadFile).toHaveBeenCalledWith(
@@ -65,33 +159,44 @@ describe('config utils', () => {
       );
     });
 
-    it('returns empty config when file does not exist', async () => {
+    it('returns empty object when file does not exist', async () => {
       mockReadFile.mockRejectedValue(new Error('ENOENT'));
 
-      const result = await loadConfig();
+      const result = await loadAppConfig();
 
       expect(result).toEqual({});
     });
 
-    it('returns empty config when file contains invalid JSON', async () => {
-      mockReadFile.mockResolvedValue('invalid json');
+    it('strips unknown fields from config.json', async () => {
+      const configWithExtra = {
+        auth: { token: 'should-be-ignored' },
+        registry: { url: 'https://agentage.io' },
+        deviceId: 'abc123',
+      };
+      mockReadFile.mockResolvedValue(JSON.stringify(configWithExtra));
 
-      const result = await loadConfig();
+      const result = await loadAppConfig();
 
-      expect(result).toEqual({});
+      expect(result).toEqual({
+        registry: { url: 'https://agentage.io' },
+        deviceId: 'abc123',
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((result as any).auth).toBeUndefined();
     });
   });
 
-  describe('saveConfig', () => {
-    it('creates directory and writes config file', async () => {
+  describe('saveAppConfig', () => {
+    it('creates directory and writes config.json', async () => {
       mockMkdir.mockResolvedValue(undefined);
       mockWriteFile.mockResolvedValue(undefined);
 
-      const config: AgentageConfig = {
-        auth: { token: 'test-token' },
+      const config: AppConfig = {
+        registry: { url: 'https://agentage.io' },
+        deviceId: 'dev-123',
       };
 
-      await saveConfig(config);
+      await saveAppConfig(config);
 
       expect(mockMkdir).toHaveBeenCalledWith('/home/testuser/.agentage', {
         recursive: true,
@@ -101,24 +206,6 @@ describe('config utils', () => {
         JSON.stringify(config, null, 2),
         'utf-8'
       );
-    });
-  });
-
-  describe('clearConfig', () => {
-    it('removes the config file', async () => {
-      mockRm.mockResolvedValue(undefined);
-
-      await clearConfig();
-
-      expect(mockRm).toHaveBeenCalledWith(
-        '/home/testuser/.agentage/config.json'
-      );
-    });
-
-    it('ignores error if file does not exist', async () => {
-      mockRm.mockRejectedValue(new Error('ENOENT'));
-
-      await expect(clearConfig()).resolves.not.toThrow();
     });
   });
 
@@ -132,7 +219,7 @@ describe('config utils', () => {
     });
 
     it('returns config value when no env var', async () => {
-      const config: AgentageConfig = {
+      const config: AppConfig = {
         registry: { url: 'https://config.registry.io' },
       };
       mockReadFile.mockResolvedValue(JSON.stringify(config));
@@ -160,15 +247,13 @@ describe('config utils', () => {
       expect(result).toBe('env-token');
     });
 
-    it('returns config value when no env var', async () => {
-      const config: AgentageConfig = {
-        auth: { token: 'config-token' },
-      };
-      mockReadFile.mockResolvedValue(JSON.stringify(config));
+    it('returns token from auth.json when no env var', async () => {
+      const auth: AuthFileConfig = { token: 'auth-file-token' };
+      mockReadFile.mockResolvedValue(JSON.stringify(auth));
 
       const result = await getAuthToken();
 
-      expect(result).toBe('config-token');
+      expect(result).toBe('auth-file-token');
     });
 
     it('returns undefined when no token available', async () => {
@@ -180,11 +265,12 @@ describe('config utils', () => {
     });
 
     it('returns undefined when token is expired', async () => {
-      const pastDate = new Date(Date.now() - 86400000).toISOString(); // 1 day ago
-      const config: AgentageConfig = {
-        auth: { token: 'expired-token', expiresAt: pastDate },
+      const pastDate = new Date(Date.now() - 86400000).toISOString();
+      const auth: AuthFileConfig = {
+        token: 'expired-token',
+        expiresAt: pastDate,
       };
-      mockReadFile.mockResolvedValue(JSON.stringify(config));
+      mockReadFile.mockResolvedValue(JSON.stringify(auth));
 
       const result = await getAuthToken();
 
@@ -192,11 +278,12 @@ describe('config utils', () => {
     });
 
     it('returns token when not expired', async () => {
-      const futureDate = new Date(Date.now() + 86400000).toISOString(); // 1 day from now
-      const config: AgentageConfig = {
-        auth: { token: 'valid-token', expiresAt: futureDate },
+      const futureDate = new Date(Date.now() + 86400000).toISOString();
+      const auth: AuthFileConfig = {
+        token: 'valid-token',
+        expiresAt: futureDate,
       };
-      mockReadFile.mockResolvedValue(JSON.stringify(config));
+      mockReadFile.mockResolvedValue(JSON.stringify(auth));
 
       const result = await getAuthToken();
 
@@ -244,10 +331,11 @@ describe('config utils', () => {
 
     it('returns expired when token is expired', async () => {
       const pastDate = new Date(Date.now() - 86400000).toISOString();
-      const config: AgentageConfig = {
-        auth: { token: 'expired-token', expiresAt: pastDate },
+      const auth: AuthFileConfig = {
+        token: 'expired-token',
+        expiresAt: pastDate,
       };
-      mockReadFile.mockResolvedValue(JSON.stringify(config));
+      mockReadFile.mockResolvedValue(JSON.stringify(auth));
 
       const result = await getAuthStatus();
 
@@ -256,10 +344,11 @@ describe('config utils', () => {
 
     it('returns authenticated when token is valid', async () => {
       const futureDate = new Date(Date.now() + 86400000).toISOString();
-      const config: AgentageConfig = {
-        auth: { token: 'valid-token', expiresAt: futureDate },
+      const auth: AuthFileConfig = {
+        token: 'valid-token',
+        expiresAt: futureDate,
       };
-      mockReadFile.mockResolvedValue(JSON.stringify(config));
+      mockReadFile.mockResolvedValue(JSON.stringify(auth));
 
       const result = await getAuthStatus();
 
@@ -268,8 +357,8 @@ describe('config utils', () => {
   });
 
   describe('getDeviceId', () => {
-    it('returns existing device ID from config', async () => {
-      const config: AgentageConfig = {
+    it('returns existing device ID from config.json', async () => {
+      const config: AppConfig = {
         deviceId: 'existing-device-id-12345678',
       };
       mockReadFile.mockResolvedValue(JSON.stringify(config));
@@ -277,7 +366,6 @@ describe('config utils', () => {
       const result = await getDeviceId();
 
       expect(result).toBe('existing-device-id-12345678');
-      // Should not save config since device ID already exists
       expect(mockWriteFile).not.toHaveBeenCalled();
     });
 
@@ -288,18 +376,18 @@ describe('config utils', () => {
 
       const result = await getDeviceId();
 
-      // Should return a 32-character hex string
       expect(result).toMatch(/^[a-f0-9]{32}$/);
-      // Should save the new device ID
       expect(mockWriteFile).toHaveBeenCalled();
+      const writtenPath = mockWriteFile.mock.calls[0][0] as string;
+      expect(writtenPath).toContain('config.json');
       const savedConfig = JSON.parse(
         mockWriteFile.mock.calls[0][1] as string
-      ) as AgentageConfig;
+      ) as AppConfig;
       expect(savedConfig.deviceId).toBe(result);
     });
 
     it('returns consistent device ID on subsequent calls', async () => {
-      const config: AgentageConfig = {
+      const config: AppConfig = {
         deviceId: 'consistent-device-id-abc',
       };
       mockReadFile.mockResolvedValue(JSON.stringify(config));

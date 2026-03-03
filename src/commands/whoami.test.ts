@@ -16,8 +16,8 @@ jest.mock('../utils/config.js');
 const mockGetMe = authService.getMe as jest.MockedFunction<
   typeof authService.getMe
 >;
-const mockLoadConfig = configUtils.loadConfig as jest.MockedFunction<
-  typeof configUtils.loadConfig
+const mockLoadAuth = configUtils.loadAuth as jest.MockedFunction<
+  typeof configUtils.loadAuth
 >;
 const mockGetRegistryUrl = configUtils.getRegistryUrl as jest.MockedFunction<
   typeof configUtils.getRegistryUrl
@@ -49,7 +49,7 @@ describe('whoamiCommand', () => {
   });
 
   it('shows not logged in when no token', async () => {
-    mockLoadConfig.mockResolvedValue({});
+    mockLoadAuth.mockResolvedValue({});
 
     await whoamiCommand();
 
@@ -59,8 +59,9 @@ describe('whoamiCommand', () => {
   });
 
   it('shows expired session when token is locally expired', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: { token: 'expired-token', expiresAt: '2020-01-01T00:00:00Z' },
+    mockLoadAuth.mockResolvedValue({
+      token: 'expired-token',
+      expiresAt: '2020-01-01T00:00:00Z',
     });
     mockIsTokenExpired.mockReturnValue(true);
 
@@ -72,9 +73,7 @@ describe('whoamiCommand', () => {
   });
 
   it('displays user info when authenticated', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: { token: 'test-token' },
-    });
+    mockLoadAuth.mockResolvedValue({ token: 'test-token' });
     mockGetMe.mockResolvedValue({
       id: '123',
       email: 'test@example.com',
@@ -91,9 +90,7 @@ describe('whoamiCommand', () => {
   });
 
   it('handles session expired error', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: { token: 'expired-token' },
-    });
+    mockLoadAuth.mockResolvedValue({ token: 'expired-token' });
     mockGetMe.mockRejectedValue(
       new AuthError('Session expired', 'session_expired')
     );
@@ -107,9 +104,7 @@ describe('whoamiCommand', () => {
   });
 
   it('handles not_authenticated error', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: { token: 'test-token' },
-    });
+    mockLoadAuth.mockResolvedValue({ token: 'test-token' });
     mockGetMe.mockRejectedValue(
       new AuthError('Not authenticated', 'not_authenticated')
     );
@@ -122,9 +117,7 @@ describe('whoamiCommand', () => {
   });
 
   it('handles other AuthError errors', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: { token: 'test-token' },
-    });
+    mockLoadAuth.mockResolvedValue({ token: 'test-token' });
     mockGetMe.mockRejectedValue(new AuthError('Server error', 'server_error'));
 
     await expect(whoamiCommand()).rejects.toThrow('process.exit called');
@@ -136,9 +129,7 @@ describe('whoamiCommand', () => {
   });
 
   it('handles non-AuthError errors', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: { token: 'test-token' },
-    });
+    mockLoadAuth.mockResolvedValue({ token: 'test-token' });
     mockGetMe.mockRejectedValue(new Error('Network error'));
 
     await expect(whoamiCommand()).rejects.toThrow('process.exit called');
@@ -150,9 +141,7 @@ describe('whoamiCommand', () => {
   });
 
   it('displays user without name', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: { token: 'test-token' },
-    });
+    mockLoadAuth.mockResolvedValue({ token: 'test-token' });
     mockGetMe.mockResolvedValue({
       id: '123',
       email: 'test@example.com',
@@ -167,9 +156,7 @@ describe('whoamiCommand', () => {
   });
 
   it('displays user with verifiedAlias', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: { token: 'test-token' },
-    });
+    mockLoadAuth.mockResolvedValue({ token: 'test-token' });
     mockGetMe.mockResolvedValue({
       id: '123',
       email: 'test@example.com',

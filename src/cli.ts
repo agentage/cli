@@ -14,7 +14,7 @@ import { updateCommand } from './commands/update.js';
 import { whoamiCommand } from './commands/whoami.js';
 import { version } from './index.js';
 import { AuthError, getMe } from './services/auth.service.js';
-import { loadConfig } from './utils/config.js';
+import { loadAuth } from './utils/config.js';
 import { checkForUpdates } from './utils/version.js';
 
 const displayBanner = (): void => {
@@ -38,8 +38,8 @@ const displayVersionInfo = async (): Promise<void> => {
 
   // Display login status
   try {
-    const config = await loadConfig();
-    if (config.auth?.token) {
+    const auth = await loadAuth();
+    if (auth.token) {
       const user = await getMe();
       const displayName = user.name || user.email;
       const aliasDisplay = user.verifiedAlias
