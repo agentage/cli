@@ -1,8 +1,13 @@
 import { createHash } from 'crypto';
-import { mkdir, readFile, rm, writeFile } from 'fs/promises';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { arch, homedir, hostname, platform } from 'os';
 import { dirname, join } from 'path';
-import { AgentageConfig, agentageConfigSchema } from '../types/config.types.js';
+import {
+  AppConfig,
+  appConfigSchema,
+  AuthFileConfig,
+  authFileSchema,
+} from '../types/config.types.js';
 
 /**
  * Default registry URL
@@ -15,49 +20,74 @@ export const DEFAULT_REGISTRY_URL = 'https://dev.agentage.io';
 export const getConfigDir = (): string => join(homedir(), '.agentage');
 
 /**
- * Get the config file path
+ * Get the config file path (config.json)
  */
 export const getConfigPath = (): string => join(getConfigDir(), 'config.json');
 
 /**
- * Load configuration from disk
+ * Get the auth file path (auth.json)
  */
-export const loadConfig = async (): Promise<AgentageConfig> => {
+export const getAuthPath = (): string => join(getConfigDir(), 'auth.json');
+
+/**
+ * Load auth state from auth.json
+ */
+export const loadAuth = async (): Promise<AuthFileConfig> => {
   try {
-    const configPath = getConfigPath();
-    const content = await readFile(configPath, 'utf-8');
+    const authPath = getAuthPath();
+    const content = await readFile(authPath, 'utf-8');
     const parsed = JSON.parse(content);
-    return agentageConfigSchema.parse(parsed);
+    return authFileSchema.parse(parsed);
   } catch {
-    // Return empty config if file doesn't exist or is invalid
     return {};
   }
 };
 
 /**
- * Save configuration to disk
+ * Save auth state to auth.json
  */
-export const saveConfig = async (config: AgentageConfig): Promise<void> => {
-  const configPath = getConfigPath();
-  const configDir = dirname(configPath);
-
-  // Ensure directory exists
-  await mkdir(configDir, { recursive: true });
-
-  // Write config file
-  await writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
+export const saveAuth = async (auth: AuthFileConfig): Promise<void> => {
+  const authPath = getAuthPath();
+  const authDir = dirname(authPath);
+  await mkdir(authDir, { recursive: true });
+  await writeFile(authPath, JSON.stringify(auth, null, 2), 'utf-8');
 };
 
 /**
- * Clear stored credentials (logout)
+ * Clear auth state (writes empty object to auth.json)
+ * Does NOT touch config.json — deviceId and registry are preserved
  */
-export const clearConfig = async (): Promise<void> => {
+export const clearAuth = async (): Promise<void> => {
+  try {
+    const authPath = getAuthPath();
+    await writeFile(authPath, JSON.stringify({}, null, 2), 'utf-8');
+  } catch {
+    // Ignore if directory doesn't exist
+  }
+};
+
+/**
+ * Load app config from config.json (registry + deviceId only, no tokens)
+ */
+export const loadAppConfig = async (): Promise<AppConfig> => {
   try {
     const configPath = getConfigPath();
-    await rm(configPath);
+    const content = await readFile(configPath, 'utf-8');
+    const parsed = JSON.parse(content);
+    return appConfigSchema.parse(parsed);
   } catch {
-    // Ignore if file doesn't exist
+    return {};
   }
+};
+
+/**
+ * Save app config to config.json (registry + deviceId only)
+ */
+export const saveAppConfig = async (config: AppConfig): Promise<void> => {
+  const configPath = getConfigPath();
+  const configDir = dirname(configPath);
+  await mkdir(configDir, { recursive: true });
+  await writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
 };
 
 /**
@@ -70,8 +100,7 @@ export const getRegistryUrl = async (): Promise<string> => {
     return envUrl;
   }
 
-  // Check config file
-  const config = await loadConfig();
+  const config = await loadAppConfig();
   return config.registry?.url || DEFAULT_REGISTRY_URL;
 };
 
@@ -87,7 +116,7 @@ export const isTokenExpired = (expiresAt: string | undefined): boolean => {
 };
 
 /**
- * Get the auth token from config or environment
+ * Get the auth token from auth.json or environment
  * Returns undefined if the token is expired
  */
 export const getAuthToken = async (): Promise<string | undefined> => {
@@ -97,15 +126,13 @@ export const getAuthToken = async (): Promise<string | undefined> => {
     return envToken;
   }
 
-  // Check config file
-  const config = await loadConfig();
+  const auth = await loadAuth();
 
-  // Check if token exists and is not expired
-  if (config.auth?.token) {
-    if (isTokenExpired(config.auth.expiresAt)) {
-      return undefined; // Token is expired
+  if (auth.token) {
+    if (isTokenExpired(auth.expiresAt)) {
+      return undefined;
     }
-    return config.auth.token;
+    return auth.token;
   }
 
   return undefined;
@@ -129,18 +156,17 @@ export const getAuthStatus = async (): Promise<AuthStatus> => {
     return { status: 'authenticated', token: envToken };
   }
 
-  // Check config file
-  const config = await loadConfig();
+  const auth = await loadAuth();
 
-  if (!config.auth?.token) {
+  if (!auth.token) {
     return { status: 'not_authenticated' };
   }
 
-  if (isTokenExpired(config.auth.expiresAt)) {
+  if (isTokenExpired(auth.expiresAt)) {
     return { status: 'expired' };
   }
 
-  return { status: 'authenticated', token: config.auth.token };
+  return { status: 'authenticated', token: auth.token };
 };
 
 /**
@@ -162,19 +188,17 @@ const generateDeviceFingerprint = async (): Promise<string> => {
 
 /**
  * Get or create a unique device ID
- * The device ID is generated from machine ID + OS info and stored in config
+ * The device ID is generated from machine ID + OS info and stored in config.json
  */
 export const getDeviceId = async (): Promise<string> => {
-  const config = await loadConfig();
+  const config = await loadAppConfig();
 
-  // Return existing device ID if available
   if (config.deviceId) {
     return config.deviceId;
   }
 
-  // Generate and store new device ID
   const deviceId = await generateDeviceFingerprint();
-  await saveConfig({ ...config, deviceId });
+  await saveAppConfig({ ...config, deviceId });
 
   return deviceId;
 };

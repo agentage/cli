@@ -5,18 +5,18 @@ import { z } from 'zod';
  */
 export const userSchema = z.object({
   id: z.string(),
-  email: z.string().email(),
+  email: z.string(),
   name: z.string().optional(),
-  avatar: z.string().url().optional(),
+  avatar: z.string().optional(),
   verifiedAlias: z.string().optional(),
 });
 
 /**
- * Auth configuration schema
+ * Auth config schema (auth.json)
  */
-export const authConfigSchema = z.object({
-  token: z.string(),
-  expiresAt: z.string().datetime().optional(),
+export const authFileSchema = z.object({
+  token: z.string().optional(),
+  expiresAt: z.string().optional(),
   user: userSchema.optional(),
 });
 
@@ -28,10 +28,9 @@ export const registryConfigSchema = z.object({
 });
 
 /**
- * Complete Agentage configuration schema
+ * App config schema (config.json) — NO tokens
  */
-export const agentageConfigSchema = z.object({
-  auth: authConfigSchema.optional(),
+export const appConfigSchema = z.object({
   registry: registryConfigSchema.optional(),
   deviceId: z.string().optional(),
 });
@@ -42,9 +41,9 @@ export const agentageConfigSchema = z.object({
 export type User = z.infer<typeof userSchema>;
 
 /**
- * Auth configuration
+ * Auth config (auth.json)
  */
-export type AuthConfig = z.infer<typeof authConfigSchema>;
+export type AuthFileConfig = z.infer<typeof authFileSchema>;
 
 /**
  * Registry configuration
@@ -52,9 +51,9 @@ export type AuthConfig = z.infer<typeof authConfigSchema>;
 export type RegistryConfig = z.infer<typeof registryConfigSchema>;
 
 /**
- * Complete Agentage configuration
+ * App configuration (config.json — no tokens)
  */
-export type AgentageConfig = z.infer<typeof agentageConfigSchema>;
+export type AppConfig = z.infer<typeof appConfigSchema>;
 
 /**
  * Device code response from the auth API

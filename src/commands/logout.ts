@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { logout as logoutApi } from '../services/auth.service.js';
-import { clearConfig, loadConfig } from '../utils/config.js';
+import { clearAuth, loadAuth } from '../utils/config.js';
 
 /**
  * Logout command - clear stored credentials
@@ -8,21 +8,21 @@ import { clearConfig, loadConfig } from '../utils/config.js';
 export const logoutCommand = async (): Promise<void> => {
   try {
     // Check if logged in
-    const config = await loadConfig();
-    if (!config.auth?.token) {
+    const auth = await loadAuth();
+    if (!auth.token) {
       console.log(chalk.yellow('Not logged in.'));
       return;
     }
 
     // Get user info before clearing
-    const userName = config.auth.user?.name || config.auth.user?.email;
+    const userName = auth.user?.name || auth.user?.email;
 
     // Attempt server-side logout (optional, ignore errors)
     console.log(chalk.gray('Logging out...'));
     await logoutApi();
 
-    // Clear local credentials
-    await clearConfig();
+    // Clear auth.json only — config.json (deviceId, registry) is preserved
+    await clearAuth();
 
     console.log();
     if (userName) {
@@ -32,7 +32,7 @@ export const logoutCommand = async (): Promise<void> => {
     }
   } catch {
     // Even if server logout fails, clear local credentials
-    await clearConfig();
+    await clearAuth();
     console.log(chalk.green('✅ Logged out locally.'));
     console.log(
       chalk.gray(

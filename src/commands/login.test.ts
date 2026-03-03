@@ -24,11 +24,11 @@ const mockRequestDeviceCode =
 const mockPollForToken = authService.pollForToken as jest.MockedFunction<
   typeof authService.pollForToken
 >;
-const mockLoadConfig = configUtils.loadConfig as jest.MockedFunction<
-  typeof configUtils.loadConfig
+const mockLoadAuth = configUtils.loadAuth as jest.MockedFunction<
+  typeof configUtils.loadAuth
 >;
-const mockSaveConfig = configUtils.saveConfig as jest.MockedFunction<
-  typeof configUtils.saveConfig
+const mockSaveAuth = configUtils.saveAuth as jest.MockedFunction<
+  typeof configUtils.saveAuth
 >;
 const mockGetRegistryUrl = configUtils.getRegistryUrl as jest.MockedFunction<
   typeof configUtils.getRegistryUrl
@@ -56,9 +56,7 @@ describe('loginCommand', () => {
   });
 
   it('shows message when already logged in', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: { token: 'existing-token' },
-    });
+    mockLoadAuth.mockResolvedValue({ token: 'existing-token' });
 
     await loginCommand();
 
@@ -71,7 +69,7 @@ describe('loginCommand', () => {
   });
 
   it('completes login flow successfully', async () => {
-    mockLoadConfig.mockResolvedValue({});
+    mockLoadAuth.mockResolvedValue({});
     mockRequestDeviceCode.mockResolvedValue({
       device_code: 'device123',
       user_code: 'ABCD-1234',
@@ -84,18 +82,16 @@ describe('loginCommand', () => {
       token_type: 'Bearer',
       user: { id: '1', email: 'test@example.com', name: 'Test User' },
     });
-    mockSaveConfig.mockResolvedValue(undefined);
+    mockSaveAuth.mockResolvedValue(undefined);
 
     await loginCommand();
 
     expect(mockRequestDeviceCode).toHaveBeenCalled();
     expect(mockPollForToken).toHaveBeenCalledWith('device123', 5, 900);
-    expect(mockSaveConfig).toHaveBeenCalledWith({
-      auth: {
-        token: 'new-token',
-        user: { id: '1', email: 'test@example.com', name: 'Test User' },
-        expiresAt: undefined,
-      },
+    expect(mockSaveAuth).toHaveBeenCalledWith({
+      token: 'new-token',
+      user: { id: '1', email: 'test@example.com', name: 'Test User' },
+      expiresAt: undefined,
     });
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('Logged in as'),
@@ -104,7 +100,7 @@ describe('loginCommand', () => {
   });
 
   it('handles login errors', async () => {
-    mockLoadConfig.mockResolvedValue({});
+    mockLoadAuth.mockResolvedValue({});
     mockRequestDeviceCode.mockRejectedValue(
       new AuthError('Failed', 'request_failed')
     );
@@ -118,7 +114,7 @@ describe('loginCommand', () => {
   });
 
   it('handles expired token error with hint', async () => {
-    mockLoadConfig.mockResolvedValue({});
+    mockLoadAuth.mockResolvedValue({});
     mockRequestDeviceCode.mockResolvedValue({
       device_code: 'device123',
       user_code: 'ABCD-1234',
@@ -144,7 +140,7 @@ describe('loginCommand', () => {
   });
 
   it('handles non-AuthError errors', async () => {
-    mockLoadConfig.mockResolvedValue({});
+    mockLoadAuth.mockResolvedValue({});
     mockRequestDeviceCode.mockRejectedValue(new Error('Network error'));
 
     await expect(loginCommand()).rejects.toThrow('process.exit called');
@@ -156,7 +152,7 @@ describe('loginCommand', () => {
   });
 
   it('shows email when user has no name', async () => {
-    mockLoadConfig.mockResolvedValue({});
+    mockLoadAuth.mockResolvedValue({});
     mockRequestDeviceCode.mockResolvedValue({
       device_code: 'device123',
       user_code: 'ABCD-1234',
@@ -169,7 +165,7 @@ describe('loginCommand', () => {
       token_type: 'Bearer',
       user: { id: '1', email: 'test@example.com' },
     });
-    mockSaveConfig.mockResolvedValue(undefined);
+    mockSaveAuth.mockResolvedValue(undefined);
 
     await loginCommand();
 
@@ -180,7 +176,7 @@ describe('loginCommand', () => {
   });
 
   it('shows generic success when no user info', async () => {
-    mockLoadConfig.mockResolvedValue({});
+    mockLoadAuth.mockResolvedValue({});
     mockRequestDeviceCode.mockResolvedValue({
       device_code: 'device123',
       user_code: 'ABCD-1234',
@@ -192,7 +188,7 @@ describe('loginCommand', () => {
       access_token: 'new-token',
       token_type: 'Bearer',
     });
-    mockSaveConfig.mockResolvedValue(undefined);
+    mockSaveAuth.mockResolvedValue(undefined);
 
     await loginCommand();
 
@@ -207,7 +203,7 @@ describe('loginCommand', () => {
       default: jest.fn().mockRejectedValue(new Error('Cannot open browser')),
     }));
 
-    mockLoadConfig.mockResolvedValue({});
+    mockLoadAuth.mockResolvedValue({});
     mockRequestDeviceCode.mockResolvedValue({
       device_code: 'device123',
       user_code: 'ABCD-1234',
@@ -220,7 +216,7 @@ describe('loginCommand', () => {
       token_type: 'Bearer',
       user: { id: '1', email: 'test@example.com', name: 'Test User' },
     });
-    mockSaveConfig.mockResolvedValue(undefined);
+    mockSaveAuth.mockResolvedValue(undefined);
 
     await loginCommand();
 

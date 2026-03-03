@@ -9,11 +9,11 @@ jest.mock('../utils/config.js');
 const mockLogout = authService.logout as jest.MockedFunction<
   typeof authService.logout
 >;
-const mockLoadConfig = configUtils.loadConfig as jest.MockedFunction<
-  typeof configUtils.loadConfig
+const mockLoadAuth = configUtils.loadAuth as jest.MockedFunction<
+  typeof configUtils.loadAuth
 >;
-const mockClearConfig = configUtils.clearConfig as jest.MockedFunction<
-  typeof configUtils.clearConfig
+const mockClearAuth = configUtils.clearAuth as jest.MockedFunction<
+  typeof configUtils.clearAuth
 >;
 
 describe('logoutCommand', () => {
@@ -29,30 +29,28 @@ describe('logoutCommand', () => {
   });
 
   it('shows message when not logged in', async () => {
-    mockLoadConfig.mockResolvedValue({});
+    mockLoadAuth.mockResolvedValue({});
 
     await logoutCommand();
 
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('Not logged in')
     );
-    expect(mockClearConfig).not.toHaveBeenCalled();
+    expect(mockClearAuth).not.toHaveBeenCalled();
   });
 
   it('clears credentials and shows success', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: {
-        token: 'test-token',
-        user: { id: '1', email: 'test@example.com', name: 'Test User' },
-      },
+    mockLoadAuth.mockResolvedValue({
+      token: 'test-token',
+      user: { id: '1', email: 'test@example.com', name: 'Test User' },
     });
     mockLogout.mockResolvedValue(undefined);
-    mockClearConfig.mockResolvedValue(undefined);
+    mockClearAuth.mockResolvedValue(undefined);
 
     await logoutCommand();
 
     expect(mockLogout).toHaveBeenCalled();
-    expect(mockClearConfig).toHaveBeenCalled();
+    expect(mockClearAuth).toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('Logged out from'),
       expect.stringContaining('Test User')
@@ -60,15 +58,13 @@ describe('logoutCommand', () => {
   });
 
   it('clears credentials even when server logout fails', async () => {
-    mockLoadConfig.mockResolvedValue({
-      auth: { token: 'test-token' },
-    });
+    mockLoadAuth.mockResolvedValue({ token: 'test-token' });
     mockLogout.mockRejectedValue(new Error('Network error'));
-    mockClearConfig.mockResolvedValue(undefined);
+    mockClearAuth.mockResolvedValue(undefined);
 
     await logoutCommand();
 
-    expect(mockClearConfig).toHaveBeenCalled();
+    expect(mockClearAuth).toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('Logged out locally')
     );
