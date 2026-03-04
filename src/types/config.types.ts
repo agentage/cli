@@ -24,7 +24,7 @@ export const authFileSchema = z.object({
  * Registry configuration schema
  */
 export const registryConfigSchema = z.object({
-  url: z.string().url().default('https://dev.agentage.io'),
+  url: z.url().default('https://dev.agentage.io'),
 });
 
 /**
