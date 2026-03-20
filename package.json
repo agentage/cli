@@ -1,72 +1,59 @@
 {
   "name": "@agentage/cli",
-  "version": "0.1.19",
-  "description": "CLI tool for creating and running AI agents locally",
+  "version": "0.2.0",
+  "description": "Agentage CLI and daemon — control plane for AI agents",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "agent": "./dist/cli.js",
-    "agentkit": "./dist/cli.js"
+    "agentage": "./dist/cli.js"
+  },
+  "files": ["dist"],
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "tsx src/cli.ts",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "verify": "npm run type-check && npm run lint && npm run build && npm run test",
-    "clean": "rm -rf dist coverage",
-    "prepublishOnly": "npm run verify",
-    "format:check": "prettier --check .",
-    "format": "prettier --write ."
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rm -rf dist *.tsbuildinfo coverage",
+    "verify": "npm run type-check && npm run lint && npm run format:check && npm run test && npm run build",
+    "prepublishOnly": "npm run verify"
   },
-  "keywords": [
-    "cli",
-    "ai",
-    "agent",
-    "agentkit",
-    "typescript"
-  ],
-  "author": "Agentage",
-  "license": "MIT",
+  "dependencies": {
+    "@agentage/core": "^0.2.0",
+    "@agentage/platform": "^0.2.0",
+    "chalk": "latest",
+    "commander": "latest",
+    "express": "latest",
+    "gray-matter": "latest",
+    "jiti": "latest",
+    "open": "latest",
+    "ws": "latest"
+  },
+  "devDependencies": {
+    "@types/express": "latest",
+    "@types/node": "latest",
+    "@types/ws": "latest",
+    "@typescript-eslint/eslint-plugin": "latest",
+    "@typescript-eslint/parser": "latest",
+    "eslint": "latest",
+    "eslint-config-prettier": "latest",
+    "eslint-plugin-prettier": "latest",
+    "prettier": "latest",
+    "typescript": "latest",
+    "vitest": "latest",
+    "@vitest/coverage-v8": "latest"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/agentage/cli.git"
   },
-  "bugs": {
-    "url": "https://github.com/agentage/cli/issues"
-  },
-  "homepage": "https://github.com/agentage/cli#readme",
-  "engines": {
-    "node": ">=20.0.0",
-    "npm": ">=10.0.0"
-  },
-  "dependencies": {
-    "chalk": "^5.6.2",
-    "commander": "^14.0.2",
-    "gray-matter": "^4.0.3",
-    "inquirer": "^13.0.1",
-    "js-yaml": "^4.1.0",
-    "node-machine-id": "1.1.12",
-    "open": "^11.0.0",
-    "yaml": "^2.8.1",
-    "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "@types/inquirer": "^9.0.9",
-    "@types/jest": "^30.0.0",
-    "@types/js-yaml": "^4.0.9",
-    "@types/node": "^25.0.3",
-    "@typescript-eslint/eslint-plugin": "^8.46.3",
-    "@typescript-eslint/parser": "^8.46.3",
-    "eslint": "^9.39.1",
-    "jest": "^30.2.0",
-    "prettier": "^3.8.1",
-    "ts-jest": "^29.4.5",
-    "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
-  }
+  "license": "MIT"
 }
