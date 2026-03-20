@@ -1,11 +1,7 @@
 import chalk from 'chalk';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import {
-  getInstalledVersion,
-  getLatestVersion,
-  PACKAGE_NAME,
-} from '../utils/version.js';
+import { getInstalledVersion, getLatestVersion, PACKAGE_NAME } from '../utils/version.js';
 
 const execAsync = promisify(exec);
 
@@ -24,16 +20,12 @@ export const updateCommand = async (): Promise<void> => {
     const latestVersion = await getLatestVersion();
 
     if (latestVersion === 'unknown') {
-      console.error(
-        chalk.red('❌ Failed to fetch latest version from npm registry')
-      );
+      console.error(chalk.red('❌ Failed to fetch latest version from npm registry'));
       process.exit(1);
     }
 
     if (previousVersion === latestVersion) {
-      console.log(
-        chalk.green(`✅ Already on the latest version (${latestVersion})`)
-      );
+      console.log(chalk.green(`✅ Already on the latest version (${latestVersion})`));
       return;
     }
 
@@ -47,9 +39,7 @@ export const updateCommand = async (): Promise<void> => {
 
     await execAsync(`npm install -g ${PACKAGE_NAME}@latest`);
 
-    console.log(
-      chalk.green.bold(`✅ Successfully updated to version ${latestVersion}`)
-    );
+    console.log(chalk.green.bold(`✅ Successfully updated to version ${latestVersion}`));
   } catch (error) {
     console.error(chalk.red(`❌ Update failed: ${(error as Error).message}`));
     process.exit(1);

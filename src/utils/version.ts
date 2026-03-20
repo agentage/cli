@@ -30,12 +30,9 @@ export interface VersionCheckResult {
   updateAvailable: boolean;
 }
 
-export const checkForUpdates = async (
-  currentVersion: string
-): Promise<VersionCheckResult> => {
+export const checkForUpdates = async (currentVersion: string): Promise<VersionCheckResult> => {
   const latestVersion = await getLatestVersion();
-  const updateAvailable =
-    latestVersion !== 'unknown' && latestVersion !== currentVersion;
+  const updateAvailable = latestVersion !== 'unknown' && latestVersion !== currentVersion;
 
   return {
     currentVersion,

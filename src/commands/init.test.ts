@@ -71,14 +71,10 @@ describe('initCommand', () => {
     const consoleError = jest.spyOn(console, 'error').mockImplementation();
 
     const originalWriteFile = require('fs/promises').writeFile;
-    jest
-      .spyOn(require('fs/promises'), 'writeFile')
-      .mockRejectedValue(new Error('Write failed'));
+    jest.spyOn(require('fs/promises'), 'writeFile').mockRejectedValue(new Error('Write failed'));
 
     await expect(initCommand('test')).rejects.toThrow('process.exit called');
-    expect(consoleError).toHaveBeenCalledWith(
-      expect.stringContaining('❌ Failed: Write failed')
-    );
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('❌ Failed: Write failed'));
     expect(mockExit).toHaveBeenCalledWith(1);
 
     // Restore

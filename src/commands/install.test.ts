@@ -63,9 +63,7 @@ describe('installCommand', () => {
   test('rejects invalid identifier format', async () => {
     await expect(installCommand('invalid')).rejects.toThrow('process.exit(1)');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('Invalid format')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Invalid format'));
   });
 
   test('installs agent to local directory when agent.json exists', async () => {
@@ -83,15 +81,10 @@ describe('installCommand', () => {
     await installCommand('testuser/test-agent');
 
     expect(existsSync(join('agents', 'test-agent.agent.md'))).toBe(true);
-    const content = readFileSync(
-      join('agents', 'test-agent.agent.md'),
-      'utf-8'
-    );
+    const content = readFileSync(join('agents', 'test-agent.agent.md'), 'utf-8');
     expect(content).toContain('name: test-agent');
 
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('Installed')
-    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Installed'));
   });
 
   test('installs specific version', async () => {
@@ -106,10 +99,7 @@ describe('installCommand', () => {
 
     await installCommand('testuser/test-agent@2025-11-01');
 
-    const content = readFileSync(
-      join('agents', 'test-agent.agent.md'),
-      'utf-8'
-    );
+    const content = readFileSync(join('agents', 'test-agent.agent.md'), 'utf-8');
     expect(content).toContain('version: 2025-11-01');
   });
 
@@ -134,15 +124,10 @@ describe('installCommand', () => {
       // Expected to exit
     }
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('already exists')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('already exists'));
 
     // Verify file was not overwritten
-    const content = readFileSync(
-      join('agents', 'test-agent.agent.md'),
-      'utf-8'
-    );
+    const content = readFileSync(join('agents', 'test-agent.agent.md'), 'utf-8');
     expect(content).toBe('existing content');
   });
 
@@ -162,10 +147,7 @@ describe('installCommand', () => {
 
     await installCommand('testuser/test-agent', { force: true });
 
-    const content = readFileSync(
-      join('agents', 'test-agent.agent.md'),
-      'utf-8'
-    );
+    const content = readFileSync(join('agents', 'test-agent.agent.md'), 'utf-8');
     expect(content).toContain('New content');
   });
 
@@ -181,9 +163,7 @@ describe('installCommand', () => {
 
     await installCommand('testuser/test-agent', { global: true });
 
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('Installed')
-    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Installed'));
   });
 
   test('installs to local directory with --local flag', async () => {
@@ -202,45 +182,27 @@ describe('installCommand', () => {
   });
 
   test('handles 404 error', async () => {
-    const {
-      getAgent,
-      RegistryApiError,
-    } = require('../services/registry.service.js');
+    const { getAgent, RegistryApiError } = require('../services/registry.service.js');
 
-    getAgent.mockRejectedValue(
-      new RegistryApiError('Not found', 'not_found', 404)
-    );
+    getAgent.mockRejectedValue(new RegistryApiError('Not found', 'not_found', 404));
 
     writeFileSync('agent.json', '{}');
 
-    await expect(installCommand('testuser/nonexistent')).rejects.toThrow(
-      'process.exit(1)'
-    );
+    await expect(installCommand('testuser/nonexistent')).rejects.toThrow('process.exit(1)');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('not found')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('not found'));
   });
 
   test('handles 403 error', async () => {
-    const {
-      getAgent,
-      RegistryApiError,
-    } = require('../services/registry.service.js');
+    const { getAgent, RegistryApiError } = require('../services/registry.service.js');
 
-    getAgent.mockRejectedValue(
-      new RegistryApiError('Forbidden', 'forbidden', 403)
-    );
+    getAgent.mockRejectedValue(new RegistryApiError('Forbidden', 'forbidden', 403));
 
     writeFileSync('agent.json', '{}');
 
-    await expect(installCommand('testuser/private-agent')).rejects.toThrow(
-      'process.exit(1)'
-    );
+    await expect(installCommand('testuser/private-agent')).rejects.toThrow('process.exit(1)');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('Access denied')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Access denied'));
   });
 
   test('handles version without content', async () => {
@@ -253,13 +215,11 @@ describe('installCommand', () => {
 
     writeFileSync('agent.json', '{}');
 
-    await expect(
-      installCommand('testuser/test-agent@2025-11-01')
-    ).rejects.toThrow('process.exit(1)');
-
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('not available')
+    await expect(installCommand('testuser/test-agent@2025-11-01')).rejects.toThrow(
+      'process.exit(1)'
     );
+
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('not available'));
   });
 
   test('handles generic error', async () => {
@@ -269,12 +229,8 @@ describe('installCommand', () => {
 
     writeFileSync('agent.json', '{}');
 
-    await expect(installCommand('testuser/test-agent')).rejects.toThrow(
-      'process.exit(1)'
-    );
+    await expect(installCommand('testuser/test-agent')).rejects.toThrow('process.exit(1)');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('Network error')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Network error'));
   });
 });

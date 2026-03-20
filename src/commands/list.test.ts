@@ -39,9 +39,7 @@ describe('listCommand', () => {
 
     await listCommand();
 
-    expect(consoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('No agents found.')
-    );
+    expect(consoleLog).toHaveBeenCalledWith(expect.stringContaining('No agents found.'));
 
     consoleLog.mockRestore();
   });
@@ -52,9 +50,7 @@ describe('listCommand', () => {
 
     await listCommand();
 
-    expect(consoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('No agents found.')
-    );
+    expect(consoleLog).toHaveBeenCalledWith(expect.stringContaining('No agents found.'));
 
     consoleLog.mockRestore();
   });
@@ -111,9 +107,7 @@ content: here`;
     await listCommand();
 
     expect(consoleLog).toHaveBeenCalledWith('\n📋 Available Agents:\n');
-    expect(consoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('❌ invalid-agent -')
-    );
+    expect(consoleLog).toHaveBeenCalledWith(expect.stringContaining('❌ invalid-agent -'));
 
     consoleLog.mockRestore();
   });
@@ -137,9 +131,7 @@ model: gpt-4`;
     await listCommand();
 
     expect(consoleLog).toHaveBeenCalledWith('    ✅ valid-agent (gpt-4)');
-    expect(consoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('❌ invalid-agent -')
-    );
+    expect(consoleLog).toHaveBeenCalledWith(expect.stringContaining('❌ invalid-agent -'));
 
     consoleLog.mockRestore();
   });
@@ -169,9 +161,7 @@ instructions: Test instructions`;
 
     await listCommand();
 
-    expect(consoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('No agents found.')
-    );
+    expect(consoleLog).toHaveBeenCalledWith(expect.stringContaining('No agents found.'));
 
     consoleLog.mockRestore();
   });

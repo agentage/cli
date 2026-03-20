@@ -4,10 +4,7 @@ import { join } from 'path';
 import { parse } from 'yaml';
 import { agentYamlSchema } from '../schemas/agent.schema.js';
 
-export const runCommand = async (
-  name: string,
-  prompt?: string
-): Promise<void> => {
+export const runCommand = async (name: string, prompt?: string): Promise<void> => {
   try {
     const agentsDir = 'agents';
     const filename = join(agentsDir, `${name}.yml`);
@@ -31,9 +28,7 @@ export const runCommand = async (
       )
     );
     console.log(
-      chalk.gray(
-        'To run agents, integrate with an AI provider (OpenAI, Anthropic, etc.) directly.'
-      )
+      chalk.gray('To run agents, integrate with an AI provider (OpenAI, Anthropic, etc.) directly.')
     );
     console.log();
   } catch (error) {

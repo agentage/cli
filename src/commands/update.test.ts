@@ -47,9 +47,7 @@ describe('updateCommand', () => {
     await updateCommand();
 
     expect(consoleSpy).toHaveBeenCalledWith('🔄 Checking for updates...');
-    expect(consoleSpy).toHaveBeenCalledWith(
-      '✅ Already on the latest version (1.0.0)'
-    );
+    expect(consoleSpy).toHaveBeenCalledWith('✅ Already on the latest version (1.0.0)');
   });
 
   it('updates successfully when new version available', async () => {
@@ -77,9 +75,7 @@ describe('updateCommand', () => {
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('Updating @agentage/cli from 1.0.0 to 2.0.0')
     );
-    expect(consoleSpy).toHaveBeenCalledWith(
-      '✅ Successfully updated to version 2.0.0'
-    );
+    expect(consoleSpy).toHaveBeenCalledWith('✅ Successfully updated to version 2.0.0');
   });
 
   it('handles npm view error', async () => {
@@ -98,9 +94,7 @@ describe('updateCommand', () => {
 
     await expect(updateCommand()).rejects.toThrow('process.exit called');
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Update failed')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Update failed'));
     expect(processExitSpy).toHaveBeenCalledWith(1);
   });
 
@@ -122,9 +116,7 @@ describe('updateCommand', () => {
 
     await expect(updateCommand()).rejects.toThrow('process.exit called');
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Update failed')
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Update failed'));
     expect(processExitSpy).toHaveBeenCalledWith(1);
   });
 

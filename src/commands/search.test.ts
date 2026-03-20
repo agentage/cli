@@ -54,15 +54,9 @@ describe('searchCommand', () => {
     await searchCommand('test');
 
     expect(mockSearchAgents).toHaveBeenCalledWith('test', 1, 10);
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('testuser/test-agent')
-    );
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('A test agent')
-    );
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('42 downloads')
-    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('testuser/test-agent'));
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('A test agent'));
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('42 downloads'));
   });
 
   test('shows no results message', async () => {
@@ -76,9 +70,7 @@ describe('searchCommand', () => {
 
     await searchCommand('nonexistent');
 
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('No agents found')
-    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('No agents found'));
   });
 
   test('outputs JSON format with --json flag', async () => {
@@ -94,9 +86,7 @@ describe('searchCommand', () => {
 
     await searchCommand('test', { json: true });
 
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      JSON.stringify(mockResult, null, 2)
-    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(JSON.stringify(mockResult, null, 2));
   });
 
   test('respects limit and page options', async () => {
@@ -131,24 +121,18 @@ describe('searchCommand', () => {
 
     await searchCommand('test');
 
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('--page 2')
-    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('--page 2'));
   });
 
   test('handles RegistryApiError', async () => {
     const { RegistryApiError } = require('../services/registry.service.js');
-    mockSearchAgents.mockRejectedValue(
-      new RegistryApiError('Rate limited', 'rate_limit', 429)
-    );
+    mockSearchAgents.mockRejectedValue(new RegistryApiError('Rate limited', 'rate_limit', 429));
 
     const mockConsoleError = jest.spyOn(console, 'error').mockImplementation();
 
     await expect(searchCommand('test')).rejects.toThrow('process.exit(1)');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('Rate limited')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Rate limited'));
 
     mockConsoleError.mockRestore();
   });
@@ -160,9 +144,7 @@ describe('searchCommand', () => {
 
     await expect(searchCommand('test')).rejects.toThrow('process.exit(1)');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('Network error')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Network error'));
 
     mockConsoleError.mockRestore();
   });
@@ -185,8 +167,6 @@ describe('searchCommand', () => {
 
     await searchCommand('test');
 
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('No description')
-    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('No description'));
   });
 });

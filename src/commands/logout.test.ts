@@ -6,15 +6,9 @@ import { logoutCommand } from './logout.js';
 jest.mock('../services/auth.service.js');
 jest.mock('../utils/config.js');
 
-const mockLogout = authService.logout as jest.MockedFunction<
-  typeof authService.logout
->;
-const mockLoadAuth = configUtils.loadAuth as jest.MockedFunction<
-  typeof configUtils.loadAuth
->;
-const mockClearAuth = configUtils.clearAuth as jest.MockedFunction<
-  typeof configUtils.clearAuth
->;
+const mockLogout = authService.logout as jest.MockedFunction<typeof authService.logout>;
+const mockLoadAuth = configUtils.loadAuth as jest.MockedFunction<typeof configUtils.loadAuth>;
+const mockClearAuth = configUtils.clearAuth as jest.MockedFunction<typeof configUtils.clearAuth>;
 
 describe('logoutCommand', () => {
   let consoleSpy: jest.SpyInstance;
@@ -33,9 +27,7 @@ describe('logoutCommand', () => {
 
     await logoutCommand();
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Not logged in')
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Not logged in'));
     expect(mockClearAuth).not.toHaveBeenCalled();
   });
 
@@ -65,8 +57,6 @@ describe('logoutCommand', () => {
     await logoutCommand();
 
     expect(mockClearAuth).toHaveBeenCalled();
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Logged out locally')
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Logged out locally'));
   });
 });

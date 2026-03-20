@@ -1,8 +1,5 @@
 import chalk from 'chalk';
-import {
-  RegistryApiError,
-  searchAgents,
-} from '../services/registry.service.js';
+import { RegistryApiError, searchAgents } from '../services/registry.service.js';
 
 interface SearchOptions {
   limit?: string;
@@ -13,10 +10,7 @@ interface SearchOptions {
 /**
  * Search command - search for agents in registry
  */
-export const searchCommand = async (
-  query: string,
-  options: SearchOptions = {}
-): Promise<void> => {
+export const searchCommand = async (query: string, options: SearchOptions = {}): Promise<void> => {
   try {
     const limit = options.limit ? parseInt(options.limit, 10) : 10;
     const page = options.page ? parseInt(options.page, 10) : 1;
@@ -38,20 +32,12 @@ export const searchCommand = async (
     }
 
     // Display results
-    console.log(
-      chalk.white.bold(
-        `Found ${result.total} agent${result.total !== 1 ? 's' : ''}:\n`
-      )
-    );
+    console.log(chalk.white.bold(`Found ${result.total} agent${result.total !== 1 ? 's' : ''}:\n`));
 
     for (const agent of result.agents) {
       console.log(chalk.cyan.bold(`  ${agent.owner}/${agent.name}`));
       console.log(chalk.gray(`    ${agent.description || 'No description'}`));
-      console.log(
-        chalk.gray(
-          `    v${agent.latestVersion} • ${agent.totalDownloads} downloads`
-        )
-      );
+      console.log(chalk.gray(`    v${agent.latestVersion} • ${agent.totalDownloads} downloads`));
       if (agent.tags && agent.tags.length > 0) {
         console.log(chalk.gray(`    Tags: ${agent.tags.join(', ')}`));
       }
@@ -62,9 +48,7 @@ export const searchCommand = async (
     if (result.hasMore) {
       console.log(
         chalk.gray(
-          `Showing ${result.agents.length} of ${result.total}. Use --page ${
-            page + 1
-          } for more.`
+          `Showing ${result.agents.length} of ${result.total}. Use --page ${page + 1} for more.`
         )
       );
     }
