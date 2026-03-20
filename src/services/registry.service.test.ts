@@ -169,11 +169,7 @@ describe('Registry Service', () => {
 
       const { getAgentVersion } = await import('./registry.service.js');
 
-      const result = await getAgentVersion(
-        'testuser',
-        'test-agent',
-        '2025-11-01'
-      );
+      const result = await getAgentVersion('testuser', 'test-agent', '2025-11-01');
 
       expect(result.version).toBe('2025-11-01');
       expect(mockFetch).toHaveBeenCalledWith(
@@ -211,10 +207,7 @@ describe('Registry Service', () => {
       });
 
       expect(result.agents).toHaveLength(1);
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('page=1'),
-        expect.any(Object)
-      );
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('page=1'), expect.any(Object));
     });
 
     test('lists agents without filters', async () => {

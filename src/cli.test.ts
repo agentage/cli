@@ -74,8 +74,6 @@ describe('CLI Commands', () => {
       encoding: 'utf-8',
     });
     // Either shows no agents found or lists available agents (including global)
-    expect(
-      output.includes('No agents found') || output.includes('Available Agents')
-    ).toBe(true);
+    expect(output.includes('No agents found') || output.includes('Available Agents')).toBe(true);
   });
 });

@@ -2,9 +2,9 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 // Read package.json directly in test since index.ts uses ESM-specific import.meta
-const packageJson = JSON.parse(
-  readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')
-) as { version: string };
+const packageJson = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')) as {
+  version: string;
+};
 
 // Mock the index module to avoid import.meta issues in Jest
 jest.mock('./index.js', () => ({

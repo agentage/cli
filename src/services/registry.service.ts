@@ -27,10 +27,7 @@ export class RegistryApiError extends Error {
 /**
  * Make authenticated request to registry API
  */
-const registryFetch = async <T>(
-  path: string,
-  options: RequestInit = {}
-): Promise<T> => {
+const registryFetch = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
   const registryUrl = await getRegistryUrl();
   const token = await getAuthToken();
 
@@ -66,9 +63,7 @@ const registryFetch = async <T>(
 /**
  * Publish an agent to the registry
  */
-export const publishAgent = async (
-  data: PublishRequest
-): Promise<PublishResponse> => {
+export const publishAgent = async (data: PublishRequest): Promise<PublishResponse> => {
   const response = await registryFetch<{
     success: boolean;
     agent: PublishResponse;
@@ -82,10 +77,7 @@ export const publishAgent = async (
 /**
  * Get agent details from registry
  */
-export const getAgent = async (
-  owner: string,
-  name: string
-): Promise<AgentDetail> => {
+export const getAgent = async (owner: string, name: string): Promise<AgentDetail> => {
   const response = await registryFetch<{ success: boolean; data: AgentDetail }>(
     `/api/agents/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
   );
@@ -114,11 +106,7 @@ export const getAgentVersion = async (
 /**
  * Search for agents in registry
  */
-export const searchAgents = async (
-  query: string,
-  page = 1,
-  limit = 10
-): Promise<SearchResult> => {
+export const searchAgents = async (query: string, page = 1, limit = 10): Promise<SearchResult> => {
   const params = new URLSearchParams({
     q: query,
     page: String(page),
@@ -135,9 +123,7 @@ export const searchAgents = async (
 /**
  * List agents from registry with filters
  */
-export const listAgents = async (
-  filters: ListFilters = {}
-): Promise<SearchResult> => {
+export const listAgents = async (filters: ListFilters = {}): Promise<SearchResult> => {
   const params = new URLSearchParams();
 
   if (filters.page) params.set('page', String(filters.page));

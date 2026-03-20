@@ -70,11 +70,11 @@
 **Command Structure**:
 
 ```typescript
-import { Command } from "commander";
+import { Command } from 'commander';
 
-export const myCommand = new Command("name")
-  .description("Command description")
-  .option("-o, --option <value>", "Option description")
+export const myCommand = new Command('name')
+  .description('Command description')
+  .option('-o, --option <value>', 'Option description')
   .action(async (options) => {
     // Implementation
   });

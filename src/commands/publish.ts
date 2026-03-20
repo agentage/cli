@@ -2,15 +2,8 @@ import chalk from 'chalk';
 import { existsSync } from 'fs';
 import { readdir } from 'fs/promises';
 import { join } from 'path';
-import {
-  publishAgent,
-  RegistryApiError,
-} from '../services/registry.service.js';
-import {
-  generateDateVersion,
-  isValidAgentName,
-  readAgentFile,
-} from '../utils/agent-parser.js';
+import { publishAgent, RegistryApiError } from '../services/registry.service.js';
+import { generateDateVersion, isValidAgentName, readAgentFile } from '../utils/agent-parser.js';
 import { getAuthStatus } from '../utils/config.js';
 
 interface PublishOptions {
@@ -31,9 +24,7 @@ const resolveAgentPath = async (pathArg?: string): Promise<string | null> => {
       return pathArg;
     }
     // Try adding .agent.md extension
-    const withExt = pathArg.endsWith('.agent.md')
-      ? pathArg
-      : `${pathArg}.agent.md`;
+    const withExt = pathArg.endsWith('.agent.md') ? pathArg : `${pathArg}.agent.md`;
     if (existsSync(withExt)) {
       return withExt;
     }
@@ -52,9 +43,7 @@ const resolveAgentPath = async (pathArg?: string): Promise<string | null> => {
     return agentFiles[0];
   }
   if (agentFiles.length > 1) {
-    console.log(
-      chalk.yellow('Multiple agent files found. Please specify one:')
-    );
+    console.log(chalk.yellow('Multiple agent files found. Please specify one:'));
     for (const file of agentFiles) {
       console.log(`  - ${file}`);
     }
@@ -69,9 +58,7 @@ const resolveAgentPath = async (pathArg?: string): Promise<string | null> => {
       return join('agents', agentMdFiles[0]);
     }
     if (agentMdFiles.length > 1) {
-      console.log(
-        chalk.yellow('Multiple agent files found. Please specify one:')
-      );
+      console.log(chalk.yellow('Multiple agent files found. Please specify one:'));
       for (const file of agentMdFiles) {
         console.log(`  - agents/${file}`);
       }
@@ -107,9 +94,7 @@ export const publishCommand = async (
     const agentPath = await resolveAgentPath(pathArg);
     if (!agentPath) {
       console.error(chalk.red('❌ No agent file found.'));
-      console.log(
-        'Specify a path or run from a directory with a .agent.md file.'
-      );
+      console.log('Specify a path or run from a directory with a .agent.md file.');
       process.exit(1);
     }
 
@@ -120,25 +105,18 @@ export const publishCommand = async (
     // 4. Validate required fields
     if (!frontmatter.name) {
       console.error(chalk.red('❌ Agent must have a name in frontmatter.'));
-      console.log(
-        chalk.gray('Add "name: your-agent-name" to the YAML frontmatter.')
-      );
+      console.log(chalk.gray('Add "name: your-agent-name" to the YAML frontmatter.'));
       process.exit(1);
     }
 
     if (!isValidAgentName(frontmatter.name)) {
       console.error(chalk.red('❌ Invalid agent name.'));
-      console.log(
-        chalk.gray(
-          'Name must be lowercase alphanumeric with hyphens (e.g., my-agent).'
-        )
-      );
+      console.log(chalk.gray('Name must be lowercase alphanumeric with hyphens (e.g., my-agent).'));
       process.exit(1);
     }
 
     // 5. Determine version
-    const version =
-      options.version || frontmatter.version || generateDateVersion();
+    const version = options.version || frontmatter.version || generateDateVersion();
     const visibility = options.visibility || 'public';
 
     // 6. Dry run check
@@ -177,16 +155,8 @@ export const publishCommand = async (
 
     // 8. Success
     console.log();
-    console.log(
-      chalk.green(
-        `✅ Published ${result.owner}/${result.name}@${result.version}`
-      )
-    );
-    console.log(
-      chalk.gray(
-        `   Install with: agent install ${result.owner}/${result.name}`
-      )
-    );
+    console.log(chalk.green(`✅ Published ${result.owner}/${result.name}@${result.version}`));
+    console.log(chalk.gray(`   Install with: agent install ${result.owner}/${result.name}`));
     console.log();
   } catch (error) {
     if (error instanceof RegistryApiError) {

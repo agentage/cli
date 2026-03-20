@@ -1,11 +1,5 @@
 import * as configUtils from '../utils/config.js';
-import {
-  AuthError,
-  getMe,
-  logout,
-  pollForToken,
-  requestDeviceCode,
-} from './auth.service.js';
+import { AuthError, getMe, logout, pollForToken, requestDeviceCode } from './auth.service.js';
 
 // Mock the config utils
 jest.mock('../utils/config.js');
@@ -49,14 +43,11 @@ describe('auth.service', () => {
       const result = await requestDeviceCode();
 
       expect(result).toEqual(deviceCodeResponse);
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://dev.agentage.io/api/auth/device/code',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device_id: 'test-device-id-12345678' }),
-        }
-      );
+      expect(mockFetch).toHaveBeenCalledWith('https://dev.agentage.io/api/auth/device/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: 'test-device-id-12345678' }),
+      });
     });
 
     it('throws AuthError on failure', async () => {
@@ -106,9 +97,7 @@ describe('auth.service', () => {
         json: () => Promise.resolve({ error: 'access_denied' }),
       });
 
-      await expect(pollForToken('device123', 0.01, 60)).rejects.toThrow(
-        'Authorization was denied'
-      );
+      await expect(pollForToken('device123', 0.01, 60)).rejects.toThrow('Authorization was denied');
     });
 
     it('throws on expired_token', async () => {
@@ -117,9 +106,7 @@ describe('auth.service', () => {
         json: () => Promise.resolve({ error: 'expired_token' }),
       });
 
-      await expect(pollForToken('device123', 0.01, 60)).rejects.toThrow(
-        'Login timed out'
-      );
+      await expect(pollForToken('device123', 0.01, 60)).rejects.toThrow('Login timed out');
     });
 
     it('continues polling on authorization_pending then succeeds', async () => {
@@ -191,9 +178,7 @@ describe('auth.service', () => {
         json: () => Promise.resolve({ error: 'some_error' }),
       });
 
-      await expect(pollForToken('device123', 0.01, 60)).rejects.toThrow(
-        'Authentication failed'
-      );
+      await expect(pollForToken('device123', 0.01, 60)).rejects.toThrow('Authentication failed');
     });
   });
 
@@ -213,12 +198,9 @@ describe('auth.service', () => {
       const result = await getMe();
 
       expect(result).toEqual(user);
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://dev.agentage.io/api/auth/me',
-        {
-          headers: { Authorization: 'Bearer token123' },
-        }
-      );
+      expect(mockFetch).toHaveBeenCalledWith('https://dev.agentage.io/api/auth/me', {
+        headers: { Authorization: 'Bearer token123' },
+      });
     });
 
     it('throws when not authenticated', async () => {
@@ -272,13 +254,10 @@ describe('auth.service', () => {
 
       await logout();
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        'https://dev.agentage.io/api/auth/logout',
-        {
-          method: 'POST',
-          headers: { Authorization: 'Bearer token123' },
-        }
-      );
+      expect(mockFetch).toHaveBeenCalledWith('https://dev.agentage.io/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer token123' },
+      });
     });
 
     it('does nothing when not authenticated', async () => {

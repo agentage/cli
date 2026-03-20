@@ -3,11 +3,7 @@ import { existsSync } from 'fs';
 import { access, mkdir, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
-import {
-  getAgent,
-  getAgentVersion,
-  RegistryApiError,
-} from '../services/registry.service.js';
+import { getAgent, getAgentVersion, RegistryApiError } from '../services/registry.service.js';
 import { parseAgentIdentifier } from '../utils/agent-parser.js';
 
 interface InstallOptions {
@@ -107,9 +103,7 @@ export const installCommand = async (
 
     // 6. Success
     console.log();
-    console.log(
-      chalk.green(`✅ Installed ${owner}/${name}@${installedVersion}`)
-    );
+    console.log(chalk.green(`✅ Installed ${owner}/${name}@${installedVersion}`));
     console.log(chalk.gray(`   Location: ${filePath}`));
     console.log(chalk.gray(`   Run with: agent run ${name}`));
     console.log();
@@ -118,9 +112,7 @@ export const installCommand = async (
       if (error.statusCode === 404) {
         console.error(chalk.red(`❌ Agent not found: ${identifier}`));
       } else if (error.statusCode === 403) {
-        console.error(
-          chalk.red('❌ Access denied. This agent may be private.')
-        );
+        console.error(chalk.red('❌ Access denied. This agent may be private.'));
         console.log('Run', chalk.cyan('agent login'), 'to authenticate.');
       } else {
         console.error(chalk.red(`❌ ${error.message}`));

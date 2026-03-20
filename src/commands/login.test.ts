@@ -17,19 +17,14 @@ jest.mock('open', () => ({
   default: jest.fn(),
 }));
 
-const mockRequestDeviceCode =
-  authService.requestDeviceCode as jest.MockedFunction<
-    typeof authService.requestDeviceCode
-  >;
+const mockRequestDeviceCode = authService.requestDeviceCode as jest.MockedFunction<
+  typeof authService.requestDeviceCode
+>;
 const mockPollForToken = authService.pollForToken as jest.MockedFunction<
   typeof authService.pollForToken
 >;
-const mockLoadAuth = configUtils.loadAuth as jest.MockedFunction<
-  typeof configUtils.loadAuth
->;
-const mockSaveAuth = configUtils.saveAuth as jest.MockedFunction<
-  typeof configUtils.saveAuth
->;
+const mockLoadAuth = configUtils.loadAuth as jest.MockedFunction<typeof configUtils.loadAuth>;
+const mockSaveAuth = configUtils.saveAuth as jest.MockedFunction<typeof configUtils.saveAuth>;
 const mockGetRegistryUrl = configUtils.getRegistryUrl as jest.MockedFunction<
   typeof configUtils.getRegistryUrl
 >;
@@ -101,16 +96,11 @@ describe('loginCommand', () => {
 
   it('handles login errors', async () => {
     mockLoadAuth.mockResolvedValue({});
-    mockRequestDeviceCode.mockRejectedValue(
-      new AuthError('Failed', 'request_failed')
-    );
+    mockRequestDeviceCode.mockRejectedValue(new AuthError('Failed', 'request_failed'));
 
     await expect(loginCommand()).rejects.toThrow('process.exit called');
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Login failed'),
-      'Failed'
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Login failed'), 'Failed');
   });
 
   it('handles expired token error with hint', async () => {
@@ -122,9 +112,7 @@ describe('loginCommand', () => {
       expires_in: 900,
       interval: 5,
     });
-    mockPollForToken.mockRejectedValue(
-      new AuthError('Login timed out', 'expired_token')
-    );
+    mockPollForToken.mockRejectedValue(new AuthError('Login timed out', 'expired_token'));
 
     await expect(loginCommand()).rejects.toThrow('process.exit called');
 
@@ -192,9 +180,7 @@ describe('loginCommand', () => {
 
     await loginCommand();
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Login successful')
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Login successful'));
   });
 
   it('handles browser open failure gracefully', async () => {

@@ -65,10 +65,7 @@ describe('config utils', () => {
       const result = await loadAuth();
 
       expect(result).toEqual(auth);
-      expect(mockReadFile).toHaveBeenCalledWith(
-        '/home/testuser/.agentage/auth.json',
-        'utf-8'
-      );
+      expect(mockReadFile).toHaveBeenCalledWith('/home/testuser/.agentage/auth.json', 'utf-8');
     });
 
     it('returns empty object when file does not exist', async () => {
@@ -153,10 +150,7 @@ describe('config utils', () => {
       const result = await loadAppConfig();
 
       expect(result).toEqual(config);
-      expect(mockReadFile).toHaveBeenCalledWith(
-        '/home/testuser/.agentage/config.json',
-        'utf-8'
-      );
+      expect(mockReadFile).toHaveBeenCalledWith('/home/testuser/.agentage/config.json', 'utf-8');
     });
 
     it('returns empty object when file does not exist', async () => {
@@ -380,9 +374,7 @@ describe('config utils', () => {
       expect(mockWriteFile).toHaveBeenCalled();
       const writtenPath = mockWriteFile.mock.calls[0][0] as string;
       expect(writtenPath).toContain('config.json');
-      const savedConfig = JSON.parse(
-        mockWriteFile.mock.calls[0][1] as string
-      ) as AppConfig;
+      const savedConfig = JSON.parse(mockWriteFile.mock.calls[0][1] as string) as AppConfig;
       expect(savedConfig.deviceId).toBe(result);
     });
 

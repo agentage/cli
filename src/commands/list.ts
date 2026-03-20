@@ -62,17 +62,12 @@ const getAgentPaths = async (
 /**
  * Scan a directory for agent files (.yml and .agent.md)
  */
-const scanAgentsInDir = async (
-  dir: string,
-  location: 'global' | 'local'
-): Promise<AgentInfo[]> => {
+const scanAgentsInDir = async (dir: string, location: 'global' | 'local'): Promise<AgentInfo[]> => {
   const agents: AgentInfo[] = [];
 
   try {
     const files = await readdir(dir);
-    const agentFiles = files.filter(
-      (f) => f.endsWith('.yml') || f.endsWith('.agent.md')
-    );
+    const agentFiles = files.filter((f) => f.endsWith('.yml') || f.endsWith('.agent.md'));
 
     for (const file of agentFiles) {
       const filePath = join(dir, file);
@@ -154,9 +149,7 @@ export const listCommand = async (): Promise<void> => {
 
     // 3. Display results
     if (allAgents.length === 0) {
-      console.log(
-        'No agents found. Run ' + chalk.cyan('agent init') + ' to create one.'
-      );
+      console.log('No agents found. Run ' + chalk.cyan('agent init') + ' to create one.');
       return;
     }
 

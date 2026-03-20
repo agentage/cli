@@ -13,12 +13,8 @@ jest.mock('../services/auth.service.js', () => {
 });
 jest.mock('../utils/config.js');
 
-const mockGetMe = authService.getMe as jest.MockedFunction<
-  typeof authService.getMe
->;
-const mockLoadAuth = configUtils.loadAuth as jest.MockedFunction<
-  typeof configUtils.loadAuth
->;
+const mockGetMe = authService.getMe as jest.MockedFunction<typeof authService.getMe>;
+const mockLoadAuth = configUtils.loadAuth as jest.MockedFunction<typeof configUtils.loadAuth>;
 const mockGetRegistryUrl = configUtils.getRegistryUrl as jest.MockedFunction<
   typeof configUtils.getRegistryUrl
 >;
@@ -53,9 +49,7 @@ describe('whoamiCommand', () => {
 
     await whoamiCommand();
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Not logged in')
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Not logged in'));
   });
 
   it('shows expired session when token is locally expired', async () => {
@@ -67,9 +61,7 @@ describe('whoamiCommand', () => {
 
     await expect(whoamiCommand()).rejects.toThrow('process.exit called');
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Session expired')
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Session expired'));
   });
 
   it('displays user info when authenticated', async () => {
@@ -91,29 +83,21 @@ describe('whoamiCommand', () => {
 
   it('handles session expired error', async () => {
     mockLoadAuth.mockResolvedValue({ token: 'expired-token' });
-    mockGetMe.mockRejectedValue(
-      new AuthError('Session expired', 'session_expired')
-    );
+    mockGetMe.mockRejectedValue(new AuthError('Session expired', 'session_expired'));
 
     await expect(whoamiCommand()).rejects.toThrow('process.exit called');
 
     // The code logs "Session expired." (with period and emoji)
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Session expired')
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Session expired'));
   });
 
   it('handles not_authenticated error', async () => {
     mockLoadAuth.mockResolvedValue({ token: 'test-token' });
-    mockGetMe.mockRejectedValue(
-      new AuthError('Not authenticated', 'not_authenticated')
-    );
+    mockGetMe.mockRejectedValue(new AuthError('Not authenticated', 'not_authenticated'));
 
     await expect(whoamiCommand()).rejects.toThrow('process.exit called');
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Not logged in')
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Not logged in'));
   });
 
   it('handles other AuthError errors', async () => {
@@ -122,10 +106,7 @@ describe('whoamiCommand', () => {
 
     await expect(whoamiCommand()).rejects.toThrow('process.exit called');
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Error'),
-      'Server error'
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Error'), 'Server error');
   });
 
   it('handles non-AuthError errors', async () => {
@@ -134,10 +115,7 @@ describe('whoamiCommand', () => {
 
     await expect(whoamiCommand()).rejects.toThrow('process.exit called');
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Error'),
-      'Network error'
-    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Error'), 'Network error');
   });
 
   it('displays user without name', async () => {
@@ -166,9 +144,6 @@ describe('whoamiCommand', () => {
 
     await whoamiCommand();
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      '  Alias:',
-      expect.stringContaining('testuser')
-    );
+    expect(consoleSpy).toHaveBeenCalledWith('  Alias:', expect.stringContaining('testuser'));
   });
 });

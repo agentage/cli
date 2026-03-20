@@ -27,10 +27,7 @@ export interface InitOptions {
  */
 const getGlobalDir = (): string => join(homedir(), '.agentage');
 
-export const initCommand = async (
-  name?: string,
-  options?: InitOptions
-): Promise<void> => {
+export const initCommand = async (name?: string, options?: InitOptions): Promise<void> => {
   const agentName = name || 'my-agent';
   const isGlobal = options?.global ?? false;
 
@@ -55,11 +52,7 @@ export const initCommand = async (
     console.log(`✅ Created ${agentFilePath}`);
 
     // Create agent.json config file
-    await writeFile(
-      configFilePath,
-      JSON.stringify(agentConfig, null, 2),
-      'utf-8'
-    );
+    await writeFile(configFilePath, JSON.stringify(agentConfig, null, 2), 'utf-8');
     console.log(`✅ Created ${configFilePath}`);
   } catch (error) {
     console.error(`❌ Failed: ${(error as Error).message}`);

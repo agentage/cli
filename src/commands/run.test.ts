@@ -35,9 +35,7 @@ variables: {}`;
     await runCommand('test-agent', 'Hello');
 
     expect(consoleLog).toHaveBeenCalledWith('\n🤖 Running test-agent...\n');
-    expect(consoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('Agent runtime not available')
-    );
+    expect(consoleLog).toHaveBeenCalledWith(expect.stringContaining('Agent runtime not available'));
 
     consoleLog.mockRestore();
   });
@@ -66,12 +64,8 @@ variables: {}`;
     });
     const consoleError = jest.spyOn(console, 'error').mockImplementation();
 
-    await expect(runCommand('nonexistent')).rejects.toThrow(
-      'process.exit called'
-    );
-    expect(consoleError).toHaveBeenCalledWith(
-      expect.stringContaining('❌ Failed:')
-    );
+    await expect(runCommand('nonexistent')).rejects.toThrow('process.exit called');
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('❌ Failed:'));
     expect(mockExit).toHaveBeenCalledWith(1);
 
     mockExit.mockRestore();
@@ -90,9 +84,7 @@ model: gpt-4`;
     const consoleError = jest.spyOn(console, 'error').mockImplementation();
 
     await expect(runCommand('invalid')).rejects.toThrow('process.exit called');
-    expect(consoleError).toHaveBeenCalledWith(
-      expect.stringContaining('❌ Failed:')
-    );
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('❌ Failed:'));
 
     mockExit.mockRestore();
     consoleError.mockRestore();

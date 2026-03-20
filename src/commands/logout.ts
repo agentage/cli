@@ -34,10 +34,6 @@ export const logoutCommand = async (): Promise<void> => {
     // Even if server logout fails, clear local credentials
     await clearAuth();
     console.log(chalk.green('✅ Logged out locally.'));
-    console.log(
-      chalk.gray(
-        '(Server logout may have failed, but local credentials cleared)'
-      )
-    );
+    console.log(chalk.gray('(Server logout may have failed, but local credentials cleared)'));
   }
 };

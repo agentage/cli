@@ -1,9 +1,5 @@
 import chalk from 'chalk';
-import {
-  AuthError,
-  pollForToken,
-  requestDeviceCode,
-} from '../services/auth.service.js';
+import { AuthError, pollForToken, requestDeviceCode } from '../services/auth.service.js';
 import { getRegistryUrl, loadAuth, saveAuth } from '../utils/config.js';
 
 /**
@@ -35,10 +31,7 @@ export const loginCommand = async (): Promise<void> => {
     console.log();
     console.log(chalk.bold('To complete login:'));
     console.log();
-    console.log(
-      '  1. Open:',
-      chalk.cyan.underline(deviceCode.verification_uri)
-    );
+    console.log('  1. Open:', chalk.cyan.underline(deviceCode.verification_uri));
     console.log('  2. Enter code:', chalk.bold.yellow(deviceCode.user_code));
     console.log();
 
@@ -48,11 +41,7 @@ export const loginCommand = async (): Promise<void> => {
       await open.default(deviceCode.verification_uri);
       console.log(chalk.gray('(Browser opened automatically)'));
     } catch {
-      console.log(
-        chalk.gray(
-          '(Could not open browser automatically - please open manually)'
-        )
-      );
+      console.log(chalk.gray('(Could not open browser automatically - please open manually)'));
     }
 
     console.log();
@@ -76,15 +65,9 @@ export const loginCommand = async (): Promise<void> => {
 
     console.log();
     if (tokenResponse.user?.name) {
-      console.log(
-        chalk.green('✅ Logged in as'),
-        chalk.bold(tokenResponse.user.name)
-      );
+      console.log(chalk.green('✅ Logged in as'), chalk.bold(tokenResponse.user.name));
     } else if (tokenResponse.user?.email) {
-      console.log(
-        chalk.green('✅ Logged in as'),
-        chalk.bold(tokenResponse.user.email)
-      );
+      console.log(chalk.green('✅ Logged in as'), chalk.bold(tokenResponse.user.email));
     } else {
       console.log(chalk.green('✅ Login successful!'));
     }
@@ -92,11 +75,7 @@ export const loginCommand = async (): Promise<void> => {
     if (error instanceof AuthError) {
       console.error(chalk.red('❌ Login failed:'), error.message);
       if (error.code === 'expired_token') {
-        console.log(
-          chalk.gray('Run'),
-          chalk.cyan('agent login'),
-          chalk.gray('to try again.')
-        );
+        console.log(chalk.gray('Run'), chalk.cyan('agent login'), chalk.gray('to try again.'));
       }
     } else {
       console.error(chalk.red('❌ Login failed:'), (error as Error).message);

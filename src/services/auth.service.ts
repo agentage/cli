@@ -10,7 +10,10 @@ import { getAuthToken, getDeviceId, getRegistryUrl } from '../utils/config.js';
  * Auth error class
  */
 export class AuthError extends Error {
-  constructor(message: string, public code: string) {
+  constructor(
+    message: string,
+    public code: string
+  ) {
     super(message);
     this.name = 'AuthError';
   }
@@ -122,10 +125,7 @@ export const getMe = async (): Promise<User> => {
 
   if (!response.ok) {
     if (response.status === 401) {
-      throw new AuthError(
-        'Session expired. Please login again.',
-        'session_expired'
-      );
+      throw new AuthError('Session expired. Please login again.', 'session_expired');
     }
     const error = (await response.json()) as AuthErrorResponse;
     throw new AuthError(
@@ -164,5 +164,4 @@ export const logout = async (): Promise<void> => {
 /**
  * Sleep utility
  */
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

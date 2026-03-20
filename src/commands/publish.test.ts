@@ -53,9 +53,7 @@ describe('publishCommand', () => {
 
     await expect(publishCommand()).rejects.toThrow('process.exit');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('Not logged in')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Not logged in'));
 
     mockExit.mockRestore();
     mockConsoleError.mockRestore();
@@ -74,9 +72,7 @@ describe('publishCommand', () => {
 
     await expect(publishCommand()).rejects.toThrow('process.exit');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('Session expired')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Session expired'));
 
     mockExit.mockRestore();
     mockConsoleError.mockRestore();
@@ -114,9 +110,7 @@ You are helpful.`;
         visibility: 'public',
       })
     );
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('Published')
-    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Published'));
 
     mockConsoleLog.mockRestore();
   });
@@ -142,9 +136,7 @@ You are helpful.`;
     await publishCommand(undefined, { dryRun: true });
 
     expect(publishAgent).not.toHaveBeenCalled();
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('Dry run')
-    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Dry run'));
 
     mockConsoleLog.mockRestore();
   });
@@ -170,9 +162,7 @@ Content`;
 
     await expect(publishCommand()).rejects.toThrow('process.exit');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('Invalid agent name')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Invalid agent name'));
 
     mockExit.mockRestore();
     mockConsoleError.mockRestore();
@@ -280,9 +270,7 @@ Content`;
 
     await expect(publishCommand('nonexistent')).rejects.toThrow('process.exit');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('No agent file found')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('No agent file found'));
 
     mockExit.mockRestore();
     mockConsoleError.mockRestore();
@@ -310,9 +298,7 @@ Content`;
 
     await expect(publishCommand()).rejects.toThrow('process.exit');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('must have a name')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('must have a name'));
 
     mockExit.mockRestore();
     mockConsoleError.mockRestore();
@@ -348,18 +334,13 @@ Content`;
 
   test('handles RegistryApiError', async () => {
     const { getAuthStatus } = require('../utils/config.js');
-    const {
-      publishAgent,
-      RegistryApiError,
-    } = require('../services/registry.service.js');
+    const { publishAgent, RegistryApiError } = require('../services/registry.service.js');
 
     getAuthStatus.mockResolvedValue({
       status: 'authenticated',
       token: 'test-token',
     });
-    publishAgent.mockRejectedValue(
-      new RegistryApiError('Version exists', 'version_exists', 409)
-    );
+    publishAgent.mockRejectedValue(new RegistryApiError('Version exists', 'version_exists', 409));
 
     const agentContent = `---
 name: my-agent
@@ -375,9 +356,7 @@ Content`;
 
     await expect(publishCommand()).rejects.toThrow('process.exit');
 
-    expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('Version exists')
-    );
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Version exists'));
 
     mockExit.mockRestore();
     mockConsoleError.mockRestore();
@@ -408,12 +387,8 @@ Content`;
       changelog: 'Initial release',
     });
 
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('Tags')
-    );
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      expect.stringContaining('Changelog')
-    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Tags'));
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Changelog'));
 
     mockConsoleLog.mockRestore();
   });
