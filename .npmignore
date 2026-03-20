@@ -4,8 +4,11 @@ src/
 
 # Config files
 tsconfig.json
-jest.config.js
-eslint.config.js
+eslint.config.mjs
+vitest.config.ts
+.prettierrc
+.nvmrc
+.npmrc
 
 # Coverage
 coverage/
@@ -18,3 +21,6 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+
+# CI
+.github/

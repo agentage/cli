@@ -1,38 +1,111 @@
+import { type Command } from 'commander';
 import chalk from 'chalk';
-import { readFile } from 'fs/promises';
-import { join } from 'path';
-import { parse } from 'yaml';
-import { agentYamlSchema } from '../schemas/agent.schema.js';
+import { type RunEvent } from '@agentage/core';
+import { ensureDaemon } from '../utils/ensure-daemon.js';
+import { connectWs, post } from '../utils/daemon-client.js';
+import { renderEvent } from '../utils/render.js';
 
-export const runCommand = async (name: string, prompt?: string): Promise<void> => {
-  try {
-    const agentsDir = 'agents';
-    const filename = join(agentsDir, `${name}.yml`);
-    const content = await readFile(filename, 'utf-8');
-    const yaml = parse(content);
+interface RunResponse {
+  runId: string;
+}
 
-    const validated = agentYamlSchema.parse(yaml);
+interface WsRunEventMessage {
+  type: 'run_event';
+  runId: string;
+  event: RunEvent;
+}
 
-    const userPrompt = prompt || 'Hello!';
-    console.log(`\n🤖 Running ${validated.name}...\n`);
-    console.log(chalk.gray(`Model: ${validated.model}`));
-    console.log(chalk.gray(`Prompt: ${userPrompt}`));
-    console.log();
+interface WsRunStateMessage {
+  type: 'run_state';
+  run: { id: string; state: string };
+}
 
-    // Note: The run command requires an AI provider integration.
-    // This is a placeholder that shows the agent would be run.
-    // TODO: Add support for direct OpenAI/Claude API calls or integrate a runtime.
-    console.log(
-      chalk.yellow(
-        '⚠️  Agent runtime not available. This is a standalone CLI without SDK integration.'
-      )
+type WsMessage = WsRunEventMessage | WsRunStateMessage;
+
+const TERMINAL_STATES = ['completed', 'failed', 'canceled'];
+
+export const registerRun = (program: Command): void => {
+  program
+    .command('run')
+    .argument('<agent>', 'Agent name')
+    .argument('[prompt]', 'Task/prompt for the agent')
+    .description('Run an agent')
+    .option('-d, --detach', 'Run in background, print run ID')
+    .option('--json', 'Output events as JSON lines')
+    .option('--config <json>', 'Per-run config overrides (JSON)')
+    .option('--context <paths...>', 'Additional context files')
+    .action(
+      async (
+        agent: string,
+        prompt: string | undefined,
+        opts: { detach?: boolean; json?: boolean; config?: string; context?: string[] }
+      ) => {
+        await ensureDaemon();
+
+        if (!prompt) {
+          console.error(chalk.red('Prompt is required. Usage: agentage run <agent> "<prompt>"'));
+          process.exitCode = 1;
+          return;
+        }
+
+        const config = opts.config
+          ? (JSON.parse(opts.config) as Record<string, unknown>)
+          : undefined;
+
+        const { runId } = await post<RunResponse>(`/api/agents/${agent}/run`, {
+          task: prompt,
+          config,
+          context: opts.context,
+        });
+
+        if (opts.detach) {
+          console.log(runId);
+          return;
+        }
+
+        // Stream events via WebSocket
+        await streamRun(runId, opts.json ?? false);
+      }
     );
-    console.log(
-      chalk.gray('To run agents, integrate with an AI provider (OpenAI, Anthropic, etc.) directly.')
-    );
-    console.log();
-  } catch (error) {
-    console.error(`❌ Failed: ${(error as Error).message}`);
-    process.exit(1);
-  }
 };
+
+const streamRun = (runId: string, jsonMode: boolean): Promise<void> =>
+  new Promise((resolve) => {
+    const ws = connectWs((data) => {
+      const msg = data as WsMessage;
+
+      if (msg.type === 'run_event' && msg.runId === runId) {
+        if (jsonMode) {
+          console.log(JSON.stringify(msg.event));
+        } else {
+          renderEvent(msg.event);
+        }
+      }
+
+      if (msg.type === 'run_state' && msg.run.id === runId) {
+        if (TERMINAL_STATES.includes(msg.run.state)) {
+          ws.close();
+          resolve();
+        }
+      }
+    });
+
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ type: 'subscribe', runId }));
+    });
+
+    ws.on('error', () => {
+      resolve();
+    });
+
+    ws.on('close', () => {
+      resolve();
+    });
+
+    // Handle Ctrl+C
+    process.on('SIGINT', () => {
+      post(`/api/runs/${runId}/cancel`).catch(() => {});
+      ws.close();
+      resolve();
+    });
+  });
