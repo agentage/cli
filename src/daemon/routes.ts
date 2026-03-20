@@ -7,12 +7,17 @@ const VERSION = '0.2.0';
 const startTime = Date.now();
 
 let agents: Agent[] = [];
+let refreshHandler: (() => Promise<Agent[]>) | null = null;
 
 export const setAgents = (newAgents: Agent[]): void => {
   agents = newAgents;
 };
 
 export const getAgents = (): Agent[] => agents;
+
+export const setRefreshHandler = (handler: () => Promise<Agent[]>): void => {
+  refreshHandler = handler;
+};
 
 export const createRoutes = (): Router => {
   const router = createRouter();
@@ -33,9 +38,16 @@ export const createRoutes = (): Router => {
     res.json(agents.map((a) => a.manifest));
   });
 
-  router.post('/api/agents/refresh', (_req, res) => {
-    // Scanner will be called by the server module
-    res.json(agents.map((a) => a.manifest));
+  router.post('/api/agents/refresh', async (_req, res) => {
+    try {
+      if (refreshHandler) {
+        agents = await refreshHandler();
+      }
+      res.json(agents.map((a) => a.manifest));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
   });
 
   router.post('/api/agents/:name/run', async (req, res) => {

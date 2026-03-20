@@ -13,6 +13,7 @@ const main = async (): Promise<void> => {
 
   const server = createDaemonServer();
   const factories = [createMarkdownFactory(), createCodeFactory()];
+  server.setFactories(factories);
 
   // Initial agent discovery
   const agents = await scanAgents(config.discovery.dirs, factories);

@@ -16,7 +16,42 @@ interface UnsubscribeMessage {
 
 type ClientMessage = SubscribeMessage | UnsubscribeMessage;
 
+type BufferedMessage =
+  | { type: 'run_event'; runId: string; event: RunEvent }
+  | { type: 'run_state'; run: Run };
+
+const MAX_BUFFER_PER_RUN = 200;
+const BUFFER_TTL_MS = 60_000;
+
 const clientSubscriptions = new Map<WebSocket, Set<string>>();
+const runBuffers = new Map<string, BufferedMessage[]>();
+const bufferTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+const bufferMessage = (runId: string, msg: BufferedMessage): void => {
+  let buf = runBuffers.get(runId);
+  if (!buf) {
+    buf = [];
+    runBuffers.set(runId, buf);
+    // Auto-cleanup after TTL
+    const timer = setTimeout(() => {
+      runBuffers.delete(runId);
+      bufferTimers.delete(runId);
+    }, BUFFER_TTL_MS);
+    bufferTimers.set(runId, timer);
+  }
+  if (buf.length < MAX_BUFFER_PER_RUN) {
+    buf.push(msg);
+  }
+};
+
+const replayBuffer = (ws: WebSocket, runId: string): void => {
+  const buf = runBuffers.get(runId);
+  if (!buf) return;
+  logDebug(`Replaying ${buf.length} buffered messages for run ${runId}`);
+  for (const msg of buf) {
+    sendToClient(ws, msg);
+  }
+};
 
 const sendToClient = (ws: WebSocket, data: unknown): void => {
   if (ws.readyState === ws.OPEN) {
@@ -28,17 +63,23 @@ export const setupWebSocket = (server: Server): WebSocketServer => {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
   onRunEvent((runId: string, event: RunEvent) => {
+    const msg: BufferedMessage = { type: 'run_event', runId, event };
+    bufferMessage(runId, msg);
+
     for (const [ws, subs] of clientSubscriptions) {
       if (subs.has(runId)) {
-        sendToClient(ws, { type: 'run_event', runId, event });
+        sendToClient(ws, msg);
       }
     }
   });
 
   onRunStateChange((run: Run) => {
+    const msg: BufferedMessage = { type: 'run_state', run };
+    bufferMessage(run.id, msg);
+
     for (const [ws, subs] of clientSubscriptions) {
       if (subs.has(run.id)) {
-        sendToClient(ws, { type: 'run_state', run });
+        sendToClient(ws, msg);
       }
     }
   });
@@ -54,6 +95,8 @@ export const setupWebSocket = (server: Server): WebSocketServer => {
         if (msg.type === 'subscribe') {
           clientSubscriptions.get(ws)?.add(msg.runId);
           logDebug(`Client subscribed to run ${msg.runId}`);
+          // Replay any buffered events the client missed
+          replayBuffer(ws, msg.runId);
         }
 
         if (msg.type === 'unsubscribe') {

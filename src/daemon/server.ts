@@ -1,27 +1,39 @@
 import { createServer, type Server } from 'node:http';
 import express from 'express';
-import { type Agent } from '@agentage/core';
+import { type Agent, type AgentFactory } from '@agentage/core';
 import { loadConfig } from './config.js';
 import { logInfo } from './logger.js';
-import { createRoutes, setAgents } from './routes.js';
+import { createRoutes, setAgents, setRefreshHandler } from './routes.js';
 import { setupWebSocket } from './websocket.js';
 import { cancelAllRuns } from './run-manager.js';
+import { scanAgents } from '../discovery/scanner.js';
 
 export interface DaemonServer {
   server: Server;
   start: () => Promise<void>;
   stop: () => Promise<void>;
   updateAgents: (agents: Agent[]) => void;
+  setFactories: (factories: AgentFactory[]) => void;
 }
 
 export const createDaemonServer = (): DaemonServer => {
   const app = express();
   const server = createServer(app);
+  let factories: AgentFactory[] = [];
 
   const routes = createRoutes();
   app.use(routes);
 
   setupWebSocket(server);
+
+  // Wire up refresh to actually rescan
+  setRefreshHandler(async () => {
+    const config = loadConfig();
+    const agents = await scanAgents(config.discovery.dirs, factories);
+    setAgents(agents);
+    logInfo(`Refresh: discovered ${agents.length} agent(s)`);
+    return agents;
+  });
 
   const start = async (): Promise<void> => {
     const config = loadConfig();
@@ -57,5 +69,9 @@ export const createDaemonServer = (): DaemonServer => {
     setAgents(agents);
   };
 
-  return { server, start, stop, updateAgents };
+  const setFactoriesFn = (f: AgentFactory[]): void => {
+    factories = f;
+  };
+
+  return { server, start, stop, updateAgents, setFactories: setFactoriesFn };
 };
