@@ -16,7 +16,7 @@ env:
 
 jobs:
   detect-changes:
-    name: Detect Version Changes
+    name: 🔍 Detect Version Changes
     runs-on: ubuntu-latest
     outputs:
       should-publish: ${{ steps.detect.outputs.should-publish }}
@@ -24,19 +24,19 @@ jobs:
       version: ${{ steps.detect.outputs.version }}
 
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
+      - name: 🔧 Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: npm ci
 
-      - name: Detect version changes
+      - name: 🔍 Detect version changes
         id: detect
         run: |
           name=$(node -p "require('./package.json').name")
@@ -48,73 +48,73 @@ jobs:
 
           if [ "$private" = "true" ]; then
             echo "should-publish=false" >> $GITHUB_OUTPUT
-            echo "Package is private, skipping publish"
+            echo "ℹ️  Package is private, skipping publish"
             exit 0
           fi
 
-          echo "Checking ${name}@${version}..."
+          echo "📦 Checking ${name}@${version}..."
 
           if npm view "${name}@${version}" version 2>/dev/null; then
             echo "should-publish=false" >> $GITHUB_OUTPUT
-            echo "Version ${version} already published for ${name}"
+            echo "⏭️  Version ${version} already published for ${name}"
           else
             echo "should-publish=true" >> $GITHUB_OUTPUT
-            echo "New version detected: ${name}@${version}"
+            echo "✨ New version detected: ${name}@${version}"
           fi
 
   verify:
-    name: Verify Package
+    name: ✅ Verify Package
     needs: [detect-changes]
     if: needs.detect-changes.outputs.should-publish == 'true'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
+      - name: 🔧 Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: npm ci
 
-      - name: Verify
+      - name: ✅ Verify
         run: npm run verify
 
   publish:
-    name: Publish Package
+    name: 📤 Publish Package
     needs: [detect-changes, verify]
     if: needs.detect-changes.outputs.should-publish == 'true' && needs.verify.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: 📥 Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
+      - name: 🔧 Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: npm ci
 
-      - name: Build package
+      - name: 🏗️ Build package
         run: npm run build
 
-      - name: Publish to npm
+      - name: 📤 Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "Publishing ${{ needs.detect-changes.outputs.name }}@${{ needs.detect-changes.outputs.version }}"
+          echo "📤 Publishing ${{ needs.detect-changes.outputs.name }}@${{ needs.detect-changes.outputs.version }}"
           npm publish --access public --provenance
 
-      - name: Create git tag
+      - name: 🏷️ Create git tag
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -124,35 +124,35 @@ jobs:
           git tag -a "${TAG_NAME}" -m "Release ${{ needs.detect-changes.outputs.name }}@${{ needs.detect-changes.outputs.version }}"
           git push origin "${TAG_NAME}"
 
-      - name: Published successfully
+      - name: ✅ Published successfully
         run: |
-          echo "Successfully published ${{ needs.detect-changes.outputs.name }}@${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "Package URL: https://www.npmjs.com/package/${{ needs.detect-changes.outputs.name }}/v/${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "🎉 Successfully published ${{ needs.detect-changes.outputs.name }}@${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "📦 Package URL: https://www.npmjs.com/package/${{ needs.detect-changes.outputs.name }}/v/${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
 
   summary:
-    name: Publish Summary
+    name: 📋 Publish Summary
     needs: [detect-changes, verify, publish]
     if: always()
     runs-on: ubuntu-latest
 
     steps:
-      - name: Create summary
+      - name: 📊 Create summary
         run: |
-          echo "## Package Publishing Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 📦 Package Publishing Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [ "${{ needs.detect-changes.outputs.should-publish }}" != "true" ]; then
-            echo "**No new version to publish**" >> $GITHUB_STEP_SUMMARY
+            echo "ℹ️ **No new version to publish**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Version ${{ needs.detect-changes.outputs.version }} is already published or package is private." >> $GITHUB_STEP_SUMMARY
           elif [ "${{ needs.verify.result }}" != "success" ]; then
-            echo "**Verification failed - package not published**" >> $GITHUB_STEP_SUMMARY
+            echo "❌ **Verification failed - package not published**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Please fix verification errors and try again." >> $GITHUB_STEP_SUMMARY
           elif [ "${{ needs.publish.result }}" == "success" ]; then
-            echo "**Package published successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "✅ **Package published successfully!**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "- **${{ needs.detect-changes.outputs.name }}** version ${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           else
-            echo "**Package failed to publish**" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ **Package failed to publish**" >> $GITHUB_STEP_SUMMARY
           fi
