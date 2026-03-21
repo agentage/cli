@@ -178,5 +178,38 @@ export const createRoutes = (): Router => {
     }
   });
 
+  router.get('/api/hub/runs/:id', async (req, res) => {
+    const auth = readAuth();
+    if (!auth) {
+      res.status(401).json({ error: 'Not logged in' });
+      return;
+    }
+    try {
+      const client = createHubClient(auth.hub.url, auth);
+      const run = await client.getRun(req.params.id);
+      res.json(run);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: message });
+    }
+  });
+
+  router.get('/api/hub/runs/:id/events', async (req, res) => {
+    const auth = readAuth();
+    if (!auth) {
+      res.status(401).json({ error: 'Not logged in' });
+      return;
+    }
+    try {
+      const client = createHubClient(auth.hub.url, auth);
+      const after = req.query.after as string | undefined;
+      const events = await client.getRunEvents(req.params.id, after);
+      res.json(events);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: message });
+    }
+  });
+
   return router;
 };
