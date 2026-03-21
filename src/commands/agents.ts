@@ -4,6 +4,13 @@ import { type AgentManifest } from '@agentage/core';
 import { ensureDaemon } from '../utils/ensure-daemon.js';
 import { get, post } from '../utils/daemon-client.js';
 
+interface HubAgent {
+  name: string;
+  description?: string;
+  version?: string;
+  machines?: { name: string; status: string };
+}
+
 export const registerAgents = (program: Command): void => {
   program
     .command('agents')
@@ -15,8 +22,7 @@ export const registerAgents = (program: Command): void => {
       await ensureDaemon();
 
       if (opts.all) {
-        console.error(chalk.red("Not connected to hub. Run 'agentage login' first."));
-        process.exitCode = 1;
+        await listHubAgents(opts.json ?? false);
         return;
       }
 
@@ -54,4 +60,50 @@ export const registerAgents = (program: Command): void => {
         );
       }
     });
+};
+
+const listHubAgents = async (jsonMode: boolean): Promise<void> => {
+  let agents: HubAgent[];
+  try {
+    agents = await get<HubAgent[]>('/api/hub/agents');
+  } catch {
+    console.error(chalk.red("Not connected to hub. Run 'agentage login' first."));
+    process.exitCode = 1;
+    return;
+  }
+
+  if (jsonMode) {
+    console.log(JSON.stringify(agents, null, 2));
+    return;
+  }
+
+  if (agents.length === 0) {
+    console.log(chalk.gray('No agents found across machines.'));
+    return;
+  }
+
+  const nameWidth = Math.max(12, ...agents.map((a) => a.name.length)) + 2;
+  const machineWidth = Math.max(10, ...agents.map((a) => (a.machines?.name || '').length)) + 2;
+  const descWidth =
+    Math.max(12, ...agents.map((a) => (a.description || '').length).slice(0, 40)) + 2;
+
+  console.log(
+    chalk.bold('NAME'.padEnd(nameWidth)) +
+      chalk.bold('MACHINE'.padEnd(machineWidth)) +
+      chalk.bold('DESCRIPTION'.padEnd(descWidth)) +
+      chalk.bold('STATUS')
+  );
+
+  for (const agent of agents) {
+    const machineName = agent.machines?.name || '';
+    const status =
+      agent.machines?.status === 'online' ? chalk.green('online') : chalk.gray('offline');
+
+    console.log(
+      agent.name.padEnd(nameWidth) +
+        machineName.padEnd(machineWidth) +
+        (agent.description || '').substring(0, 38).padEnd(descWidth) +
+        status
+    );
+  }
 };

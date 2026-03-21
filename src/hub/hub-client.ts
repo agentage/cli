@@ -21,6 +21,8 @@ export interface HubClient {
   createRun: (machineId: string, agentName: string, input: string) => Promise<unknown>;
   cancelRun: (runId: string) => Promise<void>;
   sendRunInput: (runId: string, text: string) => Promise<void>;
+  getRun: (runId: string) => Promise<unknown>;
+  getRunEvents: (runId: string, after?: string) => Promise<unknown[]>;
 }
 
 export const createHubClient = (hubUrl: string, auth: AuthState): HubClient => {
@@ -88,6 +90,17 @@ export const createHubClient = (hubUrl: string, auth: AuthState): HubClient => {
 
     sendRunInput: async (runId, text) => {
       await request('POST', `/runs/${runId}/input`, { text });
+    },
+
+    getRun: async (runId) => {
+      const data = await request('GET', `/runs/${runId}`);
+      return data;
+    },
+
+    getRunEvents: async (runId, after) => {
+      const path = after ? `/runs/${runId}/events?after=${after}` : `/runs/${runId}/events`;
+      const data = await request('GET', path);
+      return data as unknown[];
     },
   };
 };
