@@ -7,7 +7,9 @@
   "bin": {
     "agentage": "./dist/cli.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=22.0.0",
     "npm": ">=10.0.0"
@@ -29,6 +31,7 @@
   "dependencies": {
     "@agentage/core": "^0.2.0",
     "@agentage/platform": "^0.2.0",
+    "@supabase/supabase-js": "2.99.3",
     "chalk": "latest",
     "commander": "latest",
     "express": "latest",
@@ -43,13 +46,13 @@
     "@types/ws": "latest",
     "@typescript-eslint/eslint-plugin": "latest",
     "@typescript-eslint/parser": "latest",
+    "@vitest/coverage-v8": "latest",
     "eslint": "latest",
     "eslint-config-prettier": "latest",
     "eslint-plugin-prettier": "latest",
     "prettier": "latest",
     "typescript": "latest",
-    "vitest": "latest",
-    "@vitest/coverage-v8": "latest"
+    "vitest": "latest"
   },
   "repository": {
     "type": "git",

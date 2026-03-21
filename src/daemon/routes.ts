@@ -2,6 +2,8 @@ import { type Router, Router as createRouter, json } from 'express';
 import { type Agent } from '@agentage/core';
 import { loadConfig } from './config.js';
 import { cancelRun, getRun, getRuns, sendInput, startRun } from './run-manager.js';
+import { getHubSync } from '../hub/hub-sync.js';
+import { readAuth } from '../hub/auth.js';
 
 const VERSION = '0.2.0';
 const startTime = Date.now();
@@ -25,12 +27,17 @@ export const createRoutes = (): Router => {
 
   router.get('/api/health', (_req, res) => {
     const config = loadConfig();
+    const hubSync = getHubSync();
+    const auth = readAuth();
+
     res.json({
       status: 'ok',
       version: VERSION,
       uptime: Math.floor((Date.now() - startTime) / 1000),
       machineId: config.machine.id,
-      hubConnected: false,
+      hubConnected: hubSync.isConnected(),
+      hubUrl: auth?.hub.url ?? null,
+      userEmail: auth?.user.email ?? null,
     });
   });
 

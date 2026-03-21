@@ -10,6 +10,8 @@ interface HealthResponse {
   uptime: number;
   machineId: string;
   hubConnected: boolean;
+  hubUrl: string | null;
+  userEmail: string | null;
 }
 
 export const registerStatus = (program: Command): void => {
@@ -28,9 +30,17 @@ export const registerStatus = (program: Command): void => {
 
       console.log(`Daemon:     ${chalk.green('running')} (PID ${pid}, port 4243)`);
       console.log(`Uptime:     ${uptime}`);
-      console.log(
-        `Hub:        ${health.hubConnected ? chalk.green('connected') : chalk.yellow('not connected (standalone mode)')}`
-      );
+
+      if (health.hubConnected) {
+        console.log(`Hub:        ${chalk.green('connected')} (${health.hubUrl})`);
+        console.log(`User:       ${health.userEmail}`);
+      } else if (health.hubUrl) {
+        console.log(`Hub:        ${chalk.yellow('disconnected')} (${health.hubUrl})`);
+        console.log(`User:       ${health.userEmail}`);
+      } else {
+        console.log(`Hub:        ${chalk.yellow('not connected (standalone mode)')}`);
+      }
+
       console.log(`Machine:    ${health.machineId}`);
       console.log(`Agents:     ${agents.length} discovered`);
       console.log(`Runs:       ${activeRuns} active`);
