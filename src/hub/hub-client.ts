@@ -18,6 +18,9 @@ export interface HubClient {
   deregister: (machineId: string) => Promise<void>;
   getMachines: () => Promise<unknown[]>;
   getAgents: (machineId?: string) => Promise<unknown[]>;
+  createRun: (machineId: string, agentName: string, input: string) => Promise<unknown>;
+  cancelRun: (runId: string) => Promise<void>;
+  sendRunInput: (runId: string, text: string) => Promise<void>;
 }
 
 export const createHubClient = (hubUrl: string, auth: AuthState): HubClient => {
@@ -72,6 +75,19 @@ export const createHubClient = (hubUrl: string, auth: AuthState): HubClient => {
       const path = machineId ? `/agents?machine=${machineId}` : '/agents';
       const data = await request('GET', path);
       return data as unknown[];
+    },
+
+    createRun: async (machineId, agentName, input) => {
+      const data = await request('POST', '/runs', { machineId, agentName, input });
+      return data;
+    },
+
+    cancelRun: async (runId) => {
+      await request('POST', `/runs/${runId}/cancel`);
+    },
+
+    sendRunInput: async (runId, text) => {
+      await request('POST', `/runs/${runId}/input`, { text });
     },
   };
 };

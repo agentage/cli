@@ -4,6 +4,7 @@ import { loadConfig } from './config.js';
 import { cancelRun, getRun, getRuns, sendInput, startRun } from './run-manager.js';
 import { getHubSync } from '../hub/hub-sync.js';
 import { readAuth } from '../hub/auth.js';
+import { createHubClient } from '../hub/hub-client.js';
 
 const VERSION = '0.2.0';
 const startTime = Date.now();
@@ -122,9 +123,59 @@ export const createRoutes = (): Router => {
     res.json({ ok: true });
   });
 
-  // OAuth callback placeholder
-  router.get('/auth/callback', (_req, res) => {
-    res.send('Hub sync not yet available.');
+  // Hub proxy routes — daemon proxies CLI requests to hub API
+  router.get('/api/hub/machines', async (_req, res) => {
+    const auth = readAuth();
+    if (!auth) {
+      res.status(401).json({ error: 'Not logged in' });
+      return;
+    }
+    try {
+      const client = createHubClient(auth.hub.url, auth);
+      const machines = await client.getMachines();
+      res.json(machines);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: message });
+    }
+  });
+
+  router.get('/api/hub/agents', async (req, res) => {
+    const auth = readAuth();
+    if (!auth) {
+      res.status(401).json({ error: 'Not logged in' });
+      return;
+    }
+    try {
+      const client = createHubClient(auth.hub.url, auth);
+      const machineId = req.query.machine as string | undefined;
+      const hubAgents = await client.getAgents(machineId);
+      res.json(hubAgents);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: message });
+    }
+  });
+
+  router.post('/api/hub/runs', async (req, res) => {
+    const auth = readAuth();
+    if (!auth) {
+      res.status(401).json({ error: 'Not logged in' });
+      return;
+    }
+    try {
+      const client = createHubClient(auth.hub.url, auth);
+      const { machineId, agentName, input } = req.body as {
+        machineId: string;
+        agentName: string;
+        input: string;
+      };
+      const result = await client.createRun(machineId, agentName, input);
+      res.json(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: message });
+    }
   });
 
   return router;

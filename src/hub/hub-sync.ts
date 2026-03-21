@@ -2,10 +2,11 @@ import { platform, arch } from 'node:os';
 import { loadConfig } from '../daemon/config.js';
 import { type AuthState, readAuth, saveAuth } from './auth.js';
 import { createHubClient, type HubClient } from './hub-client.js';
+import { createHubWs, type HubWs } from './hub-ws.js';
 import { createReconnector, type Reconnector } from './reconnection.js';
 import { logInfo, logWarn } from '../daemon/logger.js';
 import { getAgents } from '../daemon/routes.js';
-import { getRuns } from '../daemon/run-manager.js';
+import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const DAEMON_VERSION = '0.2.0';
@@ -18,11 +19,12 @@ export interface HubSync {
 
 export const createHubSync = (): HubSync => {
   let hubClient: HubClient | null = null;
+  let hubWs: HubWs | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let reconnector: Reconnector | null = null;
   let connected = false;
 
-  const register = async (auth: AuthState): Promise<void> => {
+  const connectAll = async (auth: AuthState): Promise<void> => {
     const config = loadConfig();
 
     hubClient = createHubClient(auth.hub.url, auth);
@@ -39,15 +41,25 @@ export const createHubSync = (): HubSync => {
     auth.hub.machineId = result.machineId;
     saveAuth(auth);
 
-    connected = true;
     logInfo(`Registered with hub as machine ${result.machineId}`);
+
+    // Connect WebSocket
+    hubWs = createHubWs(auth.hub.url, auth.session.access_token, auth.hub.machineId, () => {
+      // On disconnect — trigger reconnection
+      connected = false;
+      logWarn('[hub-sync] WS disconnected, will reconnect via heartbeat');
+      reconnector?.start();
+    });
+
+    hubWs.connect();
+    connected = true;
   };
 
   const startHeartbeat = (auth: AuthState): void => {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
 
     heartbeatTimer = setInterval(async () => {
-      if (!hubClient || !connected) return;
+      if (!hubClient) return;
 
       try {
         const agents = getAgents().map((a) => ({
@@ -66,10 +78,20 @@ export const createHubSync = (): HubSync => {
           activeRunIds,
         });
 
-        // Process pending commands
+        // Process pending commands from hub
         if (response.pendingCommands && Array.isArray(response.pendingCommands)) {
-          if (response.pendingCommands.length > 0) {
-            logInfo(`Received ${response.pendingCommands.length} pending command(s) from hub`);
+          for (const cmd of response.pendingCommands as Array<{
+            type: string;
+            runId: string;
+            payload?: string;
+          }>) {
+            if (cmd.type === 'cancel') {
+              cancelRun(cmd.runId);
+              logInfo(`Processed pending cancel for run ${cmd.runId}`);
+            } else if (cmd.type === 'input' && cmd.payload) {
+              sendInput(cmd.runId, cmd.payload);
+              logInfo(`Processed pending input for run ${cmd.runId}`);
+            }
           }
         }
       } catch (err) {
@@ -88,7 +110,7 @@ export const createHubSync = (): HubSync => {
 
       reconnector = createReconnector({
         onReconnect: async () => {
-          await register(auth);
+          await connectAll(auth);
           startHeartbeat(auth);
         },
         onError: (err) => {
@@ -99,7 +121,7 @@ export const createHubSync = (): HubSync => {
       });
 
       try {
-        await register(auth);
+        await connectAll(auth);
         startHeartbeat(auth);
         logInfo(`Connected to hub at ${auth.hub.url}`);
       } catch (err) {
@@ -120,6 +142,11 @@ export const createHubSync = (): HubSync => {
       if (reconnector) {
         reconnector.stop();
         reconnector = null;
+      }
+
+      if (hubWs) {
+        hubWs.disconnect();
+        hubWs = null;
       }
 
       if (hubClient && connected) {

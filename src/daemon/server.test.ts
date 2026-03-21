@@ -174,10 +174,8 @@ describe('server', () => {
     expect(Array.isArray(body)).toBe(true);
   });
 
-  it('GET /auth/callback returns placeholder', async () => {
-    const res = await fetch(`http://localhost:${port}/auth/callback`);
-    expect(res.status).toBe(200);
-    const text = await res.text();
-    expect(text).toContain('not yet available');
+  it('GET /api/hub/machines returns 401 when not logged in', async () => {
+    const res = await fetch(`http://localhost:${port}/api/hub/machines`);
+    expect(res.status).toBe(401);
   });
 });
