@@ -5,6 +5,7 @@ import { createDaemonServer } from './daemon/server.js';
 import { scanAgents } from './discovery/scanner.js';
 import { createMarkdownFactory } from './discovery/markdown-factory.js';
 import { createCodeFactory } from './discovery/code-factory.js';
+import { getHubSync } from './hub/hub-sync.js';
 
 const main = async (): Promise<void> => {
   const config = loadConfig();
@@ -23,8 +24,13 @@ const main = async (): Promise<void> => {
   await server.start();
   logInfo(`Daemon ready on port ${config.daemon.port}`);
 
+  // Initialize hub sync (registers + heartbeat if auth.json exists)
+  const hubSync = getHubSync();
+  await hubSync.start();
+
   const shutdown = async (): Promise<void> => {
     logInfo('Daemon shutting down...');
+    await hubSync.stop();
     await server.stop();
     removePidFile();
     process.exit(0);
