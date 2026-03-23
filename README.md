@@ -1,222 +1,134 @@
-# AgentKit CLI
+# @agentage/cli
 
 [![CI](https://github.com/agentage/cli/actions/workflows/ci.yml/badge.svg)](https://github.com/agentage/cli/actions/workflows/ci.yml)
 [![npm version](https://badge.fury.io/js/%40agentage%2Fcli.svg)](https://badge.fury.io/js/%40agentage%2Fcli)
 
-Command-line interface for creating and managing AI agents.
+CLI and daemon for the [Agentage](https://agentage.io) control plane. Discovers local agents, executes them, and connects to the hub for multi-machine orchestration.
 
 ## Installation
-
-Install globally:
 
 ```bash
 npm install -g @agentage/cli
 ```
 
-Or use with npx:
-
-```bash
-npx @agentage/cli <command>
-```
-
 ## Quick Start
 
 ```bash
-# Create a new agent
-agent init my-assistant
+# Start the daemon (discovers agents, exposes REST API)
+agentage daemon
 
-# Run the agent
-agent run my-assistant "Hello, how are you?"
+# List discovered agents
+agentage agents
 
-# List all agents
-agent list
+# Run an agent
+agentage run my-agent "Summarize this project"
+
+# Check daemon + hub status
+agentage status
 ```
 
-## Commands
+## Daemon
 
-### `agent init [name]`
+The daemon is a lightweight Express server that runs on each machine. It discovers local agents, executes them, and optionally syncs with a central hub.
 
-Create a new agent configuration file.
+### API
 
-```bash
-# Create agent with default name
-agent init
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/health` | Status, version, uptime, machine ID, hub connection |
+| `GET` | `/api/agents` | List discovered agent manifests |
+| `POST` | `/api/agents/refresh` | Re-scan agent directories |
+| `POST` | `/api/agents/:name/run` | Execute an agent (`{ task, config?, context? }`) |
+| `GET` | `/api/runs` | List all runs |
+| `GET` | `/api/runs/:id` | Get run details + output |
+| `POST` | `/api/runs/:id/cancel` | Cancel a running execution |
+| `POST` | `/api/runs/:id/input` | Send input to a waiting agent |
 
-# Create agent with custom name
-agent init my-assistant
+Default port: **3100**
 
-# Create in global directory
-agent init my-agent --global
+### Agent Discovery
+
+The daemon scans configured directories for agents:
+
+```
+~/.agentage/agents/*.agent.md    # Global agents
+.agentage/agents/*.agent.md      # Workspace agents
 ```
 
-### `agent run <name> [prompt]`
+Two built-in factories: **markdown** (`.agent.md` files with YAML frontmatter) and **code** (TypeScript/JavaScript modules exporting an Agent).
 
-Execute an agent with a prompt.
+### Hub Sync
 
-```bash
-# Run with default prompt
-agent run my-assistant
+When authenticated (`agentage login`), the daemon connects to the hub via WebSocket — registering the machine, syncing agents, and relaying run events.
 
-# Run with custom prompt
-agent run my-assistant "What is TypeScript?"
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/hub/machines` | List all hub-connected machines |
+| `GET` | `/api/hub/agents` | Aggregated agents across all machines |
+| `POST` | `/api/hub/runs` | Start a run on any connected machine |
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `agentage daemon` | Start the daemon server |
+| `agentage agents` | List discovered agents |
+| `agentage run <name> [task]` | Execute an agent |
+| `agentage runs` | List runs |
+| `agentage machines` | List hub-connected machines |
+| `agentage status` | Show daemon and hub status |
+| `agentage logs` | View daemon logs |
+| `agentage login` | Authenticate with the hub |
+| `agentage logout` | Log out |
+
+## Project Structure
+
 ```
-
-### `agent list`
-
-List all available agents (local and global).
-
-```bash
-agent list
-```
-
-### `agent publish [path]`
-
-Publish an agent to the Agentage registry.
-
-```bash
-# Publish agent in current directory
-agent publish
-
-# Publish specific agent file
-agent publish agents/my-agent.agent.md
-
-# Dry run (validate without publishing)
-agent publish --dry-run
-```
-
-### `agent install <owner/name>`
-
-Install an agent from the registry.
-
-```bash
-# Install latest version
-agent install user/my-agent
-
-# Install specific version
-agent install user/my-agent@2025-01-01
-
-# Install globally
-agent install user/my-agent --global
-```
-
-### `agent search <query>`
-
-Search for agents in the registry.
-
-```bash
-# Search for agents
-agent search "code review"
-
-# Limit results
-agent search "ai assistant" --limit 5
-```
-
-### `agent login`
-
-Authenticate with the Agentage registry.
-
-```bash
-agent login
-```
-
-### `agent logout`
-
-Log out from the registry.
-
-```bash
-agent logout
-```
-
-### `agent whoami`
-
-Display the currently logged in user.
-
-```bash
-agent whoami
-```
-
-### `agent update`
-
-Update the CLI to the latest version.
-
-```bash
-agent update
+src/
+├── cli.ts                  # CLI entry point (commander)
+├── daemon-entry.ts         # Daemon process entry point
+├── commands/               # CLI command handlers
+│   ├── daemon-cmd.ts       #   agentage daemon
+│   ├── agents.ts           #   agentage agents
+│   ├── run.ts              #   agentage run
+│   ├── runs.ts             #   agentage runs
+│   ├── machines.ts         #   agentage machines
+│   ├── status.ts           #   agentage status
+│   ├── logs.ts             #   agentage logs
+│   ├── login.ts            #   agentage login
+│   └── logout.ts           #   agentage logout
+├── daemon/                 # Daemon server
+│   ├── server.ts           #   Express + HTTP server setup
+│   ├── routes.ts           #   REST API routes
+│   ├── config.ts           #   Daemon configuration
+│   ├── run-manager.ts      #   Agent execution + run lifecycle
+│   ├── websocket.ts        #   WebSocket for streaming
+│   └── logger.ts           #   Structured logging
+├── discovery/              # Agent discovery
+│   ├── scanner.ts          #   Directory scanning
+│   ├── markdown-factory.ts #   .agent.md parser (gray-matter)
+│   └── code-factory.ts     #   JS/TS module loader (jiti)
+├── hub/                    # Hub connection
+│   ├── auth.ts             #   Auth token storage
+│   ├── auth-callback.ts    #   OAuth callback server
+│   ├── hub-client.ts       #   Hub REST client
+│   ├── hub-sync.ts         #   Machine/agent sync
+│   ├── hub-ws.ts           #   Hub WebSocket client
+│   └── reconnection.ts     #   Auto-reconnect logic
+└── utils/
+    ├── daemon-client.ts    #   CLI → daemon HTTP client
+    ├── ensure-daemon.ts    #   Auto-start daemon if not running
+    └── render.ts           #   Terminal output formatting
 ```
 
 ## Development
 
-### Prerequisites
-
-- Node.js >= 20.0.0
-- npm >= 10.0.0
-
-### Setup
+Requires Node.js >= 22.0.0.
 
 ```bash
-# Install dependencies
-npm install
-
-# Run in development mode
-npm run dev
-
-# Build
-npm run build
-
-# Run tests
-npm test
-
-# Run tests with coverage
-npm run test:coverage
-
-# Lint
-npm run lint
-
-# Type check
-npm run type-check
-
-# Full verification (type-check, lint, build, test)
-npm run verify
-```
-
-### Project Structure
-
-```
-cli/
-├── src/
-│   ├── cli.ts              # CLI entry point
-│   ├── index.ts            # Package exports
-│   ├── commands/           # CLI command handlers
-│   │   ├── init.ts
-│   │   ├── run.ts
-│   │   ├── list.ts
-│   │   ├── publish.ts
-│   │   ├── install.ts
-│   │   ├── search.ts
-│   │   ├── login.ts
-│   │   ├── logout.ts
-│   │   ├── whoami.ts
-│   │   └── update.ts
-│   ├── services/           # API services
-│   │   ├── auth.service.ts
-│   │   └── registry.service.ts
-│   ├── utils/              # Utility functions
-│   │   ├── agent-parser.ts
-│   │   ├── config.ts
-│   │   ├── lockfile.ts
-│   │   └── version.ts
-│   ├── schemas/            # Zod schemas
-│   │   └── agent.schema.ts
-│   ├── types/              # TypeScript types
-│   │   ├── config.types.ts
-│   │   ├── lockfile.types.ts
-│   │   └── registry.types.ts
-│   └── __mocks__/          # Jest mocks
-│       └── chalk.ts
-├── package.json
-├── tsconfig.json
-├── jest.config.js
-├── eslint.config.js
-└── README.md
+npm ci
+npm run verify    # type-check + lint + format + test + build
+npm run build && npm link   # test CLI locally
 ```
 
 ## License
