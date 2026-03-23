@@ -88,4 +88,12 @@ describe('config', () => {
     expect(config.machine.name).toBeTruthy();
     expect(typeof config.machine.name).toBe('string');
   });
+
+  it('AGENTAGE_PORT overrides daemon port', async () => {
+    process.env['AGENTAGE_PORT'] = '5555';
+    const { loadConfig } = await import('./config.js');
+    const config = loadConfig();
+    expect(config.daemon.port).toBe(5555);
+    delete process.env['AGENTAGE_PORT'];
+  });
 });
