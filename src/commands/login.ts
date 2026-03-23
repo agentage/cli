@@ -49,28 +49,10 @@ export const registerLogin = (program: Command): void => {
         return;
       }
 
-      // Fetch supabase config from hub health endpoint
-      let supabaseUrl: string;
-      let supabaseAnonKey: string;
-
-      try {
-        const healthRes = await fetch(`${hubUrl}/api/health`);
-        const health = (await healthRes.json()) as {
-          success: boolean;
-          data: { supabaseUrl: string; supabaseAnonKey: string };
-        };
-        supabaseUrl = health.data.supabaseUrl;
-        supabaseAnonKey = health.data.supabaseAnonKey;
-      } catch {
-        console.error(chalk.red(`Cannot reach hub at ${hubUrl}. Check the URL and try again.`));
-        process.exitCode = 1;
-        return;
-      }
-
-      // Start callback server, then open browser
+      // Start callback server, then open browser to hub login page
       console.log('Opening browser for authentication...');
 
-      const authPromise = startCallbackServer(supabaseUrl, supabaseAnonKey);
+      const authPromise = startCallbackServer();
 
       // Wait a tick for the server to start, then get the port
       await new Promise((r) => setTimeout(r, 100));
@@ -82,8 +64,7 @@ export const registerLogin = (program: Command): void => {
         return;
       }
 
-      const redirectUrl = `http://localhost:${port}/auth/callback`;
-      const authUrl = `${supabaseUrl}/auth/v1/authorize?provider=github&redirect_to=${encodeURIComponent(redirectUrl)}`;
+      const authUrl = `${hubUrl}/login?cli_port=${port}`;
 
       try {
         await open(authUrl);
