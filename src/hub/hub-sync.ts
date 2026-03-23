@@ -8,8 +8,9 @@ import { logInfo, logWarn } from '../daemon/logger.js';
 import { getAgents } from '../daemon/routes.js';
 import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
 
+import { VERSION } from '../utils/version.js';
+
 const HEARTBEAT_INTERVAL_MS = 30_000;
-const DAEMON_VERSION = '0.2.0';
 
 export interface HubSync {
   start: () => Promise<void>;
@@ -34,7 +35,7 @@ export const createHubSync = (): HubSync => {
       name: config.machine.name,
       platform: platform(),
       arch: arch(),
-      daemonVersion: DAEMON_VERSION,
+      daemonVersion: VERSION,
     });
 
     // Save machineId in auth
