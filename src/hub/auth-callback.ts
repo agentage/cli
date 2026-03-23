@@ -1,11 +1,27 @@
 import express from 'express';
-import { createClient } from '@supabase/supabase-js';
 import { type AuthState } from './auth.js';
 
-export const startCallbackServer = (
-  supabaseUrl: string,
-  supabaseAnonKey: string
-): Promise<AuthState> =>
+interface JwtPayload {
+  sub?: string;
+  email?: string;
+  user_metadata?: {
+    full_name?: string;
+    name?: string;
+    avatar_url?: string;
+  };
+}
+
+const decodeJwtPayload = (token: string): JwtPayload => {
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Invalid JWT format');
+  }
+  const payload = parts[1];
+  const json = Buffer.from(payload, 'base64url').toString('utf-8');
+  return JSON.parse(json) as JwtPayload;
+};
+
+export const startCallbackServer = (): Promise<AuthState> =>
   new Promise((resolve, reject) => {
     const app = express();
 
@@ -19,59 +35,56 @@ export const startCallbackServer = (
         reject(new Error('Login timed out — no callback received within 120 seconds'));
       }, 120_000);
 
-      app.get('/auth/callback', async (req, res) => {
+      app.get('/auth/callback', (req, res) => {
         clearTimeout(timeout);
 
-        const code = req.query.code as string | undefined;
+        const accessToken = req.query.access_token as string | undefined;
+        const refreshToken = req.query.refresh_token as string | undefined;
+        const expiresAt = req.query.expires_at as string | undefined;
 
-        if (!code) {
-          res.status(400).send('Missing authorization code');
-          server.close();
-          reject(new Error('Missing authorization code in callback'));
+        if (accessToken) {
+          // Primary flow — tokens provided directly by the hub login page
+          try {
+            const payload = decodeJwtPayload(accessToken);
+
+            res.send(
+              '<html><body><h2>Login successful!</h2><p>You can close this window.</p></body></html>'
+            );
+            server.close();
+
+            resolve({
+              session: {
+                access_token: accessToken,
+                refresh_token: refreshToken ?? '',
+                expires_at: expiresAt ? Number(expiresAt) : 0,
+              },
+              user: {
+                id: payload.sub ?? '',
+                email: payload.email ?? '',
+                name: payload.user_metadata?.full_name ?? payload.user_metadata?.name ?? '',
+                avatar: payload.user_metadata?.avatar_url ?? '',
+              },
+              hub: {
+                url: '',
+                machineId: '',
+              },
+            });
+          } catch (err) {
+            res.status(500).send('Failed to decode access token');
+            server.close();
+            reject(
+              new Error(
+                `Failed to decode access token: ${err instanceof Error ? err.message : String(err)}`
+              )
+            );
+          }
           return;
         }
 
-        try {
-          const supabase = createClient(supabaseUrl, supabaseAnonKey);
-          const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-
-          if (error || !data.session) {
-            res.status(500).send('Failed to exchange code for session');
-            server.close();
-            reject(new Error(`Auth exchange failed: ${error?.message ?? 'no session'}`));
-            return;
-          }
-
-          res.send(
-            '<html><body><h2>Login successful!</h2><p>You can close this window.</p></body></html>'
-          );
-          server.close();
-
-          resolve({
-            session: {
-              access_token: data.session.access_token,
-              refresh_token: data.session.refresh_token,
-              expires_at: data.session.expires_at ?? 0,
-            },
-            user: {
-              id: data.user.id,
-              email: data.user.email ?? '',
-              name:
-                (data.user.user_metadata?.full_name as string) ??
-                (data.user.user_metadata?.name as string) ??
-                '',
-              avatar: (data.user.user_metadata?.avatar_url as string) ?? '',
-            },
-            hub: {
-              url: '',
-              machineId: '',
-            },
-          });
-        } catch (err) {
-          res.status(500).send('Auth error');
-          server.close();
-          reject(err);
-        }
+        // No recognized params
+        res.status(400).send('Missing authentication parameters');
+        server.close();
+        reject(new Error('Missing authentication parameters in callback'));
       });
 
       // Export port for the caller to build the OAuth URL
