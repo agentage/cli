@@ -72,13 +72,21 @@ const createDefaultConfig = (): DaemonConfig => {
 export const loadConfig = (): DaemonConfig => {
   const configPath = join(getConfigDir(), 'config.json');
 
+  let config: DaemonConfig;
+
   if (existsSync(configPath)) {
     const raw = readFileSync(configPath, 'utf-8');
-    return JSON.parse(raw) as DaemonConfig;
+    config = JSON.parse(raw) as DaemonConfig;
+  } else {
+    config = createDefaultConfig();
+    saveConfig(config);
   }
 
-  const config = createDefaultConfig();
-  saveConfig(config);
+  const portOverride = process.env['AGENTAGE_PORT'];
+  if (portOverride) {
+    config.daemon.port = parseInt(portOverride, 10);
+  }
+
   return config;
 };
 
