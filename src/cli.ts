@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import { VERSION } from './utils/version.js';
 import { registerRun } from './commands/run.js';
 import { registerAgents } from './commands/agents.js';
 import { registerRuns } from './commands/runs.js';
@@ -13,7 +14,7 @@ import { registerDaemon } from './commands/daemon-cmd.js';
 
 const program = new Command();
 
-program.name('agentage').description('Agentage CLI — control plane for AI agents').version('0.2.0');
+program.name('agentage').description('Agentage CLI — control plane for AI agents').version(VERSION);
 
 registerRun(program);
 registerAgents(program);

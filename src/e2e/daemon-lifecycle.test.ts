@@ -176,7 +176,7 @@ describe('E2E: daemon lifecycle', () => {
     const { status, body } = await api.get<Record<string, unknown>>('/api/health');
     expect(status).toBe(200);
     expect(body.status).toBe('ok');
-    expect(body.version).toBe('0.2.0');
+    expect(body.version).toBeDefined();
     expect(typeof body.uptime).toBe('number');
     expect(body.machineId).toBeDefined();
     expect(body.hubConnected).toBe(false);

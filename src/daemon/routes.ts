@@ -6,7 +6,8 @@ import { getHubSync } from '../hub/hub-sync.js';
 import { readAuth } from '../hub/auth.js';
 import { createHubClient } from '../hub/hub-client.js';
 
-const VERSION = '0.2.0';
+import { VERSION } from '../utils/version.js';
+
 const startTime = Date.now();
 
 let agents: Agent[] = [];
