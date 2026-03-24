@@ -48,10 +48,10 @@ jobs:
         if: always() && steps.install.outcome == 'success'
         run: npm run format:check
 
-      - name: Test
+      - name: Test with coverage
         id: test
         if: always() && steps.install.outcome == 'success'
-        run: npm run test
+        run: npm run test:coverage
 
       - name: Build
         id: build
@@ -69,7 +69,7 @@ jobs:
               { name: 'Type check passed', outcome: '${{ steps.type-check.outcome }}' },
               { name: 'Linting passed', outcome: '${{ steps.lint.outcome }}' },
               { name: 'Format check passed', outcome: '${{ steps.format.outcome }}' },
-              { name: 'Tests passed', outcome: '${{ steps.test.outcome }}' },
+              { name: 'Tests + coverage passed', outcome: '${{ steps.test.outcome }}' },
               { name: 'Build successful', outcome: '${{ steps.build.outcome }}' },
             ];
 
