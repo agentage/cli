@@ -26,4 +26,7 @@ registerLogout(program);
 registerLogs(program);
 registerDaemon(program);
 
-program.parse();
+program.parseAsync().then(() => {
+  // Force exit — forked daemon process can keep the event loop alive
+  setTimeout(() => process.exit(process.exitCode ?? 0), 100);
+});
