@@ -1,4 +1,5 @@
-import { type AuthState } from './auth.js';
+import { type AuthState, saveAuth } from './auth.js';
+import { logInfo, logWarn } from '../daemon/logger.js';
 
 export interface HubClient {
   register: (machineData: {
@@ -25,6 +26,46 @@ export interface HubClient {
   getRunEvents: (runId: string, after?: string) => Promise<unknown[]>;
 }
 
+const refreshAccessToken = async (hubUrl: string, auth: AuthState): Promise<boolean> => {
+  if (!auth.session.refresh_token) return false;
+
+  try {
+    const healthRes = await fetch(`${hubUrl}/api/health`);
+    const health = (await healthRes.json()) as {
+      success: boolean;
+      data: { supabaseUrl: string; supabaseAnonKey: string };
+    };
+
+    const res = await fetch(`${health.data.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: health.data.supabaseAnonKey,
+      },
+      body: JSON.stringify({ refresh_token: auth.session.refresh_token }),
+    });
+
+    if (!res.ok) return false;
+
+    const data = (await res.json()) as {
+      access_token: string;
+      refresh_token: string;
+      expires_at: number;
+    };
+
+    auth.session.access_token = data.access_token;
+    auth.session.refresh_token = data.refresh_token;
+    auth.session.expires_at = data.expires_at;
+    saveAuth(auth);
+
+    logInfo('Token refreshed successfully');
+    return true;
+  } catch {
+    logWarn('Token refresh failed');
+    return false;
+  }
+};
+
 export const createHubClient = (hubUrl: string, auth: AuthState): HubClient => {
   const headers = (): Record<string, string> => ({
     'Content-Type': 'application/json',
@@ -34,11 +75,23 @@ export const createHubClient = (hubUrl: string, auth: AuthState): HubClient => {
   const apiUrl = `${hubUrl}/api`;
 
   const request = async (method: string, path: string, body?: unknown): Promise<unknown> => {
-    const res = await fetch(`${apiUrl}${path}`, {
+    let res = await fetch(`${apiUrl}${path}`, {
       method,
       headers: headers(),
       body: body ? JSON.stringify(body) : undefined,
     });
+
+    // Auto-refresh on 401
+    if (res.status === 401) {
+      const refreshed = await refreshAccessToken(hubUrl, auth);
+      if (refreshed) {
+        res = await fetch(`${apiUrl}${path}`, {
+          method,
+          headers: headers(),
+          body: body ? JSON.stringify(body) : undefined,
+        });
+      }
+    }
 
     const json = (await res.json()) as { success: boolean; data?: unknown; error?: unknown };
 
