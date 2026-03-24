@@ -1,11 +1,13 @@
-import { loadConfig } from './daemon/config.js';
+import { watch } from 'node:fs';
+import { loadConfig, getConfigDir } from './daemon/config.js';
 import { logError, logInfo } from './daemon/logger.js';
 import { writePidFile, removePidFile } from './daemon/daemon.js';
 import { createDaemonServer } from './daemon/server.js';
 import { scanAgents } from './discovery/scanner.js';
 import { createMarkdownFactory } from './discovery/markdown-factory.js';
 import { createCodeFactory } from './discovery/code-factory.js';
-import { getHubSync } from './hub/hub-sync.js';
+import { getHubSync, resetHubSync } from './hub/hub-sync.js';
+import { readAuth } from './hub/auth.js';
 
 const main = async (): Promise<void> => {
   const config = loadConfig();
@@ -27,6 +29,25 @@ const main = async (): Promise<void> => {
   // Initialize hub sync (registers + heartbeat if auth.json exists)
   const hubSync = getHubSync();
   await hubSync.start();
+
+  // Watch for auth.json changes — auto-connect when user logs in
+  let authWatchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  watch(getConfigDir(), (_event, filename) => {
+    if (filename !== 'auth.json') return;
+    if (authWatchDebounce) clearTimeout(authWatchDebounce);
+    authWatchDebounce = setTimeout(async () => {
+      const auth = readAuth();
+      const currentSync = getHubSync();
+      if (auth?.hub?.url && !currentSync.isConnected()) {
+        logInfo('Auth changed — connecting to hub...');
+        await currentSync.stop();
+        resetHubSync();
+        const newSync = getHubSync();
+        await newSync.start();
+      }
+    }, 500);
+  });
 
   const shutdown = async (): Promise<void> => {
     logInfo('Daemon shutting down...');
