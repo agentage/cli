@@ -46,7 +46,7 @@ export const registerLogin = (program: Command): void => {
         saveConfig(config);
 
         console.log(chalk.green('Logged in with token.'));
-        return;
+        process.exit(0);
       }
 
       // Start callback server, then open browser to hub login page
@@ -91,10 +91,8 @@ export const registerLogin = (program: Command): void => {
         saveConfig(config);
 
         console.log(chalk.green(`✓ Logged in as ${authState.user.email}`));
-        console.log(
-          `Machine "${config.machine.name}" will register with hub on next daemon restart.`
-        );
-        console.log(chalk.dim('Run `agentage daemon restart` to connect now.'));
+        console.log(`Machine "${config.machine.name}" will connect to hub automatically.`);
+        process.exit(0);
       } catch (err) {
         console.error(
           chalk.red(`Login failed: ${err instanceof Error ? err.message : String(err)}`)
