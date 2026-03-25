@@ -12,6 +12,7 @@ import {
 interface WsExecuteRequest {
   type: 'execute';
   requestId: string;
+  runId?: string;
   agentName: string;
   input: { task: string; config?: Record<string, unknown>; context?: string[] };
 }
@@ -61,19 +62,28 @@ export const createHubWs = (
     }
 
     try {
-      const runId = await startRun(agent, msg.input.task, msg.input.config, msg.input.context);
-      send({ type: 'execute_accepted', requestId: msg.requestId, runId });
+      const localRunId = await startRun(agent, msg.input.task, msg.input.config, msg.input.context);
+      // Use hub's runId for all messages back to hub, local ID for matching events
+      const hubRunId = msg.runId ?? localRunId;
+      send({ type: 'execute_accepted', requestId: msg.requestId, runId: hubRunId });
 
       // Subscribe to run events and stream to hub
+      // Match by localRunId (what run-manager emits), send with hubRunId (what hub expects)
       const unsubEvent = onRunEvent((eventRunId, event) => {
-        if (eventRunId === runId) {
-          send({ type: 'run_event', runId, event });
+        if (eventRunId === localRunId) {
+          send({ type: 'run_event', runId: hubRunId, event });
         }
       });
 
       const unsubState = onRunStateChange((run) => {
-        if (run.id === runId) {
-          send({ type: 'run_state', runId, state: run.state, error: run.error, stats: run.stats });
+        if (run.id === localRunId) {
+          send({
+            type: 'run_state',
+            runId: hubRunId,
+            state: run.state,
+            error: run.error,
+            stats: run.stats,
+          });
         }
       });
 
