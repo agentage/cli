@@ -66,7 +66,8 @@ export const registerRun = (program: Command): void => {
         } else {
           await runLocal(agentName, prompt, opts);
         }
-        process.exit(process.exitCode ?? 0);
+        // Let the event loop drain pending writes, then exit
+        setTimeout(() => process.exit(process.exitCode ?? 0), 100);
       }
     );
 };
