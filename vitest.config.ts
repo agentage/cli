@@ -11,8 +11,6 @@ export default defineConfig({
         '**/index.ts',
         'src/cli.ts',
         'src/daemon-entry.ts',
-        'src/commands/**',
-        'src/hub/**',
         'src/e2e/**',
       ],
       thresholds: {
