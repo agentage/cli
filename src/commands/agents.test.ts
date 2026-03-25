@@ -79,7 +79,11 @@ describe('agents command', () => {
   describe('--all (hub mode)', () => {
     it('fetches agents from hub', async () => {
       mockGet.mockResolvedValue([
-        { name: 'remote-agent', description: 'Hub agent', machines: { name: 'my-pc', status: 'online' } },
+        {
+          name: 'remote-agent',
+          description: 'Hub agent',
+          machines: { name: 'my-pc', status: 'online' },
+        },
       ]);
 
       await program.parseAsync(['node', 'agentage', 'agents', '--all']);
@@ -99,7 +103,9 @@ describe('agents command', () => {
     });
 
     it('outputs JSON in hub mode', async () => {
-      const agents = [{ name: 'hub-agent', description: 'Hub', machines: { name: 'pc', status: 'online' } }];
+      const agents = [
+        { name: 'hub-agent', description: 'Hub', machines: { name: 'pc', status: 'online' } },
+      ];
       mockGet.mockResolvedValue(agents);
 
       await program.parseAsync(['node', 'agentage', 'agents', '--all', '--json']);
@@ -117,7 +123,11 @@ describe('agents command', () => {
 
     it('shows offline status for offline machines', async () => {
       mockGet.mockResolvedValue([
-        { name: 'offline-agent', description: 'Agent', machines: { name: 'old-pc', status: 'offline' } },
+        {
+          name: 'offline-agent',
+          description: 'Agent',
+          machines: { name: 'old-pc', status: 'offline' },
+        },
       ]);
 
       await program.parseAsync(['node', 'agentage', 'agents', '--all']);
@@ -127,9 +137,7 @@ describe('agents command', () => {
   });
 
   it('shows table header with correct columns', async () => {
-    mockGet.mockResolvedValue([
-      { name: 'a', description: 'desc', path: '/p' },
-    ]);
+    mockGet.mockResolvedValue([{ name: 'a', description: 'desc', path: '/p' }]);
 
     await program.parseAsync(['node', 'agentage', 'agents']);
 
@@ -139,9 +147,7 @@ describe('agents command', () => {
   });
 
   it('handles agents without descriptions', async () => {
-    mockGet.mockResolvedValue([
-      { name: 'nodesc', path: '/test' },
-    ]);
+    mockGet.mockResolvedValue([{ name: 'nodesc', path: '/test' }]);
 
     await program.parseAsync(['node', 'agentage', 'agents']);
 

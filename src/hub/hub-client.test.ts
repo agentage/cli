@@ -120,10 +120,7 @@ describe('hub-client', () => {
 
       await client.getAgents();
 
-      expect(fetch).toHaveBeenCalledWith(
-        'https://hub.test/api/agents',
-        expect.anything()
-      );
+      expect(fetch).toHaveBeenCalledWith('https://hub.test/api/agents', expect.anything());
     });
 
     it('GETs agents filtered by machineId', async () => {

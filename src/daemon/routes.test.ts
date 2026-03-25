@@ -114,9 +114,9 @@ describe('daemon routes', () => {
 
   describe('GET /api/agents', () => {
     it('returns agent manifests', async () => {
-      setAgents([
-        { manifest: { name: 'hello', description: 'Hi', path: '/test' } },
-      ] as Parameters<typeof setAgents>[0]);
+      setAgents([{ manifest: { name: 'hello', description: 'Hi', path: '/test' } }] as Parameters<
+        typeof setAgents
+      >[0]);
 
       const { status, data } = await request(server, 'GET', '/api/agents');
 
@@ -178,9 +178,9 @@ describe('daemon routes', () => {
 
   describe('GET /api/runs', () => {
     it('returns all runs', async () => {
-      mockGetRuns.mockReturnValue([
-        { id: 'run-1', state: 'working' },
-      ] as ReturnType<typeof getRuns>);
+      mockGetRuns.mockReturnValue([{ id: 'run-1', state: 'working' }] as ReturnType<
+        typeof getRuns
+      >);
 
       const { status, data } = await request(server, 'GET', '/api/runs');
 

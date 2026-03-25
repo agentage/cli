@@ -80,9 +80,7 @@ describe('auth-callback', () => {
       const port = getCallbackPort();
 
       // JWT with only 2 parts (invalid)
-      const res = await fetch(
-        `http://localhost:${port}/auth/callback?access_token=invalid.jwt`
-      );
+      const res = await fetch(`http://localhost:${port}/auth/callback?access_token=invalid.jwt`);
       expect(res.status).toBe(500);
 
       const error = await resultPromise;

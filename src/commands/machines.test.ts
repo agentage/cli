@@ -55,7 +55,13 @@ describe('machines command', () => {
 
   it('outputs JSON with --json', async () => {
     const machines = [
-      { id: 'm-1', name: 'pc', platform: 'linux', status: 'online', last_seen_at: '2026-01-01T00:00:00Z' },
+      {
+        id: 'm-1',
+        name: 'pc',
+        platform: 'linux',
+        status: 'online',
+        last_seen_at: '2026-01-01T00:00:00Z',
+      },
     ];
     mockGet.mockResolvedValue(machines);
 

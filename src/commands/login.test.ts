@@ -142,7 +142,9 @@ describe('login command', () => {
 
       await program.parseAsync(['node', 'agentage', 'login']);
 
-      expect(errorLogs.some((l) => l.includes('Login failed') && l.includes('Timed out'))).toBe(true);
+      expect(errorLogs.some((l) => l.includes('Login failed') && l.includes('Timed out'))).toBe(
+        true
+      );
       expect(process.exitCode).toBe(1);
       process.exitCode = undefined;
     });

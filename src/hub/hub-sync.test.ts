@@ -100,10 +100,16 @@ describe('hub-sync', () => {
       stop: vi.fn(),
     };
 
-    mockCreateHubClient.mockReturnValue(mockHubClient as unknown as ReturnType<typeof createHubClient>);
+    mockCreateHubClient.mockReturnValue(
+      mockHubClient as unknown as ReturnType<typeof createHubClient>
+    );
     mockCreateHubWs.mockReturnValue(mockWs as unknown as ReturnType<typeof createHubWs>);
-    mockCreateReconnector.mockReturnValue(mockReconnector as unknown as ReturnType<typeof createReconnector>);
-    mockLoadConfig.mockReturnValue({ ...testConfig, sync: { events: {} } } as unknown as ReturnType<typeof loadConfig>);
+    mockCreateReconnector.mockReturnValue(
+      mockReconnector as unknown as ReturnType<typeof createReconnector>
+    );
+    mockLoadConfig.mockReturnValue({ ...testConfig, sync: { events: {} } } as unknown as ReturnType<
+      typeof loadConfig
+    >);
     mockGetAgents.mockReturnValue([]);
     mockGetRuns.mockReturnValue([]);
   });

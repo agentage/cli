@@ -50,7 +50,12 @@ describe('status command', () => {
   it('displays daemon info with hub connected', async () => {
     mockGet.mockImplementation(async (path: string) => {
       if (path === '/api/health')
-        return { ...baseHealth, hubConnected: true, hubUrl: 'https://agentage.io', userEmail: 'v@test.com' };
+        return {
+          ...baseHealth,
+          hubConnected: true,
+          hubUrl: 'https://agentage.io',
+          userEmail: 'v@test.com',
+        };
       if (path === '/api/agents') return [{}, {}];
       return [{}, {}, {}];
     });

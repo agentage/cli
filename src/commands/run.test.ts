@@ -81,7 +81,11 @@ describe('run command', () => {
         wsCallback = cb;
         setTimeout(() => {
           ws.emit('open');
-          wsCallback({ type: 'run_event', runId: 'run-123', event: { type: 'output', data: 'hi' } });
+          wsCallback({
+            type: 'run_event',
+            runId: 'run-123',
+            event: { type: 'output', data: 'hi' },
+          });
           wsCallback({ type: 'run_state', run: { id: 'run-123', state: 'completed' } });
         }, 10);
         return ws;
@@ -104,7 +108,14 @@ describe('run command', () => {
     it('detach mode prints run ID and returns', async () => {
       mockPost.mockResolvedValue({ runId: 'run-456' });
 
-      const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello', 'do stuff', '-d']);
+      const parsePromise = program.parseAsync([
+        'node',
+        'agentage',
+        'run',
+        'hello',
+        'do stuff',
+        '-d',
+      ]);
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
 
@@ -122,13 +133,24 @@ describe('run command', () => {
         wsCallback = cb;
         setTimeout(() => {
           ws.emit('open');
-          wsCallback({ type: 'run_event', runId: 'run-789', event: { type: 'output', data: 'hello' } });
+          wsCallback({
+            type: 'run_event',
+            runId: 'run-789',
+            event: { type: 'output', data: 'hello' },
+          });
           wsCallback({ type: 'run_state', run: { id: 'run-789', state: 'completed' } });
         }, 10);
         return ws;
       });
 
-      const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello', 'do stuff', '--json']);
+      const parsePromise = program.parseAsync([
+        'node',
+        'agentage',
+        'run',
+        'hello',
+        'do stuff',
+        '--json',
+      ]);
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
 
@@ -149,9 +171,16 @@ describe('run command', () => {
       });
 
       const parsePromise = program.parseAsync([
-        'node', 'agentage', 'run', 'hello', 'do stuff',
-        '--config', '{"model":"gpt-4"}',
-        '--context', 'file1.ts', 'file2.ts',
+        'node',
+        'agentage',
+        'run',
+        'hello',
+        'do stuff',
+        '--config',
+        '{"model":"gpt-4"}',
+        '--context',
+        'file1.ts',
+        'file2.ts',
       ]);
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
@@ -187,7 +216,11 @@ describe('run command', () => {
         wsCallback = cb;
         setTimeout(() => {
           ws.emit('open');
-          wsCallback({ type: 'run_event', runId: 'run-other', event: { type: 'output', data: 'nope' } });
+          wsCallback({
+            type: 'run_event',
+            runId: 'run-other',
+            event: { type: 'output', data: 'nope' },
+          });
           wsCallback({ type: 'run_state', run: { id: 'run-other', state: 'completed' } });
           wsCallback({ type: 'run_state', run: { id: 'run-mine', state: 'failed' } });
         }, 10);
@@ -211,7 +244,14 @@ describe('run command', () => {
       });
       mockPost.mockResolvedValue({ runId: 'remote-run-1' });
 
-      const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello@server', 'do stuff', '-d']);
+      const parsePromise = program.parseAsync([
+        'node',
+        'agentage',
+        'run',
+        'hello@server',
+        'do stuff',
+        '-d',
+      ]);
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
 
@@ -226,7 +266,13 @@ describe('run command', () => {
     it('errors when not connected to hub', async () => {
       mockGet.mockRejectedValue(new Error('Unauthorized'));
 
-      const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello@server', 'do stuff']);
+      const parsePromise = program.parseAsync([
+        'node',
+        'agentage',
+        'run',
+        'hello@server',
+        'do stuff',
+      ]);
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
 
@@ -238,7 +284,13 @@ describe('run command', () => {
     it('errors when machine not found', async () => {
       mockGet.mockResolvedValue([{ id: 'm1', name: 'other-pc' }]);
 
-      const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello@missing', 'do stuff']);
+      const parsePromise = program.parseAsync([
+        'node',
+        'agentage',
+        'run',
+        'hello@missing',
+        'do stuff',
+      ]);
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
 
@@ -252,7 +304,13 @@ describe('run command', () => {
       mockGet.mockResolvedValue([{ id: 'm1', name: 'server' }]);
       mockPost.mockRejectedValue(new Error('Server error'));
 
-      const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello@server', 'do stuff']);
+      const parsePromise = program.parseAsync([
+        'node',
+        'agentage',
+        'run',
+        'hello@server',
+        'do stuff',
+      ]);
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
 
@@ -265,7 +323,13 @@ describe('run command', () => {
       mockGet.mockResolvedValue([{ id: 'm1', name: 'server' }]);
       mockPost.mockResolvedValue({});
 
-      const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello@server', 'do stuff']);
+      const parsePromise = program.parseAsync([
+        'node',
+        'agentage',
+        'run',
+        'hello@server',
+        'do stuff',
+      ]);
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
 
@@ -288,7 +352,13 @@ describe('run command', () => {
       });
       mockPost.mockResolvedValue({ runId: 'remote-poll' });
 
-      const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello@server', 'do stuff']);
+      const parsePromise = program.parseAsync([
+        'node',
+        'agentage',
+        'run',
+        'hello@server',
+        'do stuff',
+      ]);
 
       await vi.advanceTimersByTimeAsync(200);
       await vi.advanceTimersByTimeAsync(1200);
@@ -307,7 +377,14 @@ describe('run command', () => {
       });
       mockPost.mockResolvedValue({ runId: 'remote-json' });
 
-      const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello@server', 'do stuff', '--json']);
+      const parsePromise = program.parseAsync([
+        'node',
+        'agentage',
+        'run',
+        'hello@server',
+        'do stuff',
+        '--json',
+      ]);
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
 
