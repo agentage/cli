@@ -106,6 +106,24 @@ describe('login command', () => {
         })
       );
     });
+
+    it('auto-prepends https:// when protocol is missing', async () => {
+      await program.parseAsync([
+        'node',
+        'agentage',
+        'login',
+        '--hub',
+        'dev.agentage.io',
+        '--token',
+        'tk',
+      ]);
+
+      expect(mockSaveAuth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          hub: expect.objectContaining({ url: 'https://dev.agentage.io' }),
+        })
+      );
+    });
   });
 
   describe('browser mode', () => {

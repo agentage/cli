@@ -17,7 +17,7 @@ export const registerLogin = (program: Command): void => {
     .action(async (opts: { hub: string; token?: string }) => {
       await ensureDaemon();
 
-      const hubUrl = opts.hub;
+      const hubUrl = opts.hub.startsWith('http') ? opts.hub : `https://${opts.hub}`;
 
       if (opts.token) {
         // Direct token mode — for headless/CI
