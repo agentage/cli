@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
 import { EventEmitter } from 'node:events';
+import { type WebSocket } from 'ws';
 
 vi.mock('../utils/ensure-daemon.js', () => ({
   ensureDaemon: vi.fn(),
@@ -25,11 +26,19 @@ const mockPost = vi.mocked(post);
 const mockConnectWs = vi.mocked(connectWs);
 const mockRenderEvent = vi.mocked(renderEvent);
 
+const createMockWs = () => {
+  const emitter = new EventEmitter();
+  const ws = emitter as unknown as WebSocket;
+  (ws as unknown as Record<string, unknown>).close = vi.fn();
+  (ws as unknown as Record<string, unknown>).send = vi.fn();
+  return ws;
+};
+
 describe('run command', () => {
   let program: Command;
   let logs: string[];
   let errorLogs: string[];
-  const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+  vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -65,18 +74,13 @@ describe('run command', () => {
     it('starts a local run and streams events via WS', async () => {
       mockPost.mockResolvedValue({ runId: 'run-123' });
 
-      // Create a mock WS that emits events
-      const ws = new EventEmitter() as EventEmitter & { close: ReturnType<typeof vi.fn>; send: ReturnType<typeof vi.fn> };
-      ws.close = vi.fn();
-      ws.send = vi.fn();
+      const ws = createMockWs();
 
       let wsCallback: (data: unknown) => void;
       mockConnectWs.mockImplementation((cb) => {
         wsCallback = cb;
-        // Simulate open after a tick
         setTimeout(() => {
           ws.emit('open');
-          // Then send a run event and terminal state
           wsCallback({ type: 'run_event', runId: 'run-123', event: { type: 'output', data: 'hi' } });
           wsCallback({ type: 'run_state', run: { id: 'run-123', state: 'completed' } });
         }, 10);
@@ -85,7 +89,6 @@ describe('run command', () => {
 
       const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello', 'do stuff']);
       await vi.advanceTimersByTimeAsync(50);
-      // Drain the setTimeout in the action for process.exit
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
 
@@ -112,9 +115,7 @@ describe('run command', () => {
     it('json mode outputs events as JSON lines', async () => {
       mockPost.mockResolvedValue({ runId: 'run-789' });
 
-      const ws = new EventEmitter() as EventEmitter & { close: ReturnType<typeof vi.fn>; send: ReturnType<typeof vi.fn> };
-      ws.close = vi.fn();
-      ws.send = vi.fn();
+      const ws = createMockWs();
 
       let wsCallback: (data: unknown) => void;
       mockConnectWs.mockImplementation((cb) => {
@@ -138,9 +139,7 @@ describe('run command', () => {
     it('passes config and context options', async () => {
       mockPost.mockResolvedValue({ runId: 'run-cfg' });
 
-      const ws = new EventEmitter() as EventEmitter & { close: ReturnType<typeof vi.fn>; send: ReturnType<typeof vi.fn> };
-      ws.close = vi.fn();
-      ws.send = vi.fn();
+      const ws = createMockWs();
       mockConnectWs.mockImplementation((cb) => {
         setTimeout(() => {
           ws.emit('open');
@@ -167,9 +166,7 @@ describe('run command', () => {
     it('handles WS error gracefully', async () => {
       mockPost.mockResolvedValue({ runId: 'run-err' });
 
-      const ws = new EventEmitter() as EventEmitter & { close: ReturnType<typeof vi.fn>; send: ReturnType<typeof vi.fn> };
-      ws.close = vi.fn();
-      ws.send = vi.fn();
+      const ws = createMockWs();
       mockConnectWs.mockImplementation(() => {
         setTimeout(() => ws.emit('error', new Error('connection failed')), 10);
         return ws;
@@ -178,26 +175,20 @@ describe('run command', () => {
       const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello', 'do stuff']);
       await vi.advanceTimersByTimeAsync(200);
       await parsePromise.catch(() => {});
-
-      // Should resolve without throwing
     });
 
     it('ignores events for other runs', async () => {
       mockPost.mockResolvedValue({ runId: 'run-mine' });
 
-      const ws = new EventEmitter() as EventEmitter & { close: ReturnType<typeof vi.fn>; send: ReturnType<typeof vi.fn> };
-      ws.close = vi.fn();
-      ws.send = vi.fn();
+      const ws = createMockWs();
 
       let wsCallback: (data: unknown) => void;
       mockConnectWs.mockImplementation((cb) => {
         wsCallback = cb;
         setTimeout(() => {
           ws.emit('open');
-          // Event for a different run — should be ignored
           wsCallback({ type: 'run_event', runId: 'run-other', event: { type: 'output', data: 'nope' } });
           wsCallback({ type: 'run_state', run: { id: 'run-other', state: 'completed' } });
-          // Now the actual run completes
           wsCallback({ type: 'run_state', run: { id: 'run-mine', state: 'failed' } });
         }, 10);
         return ws;
@@ -291,7 +282,6 @@ describe('run command', () => {
           if (pollCount === 0) return [{ id: 'e1', type: 'output', data: 'progress' }];
           return [];
         }
-        // Run state
         pollCount++;
         if (pollCount >= 2) return { state: 'completed' };
         return { state: 'working' };
@@ -300,7 +290,6 @@ describe('run command', () => {
 
       const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello@server', 'do stuff']);
 
-      // Advance through poll cycles
       await vi.advanceTimersByTimeAsync(200);
       await vi.advanceTimersByTimeAsync(1200);
       await vi.advanceTimersByTimeAsync(1200);

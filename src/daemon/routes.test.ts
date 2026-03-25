@@ -35,7 +35,7 @@ import { startRun, getRun, getRuns, cancelRun, sendInput } from './run-manager.j
 import { getHubSync } from '../hub/hub-sync.js';
 import { readAuth } from '../hub/auth.js';
 import { createHubClient } from '../hub/hub-client.js';
-import { createRoutes, setAgents, getAgents, setRefreshHandler } from './routes.js';
+import { createRoutes, setAgents, setRefreshHandler } from './routes.js';
 
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockGetRuns = vi.mocked(getRuns);
@@ -74,7 +74,8 @@ describe('daemon routes', () => {
       machine: { id: 'machine-1', name: 'test-pc' },
       daemon: { port: 4243 },
       discovery: { dirs: [] },
-    } as ReturnType<typeof loadConfig>);
+      sync: { events: {} },
+    } as unknown as ReturnType<typeof loadConfig>);
 
     mockGetHubSync.mockReturnValue({
       isConnected: () => false,
@@ -274,7 +275,7 @@ describe('daemon routes', () => {
       mockReadAuth.mockReturnValue(auth);
       mockCreateHubClient.mockReturnValue({
         getMachines: vi.fn().mockResolvedValue([{ id: 'm1', name: 'pc' }]),
-      } as ReturnType<typeof createHubClient>);
+      } as unknown as ReturnType<typeof createHubClient>);
 
       const { status, data } = await request(server, 'GET', '/api/hub/machines');
 
@@ -291,7 +292,7 @@ describe('daemon routes', () => {
       mockReadAuth.mockReturnValue(auth);
       mockCreateHubClient.mockReturnValue({
         getMachines: vi.fn().mockRejectedValue(new Error('Connection refused')),
-      } as ReturnType<typeof createHubClient>);
+      } as unknown as ReturnType<typeof createHubClient>);
 
       const { status, data } = await request(server, 'GET', '/api/hub/machines');
 
@@ -308,7 +309,7 @@ describe('daemon routes', () => {
       mockReadAuth.mockReturnValue(auth);
       mockCreateHubClient.mockReturnValue({
         createRun: vi.fn().mockResolvedValue({ runId: 'hub-run-1' }),
-      } as ReturnType<typeof createHubClient>);
+      } as unknown as ReturnType<typeof createHubClient>);
 
       const { status, data } = await request(server, 'POST', '/api/hub/runs', {
         machineId: 'm1',
@@ -335,7 +336,7 @@ describe('daemon routes', () => {
       mockReadAuth.mockReturnValue(auth);
       mockCreateHubClient.mockReturnValue({
         getAgents: vi.fn().mockResolvedValue([{ name: 'agent1' }]),
-      } as ReturnType<typeof createHubClient>);
+      } as unknown as ReturnType<typeof createHubClient>);
 
       const { status, data } = await request(server, 'GET', '/api/hub/agents');
       expect(status).toBe(200);
@@ -352,7 +353,7 @@ describe('daemon routes', () => {
       const mockGetAgents = vi.fn().mockResolvedValue([]);
       mockCreateHubClient.mockReturnValue({
         getAgents: mockGetAgents,
-      } as ReturnType<typeof createHubClient>);
+      } as unknown as ReturnType<typeof createHubClient>);
 
       await request(server, 'GET', '/api/hub/agents?machine=m1');
       expect(mockGetAgents).toHaveBeenCalledWith('m1');
@@ -373,7 +374,7 @@ describe('daemon routes', () => {
       mockReadAuth.mockReturnValue(auth);
       mockCreateHubClient.mockReturnValue({
         getRun: vi.fn().mockResolvedValue({ id: 'run-1', state: 'working' }),
-      } as ReturnType<typeof createHubClient>);
+      } as unknown as ReturnType<typeof createHubClient>);
 
       const { status, data } = await request(server, 'GET', '/api/hub/runs/run-1');
       expect(status).toBe(200);
@@ -395,7 +396,7 @@ describe('daemon routes', () => {
       mockReadAuth.mockReturnValue(auth);
       mockCreateHubClient.mockReturnValue({
         getRunEvents: vi.fn().mockResolvedValue([{ type: 'output', data: 'hi' }]),
-      } as ReturnType<typeof createHubClient>);
+      } as unknown as ReturnType<typeof createHubClient>);
 
       const { status, data } = await request(server, 'GET', '/api/hub/runs/run-1/events');
       expect(status).toBe(200);
@@ -412,7 +413,7 @@ describe('daemon routes', () => {
       const mockGetRunEvents = vi.fn().mockResolvedValue([]);
       mockCreateHubClient.mockReturnValue({
         getRunEvents: mockGetRunEvents,
-      } as ReturnType<typeof createHubClient>);
+      } as unknown as ReturnType<typeof createHubClient>);
 
       await request(server, 'GET', '/api/hub/runs/run-1/events?after=2026-01-01');
       expect(mockGetRunEvents).toHaveBeenCalledWith('run-1', '2026-01-01');
@@ -437,7 +438,7 @@ describe('daemon routes', () => {
       mockReadAuth.mockReturnValue(auth);
       mockCreateHubClient.mockReturnValue({
         getAgents: vi.fn().mockRejectedValue(new Error('Network error')),
-      } as ReturnType<typeof createHubClient>);
+      } as unknown as ReturnType<typeof createHubClient>);
 
       const { status } = await request(server, 'GET', '/api/hub/agents');
       expect(status).toBe(502);

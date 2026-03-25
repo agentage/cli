@@ -54,7 +54,7 @@ describe('logout command', () => {
       user: { id: 'u1', email: 'v@test.com' },
       hub: { url: 'https://hub.test', machineId: 'machine-1' },
     });
-    mockCreateHubClient.mockReturnValue({ deregister: mockDeregister } as ReturnType<typeof createHubClient>);
+    mockCreateHubClient.mockReturnValue({ deregister: mockDeregister } as unknown as ReturnType<typeof createHubClient>);
 
     await program.parseAsync(['node', 'agentage', 'logout']);
 
@@ -72,7 +72,7 @@ describe('logout command', () => {
     });
     mockCreateHubClient.mockReturnValue({
       deregister: vi.fn().mockRejectedValue(new Error('Network error')),
-    } as ReturnType<typeof createHubClient>);
+    } as unknown as ReturnType<typeof createHubClient>);
 
     await program.parseAsync(['node', 'agentage', 'logout']);
 

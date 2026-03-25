@@ -62,7 +62,8 @@ describe('login command', () => {
       machine: { id: 'machine-1', name: 'test-pc' },
       daemon: { port: 4243 },
       discovery: { dirs: [] },
-    } as ReturnType<typeof loadConfig>);
+      sync: { events: {} },
+    } as unknown as ReturnType<typeof loadConfig>);
 
     program = new Command();
     program.exitOverride();

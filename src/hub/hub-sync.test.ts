@@ -40,7 +40,7 @@ vi.mock('../utils/version.js', () => ({
   VERSION: '0.7.1',
 }));
 
-import { readAuth, saveAuth } from './auth.js';
+import { readAuth } from './auth.js';
 import { createHubClient } from './hub-client.js';
 import { createHubWs } from './hub-ws.js';
 import { createReconnector } from './reconnection.js';
@@ -100,10 +100,10 @@ describe('hub-sync', () => {
       stop: vi.fn(),
     };
 
-    mockCreateHubClient.mockReturnValue(mockHubClient as ReturnType<typeof createHubClient>);
-    mockCreateHubWs.mockReturnValue(mockWs as ReturnType<typeof createHubWs>);
-    mockCreateReconnector.mockReturnValue(mockReconnector as ReturnType<typeof createReconnector>);
-    mockLoadConfig.mockReturnValue(testConfig as ReturnType<typeof loadConfig>);
+    mockCreateHubClient.mockReturnValue(mockHubClient as unknown as ReturnType<typeof createHubClient>);
+    mockCreateHubWs.mockReturnValue(mockWs as unknown as ReturnType<typeof createHubWs>);
+    mockCreateReconnector.mockReturnValue(mockReconnector as unknown as ReturnType<typeof createReconnector>);
+    mockLoadConfig.mockReturnValue({ ...testConfig, sync: { events: {} } } as unknown as ReturnType<typeof loadConfig>);
     mockGetAgents.mockReturnValue([]);
     mockGetRuns.mockReturnValue([]);
   });
