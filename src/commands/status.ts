@@ -44,6 +44,7 @@ export const registerStatus = (program: Command): void => {
       console.log(`Machine:    ${health.machineId}`);
       console.log(`Agents:     ${agents.length} discovered`);
       console.log(`Runs:       ${activeRuns} active`);
+      process.exit(0);
     });
 };
 

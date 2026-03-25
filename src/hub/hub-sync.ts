@@ -16,6 +16,7 @@ export interface HubSync {
   start: () => Promise<void>;
   stop: () => Promise<void>;
   isConnected: () => boolean;
+  triggerHeartbeat: () => Promise<void>;
 }
 
 export const createHubSync = (): HubSync => {
@@ -56,45 +57,49 @@ export const createHubSync = (): HubSync => {
     connected = true;
   };
 
+  const sendHeartbeat = async (auth: AuthState): Promise<void> => {
+    if (!hubClient) return;
+
+    const agents = getAgents().map((a) => ({
+      name: a.manifest.name,
+      description: a.manifest.description,
+      version: a.manifest.version,
+      tags: a.manifest.tags,
+    }));
+
+    const activeRunIds = getRuns()
+      .filter((r) => r.state === 'working' || r.state === 'submitted')
+      .map((r) => r.id);
+
+    const response = await hubClient.heartbeat(auth.hub.machineId, {
+      agents,
+      activeRunIds,
+    });
+
+    // Process pending commands from hub
+    if (response.pendingCommands && Array.isArray(response.pendingCommands)) {
+      for (const cmd of response.pendingCommands as Array<{
+        type: string;
+        runId: string;
+        payload?: string;
+      }>) {
+        if (cmd.type === 'cancel') {
+          cancelRun(cmd.runId);
+          logInfo(`Processed pending cancel for run ${cmd.runId}`);
+        } else if (cmd.type === 'input' && cmd.payload) {
+          sendInput(cmd.runId, cmd.payload);
+          logInfo(`Processed pending input for run ${cmd.runId}`);
+        }
+      }
+    }
+  };
+
   const startHeartbeat = (auth: AuthState): void => {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
 
     heartbeatTimer = setInterval(async () => {
-      if (!hubClient) return;
-
       try {
-        const agents = getAgents().map((a) => ({
-          name: a.manifest.name,
-          description: a.manifest.description,
-          version: a.manifest.version,
-          tags: a.manifest.tags,
-        }));
-
-        const activeRunIds = getRuns()
-          .filter((r) => r.state === 'working' || r.state === 'submitted')
-          .map((r) => r.id);
-
-        const response = await hubClient.heartbeat(auth.hub.machineId, {
-          agents,
-          activeRunIds,
-        });
-
-        // Process pending commands from hub
-        if (response.pendingCommands && Array.isArray(response.pendingCommands)) {
-          for (const cmd of response.pendingCommands as Array<{
-            type: string;
-            runId: string;
-            payload?: string;
-          }>) {
-            if (cmd.type === 'cancel') {
-              cancelRun(cmd.runId);
-              logInfo(`Processed pending cancel for run ${cmd.runId}`);
-            } else if (cmd.type === 'input' && cmd.payload) {
-              sendInput(cmd.runId, cmd.payload);
-              logInfo(`Processed pending input for run ${cmd.runId}`);
-            }
-          }
-        }
+        await sendHeartbeat(auth);
       } catch (err) {
         logWarn(`Heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -167,6 +172,16 @@ export const createHubSync = (): HubSync => {
     },
 
     isConnected: () => connected,
+
+    triggerHeartbeat: async () => {
+      const auth = readAuth();
+      if (!auth || !hubClient) return;
+      try {
+        await sendHeartbeat(auth);
+      } catch (err) {
+        logWarn(`Manual heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
   };
 };
 

@@ -66,6 +66,7 @@ export const registerRun = (program: Command): void => {
         } else {
           await runLocal(agentName, prompt, opts);
         }
+        process.exit(process.exitCode ?? 0);
       }
     );
 };

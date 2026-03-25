@@ -52,7 +52,23 @@ export const createRoutes = (): Router => {
       if (refreshHandler) {
         agents = await refreshHandler();
       }
+      // Trigger heartbeat to sync agents to hub immediately
+      const { getHubSync } = await import('../hub/hub-sync.js');
+      getHubSync()
+        .triggerHeartbeat()
+        .catch(() => {});
       res.json(agents.map((a) => a.manifest));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  router.post('/api/heartbeat', async (_req, res) => {
+    try {
+      const { getHubSync } = await import('../hub/hub-sync.js');
+      await getHubSync().triggerHeartbeat();
+      res.json({ success: true });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: message });
