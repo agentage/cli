@@ -62,12 +62,7 @@ export const createHubWs = (
     }
 
     try {
-      const localRunId = await startRun(
-        agent,
-        msg.input.task,
-        msg.input.config,
-        msg.input.context
-      );
+      const localRunId = await startRun(agent, msg.input.task, msg.input.config, msg.input.context);
       // Use hub's runId for all messages back to hub, local ID for matching events
       const hubRunId = msg.runId ?? localRunId;
       send({ type: 'execute_accepted', requestId: msg.requestId, runId: hubRunId });
