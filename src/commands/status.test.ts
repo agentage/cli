@@ -13,17 +13,45 @@ vi.mock('../daemon/daemon.js', () => ({
   getDaemonPid: vi.fn(),
 }));
 
+vi.mock('../daemon/config.js', () => ({
+  loadConfig: vi.fn(),
+  saveConfig: vi.fn(),
+}));
+
 import { get } from '../utils/daemon-client.js';
 import { getDaemonPid } from '../daemon/daemon.js';
+import { loadConfig, saveConfig } from '../daemon/config.js';
 import { registerStatus } from './status.js';
 
 const mockGet = vi.mocked(get);
 const mockGetDaemonPid = vi.mocked(getDaemonPid);
+const mockLoadConfig = vi.mocked(loadConfig);
+const mockSaveConfig = vi.mocked(saveConfig);
 
 describe('status command', () => {
   let program: Command;
   let logs: string[];
   const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+
+  const defaultConfig = {
+    machine: { id: 'machine-123', name: 'test-host' },
+    daemon: { port: 4243 },
+    discovery: {
+      dirs: ['/home/user/.agentage/agents', '/home/user/.agentage/skills'],
+    },
+    sync: {
+      events: {
+        state: true,
+        result: true,
+        error: true,
+        input_required: true,
+        'output.llm.delta': true,
+        'output.llm.tool_call': true,
+        'output.llm.usage': true,
+        'output.progress': true,
+      },
+    },
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -31,6 +59,7 @@ describe('status command', () => {
     vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
       logs.push(args.map(String).join(' '));
     });
+    mockLoadConfig.mockReturnValue(structuredClone(defaultConfig));
 
     program = new Command();
     program.exitOverride();
@@ -119,5 +148,70 @@ describe('status command', () => {
     await program.parseAsync(['node', 'agentage', 'status']);
 
     expect(logs.some((l) => l.includes('45s'))).toBe(true);
+  });
+
+  it('displays discovery directories in status output', async () => {
+    mockGet.mockImplementation(async (path: string) => {
+      if (path === '/api/health') return baseHealth;
+      return [];
+    });
+    mockGetDaemonPid.mockReturnValue(42);
+
+    await program.parseAsync(['node', 'agentage', 'status']);
+
+    expect(logs.some((l) => l.includes('Discovery:'))).toBe(true);
+    expect(logs.some((l) => l.includes('/home/user/.agentage/agents'))).toBe(true);
+    expect(logs.some((l) => l.includes('/home/user/.agentage/skills'))).toBe(true);
+  });
+
+  it('--add-dir adds a new directory to config', async () => {
+    await program.parseAsync(['node', 'agentage', 'status', '--add-dir', '/tmp/new-agents']);
+
+    expect(mockSaveConfig).toHaveBeenCalledTimes(1);
+    const savedConfig = mockSaveConfig.mock.calls[0]![0];
+    expect(savedConfig.discovery.dirs).toContain('/tmp/new-agents');
+    expect(logs.some((l) => l.includes('Added discovery directory'))).toBe(true);
+    expect(mockExit).toHaveBeenCalledWith(0);
+  });
+
+  it('--add-dir with duplicate path does not add twice', async () => {
+    await program.parseAsync([
+      'node',
+      'agentage',
+      'status',
+      '--add-dir',
+      '/home/user/.agentage/agents',
+    ]);
+
+    expect(mockSaveConfig).not.toHaveBeenCalled();
+    expect(logs.some((l) => l.includes('already in discovery'))).toBe(true);
+    expect(mockExit).toHaveBeenCalledWith(0);
+  });
+
+  it('--remove-dir removes a directory from config', async () => {
+    await program.parseAsync([
+      'node',
+      'agentage',
+      'status',
+      '--remove-dir',
+      '/home/user/.agentage/agents',
+    ]);
+
+    expect(mockSaveConfig).toHaveBeenCalledTimes(1);
+    const savedConfig = mockSaveConfig.mock.calls[0]![0];
+    expect(savedConfig.discovery.dirs).not.toContain('/home/user/.agentage/agents');
+    expect(savedConfig.discovery.dirs).toContain('/home/user/.agentage/skills');
+    expect(logs.some((l) => l.includes('Removed discovery directory'))).toBe(true);
+    expect(mockExit).toHaveBeenCalledWith(0);
+  });
+
+  it('--remove-dir with non-existent path is graceful', async () => {
+    await program.parseAsync(['node', 'agentage', 'status', '--remove-dir', '/nonexistent/path']);
+
+    expect(mockSaveConfig).toHaveBeenCalledTimes(1);
+    const savedConfig = mockSaveConfig.mock.calls[0]![0];
+    expect(savedConfig.discovery.dirs).toHaveLength(2);
+    expect(logs.some((l) => l.includes('Removed discovery directory'))).toBe(true);
+    expect(mockExit).toHaveBeenCalledWith(0);
   });
 });
