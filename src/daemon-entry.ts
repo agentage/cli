@@ -8,6 +8,7 @@ import { createMarkdownFactory } from './discovery/markdown-factory.js';
 import { createCodeFactory } from './discovery/code-factory.js';
 import { getHubSync, resetHubSync } from './hub/hub-sync.js';
 import { readAuth } from './hub/auth.js';
+import { startWatcher } from './discovery/watcher.js';
 
 const main = async (): Promise<void> => {
   const config = loadConfig();
@@ -30,6 +31,18 @@ const main = async (): Promise<void> => {
   const hubSync = getHubSync();
   await hubSync.start();
 
+  // Watch discovery dirs for agent file changes
+  const stopWatcher = startWatcher(config.discovery.dirs, async () => {
+    try {
+      const freshConfig = loadConfig();
+      const updatedAgents = await scanAgents(freshConfig.discovery.dirs, factories);
+      server.updateAgents(updatedAgents);
+      logInfo(`Watcher rescan: discovered ${updatedAgents.length} agent(s)`);
+    } catch (err) {
+      logError(`Watcher rescan failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
   // Watch for auth.json changes — auto-connect when user logs in
   let authWatchDebounce: ReturnType<typeof setTimeout> | null = null;
 
@@ -51,6 +64,7 @@ const main = async (): Promise<void> => {
 
   const shutdown = async (): Promise<void> => {
     logInfo('Daemon shutting down...');
+    stopWatcher();
     await hubSync.stop();
     await server.stop();
     removePidFile();

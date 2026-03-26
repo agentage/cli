@@ -153,4 +153,16 @@ describe('agents command', () => {
 
     expect(logs.some((l) => l.includes('nodesc'))).toBe(true);
   });
+
+  it('shows agent count at bottom', async () => {
+    mockGet.mockResolvedValue([
+      { name: 'a1', description: 'Agent 1', path: '/a1' },
+      { name: 'a2', description: 'Agent 2', path: '/a2' },
+      { name: 'a3', description: 'Agent 3', path: '/a3' },
+    ]);
+
+    await program.parseAsync(['node', 'agentage', 'agents']);
+
+    expect(logs.some((l) => l.includes('3 agents discovered'))).toBe(true);
+  });
 });

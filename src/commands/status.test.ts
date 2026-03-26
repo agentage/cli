@@ -205,6 +205,33 @@ describe('status command', () => {
     expect(mockExit).toHaveBeenCalledWith(0);
   });
 
+  it('outputs JSON with --json', async () => {
+    mockGet.mockImplementation(async (path: string) => {
+      if (path === '/api/health')
+        return {
+          ...baseHealth,
+          hubConnected: true,
+          hubUrl: 'https://agentage.io',
+          userEmail: 'v@test.com',
+        };
+      if (path === '/api/agents') return [{}, {}];
+      return [{}, {}, {}];
+    });
+    mockGetDaemonPid.mockReturnValue(1234);
+
+    await program.parseAsync(['node', 'agentage', 'status', '--json']);
+
+    const parsed = JSON.parse(logs[0]!);
+    expect(parsed.daemon.status).toBe('running');
+    expect(parsed.daemon.pid).toBe(1234);
+    expect(parsed.hub.connected).toBe(true);
+    expect(parsed.hub.url).toBe('https://agentage.io');
+    expect(parsed.agents).toBe(2);
+    expect(parsed.runs).toBe(3);
+    expect(parsed.discoveryDirs).toHaveLength(2);
+    expect(mockExit).toHaveBeenCalledWith(0);
+  });
+
   it('--remove-dir with non-existent path is graceful', async () => {
     await program.parseAsync(['node', 'agentage', 'status', '--remove-dir', '/nonexistent/path']);
 

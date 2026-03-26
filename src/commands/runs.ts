@@ -4,13 +4,22 @@ import { type Run } from '@agentage/core';
 import { ensureDaemon } from '../utils/ensure-daemon.js';
 import { get } from '../utils/daemon-client.js';
 
+interface RunsOpts {
+  all?: boolean;
+  json?: boolean;
+  filter?: string;
+  last?: string;
+}
+
 export const registerRuns = (program: Command): void => {
   program
     .command('runs')
     .description('List runs')
     .option('--all', 'All runs across all machines')
     .option('--json', 'JSON output')
-    .action(async (opts: { all?: boolean; json?: boolean }) => {
+    .option('--filter <state>', 'Filter by state (working, completed, failed, cancelled)')
+    .option('--last <n>', 'Show only last N runs')
+    .action(async (opts: RunsOpts) => {
       await ensureDaemon();
 
       if (opts.all) {
@@ -19,7 +28,18 @@ export const registerRuns = (program: Command): void => {
         return;
       }
 
-      const runs = await get<Run[]>('/api/runs');
+      let runs = await get<Run[]>('/api/runs');
+
+      if (opts.filter) {
+        runs = runs.filter((r) => r.state === opts.filter);
+      }
+
+      if (opts.last) {
+        const n = parseInt(opts.last, 10);
+        if (n > 0) {
+          runs = runs.slice(-n);
+        }
+      }
 
       if (opts.json) {
         console.log(JSON.stringify(runs, null, 2));
@@ -40,9 +60,9 @@ export const registerRuns = (program: Command): void => {
       );
 
       for (const run of runs) {
-        const started = run.startedAt ? timeAgo(run.startedAt) : '—';
+        const started = run.startedAt ? timeAgo(run.startedAt) : '\u2014';
         const duration =
-          run.startedAt && run.endedAt ? formatDuration(run.endedAt - run.startedAt) : '—';
+          run.startedAt && run.endedAt ? formatDuration(run.endedAt - run.startedAt) : '\u2014';
         const stateColor = getStateColor(run.state);
 
         console.log(
@@ -53,6 +73,8 @@ export const registerRuns = (program: Command): void => {
             duration
         );
       }
+
+      console.log(chalk.dim(`\n${runs.length} runs`));
     });
 };
 

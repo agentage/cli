@@ -9,6 +9,7 @@ import { getAgents } from '../daemon/routes.js';
 import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
 
 import { VERSION } from '../utils/version.js';
+import { refreshTokenIfNeeded } from './token-refresh.js';
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -99,6 +100,7 @@ export const createHubSync = (): HubSync => {
 
     heartbeatTimer = setInterval(async () => {
       try {
+        await refreshTokenIfNeeded();
         await sendHeartbeat(auth);
       } catch (err) {
         logWarn(`Heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
