@@ -138,15 +138,12 @@ export const startCallbackServer = (hubUrl?: string): Promise<AuthState> =>
               },
             });
           } catch (err) {
-            res
-              .status(500)
-              .send(
-                buildPage({
-                  title: 'Login failed',
-                  message: 'Failed to decode access token.',
-                  status: 'error',
-                })
-              );
+            const errorHtml = buildPage({
+              title: 'Login failed',
+              message: 'Failed to decode access token.',
+              status: 'error',
+            });
+            res.status(500).send(errorHtml);
             server.close();
             reject(
               new Error(
@@ -158,15 +155,12 @@ export const startCallbackServer = (hubUrl?: string): Promise<AuthState> =>
         }
 
         // No recognized params
-        res
-          .status(400)
-          .send(
-            buildPage({
-              title: 'Login failed',
-              message: 'Missing authentication parameters.',
-              status: 'error',
-            })
-          );
+        const missingHtml = buildPage({
+          title: 'Login failed',
+          message: 'Missing authentication parameters.',
+          status: 'error',
+        });
+        res.status(400).send(missingHtml);
         server.close();
         reject(new Error('Missing authentication parameters in callback'));
       });
