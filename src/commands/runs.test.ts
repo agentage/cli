@@ -117,6 +117,91 @@ describe('runs command', () => {
 
     // duration column should show —
     const dataLine = logs[1];
-    expect(dataLine).toContain('—');
+    expect(dataLine).toContain('\u2014');
+  });
+
+  it('shows run count at bottom', async () => {
+    const now = Date.now();
+    mockGet.mockResolvedValue([
+      { id: 'run-1aaaaaa', agentName: 'a', state: 'completed', startedAt: now, endedAt: now },
+      { id: 'run-2bbbbbbb', agentName: 'b', state: 'working', startedAt: now },
+    ]);
+
+    await program.parseAsync(['node', 'agentage', 'runs']);
+
+    expect(logs.some((l) => l.includes('2 runs'))).toBe(true);
+  });
+
+  describe('--filter', () => {
+    it('filters runs by state', async () => {
+      const now = Date.now();
+      mockGet.mockResolvedValue([
+        { id: 'run-1aaaaaa', agentName: 'a', state: 'completed', startedAt: now, endedAt: now },
+        { id: 'run-2bbbbbbb', agentName: 'b', state: 'working', startedAt: now },
+        { id: 'run-3ccccccc', agentName: 'c', state: 'failed', startedAt: now, endedAt: now },
+      ]);
+
+      await program.parseAsync(['node', 'agentage', 'runs', '--filter', 'working']);
+
+      // Should only show the working run
+      expect(logs.some((l) => l.includes('run-2bbb'))).toBe(true);
+      expect(logs.some((l) => l.includes('run-1aaa'))).toBe(false);
+      expect(logs.some((l) => l.includes('1 runs'))).toBe(true);
+    });
+
+    it('shows no runs when filter matches nothing', async () => {
+      mockGet.mockResolvedValue([
+        { id: 'run-1aaaaaa', agentName: 'a', state: 'completed', startedAt: Date.now() },
+      ]);
+
+      await program.parseAsync(['node', 'agentage', 'runs', '--filter', 'failed']);
+
+      expect(logs.some((l) => l.includes('No runs'))).toBe(true);
+    });
+
+    it('applies filter before --json output', async () => {
+      const now = Date.now();
+      mockGet.mockResolvedValue([
+        { id: 'run-1', agentName: 'a', state: 'completed', startedAt: now },
+        { id: 'run-2', agentName: 'b', state: 'working', startedAt: now },
+      ]);
+
+      await program.parseAsync(['node', 'agentage', 'runs', '--filter', 'completed', '--json']);
+
+      const parsed = JSON.parse(logs[0]!);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].state).toBe('completed');
+    });
+  });
+
+  describe('--last', () => {
+    it('shows only last N runs', async () => {
+      const now = Date.now();
+      mockGet.mockResolvedValue([
+        { id: 'run-1aaaaaa', agentName: 'a', state: 'completed', startedAt: now },
+        { id: 'run-2bbbbbbb', agentName: 'b', state: 'working', startedAt: now },
+        { id: 'run-3ccccccc', agentName: 'c', state: 'failed', startedAt: now },
+      ]);
+
+      await program.parseAsync(['node', 'agentage', 'runs', '--last', '1']);
+
+      // Should show only the last run
+      expect(logs.some((l) => l.includes('run-3ccc'))).toBe(true);
+      expect(logs.some((l) => l.includes('run-1aaa'))).toBe(false);
+    });
+
+    it('applies --last to --json output', async () => {
+      const now = Date.now();
+      mockGet.mockResolvedValue([
+        { id: 'run-1', agentName: 'a', state: 'completed', startedAt: now },
+        { id: 'run-2', agentName: 'b', state: 'working', startedAt: now },
+      ]);
+
+      await program.parseAsync(['node', 'agentage', 'runs', '--last', '1', '--json']);
+
+      const parsed = JSON.parse(logs[0]!);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].id).toBe('run-2');
+    });
   });
 });

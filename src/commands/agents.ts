@@ -53,12 +53,11 @@ export const registerAgents = (program: Command): void => {
       );
 
       for (const agent of agents) {
-        console.log(
-          agent.name.padEnd(nameWidth) +
-            (agent.description || '').padEnd(descWidth) +
-            chalk.gray(agent.path)
-        );
+        const desc = (agent.description || '').substring(0, 60);
+        console.log(agent.name.padEnd(nameWidth) + desc.padEnd(descWidth) + chalk.gray(agent.path));
       }
+
+      console.log(chalk.dim(`\n${agents.length} agents discovered`));
     });
 };
 

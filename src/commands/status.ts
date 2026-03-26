@@ -22,7 +22,8 @@ export const registerStatus = (program: Command): void => {
     .description('Show daemon and connection status')
     .option('--add-dir <path>', 'Add directory to agent discovery')
     .option('--remove-dir <path>', 'Remove directory from agent discovery')
-    .action(async (opts: { addDir?: string; removeDir?: string }) => {
+    .option('--json', 'JSON output')
+    .action(async (opts: { addDir?: string; removeDir?: string; json?: boolean }) => {
       if (opts.addDir) {
         handleAddDir(opts.addDir);
         return;
@@ -38,6 +39,32 @@ export const registerStatus = (program: Command): void => {
       const agents = await get<unknown[]>('/api/agents');
       const runs = await get<unknown[]>('/api/runs');
       const pid = getDaemonPid();
+      const config = loadConfig();
+      const dirs = config.discovery.dirs;
+
+      if (opts.json) {
+        console.log(
+          JSON.stringify(
+            {
+              daemon: { status: 'running', pid, port: config.daemon.port },
+              uptime: health.uptime,
+              hub: {
+                connected: health.hubConnected,
+                url: health.hubUrl,
+                userEmail: health.userEmail,
+              },
+              machine: health.machineId,
+              agents: agents.length,
+              runs: runs.length,
+              discoveryDirs: dirs,
+            },
+            null,
+            2
+          )
+        );
+        process.exit(0);
+        return;
+      }
 
       const uptime = formatUptime(health.uptime);
       const activeRuns = runs.length;
@@ -59,8 +86,6 @@ export const registerStatus = (program: Command): void => {
       console.log(`Agents:     ${agents.length} discovered`);
       console.log(`Runs:       ${activeRuns} active`);
 
-      const config = loadConfig();
-      const dirs = config.discovery.dirs;
       if (dirs.length > 0) {
         console.log(`Discovery:  ${dirs[0]}`);
         for (const dir of dirs.slice(1)) {

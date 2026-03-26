@@ -11,6 +11,10 @@ import { registerLogin } from './commands/login.js';
 import { registerLogout } from './commands/logout.js';
 import { registerLogs } from './commands/logs.js';
 import { registerDaemon } from './commands/daemon-cmd.js';
+import { registerWhoami } from './commands/whoami.js';
+import { registerCompletions } from './commands/completions.js';
+import { registerConfig } from './commands/config-cmd.js';
+import { registerInit } from './commands/init.js';
 
 const program = new Command();
 
@@ -25,6 +29,10 @@ registerLogin(program);
 registerLogout(program);
 registerLogs(program);
 registerDaemon(program);
+registerWhoami(program);
+registerCompletions(program);
+registerConfig(program);
+registerInit(program);
 
 program.parseAsync().then(() => {
   // Force exit — forked daemon process can keep the event loop alive
