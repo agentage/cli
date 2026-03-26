@@ -52,7 +52,7 @@ export const registerLogin = (program: Command): void => {
       // Start callback server, then open browser to hub login page
       console.log('Opening browser for authentication...');
 
-      const authPromise = startCallbackServer();
+      const authPromise = startCallbackServer(hubUrl);
 
       // Wait a tick for the server to start, then get the port
       await new Promise((r) => setTimeout(r, 100));
