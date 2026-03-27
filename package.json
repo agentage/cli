@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@agentage/core": "^0.3.0",
-    "@agentage/platform": "^0.2.0",
+    "@agentage/platform": "^0.2.1",
     "@supabase/supabase-js": "2.100.1",
     "chalk": "latest",
     "commander": "latest",
