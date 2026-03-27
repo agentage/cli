@@ -11,7 +11,6 @@ describe('countdown agent', () => {
 
   it('yields output events for each number', async () => {
     const { agent } = await import('./countdown.agent.js');
-    const controller = new AbortController();
 
     // Use a small start value for fast test
     const process = await agent.run({ task: 'go', config: { start: 2 } });

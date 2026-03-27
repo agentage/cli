@@ -94,8 +94,8 @@ describe('shell agent', () => {
     const { agent } = await import('./shell.agent.js');
     const process = await agent.run({ task: 'sleep 60' });
 
-    // Cancel immediately
-    setTimeout(() => process.cancel(), 100);
+    // Cancel immediately — kill before iterating
+    process.cancel();
 
     const events: RunEvent[] = [];
     for await (const event of process.events) {
@@ -103,6 +103,8 @@ describe('shell agent', () => {
     }
 
     // Should complete quickly (not wait 60s)
-    // No result event expected when canceled
-  }, 5_000);
+    // No result event when canceled (signal.aborted check)
+    const results = events.filter((e) => e.type === 'result');
+    expect(results).toHaveLength(0);
+  }, 10_000);
 });

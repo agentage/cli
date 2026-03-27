@@ -36,7 +36,8 @@ export const agent = createAgent({
         data: {
           type: 'error' as const,
           code: 'MISSING_SDK',
-          message: 'Install @anthropic-ai/claude-agent-sdk: npm install @anthropic-ai/claude-agent-sdk',
+          message:
+            'Install @anthropic-ai/claude-agent-sdk: npm install @anthropic-ai/claude-agent-sdk',
           recoverable: false,
         },
         timestamp: Date.now(),

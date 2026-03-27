@@ -28,14 +28,25 @@ export const agent = createAgent({
       return;
     }
 
+    if (signal.aborted) return;
+
     const events: RunEvent[] = [];
     let exitCode: number | null = null;
 
     await new Promise<void>((resolve) => {
-      const proc = spawn(input.task, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawn(input.task, {
+        shell: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      if (signal.aborted) {
+        proc.kill('SIGKILL');
+        resolve();
+        return;
+      }
 
       const onAbort = (): void => {
-        proc.kill();
+        proc.kill('SIGKILL');
       };
       signal.addEventListener('abort', onAbort, { once: true });
 

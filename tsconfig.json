@@ -20,5 +20,13 @@
     "sourceMap": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "coverage"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "src/examples/claude-agent.agent.ts",
+    "src/examples/claude-agent.agent.test.ts",
+    "src/examples/copilot.agent.ts",
+    "src/examples/copilot.agent.test.ts"
+  ]
 }

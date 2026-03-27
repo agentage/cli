@@ -146,9 +146,7 @@ export const createCreateCommand = (): Command => {
     .option('-d, --dir <dir>', 'Output directory', '.')
     .action(async (name: string, options: { template: string; dir: string }) => {
       if (!KEBAB_CASE.test(name)) {
-        console.error(
-          chalk.red(`Invalid name "${name}". Use kebab-case (e.g. my-agent).`)
-        );
+        console.error(chalk.red(`Invalid name "${name}". Use kebab-case (e.g. my-agent).`));
         process.exitCode = 1;
         return;
       }
@@ -184,9 +182,7 @@ export const createCreateCommand = (): Command => {
       }
 
       console.log(
-        chalk.dim(
-          `\nTo use:\n  cp ${filePath} ~/.agentage/agents/\n  agentage agents --refresh`
-        )
+        chalk.dim(`\nTo use:\n  cp ${filePath} ~/.agentage/agents/\n  agentage agents --refresh`)
       );
     });
 
