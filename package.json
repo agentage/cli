@@ -1,6 +1,6 @@
 {
   "name": "@agentage/cli",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Agentage CLI and daemon — control plane for AI agents",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,7 +29,7 @@
     "prepublishOnly": "npm run verify"
   },
   "dependencies": {
-    "@agentage/core": "^0.3.0",
+    "@agentage/core": "^0.4.0",
     "@agentage/platform": "^0.2.1",
     "@supabase/supabase-js": "2.100.1",
     "chalk": "latest",

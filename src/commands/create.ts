@@ -5,133 +5,70 @@ import chalk from 'chalk';
 
 const TEMPLATES: Record<string, { content: (name: string) => string; deps?: string[] }> = {
   simple: {
-    content: (name) => `import { createAgent } from '@agentage/core';
+    content: (name) => `import { agent, output } from '@agentage/core';
 
-export const agent = createAgent({
+export default agent({
   name: '${name}',
   description: 'A simple agent',
-  path: '',
-  async *run(input, { signal }) {
-    yield {
-      type: 'output',
-      data: { type: 'output', content: \`Running: \${input.task}\`, format: 'text' },
-      timestamp: Date.now(),
-    };
-
-    yield {
-      type: 'result',
-      data: { type: 'result', success: true, output: 'Done' },
-      timestamp: Date.now(),
-    };
+  async *run({ task }) {
+    yield output(\`Running: \${task}\`);
   },
 });
-
-export default agent;
 `,
   },
   shell: {
-    content: (name) => `import { createAgent, type RunEvent } from '@agentage/core';
-import { spawn } from 'node:child_process';
-import { createInterface } from 'node:readline';
+    content: (name) => `import { agent, shell } from '@agentage/core';
 
-export const agent = createAgent({
+export default agent({
   name: '${name}',
   description: 'Executes a shell command and streams output',
-  path: '',
-  async *run(input, { signal }) {
-    const events: RunEvent[] = [];
-    let exitCode: number | null = null;
-
-    await new Promise<void>((resolve) => {
-      const proc = spawn(input.task, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
-      signal.addEventListener('abort', () => proc.kill(), { once: true });
-
-      if (proc.stdout) {
-        const rl = createInterface({ input: proc.stdout });
-        rl.on('line', (line) => {
-          events.push({ type: 'output', data: { type: 'output', content: line, format: 'text' }, timestamp: Date.now() });
-        });
-      }
-
-      proc.on('close', (code) => { exitCode = code; resolve(); });
-      proc.on('error', () => resolve());
-    });
-
-    for (const event of events) yield event;
-
-    yield {
-      type: 'result',
-      data: { type: 'result', success: exitCode === 0, output: exitCode === 0 ? 'Done' : \`Exited with code \${exitCode}\` },
-      timestamp: Date.now(),
-    };
+  async *run({ task }) {
+    yield* shell(task);
   },
 });
-
-export default agent;
 `,
   },
   claude: {
     deps: ['@anthropic-ai/claude-agent-sdk'],
-    content: (name) => `import { createAgent } from '@agentage/core';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+    content: (name) => `import { agent, claude } from '@agentage/core';
 
-export const agent = createAgent({
+export default agent({
   name: '${name}',
   description: 'Runs a task using Claude Code',
-  path: '',
-  async *run(input, { signal }) {
-    if (!process.env['ANTHROPIC_API_KEY']) {
-      yield { type: 'error', data: { type: 'error', code: 'MISSING_API_KEY', message: 'ANTHROPIC_API_KEY not set', recoverable: false }, timestamp: Date.now() };
-      yield { type: 'result', data: { type: 'result', success: false, output: 'ANTHROPIC_API_KEY not set' }, timestamp: Date.now() };
-      return;
-    }
-
-    const controller = new AbortController();
-    signal.addEventListener('abort', () => controller.abort(), { once: true });
-
-    for await (const message of query({
-      prompt: input.task,
-      options: { allowedTools: ['Read', 'Glob', 'Grep', 'Bash'], abortController: controller, maxTurns: 10 },
-    })) {
-      if (message.type === 'result') {
-        yield { type: 'result', data: { type: 'result', success: message.subtype === 'success' }, timestamp: Date.now() };
-      }
-    }
+  async *run({ task }, { signal }) {
+    yield* claude(task, {
+      signal,
+      tools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'],
+      maxTurns: 10,
+    });
   },
 });
-
-export default agent;
 `,
   },
   copilot: {
     deps: ['@github/copilot-sdk'],
-    content: (name) => `import { createAgent } from '@agentage/core';
-import { CopilotClient, approveAll } from '@github/copilot-sdk';
+    content: (name) => `import { agent, copilot } from '@agentage/core';
 
-export const agent = createAgent({
+export default agent({
   name: '${name}',
   description: 'Runs a task using GitHub Copilot',
-  path: '',
-  async *run(input, { signal }) {
-    const client = new CopilotClient();
-    try {
-      await client.start();
-      const session = await client.createSession({ model: 'gpt-4o', onPermissionRequest: approveAll });
-      signal.addEventListener('abort', () => session.abort(), { once: true });
-
-      const idle = new Promise<void>((resolve) => { session.on('session.idle', () => resolve()); });
-      await session.send({ prompt: input.task });
-      await idle;
-
-      yield { type: 'result', data: { type: 'result', success: true }, timestamp: Date.now() };
-      await session.disconnect();
-    } finally {
-      await client.stop().catch(() => {});
-    }
+  async *run({ task }, { signal }) {
+    yield* copilot(task, { signal, model: 'gpt-4o' });
   },
 });
+`,
+  },
+  llm: {
+    content: (name) => `import { agent } from '@agentage/core';
 
-export default agent;
+export default agent({
+  name: '${name}',
+  description: 'An LLM-powered agent',
+  model: 'claude-sonnet-4-6',
+  tools: ['read', 'glob', 'grep'],
+  prompt: \`You are a helpful assistant.
+Respond concisely and cite sources when possible.\`,
+});
 `,
   },
 };
@@ -142,7 +79,7 @@ export const createCreateCommand = (): Command => {
   const cmd = new Command('create')
     .description('Scaffold a new agent from a template')
     .argument('<name>', 'Agent name (kebab-case)')
-    .option('-t, --template <template>', 'Template: simple, shell, claude, copilot', 'simple')
+    .option('-t, --template <template>', 'Template: simple, shell, claude, copilot, llm', 'simple')
     .option('-d, --dir <dir>', 'Output directory', '.')
     .action(async (name: string, options: { template: string; dir: string }) => {
       if (!KEBAB_CASE.test(name)) {

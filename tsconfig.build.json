@@ -1,11 +1,4 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": [
-    "node_modules",
-    "dist",
-    "coverage",
-    "src/**/*.test.ts",
-    "src/examples/claude-agent.agent.ts",
-    "src/examples/copilot.agent.ts"
-  ]
+  "exclude": ["node_modules", "dist", "coverage", "src/**/*.test.ts"]
 }

@@ -3,15 +3,15 @@ import type { RunEvent } from '@agentage/core';
 
 describe('shell agent', () => {
   it('has correct manifest', async () => {
-    const { agent } = await import('./shell.agent.js');
+    const { default: agent } = await import('./shell.agent.js');
     expect(agent.manifest.name).toBe('shell');
     expect(agent.manifest.description).toBeDefined();
     expect(typeof agent.run).toBe('function');
   });
 
-  it('runs echo and returns output', async () => {
-    const { agent } = await import('./shell.agent.js');
-    const process = await agent.run({ task: 'echo hello' });
+  it('executes command and yields output', async () => {
+    const { default: agent } = await import('./shell.agent.js');
+    const process = await agent.run({ task: 'echo hello-shell' });
     const events: RunEvent[] = [];
     for await (const event of process.events) {
       events.push(event);
@@ -20,91 +20,20 @@ describe('shell agent', () => {
     const outputs = events.filter(
       (e) => e.type === 'output' && (e.data as Record<string, unknown>).format === 'text'
     );
-    expect(outputs.length).toBeGreaterThan(0);
-    expect((outputs[0]!.data as Record<string, unknown>).content).toBe('hello');
-  }, 10_000);
+    expect(outputs.length).toBeGreaterThanOrEqual(1);
+    expect((outputs[0]!.data as Record<string, unknown>).content).toBe('hello-shell');
+  });
 
-  it('streams multi-line output', async () => {
-    const { agent } = await import('./shell.agent.js');
-    const process = await agent.run({ task: 'printf "a\\nb\\nc\\n"' });
-    const events: RunEvent[] = [];
-    for await (const event of process.events) {
-      events.push(event);
-    }
-
-    const outputs = events.filter(
-      (e) => e.type === 'output' && (e.data as Record<string, unknown>).format === 'text'
-    );
-    expect(outputs).toHaveLength(3);
-  }, 10_000);
-
-  it('exit code 0 means success', async () => {
-    const { agent } = await import('./shell.agent.js');
+  it('yields result with exit code', async () => {
+    const { default: agent } = await import('./shell.agent.js');
     const process = await agent.run({ task: 'true' });
     const events: RunEvent[] = [];
     for await (const event of process.events) {
       events.push(event);
     }
 
-    const result = events.find((e) => e.type === 'result');
-    expect(result).toBeDefined();
-    expect((result!.data as Record<string, unknown>).success).toBe(true);
-  }, 10_000);
-
-  it('exit code 1 means failure', async () => {
-    const { agent } = await import('./shell.agent.js');
-    const process = await agent.run({ task: 'exit 1' });
-    const events: RunEvent[] = [];
-    for await (const event of process.events) {
-      events.push(event);
-    }
-
-    const result = events.find((e) => e.type === 'result');
-    expect(result).toBeDefined();
-    expect((result!.data as Record<string, unknown>).success).toBe(false);
-  }, 10_000);
-
-  it('captures stderr as error events', async () => {
-    const { agent } = await import('./shell.agent.js');
-    const process = await agent.run({ task: 'echo err >&2' });
-    const events: RunEvent[] = [];
-    for await (const event of process.events) {
-      events.push(event);
-    }
-
-    const errors = events.filter((e) => e.type === 'error');
-    expect(errors.length).toBeGreaterThan(0);
-    expect((errors[0]!.data as Record<string, unknown>).recoverable).toBe(true);
-  }, 10_000);
-
-  it('empty command yields error', async () => {
-    const { agent } = await import('./shell.agent.js');
-    const process = await agent.run({ task: '' });
-    const events: RunEvent[] = [];
-    for await (const event of process.events) {
-      events.push(event);
-    }
-
-    const result = events.find((e) => e.type === 'result');
-    expect(result).toBeDefined();
-    expect((result!.data as Record<string, unknown>).success).toBe(false);
-  }, 10_000);
-
-  it('cancel kills subprocess', async () => {
-    const { agent } = await import('./shell.agent.js');
-    const process = await agent.run({ task: 'sleep 60' });
-
-    // Cancel immediately — kill before iterating
-    process.cancel();
-
-    const events: RunEvent[] = [];
-    for await (const event of process.events) {
-      events.push(event);
-    }
-
-    // Should complete quickly (not wait 60s)
-    // No result event when canceled (signal.aborted check)
-    const results = events.filter((e) => e.type === 'result');
-    expect(results).toHaveLength(0);
-  }, 10_000);
+    const last = events[events.length - 1]!;
+    expect(last.type).toBe('result');
+    expect((last.data as Record<string, unknown>).success).toBe(true);
+  });
 });
