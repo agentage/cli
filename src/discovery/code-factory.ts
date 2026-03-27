@@ -3,8 +3,15 @@ import { type Agent, type AgentFactory } from '@agentage/core';
 import { createJiti } from 'jiti';
 import { logDebug, logWarn } from '../daemon/logger.js';
 
-const matches = (filePath: string): boolean =>
-  basename(filePath) === 'agent.ts' || basename(filePath) === 'agent.js';
+const matches = (filePath: string): boolean => {
+  const name = basename(filePath);
+  return (
+    name === 'agent.ts' ||
+    name === 'agent.js' ||
+    (name.endsWith('.agent.ts') && name.length > '.agent.ts'.length) ||
+    (name.endsWith('.agent.js') && name.length > '.agent.js'.length)
+  );
+};
 
 export const createCodeFactory =
   (): AgentFactory =>
@@ -29,7 +36,14 @@ export const createCodeFactory =
         'run' in agent &&
         typeof agent.run === 'function'
       ) {
-        return agent as Agent;
+        const agentObj = agent as Agent;
+
+        // Auto-inject path if missing (D2)
+        if (!agentObj.manifest.path) {
+          (agentObj.manifest as { path: string }).path = filePath;
+        }
+
+        return agentObj;
       }
 
       logWarn(`Module at ${filePath} does not export a valid Agent`);

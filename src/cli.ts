@@ -15,6 +15,7 @@ import { registerWhoami } from './commands/whoami.js';
 import { registerCompletions } from './commands/completions.js';
 import { registerConfig } from './commands/config-cmd.js';
 import { registerInit } from './commands/init.js';
+import { createCreateCommand } from './commands/create.js';
 
 const program = new Command();
 
@@ -33,6 +34,7 @@ registerWhoami(program);
 registerCompletions(program);
 registerConfig(program);
 registerInit(program);
+program.addCommand(createCreateCommand());
 
 program.parseAsync().then(() => {
   // Force exit — forked daemon process can keep the event loop alive
