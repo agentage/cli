@@ -12,6 +12,8 @@ export default defineConfig({
         'src/cli.ts',
         'src/daemon-entry.ts',
         'src/e2e/**',
+        'src/examples/claude-agent.agent.ts',
+        'src/examples/copilot.agent.ts',
       ],
       thresholds: {
         branches: 65,
