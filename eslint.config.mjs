@@ -5,15 +5,7 @@ import prettierConfig from 'eslint-config-prettier';
 
 export default [
   {
-    ignores: [
-      'dist/**',
-      'coverage/**',
-      'node_modules/**',
-      'src/examples/claude-agent.agent.ts',
-      'src/examples/claude-agent.agent.test.ts',
-      'src/examples/copilot.agent.ts',
-      'src/examples/copilot.agent.test.ts',
-    ],
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**'],
   },
   {
     files: ['src/**/*.ts'],

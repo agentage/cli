@@ -24,7 +24,7 @@ describe('create command', () => {
 
     const content = readFileSync(filePath, 'utf-8');
     expect(content).toContain("name: 'my-agent'");
-    expect(content).toContain('createAgent');
+    expect(content).toContain('import { agent');
   });
 
   it('creates agent with shell template', async () => {
@@ -34,7 +34,18 @@ describe('create command', () => {
 
     const content = readFileSync(join(testDir, 'my-shell.agent.ts'), 'utf-8');
     expect(content).toContain("name: 'my-shell'");
-    expect(content).toContain('spawn');
+    expect(content).toContain('yield* shell(');
+  });
+
+  it('creates agent with llm template', async () => {
+    const { createCreateCommand } = await import('./create.js');
+    const cmd = createCreateCommand();
+    await cmd.parseAsync(['node', 'test', 'my-llm', '--template', 'llm', '--dir', testDir]);
+
+    const content = readFileSync(join(testDir, 'my-llm.agent.ts'), 'utf-8');
+    expect(content).toContain("name: 'my-llm'");
+    expect(content).toContain("model: 'claude-sonnet-4-6'");
+    expect(content).not.toContain('async *run');
   });
 
   it('rejects invalid name', async () => {
