@@ -3,6 +3,20 @@ import { join } from 'node:path';
 import { type Agent, type AgentFactory } from '@agentage/core';
 import { logDebug, logInfo, logWarn } from '../daemon/logger.js';
 
+export interface ScanWarning {
+  file: string;
+  message: string;
+}
+
+export interface ScanResult {
+  agents: Agent[];
+  warnings: ScanWarning[];
+}
+
+let lastWarnings: ScanWarning[] = [];
+
+export const getLastScanWarnings = (): ScanWarning[] => lastWarnings;
+
 const getAllFiles = (dir: string): string[] => {
   const results: string[] = [];
 
@@ -25,6 +39,7 @@ const getAllFiles = (dir: string): string[] => {
 
 export const scanAgents = async (dirs: string[], factories: AgentFactory[]): Promise<Agent[]> => {
   const agents: Agent[] = [];
+  const warnings: ScanWarning[] = [];
   const seen = new Set<string>();
 
   for (const dir of dirs) {
@@ -45,11 +60,13 @@ export const scanAgents = async (dirs: string[], factories: AgentFactory[]): Pro
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : String(err);
           logWarn(`Factory error on ${file}: ${message}`);
+          warnings.push({ file, message });
         }
       }
     }
   }
 
-  logInfo(`Scan complete: ${agents.length} agent(s) found`);
+  lastWarnings = warnings;
+  logInfo(`Scan complete: ${agents.length} agent(s) found, ${warnings.length} warning(s)`);
   return agents;
 };

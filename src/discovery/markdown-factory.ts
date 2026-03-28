@@ -49,35 +49,63 @@ export const createMarkdownFactory =
       },
       async run(input: RunInput): Promise<AgentProcess> {
         const runId = randomUUID();
-        let canceled = false;
+        const controller = new AbortController();
 
         async function* generateEvents(): AsyncIterable<RunEvent> {
-          yield {
-            type: 'output',
-            data: { type: 'output', content: systemPrompt, format: 'text' },
-            timestamp: Date.now(),
-          };
-
-          if (!canceled) {
+          if (fm.model) {
+            try {
+              const { claude } = await import('@agentage/core');
+              yield* claude(input.task, {
+                signal: controller.signal,
+                systemPrompt,
+                model: fm.model,
+              });
+            } catch {
+              yield {
+                type: 'error',
+                data: {
+                  type: 'error',
+                  code: 'LLM_UNAVAILABLE',
+                  message:
+                    'Claude adapter not available. Install @anthropic-ai/claude-agent-sdk and set ANTHROPIC_API_KEY.',
+                  recoverable: false,
+                },
+                timestamp: Date.now(),
+              };
+              yield {
+                type: 'result',
+                data: { type: 'result', success: false, output: 'LLM adapter not available' },
+                timestamp: Date.now(),
+              };
+            }
+          } else {
             yield {
               type: 'output',
-              data: { type: 'output', content: `\nTask: ${input.task}`, format: 'text' },
+              data: { type: 'output', content: systemPrompt, format: 'text' },
+              timestamp: Date.now(),
+            };
+
+            if (!controller.signal.aborted) {
+              yield {
+                type: 'output',
+                data: { type: 'output', content: `\nTask: ${input.task}`, format: 'text' },
+                timestamp: Date.now(),
+              };
+            }
+
+            yield {
+              type: 'result',
+              data: { type: 'result', success: true, output: 'Agent execution complete' },
               timestamp: Date.now(),
             };
           }
-
-          yield {
-            type: 'result',
-            data: { type: 'result', success: true, output: 'Agent execution complete' },
-            timestamp: Date.now(),
-          };
         }
 
         return {
           runId,
           events: generateEvents(),
           cancel: () => {
-            canceled = true;
+            controller.abort();
           },
           sendInput: () => {
             // No-op for markdown agents
