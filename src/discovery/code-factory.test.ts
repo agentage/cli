@@ -142,14 +142,13 @@ describe('code-factory', () => {
     expect(agent!.manifest.path).toBe('/custom/path');
   });
 
-  it('handles import error gracefully', async () => {
+  it('throws on import error so scanner can collect warning', async () => {
     const agentDir = join(testDir, 'syntax-err');
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(join(agentDir, 'agent.js'), 'this is not valid javascript }{}{');
 
     const { createCodeFactory } = await import('./code-factory.js');
     const factory = createCodeFactory();
-    const agent = await factory(join(agentDir, 'agent.js'));
-    expect(agent).toBeNull();
+    await expect(factory(join(agentDir, 'agent.js'))).rejects.toThrow('Failed to load');
   });
 });
