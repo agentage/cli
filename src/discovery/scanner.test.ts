@@ -87,4 +87,38 @@ describe('scanner', () => {
     const agents = await scanAgents([agentsDir], [factory]);
     expect(agents).toHaveLength(1);
   });
+
+  // ─── QW-3: scan warnings ──────────────────────────────────
+
+  it('collects factory errors as warnings', async () => {
+    const agentsDir = join(testDir, 'agents-warn');
+    mkdirSync(agentsDir, { recursive: true });
+    writeFileSync(join(agentsDir, 'broken.agent.md'), '---\nname: broken\n---\n');
+
+    const throwingFactory: AgentFactory = async (path) => {
+      if (path.endsWith('.agent.md')) throw new Error('Import failed: missing module');
+      return null;
+    };
+
+    const { scanAgents, getLastScanWarnings } = await import('./scanner.js');
+    await scanAgents([agentsDir], [throwingFactory]);
+
+    const warnings = getLastScanWarnings();
+    expect(warnings.length).toBeGreaterThanOrEqual(1);
+    expect(warnings[0].file).toContain('broken.agent.md');
+    expect(warnings[0].message).toContain('Import failed');
+  });
+
+  it('clears warnings on each scan', async () => {
+    const agentsDir = join(testDir, 'agents-clear');
+    mkdirSync(agentsDir, { recursive: true });
+
+    const okFactory: AgentFactory = async () => null;
+
+    const { scanAgents, getLastScanWarnings } = await import('./scanner.js');
+    await scanAgents([agentsDir], [okFactory]);
+
+    const warnings = getLastScanWarnings();
+    expect(warnings).toHaveLength(0);
+  });
 });

@@ -95,4 +95,53 @@ describe('markdown-factory', () => {
     expect(agent).not.toBeNull();
     expect(agent!.manifest.name).toBe('my-skill');
   });
+
+  // ─── QW-4: markdown agent with model calls LLM ─────────────
+
+  it('agent with model yields error events when SDK missing', async () => {
+    const filePath = join(testDir, 'llm.agent.md');
+    writeFileSync(filePath, '---\nname: llm-test\nmodel: claude-sonnet-4-6\n---\nYou are a test.');
+
+    const { createMarkdownFactory } = await import('./markdown-factory.js');
+    const factory = createMarkdownFactory();
+    const agent = await factory(filePath);
+    expect(agent).not.toBeNull();
+    expect(agent!.manifest.config?.['model']).toBe('claude-sonnet-4-6');
+
+    const process = await agent!.run({ task: 'test prompt' });
+    const events = [];
+    for await (const event of process.events) {
+      events.push(event);
+    }
+
+    // Should get error (no SDK/API key) + result(false), NOT echo of system prompt
+    const errors = events.filter((e) => e.type === 'error');
+    const results = events.filter((e) => e.data.type === 'result');
+    expect(errors.length).toBeGreaterThanOrEqual(1);
+    expect(results).toHaveLength(1);
+    expect((results[0].data as { success: boolean }).success).toBe(false);
+  });
+
+  it('agent without model still echoes text', async () => {
+    const filePath = join(testDir, 'echo.agent.md');
+    writeFileSync(filePath, '---\nname: echo-test\n---\nYou are an echo agent.');
+
+    const { createMarkdownFactory } = await import('./markdown-factory.js');
+    const factory = createMarkdownFactory();
+    const agent = await factory(filePath);
+    const process = await agent!.run({ task: 'hello' });
+    const events = [];
+    for await (const event of process.events) {
+      events.push(event);
+    }
+
+    // Should echo system prompt + task as before
+    const outputs = events.filter((e) => e.data.type === 'output');
+    expect(outputs.length).toBeGreaterThanOrEqual(1);
+    expect((outputs[0].data as { content: string }).content).toContain('You are an echo agent');
+
+    const results = events.filter((e) => e.data.type === 'result');
+    expect(results).toHaveLength(1);
+    expect((results[0].data as { success: boolean }).success).toBe(true);
+  });
 });
