@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import { type AgentManifest } from '@agentage/core';
 import { ensureDaemon } from '../utils/ensure-daemon.js';
 import { get, post } from '../utils/daemon-client.js';
+import { type ScanWarning } from '../discovery/scanner.js';
 
 interface HubAgent {
   name: string;
@@ -58,6 +59,19 @@ export const registerAgents = (program: Command): void => {
       }
 
       console.log(chalk.dim(`\n${agents.length} agents discovered`));
+
+      try {
+        const warnings = await get<ScanWarning[]>('/api/agents/warnings');
+        if (warnings.length > 0) {
+          console.log(chalk.yellow(`\n⚠ Failed to load ${warnings.length} agent(s):`));
+          for (const w of warnings) {
+            console.log(chalk.yellow(`  ${w.file}`));
+            console.log(chalk.dim(`    ${w.message}`));
+          }
+        }
+      } catch {
+        // Daemon may not support warnings endpoint yet
+      }
     });
 };
 

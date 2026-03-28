@@ -5,6 +5,7 @@ import { cancelRun, getRun, getRuns, sendInput, startRun } from './run-manager.j
 import { getHubSync } from '../hub/hub-sync.js';
 import { readAuth } from '../hub/auth.js';
 import { createHubClient } from '../hub/hub-client.js';
+import { getLastScanWarnings } from '../discovery/scanner.js';
 
 import { VERSION } from '../utils/version.js';
 
@@ -45,6 +46,10 @@ export const createRoutes = (): Router => {
 
   router.get('/api/agents', (_req, res) => {
     res.json(agents.map((a) => a.manifest));
+  });
+
+  router.get('/api/agents/warnings', (_req, res) => {
+    res.json(getLastScanWarnings());
   });
 
   router.post('/api/agents/refresh', async (_req, res) => {
