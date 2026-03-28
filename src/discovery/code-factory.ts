@@ -51,6 +51,6 @@ export const createCodeFactory =
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logWarn(`Failed to load code agent from ${filePath}: ${message}`);
-      return null;
+      throw new Error(`Failed to load code agent from ${filePath}: ${message}`);
     }
   };
