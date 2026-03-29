@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate Pull Request
+    name: 🔍 Validate Pull Request
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
