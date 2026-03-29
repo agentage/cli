@@ -20,7 +20,7 @@ type BufferedMessage =
   | { type: 'run_event'; runId: string; event: RunEvent }
   | { type: 'run_state'; run: Run };
 
-const MAX_BUFFER_PER_RUN = 200;
+const MAX_BUFFER_PER_RUN = 500;
 const BUFFER_TTL_MS = 60_000;
 
 const clientSubscriptions = new Map<WebSocket, Set<string>>();
@@ -39,9 +39,12 @@ const bufferMessage = (runId: string, msg: BufferedMessage): void => {
     }, BUFFER_TTL_MS);
     bufferTimers.set(runId, timer);
   }
-  if (buf.length < MAX_BUFFER_PER_RUN) {
-    buf.push(msg);
+  if (buf.length >= MAX_BUFFER_PER_RUN) {
+    // Ring buffer: drop oldest to make room
+    buf.shift();
+    logDebug(`Buffer overflow for run ${runId} — dropping oldest event (cap: ${MAX_BUFFER_PER_RUN})`);
   }
+  buf.push(msg);
 };
 
 const replayBuffer = (ws: WebSocket, runId: string): void => {
@@ -54,8 +57,11 @@ const replayBuffer = (ws: WebSocket, runId: string): void => {
 };
 
 const sendToClient = (ws: WebSocket, data: unknown): void => {
-  if (ws.readyState === ws.OPEN) {
+  if (ws.readyState !== ws.OPEN) return;
+  try {
     ws.send(JSON.stringify(data));
+  } catch (err) {
+    logDebug(`Failed to send WS message: ${err instanceof Error ? err.message : String(err)}`);
   }
 };
 

@@ -16,6 +16,9 @@ interface TrackedRun {
   process: AgentProcess;
 }
 
+const TERMINAL_STATES: Run['state'][] = ['completed', 'failed', 'canceled'];
+const RUN_CLEANUP_TTL_MS = 5 * 60_000; // Clean up terminal runs after 5 minutes
+
 const runs = new Map<string, TrackedRun>();
 const eventListeners = new Set<RunEventListener>();
 const stateListeners = new Set<RunStateListener>();
@@ -58,6 +61,13 @@ const updateRunState = (
     Object.assign(tracked.run, extra);
   }
   emitStateChange(tracked.run);
+
+  // Schedule cleanup for terminal runs to prevent memory leak
+  if (TERMINAL_STATES.includes(newState)) {
+    setTimeout(() => {
+      runs.delete(tracked.run.id);
+    }, RUN_CLEANUP_TTL_MS);
+  }
 };
 
 export const startRun = async (
@@ -123,7 +133,7 @@ const consumeEvents = async (tracked: TrackedRun): Promise<void> => {
   }
 
   // If events ended without a terminal state, mark completed
-  if (!['completed', 'failed', 'canceled'].includes(tracked.run.state)) {
+  if (!TERMINAL_STATES.includes(tracked.run.state)) {
     updateRunState(tracked, 'completed', { endedAt: Date.now() });
   }
 };

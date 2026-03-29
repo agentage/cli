@@ -96,16 +96,22 @@ export const createHubSync = (): HubSync => {
   };
 
   const startHeartbeat = (auth: AuthState): void => {
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (heartbeatTimer) clearTimeout(heartbeatTimer);
 
-    heartbeatTimer = setInterval(async () => {
-      try {
-        await refreshTokenIfNeeded();
-        await sendHeartbeat(auth);
-      } catch (err) {
-        logWarn(`Heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }, HEARTBEAT_INTERVAL_MS);
+    const scheduleNext = (): void => {
+      heartbeatTimer = setTimeout(async () => {
+        try {
+          await refreshTokenIfNeeded();
+          await sendHeartbeat(auth);
+        } catch (err) {
+          logWarn(`Heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        // Schedule next heartbeat AFTER current one finishes (no overlap)
+        scheduleNext();
+      }, HEARTBEAT_INTERVAL_MS);
+    };
+
+    scheduleNext();
   };
 
   return {
@@ -143,7 +149,7 @@ export const createHubSync = (): HubSync => {
 
     stop: async () => {
       if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
+        clearTimeout(heartbeatTimer);
         heartbeatTimer = null;
       }
 
