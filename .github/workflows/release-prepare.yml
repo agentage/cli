@@ -127,9 +127,7 @@ jobs:
           git commit -m "chore: prepare release v${VERSION}
 
           - Bump version to ${VERSION}
-          - Update CHANGELOG.md with release notes
-
-          [skip ci]"
+          - Update CHANGELOG.md with release notes"
           git push origin "$BRANCH_NAME"
 
           CHANGELOG_CONTENT=$(cat changelog-content.md)
