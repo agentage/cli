@@ -150,6 +150,7 @@ export const cancelRun = (runId: string): boolean => {
 };
 
 export const sendInput = (runId: string, text: string): boolean => {
+  if (!text || typeof text !== 'string') return false;
   const tracked = runs.get(runId);
   if (!tracked) return false;
   if (tracked.run.state !== 'input_required') return false;

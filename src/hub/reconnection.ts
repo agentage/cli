@@ -18,6 +18,7 @@ export const createReconnector = (opts: ReconnectorOptions): Reconnector => {
   let currentDelay = initialDelay;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let stopped = false;
+  let running = false;
 
   const attempt = async (): Promise<void> => {
     if (stopped) return;
@@ -25,6 +26,7 @@ export const createReconnector = (opts: ReconnectorOptions): Reconnector => {
     try {
       await opts.onReconnect();
       currentDelay = initialDelay;
+      running = false;
     } catch (err) {
       opts.onError?.(err);
       timer = setTimeout(() => {
@@ -36,12 +38,15 @@ export const createReconnector = (opts: ReconnectorOptions): Reconnector => {
 
   return {
     start: () => {
+      if (running) return;
       stopped = false;
+      running = true;
       attempt();
     },
 
     stop: () => {
       stopped = true;
+      running = false;
       if (timer) {
         clearTimeout(timer);
         timer = null;
