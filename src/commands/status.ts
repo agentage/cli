@@ -5,6 +5,7 @@ import { ensureDaemon } from '../utils/ensure-daemon.js';
 import { get } from '../utils/daemon-client.js';
 import { getDaemonPid } from '../daemon/daemon.js';
 import { loadConfig, saveConfig } from '../daemon/config.js';
+import { checkForUpdateSafe } from '../utils/update-checker.js';
 
 interface HealthResponse {
   status: string;
@@ -35,9 +36,12 @@ export const registerStatus = (program: Command): void => {
       }
 
       await ensureDaemon();
-      const health = await get<HealthResponse>('/api/health');
-      const agents = await get<unknown[]>('/api/agents');
-      const runs = await get<unknown[]>('/api/runs');
+      const [health, agents, runs, updateCheck] = await Promise.all([
+        get<HealthResponse>('/api/health'),
+        get<unknown[]>('/api/agents'),
+        get<unknown[]>('/api/runs'),
+        checkForUpdateSafe(),
+      ]);
       const pid = getDaemonPid();
       const config = loadConfig();
       const dirs = config.discovery.dirs;
@@ -47,6 +51,11 @@ export const registerStatus = (program: Command): void => {
           JSON.stringify(
             {
               daemon: { status: 'running', pid, port: config.daemon.port },
+              version: {
+                current: health.version,
+                latest: updateCheck?.latestVersion ?? null,
+                updateAvailable: updateCheck?.updateAvailable ?? false,
+              },
               uptime: health.uptime,
               hub: {
                 connected: health.hubConnected,
@@ -70,6 +79,10 @@ export const registerStatus = (program: Command): void => {
       const activeRuns = runs.length;
 
       console.log(`Daemon:     ${chalk.green('running')} (PID ${pid}, port 4243)`);
+      const versionLine = updateCheck?.updateAvailable
+        ? `${health.version} ${chalk.yellow(`→ ${updateCheck.latestVersion} available`)}`
+        : health.version;
+      console.log(`Version:    ${versionLine}`);
       console.log(`Uptime:     ${uptime}`);
 
       if (health.hubConnected) {
