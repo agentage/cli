@@ -42,7 +42,9 @@ const bufferMessage = (runId: string, msg: BufferedMessage): void => {
   if (buf.length >= MAX_BUFFER_PER_RUN) {
     // Ring buffer: drop oldest to make room
     buf.shift();
-    logDebug(`Buffer overflow for run ${runId} — dropping oldest event (cap: ${MAX_BUFFER_PER_RUN})`);
+    logDebug(
+      `Buffer overflow for run ${runId} — dropping oldest event (cap: ${MAX_BUFFER_PER_RUN})`
+    );
   }
   buf.push(msg);
 };
