@@ -7,3 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.12.4] - 2026-03-29
+
+### New Features
+- Add daemon self-update capability with automatic version mismatch detection
+
+### Infrastructure
+- Add automated release preparation workflow with auto-merge support
+- Enforce release workflow with publish gates and PR guards
+
