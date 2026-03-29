@@ -15,8 +15,50 @@ env:
   NODE_VERSION: '22'
 
 jobs:
+  # =========================================================================
+  # GATE — only publish from release-prepare workflow (release/* branch merges)
+  # =========================================================================
+  release-gate:
+    name: 🔒 Release Gate
+    runs-on: ubuntu-latest
+    outputs:
+      is-release: ${{ steps.check.outputs.is-release }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 5
+
+      - name: 🔒 Check if this is a release commit
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # For workflow_dispatch, always allow
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "is-release=true" >> $GITHUB_OUTPUT
+            echo "✅ Manual trigger — allowed"
+            exit 0
+          fi
+
+          # Check if the merge commit came from a release/* branch
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          echo "Commit message: $COMMIT_MSG"
+
+          # Match squash merges from release/* branches or release prepare commits
+          if echo "$COMMIT_MSG" | grep -qE "(^Merge pull request .* from .*/release/|^chore: prepare release)"; then
+            echo "is-release=true" >> $GITHUB_OUTPUT
+            echo "✅ Release commit detected — proceeding with publish"
+          else
+            echo "is-release=false" >> $GITHUB_OUTPUT
+            echo "⛔ Not a release commit — skipping publish"
+            echo "💡 All releases must go through the release-prepare workflow"
+          fi
+
   detect-changes:
     name: 🔍 Detect Version Changes
+    needs: [release-gate]
+    if: needs.release-gate.outputs.is-release == 'true'
     runs-on: ubuntu-latest
     outputs:
       should-publish: ${{ steps.detect.outputs.should-publish }}
@@ -131,7 +173,7 @@ jobs:
 
   summary:
     name: 📋 Publish Summary
-    needs: [detect-changes, verify, publish]
+    needs: [release-gate, detect-changes, verify, publish]
     if: always()
     runs-on: ubuntu-latest
 
@@ -141,7 +183,12 @@ jobs:
           echo "## 📦 Package Publishing Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [ "${{ needs.detect-changes.outputs.should-publish }}" != "true" ]; then
+          if [ "${{ needs.release-gate.outputs.is-release }}" != "true" ]; then
+            echo "⛔ **Blocked — not a release commit**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All releases must go through the \`release-prepare\` workflow." >> $GITHUB_STEP_SUMMARY
+            echo "Run: \`gh workflow run release-prepare.yml -f bump_type=patch\`" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.detect-changes.outputs.should-publish }}" != "true" ]; then
             echo "ℹ️ **No new version to publish**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Version ${{ needs.detect-changes.outputs.version }} is already published or package is private." >> $GITHUB_STEP_SUMMARY
