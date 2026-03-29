@@ -187,6 +187,7 @@ describe('hub-sync', () => {
       expect(mockHubClient.heartbeat).toHaveBeenCalledWith('machine-1', {
         agents: [{ name: 'hello', description: 'Hi', version: '1.0', tags: ['chat'] }],
         activeRunIds: ['run-1'],
+        daemonVersion: '0.7.1',
       });
     });
 

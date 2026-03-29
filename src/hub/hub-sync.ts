@@ -75,6 +75,7 @@ export const createHubSync = (): HubSync => {
     const response = await hubClient.heartbeat(auth.hub.machineId, {
       agents,
       activeRunIds,
+      daemonVersion: VERSION,
     });
 
     // Process pending commands from hub

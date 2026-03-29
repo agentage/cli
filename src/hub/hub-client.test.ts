@@ -81,6 +81,7 @@ describe('hub-client', () => {
       const result = await client.heartbeat('machine-1', {
         agents: [{ name: 'hello', description: 'Hi' }],
         activeRunIds: ['run-1'],
+        daemonVersion: '0.12.3',
       });
 
       expect(result.pendingCommands).toEqual([]);

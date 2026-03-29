@@ -14,8 +14,9 @@ export interface HubClient {
     data: {
       agents: Array<{ name: string; description?: string; version?: string; tags?: string[] }>;
       activeRunIds: string[];
+      daemonVersion: string;
     }
-  ) => Promise<{ pendingCommands: unknown[] }>;
+  ) => Promise<{ pendingCommands: unknown[]; latestCliVersion?: string }>;
   deregister: (machineId: string) => Promise<void>;
   getMachines: () => Promise<unknown[]>;
   getAgents: (machineId?: string) => Promise<unknown[]>;
@@ -114,7 +115,7 @@ export const createHubClient = (hubUrl: string, auth: AuthState): HubClient => {
 
     heartbeat: async (machineId, body) => {
       const data = await request('POST', `/machines/${machineId}/heartbeat`, body);
-      return data as { pendingCommands: unknown[] };
+      return data as { pendingCommands: unknown[]; latestCliVersion?: string };
     },
 
     deregister: async (machineId) => {
