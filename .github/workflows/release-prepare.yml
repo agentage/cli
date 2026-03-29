@@ -151,17 +151,10 @@ jobs:
 
           ---
 
-          ### How to test
-          \`\`\`bash
-          git checkout release/v${VERSION}
-          npm ci && npm run verify
-          \`\`\`
-
           Once merged, this will automatically:
-          1. Detect version change in package.json
-          2. Run verification
+          1. Create a git tag \`v${VERSION}\`
+          2. Trigger the publish workflow
           3. Publish to npm with provenance
-          4. Create git tag v${VERSION}
           EOF
           )" \
             --base master \
