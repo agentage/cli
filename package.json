@@ -41,6 +41,7 @@
     "ws": "latest"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "latest",
     "@types/express": "latest",
     "@types/node": "latest",
     "@types/ws": "latest",
