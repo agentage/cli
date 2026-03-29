@@ -69,25 +69,42 @@ export const createHubWs = (
 
       // Subscribe to run events and stream to hub
       // Match by localRunId (what run-manager emits), send with hubRunId (what hub expects)
-      const unsubEvent = onRunEvent((eventRunId, event) => {
-        if (eventRunId === localRunId) {
-          send({ type: 'run_event', runId: hubRunId, event });
-        }
-      });
+      const TERMINAL_STATES = ['completed', 'failed', 'canceled'];
+      const unsubs: Array<() => void> = [];
 
-      const unsubState = onRunStateChange((run) => {
-        if (run.id === localRunId) {
-          send({
-            type: 'run_state',
-            runId: hubRunId,
-            state: run.state,
-            error: run.error,
-            stats: run.stats,
-          });
-        }
-      });
+      const cleanupRunListeners = (): void => {
+        for (const fn of unsubs) fn();
+        unsubs.length = 0;
+      };
 
-      eventUnsubscribers.push(unsubEvent, unsubState);
+      unsubs.push(
+        onRunEvent((eventRunId, event) => {
+          if (eventRunId === localRunId) {
+            send({ type: 'run_event', runId: hubRunId, event });
+          }
+        })
+      );
+
+      unsubs.push(
+        onRunStateChange((run) => {
+          if (run.id === localRunId) {
+            send({
+              type: 'run_state',
+              runId: hubRunId,
+              state: run.state,
+              error: run.error,
+              stats: run.stats,
+            });
+
+            // Unsubscribe on terminal state to prevent listener accumulation
+            if (TERMINAL_STATES.includes(run.state)) {
+              cleanupRunListeners();
+            }
+          }
+        })
+      );
+
+      eventUnsubscribers.push(cleanupRunListeners);
     } catch (err) {
       send({
         type: 'execute_rejected',
