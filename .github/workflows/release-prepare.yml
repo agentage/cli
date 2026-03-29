@@ -139,12 +139,14 @@ jobs:
             --body "$(cat <<EOF
           ## Release v${VERSION}
 
+          This PR prepares the release of version ${VERSION}.
+
           ### Changes
           ${CHANGELOG_CONTENT}
 
           ### Checklist
           - [ ] Review the changelog
-          - [ ] Verify version number is correct
+          - [ ] Verify version numbers are correct
           - [ ] Merge when ready to release
 
           ---
