@@ -52,6 +52,19 @@ const bufferMessage = (runId: string, msg: BufferedMessage): void => {
 const replayBuffer = (ws: WebSocket, runId: string): void => {
   const buf = runBuffers.get(runId);
   if (!buf) return;
+
+  // B3: Extend TTL when a client subscribes to prevent race between
+  // buffer expiry and replay delivery
+  const existingTimer = bufferTimers.get(runId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    const timer = setTimeout(() => {
+      runBuffers.delete(runId);
+      bufferTimers.delete(runId);
+    }, BUFFER_TTL_MS);
+    bufferTimers.set(runId, timer);
+  }
+
   logDebug(`Replaying ${buf.length} buffered messages for run ${runId}`);
   for (const msg of buf) {
     sendToClient(ws, msg);
