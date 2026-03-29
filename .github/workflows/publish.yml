@@ -46,7 +46,8 @@ jobs:
           echo "Commit message: $COMMIT_MSG"
 
           # Match squash merges from release/* branches or release prepare commits
-          if echo "$COMMIT_MSG" | grep -qE "(^Merge pull request .* from .*/release/|^chore: prepare release)"; then
+          # Match: merge commits from release/*, squash merges (PR title "Release v..."), or release prepare commits
+          if echo "$COMMIT_MSG" | grep -qE "(^Merge pull request .* from .*/release/|^Release v|^chore: prepare release)"; then
             echo "is-release=true" >> $GITHUB_OUTPUT
             echo "✅ Release commit detected — proceeding with publish"
           else
