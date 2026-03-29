@@ -7,3 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.12.4] - 2026-03-29
+
+### Improvements
+- Add automated release preparation workflow to streamline updates
+
+### Bug Fixes
+- Fix package dependency synchronization issues
+
