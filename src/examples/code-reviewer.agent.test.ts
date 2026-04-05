@@ -18,16 +18,26 @@ describe('code-reviewer agent', () => {
     expect(typeof agent.run).toBe('function');
   });
 
-  it('declarative agent yields auto-result', async () => {
-    const { default: agent } = await import('./code-reviewer.agent.js');
-    const process = await agent.run({ task: 'review this' });
-    const events: RunEvent[] = [];
-    for await (const event of process.events) {
-      events.push(event);
-    }
+  it('declarative agent auto-runs via claude adapter', async () => {
+    const prevKey = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    try {
+      const { default: agent } = await import('./code-reviewer.agent.js');
+      const run = await agent.run({ task: 'review this' });
+      const events: RunEvent[] = [];
+      for await (const event of run.events) {
+        events.push(event);
+      }
 
-    expect(events).toHaveLength(1);
-    expect(events[0]!.type).toBe('result');
-    expect((events[0]!.data as Record<string, unknown>).success).toBe(true);
+      // core 0.5.x: declarative agents auto-run via claude() adapter,
+      // which emits an error event followed by a result when no API key is set.
+      expect(events).toHaveLength(2);
+      expect(events[0]!.type).toBe('error');
+      expect((events[0]!.data as Record<string, unknown>).code).toBe('MISSING_API_KEY');
+      expect(events[1]!.type).toBe('result');
+      expect((events[1]!.data as Record<string, unknown>).success).toBe(false);
+    } finally {
+      if (prevKey !== undefined) process.env.ANTHROPIC_API_KEY = prevKey;
+    }
   });
 });
