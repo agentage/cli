@@ -44,7 +44,7 @@ The daemon is a lightweight Express server that runs on each machine. It discove
 | `POST` | `/api/runs/:id/cancel`  | Cancel a running execution                          |
 | `POST` | `/api/runs/:id/input`   | Send input to a waiting agent                       |
 
-Default port: **3100**
+Default port: **4243**
 
 ### Agent Discovery
 
