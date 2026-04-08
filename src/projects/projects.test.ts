@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
+  mkdirSync: vi.fn(),
   readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
   readdirSync: vi.fn(),
+  rmSync: vi.fn(),
   statSync: vi.fn(),
+  writeFileSync: vi.fn(),
 }));
 
 vi.mock('node:child_process', () => ({
@@ -16,7 +18,15 @@ vi.mock('../daemon/config.js', () => ({
   getConfigDir: vi.fn().mockReturnValue('/mock/config'),
 }));
 
-import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { execSync } from 'node:child_process';
 import {
   loadProjects,
@@ -26,13 +36,21 @@ import {
   discoverProjects,
   getWorktrees,
   resolveProject,
+  isGitUrl,
+  normalizeGitUrl,
+  getClonePath,
+  cloneOrFetch,
+  resolveRemoteProject,
+  pruneClones,
 } from './projects.js';
 import type { Project } from './projects.js';
 
 const mockExistsSync = vi.mocked(existsSync);
+const mockMkdirSync = vi.mocked(mkdirSync);
 const mockReadFileSync = vi.mocked(readFileSync);
 const mockWriteFileSync = vi.mocked(writeFileSync);
 const mockReaddirSync = vi.mocked(readdirSync);
+const mockRmSync = vi.mocked(rmSync);
 const mockStatSync = vi.mocked(statSync);
 const mockExecSync = vi.mocked(execSync);
 
@@ -320,5 +338,232 @@ describe('resolveProject', () => {
     expect(() => resolveProject('nonexistent', projects)).toThrow(
       'Project not found: nonexistent',
     );
+  });
+
+  it('resolves git URL through remote resolution', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('/mock/config/clones/github.com/org/repo')) return true;
+      return false;
+    });
+    mockExecSync.mockImplementation((cmd) => {
+      const c = String(cmd);
+      if (c.includes('fetch --all')) return '';
+      if (c.includes('symbolic-ref')) return 'refs/heads/main';
+      if (c.includes('worktree add')) return '';
+      return '';
+    });
+
+    const ref = resolveProject('org/repo', []);
+    expect(ref.name).toBe('repo');
+    expect(ref.remote).toBe('https://github.com/org/repo.git');
+    expect(ref.branch).toBe('main');
+  });
+});
+
+describe('isGitUrl', () => {
+  it('returns true for https git URLs', () => {
+    expect(isGitUrl('https://github.com/org/repo')).toBe(true);
+  });
+
+  it('returns true for SSH git URLs', () => {
+    expect(isGitUrl('git@github.com:org/repo')).toBe(true);
+  });
+
+  it('returns true for org/repo shorthand', () => {
+    expect(isGitUrl('org/repo')).toBe(true);
+  });
+
+  it('returns false for plain project name', () => {
+    expect(isGitUrl('my-project')).toBe(false);
+  });
+
+  it('returns false for absolute path', () => {
+    expect(isGitUrl('/abs/path')).toBe(false);
+  });
+
+  it('returns true for org/repo:branch', () => {
+    expect(isGitUrl('org/repo:branch')).toBe(true);
+  });
+});
+
+describe('normalizeGitUrl', () => {
+  it('converts org/repo shorthand to GitHub HTTPS', () => {
+    expect(normalizeGitUrl('org/repo')).toEqual({
+      url: 'https://github.com/org/repo.git',
+    });
+  });
+
+  it('extracts branch from org/repo:branch', () => {
+    expect(normalizeGitUrl('org/repo:feat/x')).toEqual({
+      url: 'https://github.com/org/repo.git',
+      branch: 'feat/x',
+    });
+  });
+
+  it('keeps HTTPS URL as-is without branch', () => {
+    expect(normalizeGitUrl('https://github.com/org/repo')).toEqual({
+      url: 'https://github.com/org/repo',
+    });
+  });
+
+  it('keeps SSH URL as-is', () => {
+    expect(normalizeGitUrl('git@github.com:org/repo.git')).toEqual({
+      url: 'git@github.com:org/repo.git',
+    });
+  });
+
+  it('extracts branch from SSH URL with # separator', () => {
+    expect(normalizeGitUrl('git@github.com:org/repo.git#main')).toEqual({
+      url: 'git@github.com:org/repo.git',
+      branch: 'main',
+    });
+  });
+});
+
+describe('getClonePath', () => {
+  it('converts HTTPS URL to cache path', () => {
+    const result = getClonePath('https://github.com/org/repo.git');
+    expect(result).toBe('/mock/config/clones/github.com/org/repo');
+  });
+
+  it('converts SSH URL to same cache path', () => {
+    const result = getClonePath('git@github.com:org/repo.git');
+    expect(result).toBe('/mock/config/clones/github.com/org/repo');
+  });
+});
+
+describe('cloneOrFetch', () => {
+  it('clones bare repo when path does not exist', () => {
+    mockExistsSync.mockReturnValue(false);
+
+    const result = cloneOrFetch('https://github.com/org/repo.git');
+
+    expect(mockMkdirSync).toHaveBeenCalledWith(
+      expect.stringContaining('github.com/org/repo'),
+      { recursive: true },
+    );
+    expect(mockExecSync).toHaveBeenCalledWith(
+      expect.stringContaining('git clone --bare'),
+      expect.objectContaining({ encoding: 'utf-8', stdio: 'pipe' }),
+    );
+    expect(result).toContain('github.com/org/repo');
+  });
+
+  it('fetches when bare clone already exists', () => {
+    mockExistsSync.mockReturnValue(true);
+
+    cloneOrFetch('https://github.com/org/repo.git');
+
+    expect(mockExecSync).toHaveBeenCalledWith(
+      'git fetch --all --prune',
+      expect.objectContaining({
+        cwd: expect.stringContaining('github.com/org/repo'),
+      }),
+    );
+    expect(mockMkdirSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveRemoteProject', () => {
+  it('returns correct ProjectRef with name, path, branch, remote', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('/mock/config/clones/github.com/org/repo')) return true;
+      if (s.includes('worktrees-checkout')) return false;
+      return false;
+    });
+    mockExecSync.mockImplementation((cmd) => {
+      const c = String(cmd);
+      if (c.includes('fetch --all')) return '';
+      if (c.includes('symbolic-ref')) return 'refs/heads/main';
+      if (c.includes('worktree add')) return '';
+      return '';
+    });
+
+    const ref = resolveRemoteProject('org/repo');
+
+    expect(ref.name).toBe('repo');
+    expect(ref.branch).toBe('main');
+    expect(ref.remote).toBe('https://github.com/org/repo.git');
+    expect(ref.path).toContain('worktrees-checkout/main');
+  });
+
+  it('creates worktree when it does not exist', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('/mock/config/clones/github.com/org/repo')) return true;
+      return false;
+    });
+    mockExecSync.mockImplementation((cmd) => {
+      const c = String(cmd);
+      if (c.includes('fetch --all')) return '';
+      if (c.includes('symbolic-ref')) return 'refs/heads/main';
+      if (c.includes('worktree add')) return '';
+      return '';
+    });
+
+    resolveRemoteProject('org/repo');
+
+    expect(mockExecSync).toHaveBeenCalledWith(
+      expect.stringContaining('git worktree add'),
+      expect.objectContaining({ encoding: 'utf-8', stdio: 'pipe' }),
+    );
+  });
+
+  it('uses explicit branch and skips default branch detection', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('/mock/config/clones/github.com/org/repo')) return true;
+      return false;
+    });
+    mockExecSync.mockImplementation((cmd) => {
+      const c = String(cmd);
+      if (c.includes('fetch --all')) return '';
+      if (c.includes('worktree add')) return '';
+      return '';
+    });
+
+    const ref = resolveRemoteProject('org/repo:develop');
+
+    expect(ref.branch).toBe('develop');
+    expect(mockExecSync).not.toHaveBeenCalledWith(
+      expect.stringContaining('symbolic-ref'),
+      expect.anything(),
+    );
+  });
+});
+
+describe('pruneClones', () => {
+  it('removes directories older than threshold', () => {
+    const clonesDir = '/mock/config/clones';
+    mockExistsSync.mockImplementation((p) => String(p) === clonesDir);
+    mockReaddirSync.mockReturnValue([
+      { name: 'old-host', isDirectory: () => true } as never,
+      { name: 'new-host', isDirectory: () => true } as never,
+    ]);
+
+    const oldDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+    const newDate = new Date();
+    mockStatSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.includes('old-host')) return { mtime: oldDate } as never;
+      return { mtime: newDate } as never;
+    });
+
+    const removed = pruneClones(30);
+
+    expect(removed).toHaveLength(1);
+    expect(removed[0]).toContain('old-host');
+    expect(mockRmSync).toHaveBeenCalledWith(
+      expect.stringContaining('old-host'),
+      { recursive: true, force: true },
+    );
+    expect(mockRmSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns empty array when clones dir does not exist', () => {
+    mockExistsSync.mockReturnValue(false);
+    expect(pruneClones()).toEqual([]);
   });
 });
