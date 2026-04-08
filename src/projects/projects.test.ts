@@ -86,7 +86,7 @@ describe('saveProjects', () => {
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       '/mock/config/projects.json',
       JSON.stringify(projects, null, 2) + '\n',
-      'utf-8',
+      'utf-8'
     );
   });
 });
@@ -180,9 +180,7 @@ describe('discoverProjects', () => {
       if (s === '/root/worktree/.git') return true;
       return false;
     });
-    mockReaddirSync.mockReturnValue([
-      { name: 'worktree', isDirectory: () => true } as never,
-    ]);
+    mockReaddirSync.mockReturnValue([{ name: 'worktree', isDirectory: () => true } as never]);
     mockStatSync.mockReturnValue({ isDirectory: () => false } as never);
 
     const result = discoverProjects('/root');
@@ -197,9 +195,7 @@ describe('discoverProjects', () => {
       if (s === '/root/my-lib/package.json') return true;
       return false;
     });
-    mockReaddirSync.mockReturnValue([
-      { name: 'my-lib', isDirectory: () => true } as never,
-    ]);
+    mockReaddirSync.mockReturnValue([{ name: 'my-lib', isDirectory: () => true } as never]);
     mockStatSync.mockReturnValue({ isDirectory: () => true } as never);
     mockReadFileSync.mockReturnValue(JSON.stringify({ name: '@scope/my-lib' }));
 
@@ -208,9 +204,7 @@ describe('discoverProjects', () => {
   });
 
   it('merges with existing projects without overwriting', () => {
-    const existing: Project[] = [
-      { name: 'manual', path: '/root/repo-a', discovered: false },
-    ];
+    const existing: Project[] = [{ name: 'manual', path: '/root/repo-a', discovered: false }];
     mockExistsSync.mockImplementation((p) => {
       const s = String(p);
       if (s.endsWith('projects.json')) return true;
@@ -218,9 +212,7 @@ describe('discoverProjects', () => {
       return false;
     });
     mockReadFileSync.mockReturnValue(JSON.stringify(existing));
-    mockReaddirSync.mockReturnValue([
-      { name: 'repo-a', isDirectory: () => true } as never,
-    ]);
+    mockReaddirSync.mockReturnValue([{ name: 'repo-a', isDirectory: () => true } as never]);
     mockStatSync.mockReturnValue({ isDirectory: () => true } as never);
 
     const result = discoverProjects('/root');
@@ -320,7 +312,7 @@ describe('resolveProject', () => {
     mockExecSync.mockReturnValue('worktree /projects/cli\nHEAD abc\nbranch refs/heads/master\n');
 
     expect(() => resolveProject('cli:nonexistent', projects)).toThrow(
-      'Worktree not found for branch: nonexistent',
+      'Worktree not found for branch: nonexistent'
     );
   });
 
@@ -335,9 +327,7 @@ describe('resolveProject', () => {
   });
 
   it('throws when project name not found', () => {
-    expect(() => resolveProject('nonexistent', projects)).toThrow(
-      'Project not found: nonexistent',
-    );
+    expect(() => resolveProject('nonexistent', projects)).toThrow('Project not found: nonexistent');
   });
 
   it('resolves git URL through remote resolution', () => {
@@ -439,13 +429,12 @@ describe('cloneOrFetch', () => {
 
     const result = cloneOrFetch('https://github.com/org/repo.git');
 
-    expect(mockMkdirSync).toHaveBeenCalledWith(
-      expect.stringContaining('github.com/org/repo'),
-      { recursive: true },
-    );
+    expect(mockMkdirSync).toHaveBeenCalledWith(expect.stringContaining('github.com/org/repo'), {
+      recursive: true,
+    });
     expect(mockExecSync).toHaveBeenCalledWith(
       expect.stringContaining('git clone --bare'),
-      expect.objectContaining({ encoding: 'utf-8', stdio: 'pipe' }),
+      expect.objectContaining({ encoding: 'utf-8', stdio: 'pipe' })
     );
     expect(result).toContain('github.com/org/repo');
   });
@@ -459,7 +448,7 @@ describe('cloneOrFetch', () => {
       'git fetch --all --prune',
       expect.objectContaining({
         cwd: expect.stringContaining('github.com/org/repo'),
-      }),
+      })
     );
     expect(mockMkdirSync).not.toHaveBeenCalled();
   });
@@ -507,7 +496,7 @@ describe('resolveRemoteProject', () => {
 
     expect(mockExecSync).toHaveBeenCalledWith(
       expect.stringContaining('git worktree add'),
-      expect.objectContaining({ encoding: 'utf-8', stdio: 'pipe' }),
+      expect.objectContaining({ encoding: 'utf-8', stdio: 'pipe' })
     );
   });
 
@@ -529,7 +518,7 @@ describe('resolveRemoteProject', () => {
     expect(ref.branch).toBe('develop');
     expect(mockExecSync).not.toHaveBeenCalledWith(
       expect.stringContaining('symbolic-ref'),
-      expect.anything(),
+      expect.anything()
     );
   });
 });
@@ -555,10 +544,10 @@ describe('pruneClones', () => {
 
     expect(removed).toHaveLength(1);
     expect(removed[0]).toContain('old-host');
-    expect(mockRmSync).toHaveBeenCalledWith(
-      expect.stringContaining('old-host'),
-      { recursive: true, force: true },
-    );
+    expect(mockRmSync).toHaveBeenCalledWith(expect.stringContaining('old-host'), {
+      recursive: true,
+      force: true,
+    });
     expect(mockRmSync).toHaveBeenCalledTimes(1);
   });
 

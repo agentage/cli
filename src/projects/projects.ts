@@ -265,10 +265,7 @@ export const pruneClones = (maxAgeDays = 30): string[] => {
   return removed;
 };
 
-export const resolveProject = (
-  input: string | undefined,
-  projects: Project[],
-): ProjectRef => {
+export const resolveProject = (input: string | undefined, projects: Project[]): ProjectRef => {
   if (input === undefined) {
     const cwd = process.cwd();
     const match = projects.find((p) => cwd.startsWith(p.path));
