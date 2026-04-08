@@ -13,6 +13,7 @@ export interface HubClient {
     machineId: string,
     data: {
       agents: Array<{ name: string; description?: string; version?: string; tags?: string[] }>;
+      projects?: Array<{ name: string; path: string }>;
       activeRunIds: string[];
       daemonVersion: string;
     }

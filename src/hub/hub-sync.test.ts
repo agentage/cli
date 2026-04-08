@@ -40,6 +40,10 @@ vi.mock('../utils/version.js', () => ({
   VERSION: '0.7.1',
 }));
 
+vi.mock('../projects/projects.js', () => ({
+  loadProjects: vi.fn(),
+}));
+
 import { readAuth } from './auth.js';
 import { createHubClient } from './hub-client.js';
 import { createHubWs } from './hub-ws.js';
@@ -47,7 +51,10 @@ import { createReconnector } from './reconnection.js';
 import { loadConfig } from '../daemon/config.js';
 import { getAgents } from '../daemon/routes.js';
 import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
+import { loadProjects } from '../projects/projects.js';
 import { createHubSync, resetHubSync, getHubSync } from './hub-sync.js';
+
+const mockLoadProjects = vi.mocked(loadProjects);
 
 const mockReadAuth = vi.mocked(readAuth);
 const mockCreateHubClient = vi.mocked(createHubClient);
@@ -117,6 +124,7 @@ describe('hub-sync', () => {
     >);
     mockGetAgents.mockReturnValue([]);
     mockGetRuns.mockReturnValue([]);
+    mockLoadProjects.mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -182,7 +190,7 @@ describe('hub-sync', () => {
   });
 
   describe('heartbeat', () => {
-    it('sends agents and active runs in heartbeat', async () => {
+    it('sends agents, projects, and active runs in heartbeat', async () => {
       mockReadAuth.mockReturnValue(testAuth);
       mockGetAgents.mockReturnValue([
         { manifest: { name: 'hello', description: 'Hi', version: '1.0', tags: ['chat'] } },
@@ -191,6 +199,10 @@ describe('hub-sync', () => {
         { id: 'run-1', state: 'working' },
         { id: 'run-2', state: 'completed' },
       ] as ReturnType<typeof getRuns>);
+      mockLoadProjects.mockReturnValue([
+        { name: 'proj-a', path: '/home/user/proj-a', discovered: false },
+        { name: 'proj-b', path: '/home/user/proj-b', discovered: true },
+      ]);
 
       const sync = createHubSync();
       await sync.start();
@@ -198,6 +210,10 @@ describe('hub-sync', () => {
 
       expect(mockHubClient.heartbeat).toHaveBeenCalledWith('machine-1', {
         agents: [{ name: 'hello', description: 'Hi', version: '1.0', tags: ['chat'] }],
+        projects: [
+          { name: 'proj-a', path: '/home/user/proj-a' },
+          { name: 'proj-b', path: '/home/user/proj-b' },
+        ],
         activeRunIds: ['run-1'],
         daemonVersion: '0.7.1',
       });

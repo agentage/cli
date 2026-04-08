@@ -6,6 +6,7 @@ import { get } from '../utils/daemon-client.js';
 import { getDaemonPid } from '../daemon/daemon.js';
 import { loadConfig, saveConfig } from '../daemon/config.js';
 import { checkForUpdateSafe } from '../utils/update-checker.js';
+import { loadProjects } from '../projects/projects.js';
 
 interface HealthResponse {
   status: string;
@@ -47,6 +48,8 @@ export const registerStatus = (program: Command): void => {
       const config = loadConfig();
       const dirs = config.discovery.dirs;
 
+      const projects = loadProjects();
+
       if (opts.json) {
         console.log(
           JSON.stringify(
@@ -66,6 +69,7 @@ export const registerStatus = (program: Command): void => {
               },
               machine: health.machineId,
               agents: agents.length,
+              projects: projects.length,
               runs: runs.length,
               discoveryDirs: dirs,
             },
@@ -102,6 +106,7 @@ export const registerStatus = (program: Command): void => {
 
       console.log(`Machine:    ${health.machineId}`);
       console.log(`Agents:     ${agents.length} discovered`);
+      console.log(`Projects:   ${projects.length} registered`);
       console.log(`Runs:       ${activeRuns} active`);
 
       if (dirs.length > 0) {

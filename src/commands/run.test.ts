@@ -17,9 +17,19 @@ vi.mock('../utils/render.js', () => ({
   renderEvent: vi.fn(),
 }));
 
+vi.mock('../projects/projects.js', () => ({
+  loadProjects: vi
+    .fn()
+    .mockReturnValue([{ name: 'my-project', path: '/home/user/my-project', discovered: false }]),
+  resolveProject: vi.fn().mockReturnValue({ name: 'my-project', path: '/home/user/my-project' }),
+}));
+
 import { get, post, connectWs } from '../utils/daemon-client.js';
 import { renderEvent } from '../utils/render.js';
+import { resolveProject } from '../projects/projects.js';
 import { registerRun } from './run.js';
+
+const mockResolveProject = vi.mocked(resolveProject);
 
 const mockGet = vi.mocked(get);
 const mockPost = vi.mocked(post);
@@ -43,6 +53,7 @@ describe('run command', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    mockResolveProject.mockReturnValue({ name: 'my-project', path: '/home/user/my-project' });
     logs = [];
     errorLogs = [];
     vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
@@ -100,6 +111,7 @@ describe('run command', () => {
         task: 'do stuff',
         config: undefined,
         context: undefined,
+        project: { name: 'my-project', path: '/home/user/my-project' },
       });
       expect(mockRenderEvent).toHaveBeenCalledWith({ type: 'output', data: 'hi' });
       expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ type: 'subscribe', runId: 'run-123' }));
@@ -158,6 +170,44 @@ describe('run command', () => {
       expect(mockRenderEvent).not.toHaveBeenCalled();
     });
 
+    it('passes --project option to daemon', async () => {
+      mockResolveProject.mockReturnValue({
+        name: 'cli',
+        path: '/home/user/cli',
+        branch: 'main',
+      });
+      mockPost.mockResolvedValue({ runId: 'run-proj' });
+
+      const ws = createMockWs();
+      mockConnectWs.mockImplementation((cb) => {
+        setTimeout(() => {
+          ws.emit('open');
+          cb({ type: 'run_state', run: { id: 'run-proj', state: 'completed' } });
+        }, 10);
+        return ws;
+      });
+
+      const parsePromise = program.parseAsync([
+        'node',
+        'agentage',
+        'run',
+        'hello',
+        'do stuff',
+        '--project',
+        'cli',
+      ]);
+      await vi.advanceTimersByTimeAsync(200);
+      await parsePromise.catch(() => {});
+
+      expect(mockResolveProject).toHaveBeenCalledWith('cli', expect.any(Array));
+      expect(mockPost).toHaveBeenCalledWith('/api/agents/hello/run', {
+        task: 'do stuff',
+        config: undefined,
+        context: undefined,
+        project: { name: 'cli', path: '/home/user/cli', branch: 'main' },
+      });
+    });
+
     it('passes config and context options', async () => {
       mockPost.mockResolvedValue({ runId: 'run-cfg' });
 
@@ -189,6 +239,7 @@ describe('run command', () => {
         task: 'do stuff',
         config: { model: 'gpt-4' },
         context: ['file1.ts', 'file2.ts'],
+        project: { name: 'my-project', path: '/home/user/my-project' },
       });
     });
 
@@ -259,6 +310,7 @@ describe('run command', () => {
         machineId: 'm1',
         agentName: 'hello',
         input: 'do stuff',
+        project: { name: 'my-project', path: '/home/user/my-project' },
       });
       expect(logs).toContain('remote-run-1');
     });

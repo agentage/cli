@@ -74,7 +74,8 @@ export const startRun = async (
   agent: Agent,
   task: string,
   config?: Record<string, unknown>,
-  context?: string[]
+  context?: string[],
+  project?: { name: string; path: string; branch?: string; remote?: string }
 ): Promise<string> => {
   const runId = randomUUID();
   const run: Run = {
@@ -87,7 +88,8 @@ export const startRun = async (
 
   logInfo(`Starting run ${runId} for agent "${agent.manifest.name}"`);
 
-  const process = await agent.run({ task, config, context });
+  const runInput = { task, config, context, ...(project && { project }) };
+  const process = await agent.run(runInput);
   const tracked: TrackedRun = { run, process };
   runs.set(runId, tracked);
 

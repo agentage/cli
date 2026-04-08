@@ -7,6 +7,7 @@ import { createReconnector, type Reconnector } from './reconnection.js';
 import { logInfo, logWarn } from '../daemon/logger.js';
 import { getAgents } from '../daemon/routes.js';
 import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
+import { loadProjects } from '../projects/projects.js';
 
 import { VERSION } from '../utils/version.js';
 import { refreshTokenIfNeeded } from './token-refresh.js';
@@ -81,12 +82,15 @@ export const createHubSync = (): HubSync => {
       tags: a.manifest.tags,
     }));
 
+    const projects = loadProjects().map((p) => ({ name: p.name, path: p.path }));
+
     const activeRunIds = getRuns()
       .filter((r) => r.state === 'working' || r.state === 'submitted')
       .map((r) => r.id);
 
     const response = await hubClient.heartbeat(auth.hub.machineId, {
       agents,
+      projects,
       activeRunIds,
       daemonVersion: VERSION,
     });

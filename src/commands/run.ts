@@ -4,6 +4,7 @@ import { type RunEvent } from '@agentage/core';
 import { ensureDaemon } from '../utils/ensure-daemon.js';
 import { connectWs, get, post } from '../utils/daemon-client.js';
 import { renderEvent } from '../utils/render.js';
+import { loadProjects, resolveProject } from '../projects/projects.js';
 
 interface RunResponse {
   runId: string;
@@ -45,11 +46,18 @@ export const registerRun = (program: Command): void => {
     .option('--json', 'Output events as JSON lines')
     .option('--config <json>', 'Per-run config overrides (JSON)')
     .option('--context <paths...>', 'Additional context files')
+    .option('--project <name-or-path>', 'Project context (name, name:branch, or path)')
     .action(
       async (
         agent: string,
         prompt: string | undefined,
-        opts: { detach?: boolean; json?: boolean; config?: string; context?: string[] }
+        opts: {
+          detach?: boolean;
+          json?: boolean;
+          config?: string;
+          context?: string[];
+          project?: string;
+        }
       ) => {
         await ensureDaemon();
 
@@ -60,11 +68,12 @@ export const registerRun = (program: Command): void => {
         }
 
         const { agentName, machineName } = parseAgentTarget(agent);
+        const project = resolveProject(opts.project, loadProjects());
 
         if (machineName) {
-          await runRemote(agentName, machineName, prompt, opts);
+          await runRemote(agentName, machineName, prompt, opts, project);
         } else {
-          await runLocal(agentName, prompt, opts);
+          await runLocal(agentName, prompt, opts, project);
         }
         // Let the event loop drain pending writes, then exit
         setTimeout(() => process.exit(process.exitCode ?? 0), 100);
@@ -75,7 +84,8 @@ export const registerRun = (program: Command): void => {
 const runLocal = async (
   agentName: string,
   prompt: string,
-  opts: { detach?: boolean; json?: boolean; config?: string; context?: string[] }
+  opts: { detach?: boolean; json?: boolean; config?: string; context?: string[] },
+  project?: { name: string; path: string; branch?: string; remote?: string }
 ): Promise<void> => {
   const config = opts.config ? (JSON.parse(opts.config) as Record<string, unknown>) : undefined;
 
@@ -83,6 +93,7 @@ const runLocal = async (
     task: prompt,
     config,
     context: opts.context,
+    project,
   });
 
   if (opts.detach) {
@@ -97,7 +108,8 @@ const runRemote = async (
   agentName: string,
   machineName: string,
   prompt: string,
-  opts: { detach?: boolean; json?: boolean }
+  opts: { detach?: boolean; json?: boolean },
+  project?: { name: string; path: string; branch?: string; remote?: string }
 ): Promise<void> => {
   // Resolve machine name to machine ID
   let machines: Array<{ id: string; name: string }>;
@@ -124,6 +136,7 @@ const runRemote = async (
       machineId: machine.id,
       agentName,
       input: prompt,
+      project,
     });
   } catch (err) {
     console.error(
