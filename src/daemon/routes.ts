@@ -39,6 +39,7 @@ export const createRoutes = (): Router => {
       uptime: Math.floor((Date.now() - startTime) / 1000),
       machineId: config.machine.id,
       hubConnected: hubSync.isConnected(),
+      hubConnecting: hubSync.isConnecting(),
       hubUrl: auth?.hub?.url ?? null,
       userEmail: auth?.user?.email ?? null,
     });

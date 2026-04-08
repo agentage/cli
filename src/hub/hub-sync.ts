@@ -17,6 +17,7 @@ export interface HubSync {
   start: () => Promise<void>;
   stop: () => Promise<void>;
   isConnected: () => boolean;
+  isConnecting: () => boolean;
   triggerHeartbeat: () => Promise<void>;
 }
 
@@ -26,6 +27,7 @@ export const createHubSync = (): HubSync => {
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   let reconnector: Reconnector | null = null;
   let connected = false;
+  let connecting = false;
 
   const connectAll = async (auth: AuthState): Promise<void> => {
     const config = loadConfig();
@@ -47,15 +49,26 @@ export const createHubSync = (): HubSync => {
     logInfo(`Registered with hub as machine ${result.machineId}`);
 
     // Connect WebSocket
-    hubWs = createHubWs(auth.hub.url, auth.session.access_token, auth.hub.machineId, () => {
-      // On disconnect — trigger reconnection
-      connected = false;
-      logWarn('[hub-sync] WS disconnected, will reconnect via heartbeat');
-      reconnector?.start();
-    });
+    connecting = true;
+    hubWs = createHubWs(
+      auth.hub.url,
+      auth.session.access_token,
+      auth.hub.machineId,
+      () => {
+        // On disconnect — trigger reconnection
+        connected = false;
+        connecting = true;
+        logWarn('[hub-sync] WS disconnected, will reconnect via heartbeat');
+        reconnector?.start();
+      },
+      () => {
+        // On connect — mark as connected
+        connected = true;
+        connecting = false;
+      }
+    );
 
     hubWs.connect();
-    connected = true;
   };
 
   const sendHeartbeat = async (auth: AuthState): Promise<void> => {
@@ -144,6 +157,7 @@ export const createHubSync = (): HubSync => {
           `Initial hub connection failed: ${err instanceof Error ? err.message : String(err)}. Will retry.`
         );
         connected = false;
+        connecting = false;
         reconnector.start();
       }
     },
@@ -177,10 +191,12 @@ export const createHubSync = (): HubSync => {
       }
 
       connected = false;
+      connecting = false;
       hubClient = null;
     },
 
     isConnected: () => connected,
+    isConnecting: () => connecting,
 
     triggerHeartbeat: async () => {
       const auth = readAuth();

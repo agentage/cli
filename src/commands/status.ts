@@ -13,6 +13,7 @@ interface HealthResponse {
   uptime: number;
   machineId: string;
   hubConnected: boolean;
+  hubConnecting: boolean;
   hubUrl: string | null;
   userEmail: string | null;
 }
@@ -59,6 +60,7 @@ export const registerStatus = (program: Command): void => {
               uptime: health.uptime,
               hub: {
                 connected: health.hubConnected,
+                connecting: health.hubConnecting,
                 url: health.hubUrl,
                 userEmail: health.userEmail,
               },
@@ -87,6 +89,9 @@ export const registerStatus = (program: Command): void => {
 
       if (health.hubConnected) {
         console.log(`Hub:        ${chalk.green('connected')} (${health.hubUrl})`);
+        console.log(`User:       ${health.userEmail}`);
+      } else if (health.hubConnecting) {
+        console.log(`Hub:        ${chalk.cyan('connecting')} (${health.hubUrl})`);
         console.log(`User:       ${health.userEmail}`);
       } else if (health.hubUrl) {
         console.log(`Hub:        ${chalk.yellow('disconnected')} (${health.hubUrl})`);

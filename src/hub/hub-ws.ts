@@ -40,7 +40,8 @@ export const createHubWs = (
   hubUrl: string,
   token: string,
   machineId: string,
-  onDisconnect?: () => void
+  onDisconnect?: () => void,
+  onConnect?: () => void
 ): HubWs => {
   let ws: WebSocket | null = null;
   let connected = false;
@@ -150,6 +151,7 @@ export const createHubWs = (
       ws.on('open', () => {
         connected = true;
         logInfo('[hub-ws] Connected to hub');
+        onConnect?.();
       });
 
       ws.on('message', handleMessage);
