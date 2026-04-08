@@ -25,6 +25,9 @@ export interface DaemonConfig {
   hub?: {
     url: string;
   };
+  projects?: {
+    roots: string[];
+  };
   discovery: {
     dirs: string[];
   };
