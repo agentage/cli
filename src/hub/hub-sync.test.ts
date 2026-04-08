@@ -79,6 +79,7 @@ describe('hub-sync', () => {
   };
   let mockWs: { connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
   let mockReconnector: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> };
+  let capturedOnConnect: (() => void) | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -103,7 +104,11 @@ describe('hub-sync', () => {
     mockCreateHubClient.mockReturnValue(
       mockHubClient as unknown as ReturnType<typeof createHubClient>
     );
-    mockCreateHubWs.mockReturnValue(mockWs as unknown as ReturnType<typeof createHubWs>);
+    capturedOnConnect = undefined;
+    mockCreateHubWs.mockImplementation((_url, _token, _machineId, _onDisconnect, onConnect) => {
+      capturedOnConnect = onConnect;
+      return mockWs as unknown as ReturnType<typeof createHubWs>;
+    });
     mockCreateReconnector.mockReturnValue(
       mockReconnector as unknown as ReturnType<typeof createReconnector>
     );
@@ -139,7 +144,13 @@ describe('hub-sync', () => {
         expect.objectContaining({ id: 'machine-1', name: 'test-pc' })
       );
       expect(mockWs.connect).toHaveBeenCalled();
+      expect(sync.isConnecting()).toBe(true);
+      expect(sync.isConnected()).toBe(false);
+
+      // Simulate WS open event
+      capturedOnConnect?.();
       expect(sync.isConnected()).toBe(true);
+      expect(sync.isConnecting()).toBe(false);
     });
 
     it('starts reconnection on initial connection failure', async () => {
@@ -159,6 +170,7 @@ describe('hub-sync', () => {
       mockReadAuth.mockReturnValue(testAuth);
       const sync = createHubSync();
       await sync.start();
+      capturedOnConnect?.();
 
       await sync.stop();
 

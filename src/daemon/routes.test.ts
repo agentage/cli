@@ -79,6 +79,7 @@ describe('daemon routes', () => {
 
     mockGetHubSync.mockReturnValue({
       isConnected: () => false,
+      isConnecting: () => false,
       start: vi.fn(),
       stop: vi.fn(),
       triggerHeartbeat: vi.fn().mockResolvedValue(undefined),

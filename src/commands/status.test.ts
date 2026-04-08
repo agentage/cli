@@ -72,6 +72,7 @@ describe('status command', () => {
     uptime: 3661,
     machineId: 'machine-123',
     hubConnected: false,
+    hubConnecting: false,
     hubUrl: null,
     userEmail: null,
   };
@@ -124,6 +125,25 @@ describe('status command', () => {
     await program.parseAsync(['node', 'agentage', 'status']);
 
     expect(logs.some((l) => l.includes('disconnected'))).toBe(true);
+  });
+
+  it('displays connecting when hub connection is in progress', async () => {
+    mockGet.mockImplementation(async (path: string) => {
+      if (path === '/api/health')
+        return {
+          ...baseHealth,
+          hubConnecting: true,
+          hubUrl: 'https://agentage.io',
+          userEmail: 'v@test.com',
+        };
+      return [];
+    });
+    mockGetDaemonPid.mockReturnValue(42);
+
+    await program.parseAsync(['node', 'agentage', 'status']);
+
+    expect(logs.some((l) => l.includes('connecting'))).toBe(true);
+    expect(logs.some((l) => l.includes('v@test.com'))).toBe(true);
   });
 
   it('formats uptime as minutes only', async () => {
