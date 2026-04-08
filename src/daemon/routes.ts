@@ -8,6 +8,7 @@ import { createHubClient } from '../hub/hub-client.js';
 import { getLastScanWarnings } from '../discovery/scanner.js';
 
 import { VERSION } from '../utils/version.js';
+import { loadProjects } from '../projects/projects.js';
 
 const startTime = Date.now();
 
@@ -81,13 +82,19 @@ export const createRoutes = (): Router => {
     }
   });
 
+  router.get('/api/projects', (_req, res) => {
+    const projects = loadProjects();
+    res.json(projects);
+  });
+
   router.post('/api/agents/:name/run', async (req, res) => {
     try {
       const { name } = req.params;
-      const { task, config, context } = req.body as {
+      const { task, config, context, project } = req.body as {
         task?: string;
         config?: Record<string, unknown>;
         context?: string[];
+        project?: { name: string; path: string; branch?: string; remote?: string };
       };
 
       if (!task) {
@@ -101,7 +108,7 @@ export const createRoutes = (): Router => {
         return;
       }
 
-      const runId = await startRun(agent, task, config, context);
+      const runId = await startRun(agent, task, config, context, project);
       res.json({ runId });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

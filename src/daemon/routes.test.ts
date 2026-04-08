@@ -30,12 +30,19 @@ vi.mock('../utils/version.js', () => ({
   VERSION: '0.7.1',
 }));
 
+vi.mock('../projects/projects.js', () => ({
+  loadProjects: vi.fn(),
+}));
+
 import { loadConfig } from './config.js';
 import { startRun, getRun, getRuns, cancelRun, sendInput } from './run-manager.js';
 import { getHubSync } from '../hub/hub-sync.js';
 import { readAuth } from '../hub/auth.js';
 import { createHubClient } from '../hub/hub-client.js';
+import { loadProjects } from '../projects/projects.js';
 import { createRoutes, setAgents, setRefreshHandler } from './routes.js';
+
+const mockLoadProjects = vi.mocked(loadProjects);
 
 const mockLoadConfig = vi.mocked(loadConfig);
 const mockGetRuns = vi.mocked(getRuns);
@@ -87,6 +94,7 @@ describe('daemon routes', () => {
 
     mockReadAuth.mockReturnValue(null);
     mockGetRuns.mockReturnValue([]);
+    mockLoadProjects.mockReturnValue([]);
     setAgents([]);
 
     const app = express();
@@ -174,6 +182,49 @@ describe('daemon routes', () => {
 
       expect(status).toBe(404);
       expect(data.error).toContain('missing');
+    });
+
+    it('passes project to startRun', async () => {
+      setAgents([
+        {
+          manifest: { name: 'hello', description: 'Hi', path: '/test' },
+          run: vi.fn(),
+        },
+      ] as Parameters<typeof setAgents>[0]);
+      mockStartRun.mockResolvedValue('run-proj-1');
+
+      const project = { name: 'my-project', path: '/home/user/my-project', branch: 'main' };
+      const { status, data } = await request(server, 'POST', '/api/agents/hello/run', {
+        task: 'build it',
+        project,
+      });
+
+      expect(status).toBe(200);
+      expect(data.runId).toBe('run-proj-1');
+      expect(mockStartRun).toHaveBeenCalledWith(
+        expect.objectContaining({ manifest: expect.objectContaining({ name: 'hello' }) }),
+        'build it',
+        undefined,
+        undefined,
+        project
+      );
+    });
+  });
+
+  describe('GET /api/projects', () => {
+    it('returns the project list', async () => {
+      mockLoadProjects.mockReturnValue([
+        { name: 'proj-a', path: '/home/user/proj-a', discovered: false },
+        { name: 'proj-b', path: '/home/user/proj-b', discovered: true },
+      ]);
+
+      const { status, data } = await request(server, 'GET', '/api/projects');
+
+      expect(status).toBe(200);
+      expect(data).toEqual([
+        { name: 'proj-a', path: '/home/user/proj-a', discovered: false },
+        { name: 'proj-b', path: '/home/user/proj-b', discovered: true },
+      ]);
     });
   });
 

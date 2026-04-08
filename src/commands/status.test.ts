@@ -18,10 +18,17 @@ vi.mock('../daemon/config.js', () => ({
   saveConfig: vi.fn(),
 }));
 
+vi.mock('../projects/projects.js', () => ({
+  loadProjects: vi.fn(),
+}));
+
 import { get } from '../utils/daemon-client.js';
 import { getDaemonPid } from '../daemon/daemon.js';
 import { loadConfig, saveConfig } from '../daemon/config.js';
+import { loadProjects } from '../projects/projects.js';
 import { registerStatus } from './status.js';
+
+const mockLoadProjects = vi.mocked(loadProjects);
 
 const mockGet = vi.mocked(get);
 const mockGetDaemonPid = vi.mocked(getDaemonPid);
@@ -60,6 +67,7 @@ describe('status command', () => {
       logs.push(args.map(String).join(' '));
     });
     mockLoadConfig.mockReturnValue(structuredClone(defaultConfig));
+    mockLoadProjects.mockReturnValue([]);
 
     program = new Command();
     program.exitOverride();
@@ -112,6 +120,37 @@ describe('status command', () => {
     await program.parseAsync(['node', 'agentage', 'status']);
 
     expect(logs.some((l) => l.includes('standalone mode'))).toBe(true);
+  });
+
+  it('displays projects count in status', async () => {
+    mockGet.mockImplementation(async (path: string) => {
+      if (path === '/api/health') return baseHealth;
+      return [];
+    });
+    mockGetDaemonPid.mockReturnValue(42);
+    mockLoadProjects.mockReturnValue([
+      { name: 'proj-a', path: '/a', discovered: false },
+      { name: 'proj-b', path: '/b', discovered: true },
+    ]);
+
+    await program.parseAsync(['node', 'agentage', 'status']);
+
+    expect(logs.some((l) => l.includes('Projects:') && l.includes('2 registered'))).toBe(true);
+  });
+
+  it('includes projects in JSON output', async () => {
+    mockGet.mockImplementation(async (path: string) => {
+      if (path === '/api/health') return baseHealth;
+      if (path === '/api/agents') return [{}];
+      return [];
+    });
+    mockGetDaemonPid.mockReturnValue(42);
+    mockLoadProjects.mockReturnValue([{ name: 'p', path: '/p', discovered: false }]);
+
+    await program.parseAsync(['node', 'agentage', 'status', '--json']);
+
+    const parsed = JSON.parse(logs[0]!);
+    expect(parsed.projects).toBe(1);
   });
 
   it('displays disconnected when hubUrl set but not connected', async () => {
