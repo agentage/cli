@@ -1,0 +1,299 @@
+import { execSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, isAbsolute, join, resolve } from 'node:path';
+import { getConfigDir } from '../daemon/config.js';
+
+export interface Project {
+  name: string;
+  path: string;
+  discovered: boolean;
+}
+
+export interface Worktree {
+  branch: string;
+  path: string;
+}
+
+export interface ProjectRef {
+  name: string;
+  path: string;
+  branch?: string;
+  remote?: string;
+}
+
+const getProjectsPath = (): string => join(getConfigDir(), 'projects.json');
+
+const deriveNameFromDir = (dirPath: string): string => {
+  const pkgPath = join(dirPath, 'package.json');
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { name?: string };
+      if (pkg.name) {
+        return pkg.name.replace(/^@[^/]+\//, '');
+      }
+    } catch {
+      // fall through to basename
+    }
+  }
+  return basename(dirPath);
+};
+
+export const loadProjects = (): Project[] => {
+  const path = getProjectsPath();
+  if (!existsSync(path)) return [];
+
+  try {
+    const raw = readFileSync(path, 'utf-8');
+    return JSON.parse(raw) as Project[];
+  } catch {
+    return [];
+  }
+};
+
+export const saveProjects = (projects: Project[]): void => {
+  writeFileSync(getProjectsPath(), JSON.stringify(projects, null, 2) + '\n', 'utf-8');
+};
+
+export const addProject = (projectPath: string): Project => {
+  const absPath = resolve(projectPath);
+  const projects = loadProjects();
+  const existing = projects.find((p) => p.path === absPath);
+  if (existing) return existing;
+
+  const name = deriveNameFromDir(absPath);
+  const discovered = false;
+  const project: Project = { name, path: absPath, discovered };
+  projects.push(project);
+  saveProjects(projects);
+  return project;
+};
+
+export const removeProject = (name: string): boolean => {
+  const projects = loadProjects();
+  const index = projects.findIndex((p) => p.name === name);
+  if (index === -1) return false;
+
+  projects.splice(index, 1);
+  saveProjects(projects);
+  return true;
+};
+
+export const discoverProjects = (rootDir: string): Project[] => {
+  const entries = readdirSync(rootDir, { withFileTypes: true });
+  const projects = loadProjects();
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const dirPath = join(rootDir, entry.name);
+    const gitPath = join(dirPath, '.git');
+
+    if (!existsSync(gitPath)) continue;
+    if (!statSync(gitPath).isDirectory()) continue;
+
+    if (projects.some((p) => p.path === dirPath)) continue;
+
+    const name = deriveNameFromDir(dirPath);
+    projects.push({ name, path: dirPath, discovered: true });
+  }
+
+  saveProjects(projects);
+  return projects;
+};
+
+export const getWorktrees = (projectPath: string): Worktree[] => {
+  try {
+    const output = execSync('git worktree list --porcelain', {
+      cwd: projectPath,
+      encoding: 'utf-8',
+    });
+
+    const blocks = output.trim().split('\n\n');
+    const worktrees: Worktree[] = [];
+
+    for (let i = 1; i < blocks.length; i++) {
+      const lines = blocks[i].split('\n');
+      let path = '';
+      let branch = '';
+
+      for (const line of lines) {
+        if (line.startsWith('worktree ')) {
+          path = line.slice('worktree '.length);
+        }
+        if (line.startsWith('branch refs/heads/')) {
+          branch = line.slice('branch refs/heads/'.length);
+        }
+      }
+
+      if (path && branch) {
+        worktrees.push({ branch, path });
+      }
+    }
+
+    return worktrees;
+  } catch {
+    return [];
+  }
+};
+
+const HTTPS_GIT_RE = /^https:\/\/.+\/.+/;
+const SSH_GIT_RE = /^git@[^:]+:.+/;
+const SHORTHAND_RE = /^[^./][^/\s]*\/[^/\s]+$/;
+
+export const isGitUrl = (input: string): boolean => {
+  if (HTTPS_GIT_RE.test(input)) return true;
+  if (SSH_GIT_RE.test(input)) return true;
+  const base = input.split(':')[0].split('#')[0];
+  return SHORTHAND_RE.test(base);
+};
+
+export const normalizeGitUrl = (input: string): { url: string; branch?: string } => {
+  if (SSH_GIT_RE.test(input)) {
+    const hashIdx = input.indexOf('#');
+    if (hashIdx !== -1) {
+      return { url: input.slice(0, hashIdx), branch: input.slice(hashIdx + 1) };
+    }
+    return { url: input };
+  }
+
+  if (HTTPS_GIT_RE.test(input)) {
+    return parseHttpsBranch(input);
+  }
+
+  return parseShorthand(input);
+};
+
+const parseHttpsBranch = (input: string): { url: string; branch?: string } => {
+  const domainEnd = input.indexOf('/', 8);
+  const afterDomain = domainEnd !== -1 ? input.slice(domainEnd) : '';
+  const colonIdx = afterDomain.lastIndexOf(':');
+  if (colonIdx !== -1) {
+    const url = input.slice(0, domainEnd + colonIdx);
+    const branch = afterDomain.slice(colonIdx + 1);
+    return { url, branch };
+  }
+  return { url: input };
+};
+
+const parseShorthand = (input: string): { url: string; branch?: string } => {
+  const colonIdx = input.indexOf(':');
+  if (colonIdx !== -1) {
+    const repo = input.slice(0, colonIdx);
+    const branch = input.slice(colonIdx + 1);
+    return { url: `https://github.com/${repo}.git`, branch };
+  }
+  return { url: `https://github.com/${input}.git` };
+};
+
+export const getClonesDir = (): string => join(getConfigDir(), 'clones');
+
+export const getClonePath = (url: string): string => {
+  const cleaned = url.replace(/\.git$/, '');
+  if (cleaned.startsWith('git@')) {
+    const afterAt = cleaned.slice(4);
+    const parts = afterAt.replace(':', '/');
+    return join(getClonesDir(), parts);
+  }
+  const withoutProtocol = cleaned.replace(/^https?:\/\//, '');
+  return join(getClonesDir(), withoutProtocol);
+};
+
+const execGit = (cmd: string, cwd?: string): string =>
+  execSync(cmd, { encoding: 'utf-8', stdio: 'pipe', cwd }).trim();
+
+export const cloneOrFetch = (url: string): string => {
+  const clonePath = getClonePath(url);
+  if (existsSync(clonePath)) {
+    execGit('git fetch --all --prune', clonePath);
+  } else {
+    mkdirSync(clonePath, { recursive: true });
+    execGit(`git clone --bare ${url} ${clonePath}`);
+  }
+  return clonePath;
+};
+
+const detectDefaultBranch = (barePath: string): string => {
+  const ref = execGit('git symbolic-ref HEAD', barePath);
+  return ref.replace('refs/heads/', '');
+};
+
+const deriveNameFromUrl = (url: string): string => {
+  const last = url.split('/').pop() ?? '';
+  return last.replace(/\.git$/, '');
+};
+
+export const resolveRemoteProject = (input: string): ProjectRef => {
+  const { url, branch: inputBranch } = normalizeGitUrl(input);
+  const barePath = cloneOrFetch(url);
+  const branch = inputBranch ?? detectDefaultBranch(barePath);
+  const worktreePath = join(barePath, 'worktrees-checkout', branch.replace(/\//g, '-'));
+
+  if (!existsSync(worktreePath)) {
+    execGit(`git worktree add ${worktreePath} ${branch}`, barePath);
+  }
+
+  const name = deriveNameFromUrl(url);
+  return { name, path: worktreePath, branch, remote: url };
+};
+
+export const pruneClones = (maxAgeDays = 30): string[] => {
+  const clonesDir = getClonesDir();
+  if (!existsSync(clonesDir)) return [];
+
+  const threshold = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+  const removed: string[] = [];
+  const entries = readdirSync(clonesDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const fullPath = join(clonesDir, entry.name);
+    const { mtime } = statSync(fullPath);
+    if (mtime.getTime() < threshold) {
+      rmSync(fullPath, { recursive: true, force: true });
+      removed.push(fullPath);
+    }
+  }
+
+  return removed;
+};
+
+export const resolveProject = (input: string | undefined, projects: Project[]): ProjectRef => {
+  if (input === undefined) {
+    const cwd = process.cwd();
+    const match = projects.find((p) => cwd.startsWith(p.path));
+    if (match) return { name: match.name, path: match.path };
+    return { name: basename(cwd), path: cwd };
+  }
+
+  if (isGitUrl(input)) {
+    return resolveRemoteProject(input);
+  }
+
+  if (input.includes(':')) {
+    const [name, branch] = input.split(':');
+    const project = projects.find((p) => p.name === name);
+    if (!project) throw new Error(`Project not found: ${name}`);
+
+    const worktrees = getWorktrees(project.path);
+    const worktree = worktrees.find((w) => w.branch === branch);
+    if (!worktree) throw new Error(`Worktree not found for branch: ${branch}`);
+
+    return { name: project.name, path: worktree.path, branch };
+  }
+
+  if (isAbsolute(input)) {
+    return { name: basename(input), path: input };
+  }
+
+  const project = projects.find((p) => p.name === input);
+  if (!project) throw new Error(`Project not found: ${input}`);
+  return { name: project.name, path: project.path };
+};
