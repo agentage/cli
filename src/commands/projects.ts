@@ -122,23 +122,23 @@ const handleAdd = (path: string): void => {
   try {
     const project = addProject(absPath);
     console.log(chalk.green(`Added project: ${project.name} (${project.path})`));
+    process.exit(0);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(chalk.red(`Failed to add project: ${message}`));
-    process.exitCode = 1;
+    process.exit(1);
   }
-  process.exit(0);
 };
 
 const handleRemove = (name: string): void => {
   const removed = removeProject(name);
   if (removed) {
     console.log(chalk.green(`Removed project: ${name}`));
+    process.exit(0);
   } else {
     console.error(chalk.red(`Project not found: ${name}`));
-    process.exitCode = 1;
+    process.exit(1);
   }
-  process.exit(0);
 };
 
 const handleDiscover = (path?: string): void => {
@@ -165,9 +165,8 @@ const handleInfo = (name: string, jsonMode: boolean): void => {
 
   if (!project) {
     console.error(chalk.red(`Project not found: ${name}`));
-    process.exitCode = 1;
-    process.exit(0);
-    return;
+    process.exit(1);
+    return; // unreachable at runtime, needed so TS narrows `project` below
   }
 
   const worktrees = getWorktrees(project.path);
