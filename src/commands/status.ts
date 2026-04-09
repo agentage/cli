@@ -86,7 +86,7 @@ export const registerStatus = (program: Command): void => {
 
       console.log(`Daemon:     ${chalk.green('running')} (PID ${pid}, port 4243)`);
       const versionLine = updateCheck?.updateAvailable
-        ? `${health.version} ${chalk.yellow(`→ ${updateCheck.latestVersion} available`)}`
+        ? `${health.version} ${chalk.yellow(`→ ${updateCheck.latestVersion} available`)} ${chalk.dim('(run `agentage update`)')}`
         : health.version;
       console.log(`Version:    ${versionLine}`);
       console.log(`Uptime:     ${uptime}`);

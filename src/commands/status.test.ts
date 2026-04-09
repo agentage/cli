@@ -22,13 +22,19 @@ vi.mock('../projects/projects.js', () => ({
   loadProjects: vi.fn(),
 }));
 
+vi.mock('../utils/update-checker.js', () => ({
+  checkForUpdateSafe: vi.fn(),
+}));
+
 import { get } from '../utils/daemon-client.js';
 import { getDaemonPid } from '../daemon/daemon.js';
 import { loadConfig, saveConfig } from '../daemon/config.js';
 import { loadProjects } from '../projects/projects.js';
+import { checkForUpdateSafe } from '../utils/update-checker.js';
 import { registerStatus } from './status.js';
 
 const mockLoadProjects = vi.mocked(loadProjects);
+const mockCheckForUpdateSafe = vi.mocked(checkForUpdateSafe);
 
 const mockGet = vi.mocked(get);
 const mockGetDaemonPid = vi.mocked(getDaemonPid);
@@ -68,6 +74,7 @@ describe('status command', () => {
     });
     mockLoadConfig.mockReturnValue(structuredClone(defaultConfig));
     mockLoadProjects.mockReturnValue([]);
+    mockCheckForUpdateSafe.mockResolvedValue(null);
 
     program = new Command();
     program.exitOverride();
@@ -151,6 +158,26 @@ describe('status command', () => {
 
     const parsed = JSON.parse(logs[0]!);
     expect(parsed.projects).toBe(1);
+  });
+
+  it('displays update hint when a newer version is available', async () => {
+    mockGet.mockImplementation(async (path: string) => {
+      if (path === '/api/health') return baseHealth;
+      return [];
+    });
+    mockGetDaemonPid.mockReturnValue(42);
+    mockCheckForUpdateSafe.mockResolvedValue({
+      currentVersion: '0.13.1',
+      latestVersion: '0.14.0',
+      updateAvailable: true,
+    });
+
+    await program.parseAsync(['node', 'agentage', 'status']);
+
+    const versionLine = logs.find((l) => l.includes('Version:'));
+    expect(versionLine).toBeDefined();
+    expect(versionLine).toContain('0.14.0 available');
+    expect(versionLine).toContain('agentage update');
   });
 
   it('displays disconnected when hubUrl set but not connected', async () => {
