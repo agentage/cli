@@ -71,10 +71,27 @@ describe('loadProjects', () => {
     expect(loadProjects()).toEqual(projects);
   });
 
-  it('returns empty array on parse error', () => {
+  it('rewrites file and returns empty array on parse error', () => {
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue('not json');
     expect(loadProjects()).toEqual([]);
+    expect(mockWriteFileSync).toHaveBeenCalledWith('/mock/config/projects.json', '[]\n', 'utf-8');
+  });
+
+  it('rewrites file and returns empty array when schema is foreign (e.g. desktop)', () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({ $version: 1, projects: [{ id: 'x', name: 'desktop', path: '/d' }] })
+    );
+    expect(loadProjects()).toEqual([]);
+    expect(mockWriteFileSync).toHaveBeenCalledWith('/mock/config/projects.json', '[]\n', 'utf-8');
+  });
+
+  it('rewrites file when array entries do not match the Project schema', () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify([{ id: 'x', name: 'desktop' }]));
+    expect(loadProjects()).toEqual([]);
+    expect(mockWriteFileSync).toHaveBeenCalled();
   });
 });
 

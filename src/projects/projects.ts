@@ -46,16 +46,37 @@ const deriveNameFromDir = (dirPath: string): string => {
   return basename(dirPath);
 };
 
+const isValidProject = (value: unknown): value is Project => {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.name === 'string' &&
+    typeof candidate.path === 'string' &&
+    typeof candidate.discovered === 'boolean'
+  );
+};
+
 export const loadProjects = (): Project[] => {
   const path = getProjectsPath();
   if (!existsSync(path)) return [];
 
+  let parsed: unknown;
   try {
-    const raw = readFileSync(path, 'utf-8');
-    return JSON.parse(raw) as Project[];
+    parsed = JSON.parse(readFileSync(path, 'utf-8'));
   } catch {
+    // Unreadable / malformed JSON — rewrite with a clean empty array.
+    saveProjects([]);
     return [];
   }
+
+  // Foreign schema (e.g. agentage desktop's `{$version, projects}` format) —
+  // rewrite with our schema so subsequent operations work.
+  if (!Array.isArray(parsed) || !parsed.every(isValidProject)) {
+    saveProjects([]);
+    return [];
+  }
+
+  return parsed;
 };
 
 export const saveProjects = (projects: Project[]): void => {
