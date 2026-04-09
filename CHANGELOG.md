@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.14.3] - 2026-04-09
+
+### Bug Fixes
+- Fix project commands to return proper exit codes when errors occur
+
 ## [0.14.2] - 2026-04-09
 
 ### New Features
