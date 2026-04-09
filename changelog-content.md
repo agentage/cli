@@ -1,10 +1,12 @@
 ### New Features
-- Add version information display in `agentage status` command
-- Add automatic daemon self-update when version mismatch is detected
-
-### Infrastructure
-- Add automated release preparation workflow with auto-merge capability
-- Add release workflow gating to ensure proper publish process
+- Add projects registry with auto-discovery and worktree support
+- Add `agentage projects` command to list and manage discovered projects
+- Wire projects into run, status, API, and heartbeat functionality
+- Add in-progress PR validation comment support
 
 ### Bug Fixes
-- Fix package-lock.json synchronization with @anthropic-ai/sdk dependency
+- Fix hub status to show 'connecting' during WebSocket handshake instead of incorrect status
+
+### Documentation
+- Fix daemon default port in README (correct port is 4243, not 3100)
+- Document daemon hub resilience features including heartbeat and retry mechanisms

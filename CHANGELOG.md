@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.14.0] - 2026-04-09
+
+### New Features
+- Add projects registry with auto-discovery and worktree support
+- Add `agentage projects` command to list and manage discovered projects
+- Wire projects into run, status, API, and heartbeat functionality
+- Add in-progress PR validation comment support
+
+### Bug Fixes
+- Fix hub status to show 'connecting' during WebSocket handshake instead of incorrect status
+
+### Documentation
+- Fix daemon default port in README (correct port is 4243, not 3100)
+- Document daemon hub resilience features including heartbeat and retry mechanisms
+
 ## [0.13.1] - 2026-03-29
 
 ### New Features
