@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.14.1] - 2026-04-09
+
+### New Features
+- Add upgrade hint in status command when newer version is available
+
+### Bug Fixes
+- Fix projects.json schema validation with automatic rewrite on mismatch
+
 ## [0.14.0] - 2026-04-09
 
 ### New Features
