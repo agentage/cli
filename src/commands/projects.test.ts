@@ -121,7 +121,7 @@ describe('projects command', () => {
       expect(mockExit).toHaveBeenCalledWith(0);
     });
 
-    it('handles errors when adding', async () => {
+    it('handles errors when adding with exit code 1', async () => {
       mockAddProject.mockImplementation(() => {
         throw new Error('Not a git repository');
       });
@@ -129,7 +129,7 @@ describe('projects command', () => {
       await program.parseAsync(['node', 'agentage', 'projects', 'add', '/tmp/bad']);
 
       expect(errorLogs.some((l) => l.includes('Not a git repository'))).toBe(true);
-      expect(mockExit).toHaveBeenCalledWith(0);
+      expect(mockExit).toHaveBeenCalledWith(1);
     });
   });
 
@@ -144,13 +144,13 @@ describe('projects command', () => {
       expect(mockExit).toHaveBeenCalledWith(0);
     });
 
-    it('reports not found', async () => {
+    it('reports not found with exit code 1', async () => {
       mockRemoveProject.mockReturnValue(false);
 
       await program.parseAsync(['node', 'agentage', 'projects', 'remove', 'nonexistent']);
 
       expect(errorLogs.some((l) => l.includes('Project not found: nonexistent'))).toBe(true);
-      expect(mockExit).toHaveBeenCalledWith(0);
+      expect(mockExit).toHaveBeenCalledWith(1);
     });
   });
 
@@ -217,13 +217,13 @@ describe('projects command', () => {
       expect(mockExit).toHaveBeenCalledWith(0);
     });
 
-    it('shows not found for unknown project', async () => {
+    it('shows not found for unknown project with exit code 1', async () => {
       mockLoadProjects.mockReturnValue([]);
 
       await program.parseAsync(['node', 'agentage', 'projects', 'info', 'nope']);
 
       expect(errorLogs.some((l) => l.includes('Project not found: nope'))).toBe(true);
-      expect(mockExit).toHaveBeenCalledWith(0);
+      expect(mockExit).toHaveBeenCalledWith(1);
     });
 
     it('shows project info with no worktrees', async () => {
