@@ -15,6 +15,8 @@ export interface Project {
   name: string;
   path: string;
   discovered: boolean;
+  /** Git remote origin URL (if the project is a git repo with an origin). */
+  remote?: string;
 }
 
 export interface Worktree {
@@ -52,8 +54,23 @@ const isValidProject = (value: unknown): value is Project => {
   return (
     typeof candidate.name === 'string' &&
     typeof candidate.path === 'string' &&
-    typeof candidate.discovered === 'boolean'
+    typeof candidate.discovered === 'boolean' &&
+    (candidate.remote === undefined || typeof candidate.remote === 'string')
   );
+};
+
+/** Reads the origin remote URL of a git repo. Returns undefined if not a repo or no origin. */
+const getOriginUrl = (projectPath: string): string | undefined => {
+  try {
+    const url = execSync('git remote get-url origin', {
+      cwd: projectPath,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+    return url || undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 export const loadProjects = (): Project[] => {
@@ -90,8 +107,8 @@ export const addProject = (projectPath: string): Project => {
   if (existing) return existing;
 
   const name = deriveNameFromDir(absPath);
-  const discovered = false;
-  const project: Project = { name, path: absPath, discovered };
+  const remote = getOriginUrl(absPath);
+  const project: Project = { name, path: absPath, discovered: false, ...(remote && { remote }) };
   projects.push(project);
   saveProjects(projects);
   return project;
@@ -120,10 +137,19 @@ export const discoverProjects = (rootDir: string): Project[] => {
     if (!existsSync(gitPath)) continue;
     if (!statSync(gitPath).isDirectory()) continue;
 
-    if (projects.some((p) => p.path === dirPath)) continue;
+    const existing = projects.find((p) => p.path === dirPath);
+    if (existing) {
+      // Backfill remote on previously-discovered entries that predate remote capture.
+      if (!existing.remote) {
+        const remote = getOriginUrl(dirPath);
+        if (remote) existing.remote = remote;
+      }
+      continue;
+    }
 
     const name = deriveNameFromDir(dirPath);
-    projects.push({ name, path: dirPath, discovered: true });
+    const remote = getOriginUrl(dirPath);
+    projects.push({ name, path: dirPath, discovered: true, ...(remote && { remote }) });
   }
 
   saveProjects(projects);

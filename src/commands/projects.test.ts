@@ -250,6 +250,23 @@ describe('projects command', () => {
       expect(parsed.worktrees[0].branch).toBe('main');
       expect(mockExit).toHaveBeenCalledWith(0);
     });
+
+    it('shows remote URL when set', async () => {
+      mockLoadProjects.mockReturnValue([
+        {
+          name: 'cli',
+          path: '/home/user/cli',
+          discovered: true,
+          remote: 'git@github.com:agentage/cli.git',
+        },
+      ]);
+      mockGetWorktrees.mockReturnValue([]);
+
+      await program.parseAsync(['node', 'agentage', 'projects', 'info', 'cli']);
+
+      expect(logs.some((l) => l.includes('git@github.com:agentage/cli.git'))).toBe(true);
+      expect(mockExit).toHaveBeenCalledWith(0);
+    });
   });
 
   describe('prune', () => {

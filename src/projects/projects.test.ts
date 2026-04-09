@@ -146,6 +146,23 @@ describe('addProject', () => {
     expect(project).toEqual(existing[0]);
     expect(mockWriteFileSync).not.toHaveBeenCalled();
   });
+
+  it('captures origin remote URL when present', () => {
+    mockExistsSync.mockImplementation((p) => {
+      if (String(p).endsWith('projects.json')) return false;
+      if (String(p).endsWith('package.json')) return false;
+      return false;
+    });
+    mockExecSync.mockImplementation((cmd) => {
+      if (String(cmd).includes('git remote get-url origin')) {
+        return 'https://github.com/agentage/cli.git\n';
+      }
+      throw new Error('not expected');
+    });
+
+    const project = addProject('/projects/cli');
+    expect(project.remote).toBe('https://github.com/agentage/cli.git');
+  });
 });
 
 describe('removeProject', () => {
@@ -237,6 +254,68 @@ describe('discoverProjects', () => {
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe('manual');
     expect(result[0].discovered).toBe(false);
+  });
+
+  it('captures origin remote URL on newly-discovered projects', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('projects.json')) return false;
+      if (s === '/root/cli/.git') return true;
+      return false;
+    });
+    mockReaddirSync.mockReturnValue([{ name: 'cli', isDirectory: () => true } as never]);
+    mockStatSync.mockReturnValue({ isDirectory: () => true } as never);
+    mockExecSync.mockImplementation((cmd) => {
+      if (String(cmd).includes('git remote get-url origin')) {
+        return 'git@github.com:agentage/cli.git\n';
+      }
+      throw new Error('not expected');
+    });
+
+    const result = discoverProjects('/root');
+    expect(result).toHaveLength(1);
+    expect(result[0].remote).toBe('git@github.com:agentage/cli.git');
+  });
+
+  it('omits remote when origin is not configured', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('projects.json')) return false;
+      if (s === '/root/local/.git') return true;
+      return false;
+    });
+    mockReaddirSync.mockReturnValue([{ name: 'local', isDirectory: () => true } as never]);
+    mockStatSync.mockReturnValue({ isDirectory: () => true } as never);
+    mockExecSync.mockImplementation(() => {
+      throw new Error('fatal: No such remote');
+    });
+
+    const result = discoverProjects('/root');
+    expect(result).toHaveLength(1);
+    expect(result[0].remote).toBeUndefined();
+  });
+
+  it('backfills remote on existing entries that are missing it', () => {
+    const existing: Project[] = [{ name: 'cli', path: '/root/cli', discovered: true }];
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('projects.json')) return true;
+      if (s === '/root/cli/.git') return true;
+      return false;
+    });
+    mockReadFileSync.mockReturnValue(JSON.stringify(existing));
+    mockReaddirSync.mockReturnValue([{ name: 'cli', isDirectory: () => true } as never]);
+    mockStatSync.mockReturnValue({ isDirectory: () => true } as never);
+    mockExecSync.mockImplementation((cmd) => {
+      if (String(cmd).includes('git remote get-url origin')) {
+        return 'https://github.com/agentage/cli.git\n';
+      }
+      throw new Error('not expected');
+    });
+
+    const result = discoverProjects('/root');
+    expect(result).toHaveLength(1);
+    expect(result[0].remote).toBe('https://github.com/agentage/cli.git');
   });
 });
 

@@ -84,25 +84,33 @@ const listProjects = (jsonMode: boolean): void => {
     return;
   }
 
+  const hasAnyRemote = enriched.some((p) => p.remote);
   const nameWidth = Math.max(12, ...enriched.map((p) => p.name.length)) + 2;
   const pathWidth = Math.max(12, ...enriched.map((p) => p.path.length)) + 2;
   const sourceWidth = 14;
+  const remoteWidth = hasAnyRemote
+    ? Math.max(8, ...enriched.map((p) => (p.remote ?? '').length)) + 2
+    : 0;
 
-  console.log(
-    chalk.bold('NAME'.padEnd(nameWidth)) +
-      chalk.bold('PATH'.padEnd(pathWidth)) +
-      chalk.bold('SOURCE'.padEnd(sourceWidth)) +
-      chalk.bold('WORKTREES')
-  );
+  const headerParts = [
+    chalk.bold('NAME'.padEnd(nameWidth)),
+    chalk.bold('PATH'.padEnd(pathWidth)),
+    chalk.bold('SOURCE'.padEnd(sourceWidth)),
+  ];
+  if (hasAnyRemote) headerParts.push(chalk.bold('REMOTE'.padEnd(remoteWidth)));
+  headerParts.push(chalk.bold('WORKTREES'));
+  console.log(headerParts.join(''));
 
   for (const p of enriched) {
     const source = p.discovered ? 'discovered' : 'manual';
-    console.log(
-      p.name.padEnd(nameWidth) +
-        chalk.gray(p.path.padEnd(pathWidth)) +
-        source.padEnd(sourceWidth) +
-        String(p.worktrees)
-    );
+    const rowParts = [
+      p.name.padEnd(nameWidth),
+      chalk.gray(p.path.padEnd(pathWidth)),
+      source.padEnd(sourceWidth),
+    ];
+    if (hasAnyRemote) rowParts.push(chalk.cyan((p.remote ?? '').padEnd(remoteWidth)));
+    rowParts.push(String(p.worktrees));
+    console.log(rowParts.join(''));
   }
 
   console.log(chalk.dim(`\n${enriched.length} projects`));
@@ -144,7 +152,8 @@ const handleDiscover = (path?: string): void => {
   } else {
     console.log(chalk.green(`Discovered ${newProjects.length} new project(s):`));
     for (const p of newProjects) {
-      console.log(`  ${p.name} ${chalk.gray(p.path)}`);
+      const remoteSuffix = p.remote ? ` ${chalk.cyan(p.remote)}` : '';
+      console.log(`  ${p.name} ${chalk.gray(p.path)}${remoteSuffix}`);
     }
   }
   process.exit(0);
@@ -172,6 +181,7 @@ const handleInfo = (name: string, jsonMode: boolean): void => {
   console.log(`Name:       ${project.name}`);
   console.log(`Path:       ${project.path}`);
   console.log(`Source:     ${project.discovered ? 'discovered' : 'manual'}`);
+  console.log(`Remote:     ${project.remote ? chalk.cyan(project.remote) : chalk.gray('none')}`);
 
   if (worktrees.length > 0) {
     console.log(`Worktrees:`);
