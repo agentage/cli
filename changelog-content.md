@@ -1,2 +1,2 @@
-### New Features
-- Capture git origin URL when discovering or adding projects
+### Bug Fixes
+- Fix project commands to return proper exit codes when errors occur
