@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.14.2] - 2026-04-09
+
+### New Features
+- Capture git origin URL when discovering or adding projects
+
 ## [0.14.1] - 2026-04-09
 
 ### New Features
