@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.14.4] - 2026-04-10
+
+### Bug Fixes
+- Fix hub sync to properly include discovered and remote agent data in heartbeat payload
+
 ## [0.14.3] - 2026-04-09
 
 ### Bug Fixes

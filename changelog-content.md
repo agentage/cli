@@ -1,2 +1,2 @@
 ### Bug Fixes
-- Fix project commands to return proper exit codes when errors occur
+- Fix hub sync to properly include discovered and remote agent data in heartbeat payload
