@@ -201,7 +201,12 @@ describe('hub-sync', () => {
       ] as ReturnType<typeof getRuns>);
       mockLoadProjects.mockReturnValue([
         { name: 'proj-a', path: '/home/user/proj-a', discovered: false },
-        { name: 'proj-b', path: '/home/user/proj-b', discovered: true },
+        {
+          name: 'proj-b',
+          path: '/home/user/proj-b',
+          discovered: true,
+          remote: 'https://github.com/example/proj-b.git',
+        },
       ]);
 
       const sync = createHubSync();
@@ -211,8 +216,13 @@ describe('hub-sync', () => {
       expect(mockHubClient.heartbeat).toHaveBeenCalledWith('machine-1', {
         agents: [{ name: 'hello', description: 'Hi', version: '1.0', tags: ['chat'] }],
         projects: [
-          { name: 'proj-a', path: '/home/user/proj-a' },
-          { name: 'proj-b', path: '/home/user/proj-b' },
+          { name: 'proj-a', path: '/home/user/proj-a', discovered: false },
+          {
+            name: 'proj-b',
+            path: '/home/user/proj-b',
+            discovered: true,
+            remote: 'https://github.com/example/proj-b.git',
+          },
         ],
         activeRunIds: ['run-1'],
         daemonVersion: '0.7.1',

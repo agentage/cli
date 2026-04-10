@@ -82,7 +82,12 @@ export const createHubSync = (): HubSync => {
       tags: a.manifest.tags,
     }));
 
-    const projects = loadProjects().map((p) => ({ name: p.name, path: p.path }));
+    const projects = loadProjects().map((p) => ({
+      name: p.name,
+      path: p.path,
+      discovered: p.discovered,
+      ...(p.remote && { remote: p.remote }),
+    }));
 
     const activeRunIds = getRuns()
       .filter((r) => r.state === 'working' || r.state === 'submitted')
