@@ -29,9 +29,9 @@
     "prepublishOnly": "npm run verify"
   },
   "dependencies": {
-    "@agentage/core": "^0.5.1",
+    "@agentage/core": "^0.6.0",
     "@agentage/platform": "^0.2.1",
-    "@supabase/supabase-js": "2.101.1",
+    "@supabase/supabase-js": "2.103.0",
     "chalk": "latest",
     "commander": "latest",
     "express": "latest",
