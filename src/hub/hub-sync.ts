@@ -80,6 +80,7 @@ export const createHubSync = (): HubSync => {
       description: a.manifest.description,
       version: a.manifest.version,
       tags: a.manifest.tags,
+      ...(a.manifest.inputSchema && { inputSchema: a.manifest.inputSchema }),
     }));
 
     const projects = loadProjects().map((p) => ({

@@ -3,13 +3,20 @@ import { resolve as resolvePath } from 'node:path';
 import { homedir } from 'node:os';
 import { type Command } from 'commander';
 import chalk from 'chalk';
-import { type Agent, type RunEvent, type RunInput } from '@agentage/core';
+import { type Agent, type AgentManifest, type RunEvent, type RunInput } from '@agentage/core';
 import { ensureDaemon } from '../utils/ensure-daemon.js';
 import { connectWs, get, post } from '../utils/daemon-client.js';
 import { renderEvent } from '../utils/render.js';
 import { loadProjects, resolveProject } from '../projects/projects.js';
 import { createMarkdownFactory } from '../discovery/markdown-factory.js';
 import { createCodeFactory } from '../discovery/code-factory.js';
+import {
+  mergeInputs,
+  parseInputJson,
+  validateInput,
+  type Input,
+  type JsonSchema,
+} from '../utils/schema-input.js';
 
 interface RunResponse {
   runId: string;
@@ -61,6 +68,7 @@ export const registerRun = (program: Command): void => {
     .option('-d, --detach', 'Run in background, print run ID')
     .option('--json', 'Output events as JSON lines')
     .option('--config <json>', 'Per-run config overrides (JSON)')
+    .option('--input <json>', 'Structured input matching the agent inputSchema (JSON object)')
     .option('--context <paths...>', 'Additional context files')
     .option('--project <name-or-path>', 'Project context (name, name:branch, or path)')
     .action(
@@ -71,6 +79,7 @@ export const registerRun = (program: Command): void => {
           detach?: boolean;
           json?: boolean;
           config?: string;
+          input?: string;
           context?: string[];
           project?: string;
         }
@@ -108,13 +117,60 @@ export const registerRun = (program: Command): void => {
     );
 };
 
+const parseJsonOption = (name: string, raw: string | undefined): Input | undefined => {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`${name} must be a JSON object`);
+    }
+    return parsed as Input;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Invalid ${name}: ${message}`);
+  }
+};
+
+const resolveConfig = (
+  opts: { config?: string; input?: string },
+  inputSchema: JsonSchema | undefined
+): Input | undefined => {
+  const fromConfig = parseJsonOption('--config', opts.config);
+  const fromInput = opts.input ? parseInputJson(opts.input) : undefined;
+  const merged = mergeInputs(fromConfig, fromInput);
+  const hasAny = Object.keys(merged).length > 0;
+
+  if (!inputSchema) return hasAny ? merged : undefined;
+
+  const result = validateInput(inputSchema, merged);
+  if (!result.ok) {
+    const detail = result.errors.map((e) => `  • ${e}`).join('\n');
+    throw new Error(`Input does not match agent schema:\n${detail}`);
+  }
+  return Object.keys(result.value).length > 0 ? result.value : undefined;
+};
+
 const runLocal = async (
   agentName: string,
   prompt: string,
-  opts: { detach?: boolean; json?: boolean; config?: string; context?: string[] },
+  opts: { detach?: boolean; json?: boolean; config?: string; input?: string; context?: string[] },
   project?: { name: string; path: string; branch?: string; remote?: string }
 ): Promise<void> => {
-  const config = opts.config ? (JSON.parse(opts.config) as Record<string, unknown>) : undefined;
+  let manifest: AgentManifest | undefined;
+  try {
+    manifest = await get<AgentManifest>(`/api/agents/${agentName}`);
+  } catch {
+    // Older daemon may not expose this endpoint; skip schema validation
+  }
+
+  let config: Input | undefined;
+  try {
+    config = resolveConfig(opts, manifest?.inputSchema);
+  } catch (err) {
+    console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+    process.exitCode = 1;
+    return;
+  }
 
   const { runId } = await post<RunResponse>(`/api/agents/${agentName}/run`, {
     task: prompt,
@@ -284,7 +340,7 @@ const loadAgentFromPath = async (filePath: string): Promise<Agent | null> => {
 const runStandalone = async (
   filePath: string,
   prompt: string,
-  opts: { json?: boolean; config?: string; context?: string[] }
+  opts: { json?: boolean; config?: string; input?: string; context?: string[] }
 ): Promise<void> => {
   if (!existsSync(filePath)) {
     console.error(chalk.red(`Agent file not found: ${filePath}`));
@@ -312,7 +368,14 @@ const runStandalone = async (
     return;
   }
 
-  const config = opts.config ? (JSON.parse(opts.config) as Record<string, unknown>) : undefined;
+  let config: Input | undefined;
+  try {
+    config = resolveConfig(opts, agent.manifest.inputSchema as JsonSchema | undefined);
+  } catch (err) {
+    console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+    process.exitCode = 1;
+    return;
+  }
   const input: RunInput = { task: prompt, config, context: opts.context };
 
   let proc;
