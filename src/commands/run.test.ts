@@ -76,12 +76,30 @@ describe('run command', () => {
     expect(typeof mod.registerRun).toBe('function');
   });
 
-  it('errors when no prompt provided', async () => {
-    await program.parseAsync(['node', 'agentage', 'run', 'hello']);
+  it('runs with empty task when no prompt provided', async () => {
+    mockPost.mockResolvedValue({ runId: 'run-empty' });
 
-    expect(errorLogs.some((l) => l.includes('Prompt is required'))).toBe(true);
-    expect(process.exitCode).toBe(1);
-    process.exitCode = undefined;
+    const ws = createMockWs();
+    let wsCallback: (data: unknown) => void;
+    mockConnectWs.mockImplementation((cb) => {
+      wsCallback = cb;
+      setTimeout(() => {
+        ws.emit('open');
+        wsCallback({ type: 'run_state', run: { id: 'run-empty', state: 'completed' } });
+      }, 10);
+      return ws;
+    });
+
+    const parsePromise = program.parseAsync(['node', 'agentage', 'run', 'hello']);
+    await vi.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(200);
+    await parsePromise;
+
+    expect(errorLogs.some((l) => l.includes('Prompt is required'))).toBe(false);
+    expect(mockPost).toHaveBeenCalledWith(
+      expect.stringContaining('/api/agents/hello/run'),
+      expect.objectContaining({ task: '' })
+    );
   });
 
   describe('local run', () => {
