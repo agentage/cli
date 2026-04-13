@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.15.0] - 2026-04-13
+
+### New Features
+- Add input validation for agent runs against defined schemas
+- Add standalone file-path mode for running agents directly from files
+
+### Bug Fixes
+- Fix agent run command to accept empty prompts
+
 ## [0.14.4] - 2026-04-10
 
 ### Bug Fixes
