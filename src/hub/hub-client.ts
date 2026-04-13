@@ -12,7 +12,13 @@ export interface HubClient {
   heartbeat: (
     machineId: string,
     data: {
-      agents: Array<{ name: string; description?: string; version?: string; tags?: string[] }>;
+      agents: Array<{
+        name: string;
+        description?: string;
+        version?: string;
+        tags?: string[];
+        inputSchema?: Record<string, unknown>;
+      }>;
       projects?: Array<{ name: string; path: string; discovered?: boolean; remote?: string }>;
       activeRunIds: string[];
       daemonVersion: string;

@@ -54,6 +54,15 @@ export const createRoutes = (): Router => {
     res.json(getLastScanWarnings());
   });
 
+  router.get('/api/agents/:name', (req, res) => {
+    const agent = agents.find((a) => a.manifest.name === req.params.name);
+    if (!agent) {
+      res.status(404).json({ error: `Agent "${req.params.name}" not found` });
+      return;
+    }
+    res.json(agent.manifest);
+  });
+
   router.post('/api/agents/refresh', async (_req, res) => {
     try {
       if (refreshHandler) {
