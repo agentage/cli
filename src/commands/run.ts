@@ -75,11 +75,7 @@ export const registerRun = (program: Command): void => {
           project?: string;
         }
       ) => {
-        if (!prompt) {
-          console.error(chalk.red('Prompt is required. Usage: agentage run <agent> "<prompt>"'));
-          process.exitCode = 1;
-          return;
-        }
+        const task = prompt ?? '';
 
         if (isAgentPath(agent)) {
           if (opts.detach) {
@@ -91,7 +87,7 @@ export const registerRun = (program: Command): void => {
             process.exitCode = 1;
             return;
           }
-          await runStandalone(expandPath(agent), prompt, opts);
+          await runStandalone(expandPath(agent), task, opts);
           setTimeout(() => process.exit(process.exitCode ?? 0), 100);
           return;
         }
@@ -102,9 +98,9 @@ export const registerRun = (program: Command): void => {
         const project = resolveProject(opts.project, loadProjects());
 
         if (machineName) {
-          await runRemote(agentName, machineName, prompt, opts, project);
+          await runRemote(agentName, machineName, task, opts, project);
         } else {
-          await runLocal(agentName, prompt, opts, project);
+          await runLocal(agentName, task, opts, project);
         }
         // Let the event loop drain pending writes, then exit
         setTimeout(() => process.exit(process.exitCode ?? 0), 100);
