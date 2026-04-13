@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Command } from 'commander';
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { type WebSocket } from 'ws';
 
 vi.mock('../utils/ensure-daemon.js', () => ({
@@ -442,6 +445,71 @@ describe('run command', () => {
 
       expect(logs.some((l) => l.includes('"type":"output"'))).toBe(true);
       expect(mockRenderEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('standalone path run', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), 'agentage-run-test-'));
+      vi.useRealTimers();
+    });
+
+    const cleanup = (): void => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    };
+
+    it('runs a markdown agent from a direct path', async () => {
+      const agentPath = join(tmpDir, 'hello.agent.md');
+      writeFileSync(
+        agentPath,
+        `---\nname: hello\ndescription: test agent\n---\n\nYou are a helpful assistant.\n`
+      );
+
+      await program.parseAsync(['node', 'agentage', 'run', agentPath, 'do stuff']);
+
+      expect(mockRenderEvent).toHaveBeenCalled();
+      const eventTypes = mockRenderEvent.mock.calls.map((c) => c[0].data.type);
+      expect(eventTypes).toContain('output');
+      expect(eventTypes).toContain('result');
+      expect(process.exitCode === undefined || process.exitCode === 0).toBe(true);
+      cleanup();
+    });
+
+    it('exits 1 on missing file', async () => {
+      const missing = join(tmpDir, 'nope.agent.md');
+
+      await program.parseAsync(['node', 'agentage', 'run', missing, 'do stuff']);
+
+      expect(errorLogs.some((l) => l.includes('not found'))).toBe(true);
+      expect(process.exitCode).toBe(1);
+      process.exitCode = undefined;
+      cleanup();
+    });
+
+    it('exits 1 when file is not a recognized agent', async () => {
+      const bad = join(tmpDir, 'bad.md');
+      writeFileSync(bad, 'just a random markdown file');
+
+      await program.parseAsync(['node', 'agentage', 'run', bad, 'do stuff']);
+
+      expect(errorLogs.some((l) => l.includes('not a recognized agent'))).toBe(true);
+      expect(process.exitCode).toBe(1);
+      process.exitCode = undefined;
+      cleanup();
+    });
+
+    it('errors when --detach is used with a path', async () => {
+      const agentPath = join(tmpDir, 'hello.agent.md');
+      writeFileSync(agentPath, `---\nname: hello\n---\n\nsystem prompt\n`);
+
+      await program.parseAsync(['node', 'agentage', 'run', agentPath, 'do stuff', '-d']);
+
+      expect(errorLogs.some((l) => l.includes('--detach requires a daemon'))).toBe(true);
+      expect(process.exitCode).toBe(1);
+      process.exitCode = undefined;
+      cleanup();
     });
   });
 });
