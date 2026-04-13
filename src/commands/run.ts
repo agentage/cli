@@ -1,10 +1,15 @@
+import { existsSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
+import { homedir } from 'node:os';
 import { type Command } from 'commander';
 import chalk from 'chalk';
-import { type RunEvent } from '@agentage/core';
+import { type Agent, type RunEvent, type RunInput } from '@agentage/core';
 import { ensureDaemon } from '../utils/ensure-daemon.js';
 import { connectWs, get, post } from '../utils/daemon-client.js';
 import { renderEvent } from '../utils/render.js';
 import { loadProjects, resolveProject } from '../projects/projects.js';
+import { createMarkdownFactory } from '../discovery/markdown-factory.js';
+import { createCodeFactory } from '../discovery/code-factory.js';
 
 interface RunResponse {
   runId: string;
@@ -24,6 +29,17 @@ interface WsRunStateMessage {
 type WsMessage = WsRunEventMessage | WsRunStateMessage;
 
 const TERMINAL_STATES = ['completed', 'failed', 'canceled'];
+
+const isAgentPath = (input: string): boolean => {
+  if (input.includes('/')) return true;
+  if (/\.(agent\.md|agent\.ts|agent\.js|md|ts|js)$/.test(input)) return true;
+  return false;
+};
+
+const expandPath = (input: string): string => {
+  if (input.startsWith('~')) return resolvePath(homedir(), input.slice(1).replace(/^\/+/, ''));
+  return resolvePath(input);
+};
 
 const parseAgentTarget = (input: string): { agentName: string; machineName?: string } => {
   const atIndex = input.lastIndexOf('@');
@@ -59,13 +75,28 @@ export const registerRun = (program: Command): void => {
           project?: string;
         }
       ) => {
-        await ensureDaemon();
-
         if (!prompt) {
           console.error(chalk.red('Prompt is required. Usage: agentage run <agent> "<prompt>"'));
           process.exitCode = 1;
           return;
         }
+
+        if (isAgentPath(agent)) {
+          if (opts.detach) {
+            console.error(
+              chalk.red(
+                '--detach requires a daemon. Omit --detach for standalone file runs, or register this agent in a discovery dir.'
+              )
+            );
+            process.exitCode = 1;
+            return;
+          }
+          await runStandalone(expandPath(agent), prompt, opts);
+          setTimeout(() => process.exit(process.exitCode ?? 0), 100);
+          return;
+        }
+
+        await ensureDaemon();
 
         const { agentName, machineName } = parseAgentTarget(agent);
         const project = resolveProject(opts.project, loadProjects());
@@ -241,5 +272,90 @@ const pollRemoteRun = async (runId: string, jsonMode: boolean): Promise<void> =>
     const done = await poll();
     if (done) break;
     await new Promise((r) => setTimeout(r, pollInterval));
+  }
+};
+
+const loadAgentFromPath = async (filePath: string): Promise<Agent | null> => {
+  const markdownFactory = createMarkdownFactory();
+  const codeFactory = createCodeFactory();
+  const md = await markdownFactory(filePath);
+  if (md) return md;
+  const code = await codeFactory(filePath);
+  if (code) return code;
+  return null;
+};
+
+const runStandalone = async (
+  filePath: string,
+  prompt: string,
+  opts: { json?: boolean; config?: string; context?: string[] }
+): Promise<void> => {
+  if (!existsSync(filePath)) {
+    console.error(chalk.red(`Agent file not found: ${filePath}`));
+    process.exitCode = 1;
+    return;
+  }
+
+  let agent: Agent | null;
+  try {
+    agent = await loadAgentFromPath(filePath);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(chalk.red(`Failed to load agent: ${message}`));
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!agent) {
+    console.error(
+      chalk.red(
+        `File is not a recognized agent: ${filePath} (expected .agent.md, .agent.ts, .agent.js, or SKILL.md)`
+      )
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const config = opts.config ? (JSON.parse(opts.config) as Record<string, unknown>) : undefined;
+  const input: RunInput = { task: prompt, config, context: opts.context };
+
+  let proc;
+  try {
+    proc = await agent.run(input);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(chalk.red(`Agent execution failed: ${message}`));
+    process.exitCode = 1;
+    return;
+  }
+
+  const onSigint = (): void => {
+    proc.cancel();
+  };
+  process.on('SIGINT', onSigint);
+
+  try {
+    for await (const event of proc.events as AsyncIterable<RunEvent>) {
+      if (opts.json) {
+        console.log(JSON.stringify(event));
+      } else {
+        renderEvent(event);
+      }
+      if (event.data.type === 'error') {
+        process.exitCode = 1;
+      }
+      if (event.data.type === 'result' && event.data.success === false) {
+        process.exitCode = 1;
+      }
+      if (event.data.type === 'state' && event.data.state === 'failed') {
+        process.exitCode = 1;
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(chalk.red(`Agent execution error: ${message}`));
+    process.exitCode = 1;
+  } finally {
+    process.off('SIGINT', onSigint);
   }
 };
