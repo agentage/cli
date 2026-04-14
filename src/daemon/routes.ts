@@ -1,5 +1,5 @@
 import { type Router, Router as createRouter, json } from 'express';
-import { type Agent } from '@agentage/core';
+import { type Agent, type JsonSchema } from '@agentage/core';
 import { loadConfig } from './config.js';
 import { cancelRun, getRun, getRuns, sendInput, startRun } from './run-manager.js';
 import { getHubSync } from '../hub/hub-sync.js';
@@ -23,6 +23,16 @@ export const getAgents = (): Agent[] => agents;
 
 export const setRefreshHandler = (handler: () => Promise<Agent[]>): void => {
   refreshHandler = handler;
+};
+
+/**
+ * `task` is required iff the agent's inputSchema explicitly lists it under
+ * `required`. Agents are expected to declare their inputSchema; there is no
+ * legacy fallback.
+ */
+const isTaskRequired = (schema: JsonSchema | undefined): boolean => {
+  const required = (schema as { required?: unknown } | undefined)?.required;
+  return Array.isArray(required) && required.includes('task');
 };
 
 export const createRoutes = (): Router => {
@@ -106,18 +116,18 @@ export const createRoutes = (): Router => {
         project?: { name: string; path: string; branch?: string; remote?: string };
       };
 
-      if (!task) {
-        res.status(400).json({ error: 'Missing "task" in request body' });
-        return;
-      }
-
       const agent = agents.find((a) => a.manifest.name === name);
       if (!agent) {
         res.status(404).json({ error: `Agent "${name}" not found` });
         return;
       }
 
-      const runId = await startRun(agent, task, config, context, project);
+      if (!task && isTaskRequired(agent.manifest.inputSchema)) {
+        res.status(400).json({ error: 'Missing "task" in request body' });
+        return;
+      }
+
+      const runId = await startRun(agent, task ?? '', config, context, project);
       res.json({ runId });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
