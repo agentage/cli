@@ -114,7 +114,7 @@ jobs:
         if: steps.check_pr.outputs.skip != 'true' && steps.check_commits.outputs.has_commits == 'true'
         id: create_pr
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.bump.outputs.new_version }}"
           BRANCH_NAME="release/v${VERSION}"
@@ -170,7 +170,7 @@ jobs:
       - name: Auto-merge release PR
         if: steps.create_pr.outputs.pr_url && github.event.inputs.auto_merge == 'true'
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           echo "Auto-merge enabled — enabling GitHub auto-merge"
           gh pr merge "${{ steps.create_pr.outputs.pr_url }}" --auto --squash
