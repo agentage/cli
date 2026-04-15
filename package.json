@@ -1,6 +1,6 @@
 {
   "name": "@agentage/cli",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Agentage CLI and daemon — control plane for AI agents",
   "type": "module",
   "main": "./dist/index.js",
