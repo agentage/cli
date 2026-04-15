@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.0] - 2026-04-15
+
+### New Features
+- Add validation of agent results against output schema defined in manifest
+
 ## [0.15.0] - 2026-04-13
 
 ### New Features
