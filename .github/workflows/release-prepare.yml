@@ -114,13 +114,18 @@ jobs:
         if: steps.check_pr.outputs.skip != 'true' && steps.check_commits.outputs.has_commits == 'true'
         id: create_pr
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.bump.outputs.new_version }}"
           BRANCH_NAME="release/v${VERSION}"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Re-auth origin so the push is authored by RELEASE_PAT, which fires
+          # downstream workflows. GITHUB_TOKEN pushes are suppressed by GitHub
+          # to prevent recursion, which stalls auto-merge on the release PR.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
 
           git checkout -b "$BRANCH_NAME"
           git add -A
@@ -165,7 +170,7 @@ jobs:
       - name: Auto-merge release PR
         if: steps.create_pr.outputs.pr_url && github.event.inputs.auto_merge == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
         run: |
           echo "Auto-merge enabled — enabling GitHub auto-merge"
           gh pr merge "${{ steps.create_pr.outputs.pr_url }}" --auto --squash
