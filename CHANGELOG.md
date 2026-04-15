@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.17.0] - 2026-04-15
+
+### New Features
+- Add WebSocket event emission when runs start to ensure child runs appear in the hub
+- Add `ctx.run()` dispatch functionality with parent-child run linkage
+
+### Bug Fixes
+- Fix task parameter to be optional when agent's input schema allows it
+
 ## [0.16.0] - 2026-04-15
 
 ### New Features
