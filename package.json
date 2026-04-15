@@ -29,7 +29,7 @@
     "prepublishOnly": "npm run verify"
   },
   "dependencies": {
-    "@agentage/core": "^0.6.0",
+    "@agentage/core": "0.9.0",
     "@agentage/platform": "^0.2.1",
     "@supabase/supabase-js": "2.103.0",
     "ajv": "8.18.0",
