@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import {
   type Agent,
   type AgentProcess,
+  type AgentRuntime,
+  type CtxRunFn,
+  type CtxRunResult,
   type Run,
   type RunEvent,
   type RunInput,
@@ -18,27 +21,6 @@ declare module '@agentage/core' {
     parentRunId?: string;
     depth?: number;
   }
-}
-
-// Local mirrors of types added in @agentage/core@0.8.x (ctx.run primitive).
-// Switch to importing directly once the CLI bumps its core dependency.
-interface AgentRegistryLocal {
-  resolve(ref: string): Promise<Agent | null>;
-}
-interface CtxRunResultLocal<O = unknown> {
-  success: boolean;
-  output?: O;
-  error?: string;
-}
-type CtxRunFnLocal = <O = unknown>(
-  ref: string | Agent,
-  input: RunInput
-) => AsyncGenerator<RunEvent, CtxRunResultLocal<O>, void>;
-interface AgentRuntimeLocal {
-  registry?: AgentRegistryLocal;
-  parentRunId?: string;
-  depth?: number;
-  dispatch?: CtxRunFnLocal;
 }
 
 type RunEventListener = (runId: string, event: RunEvent) => void;
@@ -123,19 +105,19 @@ export const DAEMON_DEPTH_LIMIT = 50;
  * Build a daemon-side runtime that honours ctx.run() inside agent code.
  * - registry: resolves agent names against the daemon's discovered agents
  * - dispatch: creates a linked child run, streams its events to the parent
- *   iterator, and returns the final CtxRunResultLocal
+ *   iterator, and returns the final CtxRunResult
  */
-const buildRuntime = (parentRunId: string, parentDepth: number): AgentRuntimeLocal => {
+const buildRuntime = (parentRunId: string, parentDepth: number): AgentRuntime => {
   const registry = {
     async resolve(ref: string): Promise<Agent | null> {
       return getAgents().find((a) => a.manifest.name === ref) ?? null;
     },
   };
 
-  const dispatch: CtxRunFnLocal = async function* <O = unknown>(
+  const dispatch: CtxRunFn = async function* <O = unknown>(
     ref: string | Agent,
     input: RunInput
-  ): AsyncGenerator<RunEvent, CtxRunResultLocal<O>, void> {
+  ): AsyncGenerator<RunEvent, CtxRunResult<O>, void> {
     const nextDepth = parentDepth + 1;
     if (nextDepth > DAEMON_DEPTH_LIMIT) {
       return { success: false, error: `ctx.run depth limit exceeded (${DAEMON_DEPTH_LIMIT})` };
@@ -174,7 +156,7 @@ const buildRuntime = (parentRunId: string, parentDepth: number): AgentRuntimeLoc
     // events through the parent agent's generator so the author can observe
     // them if they iterate the yielded events).
     const childTracked = runs.get(childRunId);
-    let finalResult: CtxRunResultLocal<O> = { success: true };
+    let finalResult: CtxRunResult<O> = { success: true };
     if (childTracked) {
       for await (const event of childTracked.process.events) {
         yield event;
@@ -219,14 +201,7 @@ export const startRun = async (
 
   const runInput = { task, config, context, ...(project && { project }) };
   const runtime = buildRuntime(runId, depth);
-  // @agentage/core ^0.8 adds an optional second `runtime` arg; older versions
-  // simply ignore it at runtime (extra positional args are harmless for a
-  // regular function). Cast for type compatibility until the bump lands.
-  const runWithRuntime = agent.run as (
-    input: RunInput,
-    runtime?: AgentRuntimeLocal
-  ) => Promise<AgentProcess>;
-  const process = await runWithRuntime(runInput, runtime);
+  const process = await agent.run(runInput, runtime);
   const outputSchema = (agent.manifest as { outputSchema?: JsonSchema }).outputSchema;
   const tracked: TrackedRun = { run, process, outputSchema, childRunIds: new Set() };
   runs.set(runId, tracked);
