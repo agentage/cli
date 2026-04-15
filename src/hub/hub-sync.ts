@@ -7,6 +7,7 @@ import { createReconnector, type Reconnector } from './reconnection.js';
 import { logInfo, logWarn } from '../daemon/logger.js';
 import { getAgents } from '../daemon/routes.js';
 import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
+import { getScheduler } from '../daemon/scheduler.js';
 import { loadProjects } from '../projects/projects.js';
 
 import { VERSION } from '../utils/version.js';
@@ -103,6 +104,17 @@ export const createHubSync = (): HubSync => {
       activeRunIds,
       daemonVersion: VERSION,
     });
+
+    // Reconcile local cron registry against the authoritative bindings
+    if (response.schedules) {
+      try {
+        getScheduler().reconcile(response.schedules);
+      } catch (err) {
+        logWarn(
+          `[hub-sync] scheduler reconcile failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
 
     // Process pending commands from hub
     if (response.pendingCommands && Array.isArray(response.pendingCommands)) {

@@ -9,6 +9,8 @@ import { createCodeFactory } from './discovery/code-factory.js';
 import { getHubSync, resetHubSync } from './hub/hub-sync.js';
 import { readAuth } from './hub/auth.js';
 import { startWatcher } from './discovery/watcher.js';
+import { getScheduler, resetScheduler } from './daemon/scheduler.js';
+import { createHubClient } from './hub/hub-client.js';
 
 const main = async (): Promise<void> => {
   const config = loadConfig();
@@ -26,6 +28,16 @@ const main = async (): Promise<void> => {
 
   await server.start();
   logInfo(`Daemon ready on port ${config.daemon.port}`);
+
+  // Scheduler — fires schedules via the hub /fire endpoint. Initialised
+  // before hub-sync so the first heartbeat can reconcile immediately.
+  const scheduler = getScheduler(async (s) => {
+    const auth = readAuth();
+    if (!auth) return null;
+    const client = createHubClient(auth.hub.url, auth);
+    return client.fireSchedule(s.id, s.nextFireAt);
+  });
+  await scheduler.start();
 
   // Initialize hub sync (registers + heartbeat if auth.json exists)
   const hubSync = getHubSync();
@@ -65,6 +77,7 @@ const main = async (): Promise<void> => {
   const shutdown = async (): Promise<void> => {
     logInfo('Daemon shutting down...');
     stopWatcher();
+    resetScheduler();
     await hubSync.stop();
     await server.stop();
     removePidFile();
