@@ -420,11 +420,6 @@ describe('E2E: daemon lifecycle', () => {
     expect(status).toBe(404);
   });
 
-  it('returns 400 for run without task', async () => {
-    const { status } = await api.post<unknown>('/api/agents/hello/run', {});
-    expect(status).toBe(400);
-  });
-
   it('returns 404 for unknown run ID', async () => {
     const { status } = await api.get<unknown>('/api/runs/nonexistent-id');
     expect(status).toBe(404);

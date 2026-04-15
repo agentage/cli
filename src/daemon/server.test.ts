@@ -55,7 +55,30 @@ describe('server', () => {
         };
       },
     };
-    server.updateAgents([mockAgent]);
+    const noTaskAgent: Agent = {
+      manifest: {
+        name: 'no-task-agent',
+        description: 'Takes no task',
+        path: '/test',
+        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      },
+      async run() {
+        async function* gen(): AsyncIterable<RunEvent> {
+          yield {
+            type: 'result',
+            data: { type: 'result', success: true },
+            timestamp: Date.now(),
+          };
+        }
+        return {
+          runId: 'no-task',
+          events: gen(),
+          cancel: () => {},
+          sendInput: () => {},
+        };
+      },
+    };
+    server.updateAgents([mockAgent, noTaskAgent]);
     await server.start();
   });
 
@@ -94,6 +117,17 @@ describe('server', () => {
     expect(body.runId).toBeDefined();
   });
 
+  it('POST /api/agents/:name/run accepts missing task when inputSchema does not require it', async () => {
+    const res = await fetch(`http://localhost:${port}/api/agents/no-task-agent/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const body = (await res.json()) as { runId: string };
+    expect(res.status).toBe(200);
+    expect(body.runId).toBeDefined();
+  });
+
   it('GET /api/runs returns run list', async () => {
     // Wait for the run from previous test to register
     await new Promise((r) => setTimeout(r, 100));
@@ -124,15 +158,6 @@ describe('server', () => {
       body: JSON.stringify({ task: 'hello' }),
     });
     expect(res.status).toBe(404);
-  });
-
-  it('POST /api/agents/:name/run returns 400 without task', async () => {
-    const res = await fetch(`http://localhost:${port}/api/agents/test-agent/run`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(400);
   });
 
   it('GET /api/runs/:id returns 404 for unknown run', async () => {

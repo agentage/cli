@@ -168,11 +168,46 @@ describe('daemon routes', () => {
       expect(data.runId).toBe('run-new-123');
     });
 
-    it('returns 400 when task is missing', async () => {
-      const { status, data } = await request(server, 'POST', '/api/agents/hello/run', {});
+    it('accepts missing task when inputSchema does not list task as required', async () => {
+      setAgents([
+        {
+          manifest: {
+            name: 'no-task',
+            description: 'Needs no task',
+            path: '/test',
+            inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+          },
+          run: vi.fn(),
+        },
+      ] as Parameters<typeof setAgents>[0]);
+      mockStartRun.mockResolvedValue('run-empty-1');
+
+      const { status, data } = await request(server, 'POST', '/api/agents/no-task/run', {});
+
+      expect(status).toBe(200);
+      expect(data.runId).toBe('run-empty-1');
+    });
+
+    it('rejects missing task when inputSchema lists task as required', async () => {
+      setAgents([
+        {
+          manifest: {
+            name: 'needs-task',
+            description: 'Requires task',
+            path: '/test',
+            inputSchema: {
+              type: 'object',
+              properties: { task: { type: 'string' } },
+              required: ['task'],
+            },
+          },
+          run: vi.fn(),
+        },
+      ] as Parameters<typeof setAgents>[0]);
+
+      const { status } = await request(server, 'POST', '/api/agents/needs-task/run', {});
 
       expect(status).toBe(400);
-      expect(data.error).toContain('task');
     });
 
     it('returns 404 when agent not found', async () => {
