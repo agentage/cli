@@ -254,6 +254,31 @@ describe('hub-sync', () => {
       expect(call.agents[1]).not.toHaveProperty('inputSchema');
     });
 
+    it('includes outputSchema in agent payload when declared', async () => {
+      mockReadAuth.mockReturnValue(testAuth);
+      const outputSchema = {
+        type: 'object',
+        properties: { verdict: { type: 'string' } },
+        required: ['verdict'],
+      };
+      mockGetAgents.mockReturnValue([
+        { manifest: { name: 'pr-reviewer', outputSchema } },
+        { manifest: { name: 'pr-list' } },
+      ] as ReturnType<typeof getAgents>);
+      mockGetRuns.mockReturnValue([] as ReturnType<typeof getRuns>);
+      mockLoadProjects.mockReturnValue([]);
+
+      const sync = createHubSync();
+      await sync.start();
+      await sync.triggerHeartbeat();
+
+      const call = mockHubClient.heartbeat.mock.calls[0][1] as {
+        agents: Array<Record<string, unknown>>;
+      };
+      expect(call.agents[0]).toMatchObject({ name: 'pr-reviewer', outputSchema });
+      expect(call.agents[1]).not.toHaveProperty('outputSchema');
+    });
+
     it('processes pending cancel commands', async () => {
       mockReadAuth.mockReturnValue(testAuth);
       mockHubClient.heartbeat.mockResolvedValue({

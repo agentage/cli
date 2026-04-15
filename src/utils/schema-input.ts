@@ -17,7 +17,12 @@ export type ValidationResult = ValidationSuccess | ValidationFailure;
 
 const ajv = new Ajv({ allErrors: true, coerceTypes: true, useDefaults: true, strict: false });
 
+// Separate, stricter instance for validating agent outputs — don't mutate
+// or coerce the agent's actual result payload.
+const ajvOutput = new Ajv({ allErrors: true, strict: false });
+
 const compile = (schema: JsonSchema): ValidateFunction => ajv.compile(schema);
+const compileOutput = (schema: JsonSchema): ValidateFunction => ajvOutput.compile(schema);
 
 const formatError = (err: ErrorObject): string => {
   const path = err.instancePath || '/';
@@ -39,6 +44,31 @@ export const mergeInputs = (...layers: Array<Input | undefined>): Input => {
     for (const [k, v] of Object.entries(layer)) out[k] = v;
   }
   return out;
+};
+
+export interface OutputValidationFailure {
+  ok: false;
+  errors: string[];
+}
+export interface OutputValidationSuccess {
+  ok: true;
+}
+export type OutputValidationResult = OutputValidationSuccess | OutputValidationFailure;
+
+export const validateOutput = (schema: JsonSchema, output: unknown): OutputValidationResult => {
+  let validate: ValidateFunction;
+  try {
+    validate = compileOutput(schema);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, errors: [`invalid outputSchema: ${message}`] };
+  }
+  const valid = validate(output);
+  if (!valid) {
+    const errors = (validate.errors ?? []).map(formatError);
+    return { ok: false, errors: errors.length ? errors : ['output validation failed'] };
+  }
+  return { ok: true };
 };
 
 export const validateInput = (schema: JsonSchema, input: Input): ValidationResult => {

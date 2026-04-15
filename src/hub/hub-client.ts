@@ -18,6 +18,7 @@ export interface HubClient {
         version?: string;
         tags?: string[];
         inputSchema?: Record<string, unknown>;
+        outputSchema?: Record<string, unknown>;
       }>;
       projects?: Array<{ name: string; path: string; discovered?: boolean; remote?: string }>;
       activeRunIds: string[];
