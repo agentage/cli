@@ -44,6 +44,65 @@ describe('run-manager', () => {
     },
   });
 
+  /**
+   * A code-style agent that can call ctx.run (because it accepts the runtime
+   * arg). Yields events from the child run; forwards the child's result as its
+   * own with an optional wrapping transform.
+   */
+  interface ChildCallAgentOpts {
+    childRef: string;
+    onChildResult?: (success: boolean, output: unknown) => RunEvent;
+  }
+  const createParentAgent = (name: string, opts: ChildCallAgentOpts): Agent => ({
+    manifest: { name, path: '/test', description: `Parent ${name}` },
+    async run(_input, runtime?: unknown) {
+      const dispatch = (runtime as { dispatch?: Function } | undefined)?.dispatch;
+      const controller = new AbortController();
+      async function* events(): AsyncIterable<RunEvent> {
+        if (!dispatch) {
+          yield {
+            type: 'result',
+            data: { type: 'result', success: false, output: 'no dispatch' },
+            timestamp: Date.now(),
+          };
+          return;
+        }
+        const gen = dispatch(opts.childRef, { task: '' }) as AsyncGenerator<
+          RunEvent,
+          { success: boolean; output?: unknown; error?: string }
+        >;
+        let final: { success: boolean; output?: unknown; error?: string } = { success: true };
+        while (true) {
+          const next = await gen.next();
+          if (next.done) {
+            final = next.value;
+            break;
+          }
+          yield next.value;
+        }
+        if (opts.onChildResult) {
+          yield opts.onChildResult(final.success, final.output);
+        } else {
+          yield {
+            type: 'result',
+            data: {
+              type: 'result',
+              success: final.success,
+              output: final.output,
+            },
+            timestamp: Date.now(),
+          };
+        }
+      }
+      return {
+        runId: 'parent-run',
+        events: events(),
+        cancel: () => controller.abort(),
+        sendInput: () => {},
+      };
+    },
+  });
+
   it('starts a run and returns a runId', async () => {
     const { startRun } = await import('./run-manager.js');
     const agent = createMockAgent('test', [
@@ -346,6 +405,99 @@ describe('run-manager', () => {
 
     // Run is likely completed, not input_required
     expect(sendInput(runId, 'text')).toBe(false);
+  });
+
+  describe('ctx.run — daemon dispatch', () => {
+    it('creates a linked child run when parent calls ctx.run', async () => {
+      const { startRun, getRuns } = await import('./run-manager.js');
+      const { setAgents } = await import('./routes.js');
+
+      const child = createMockAgent('child', [
+        {
+          type: 'result',
+          data: { type: 'result', success: true, output: { value: 42 } },
+          timestamp: Date.now(),
+        },
+      ]);
+      setAgents([child]);
+
+      const parent = createParentAgent('parent', { childRef: 'child' });
+      const parentRunId = await startRun(parent, 't');
+      await new Promise((r) => setTimeout(r, 50));
+
+      const allRuns = getRuns();
+      const childRun = allRuns.find((r) => r.agentName === 'child');
+      expect(childRun).toBeDefined();
+      expect(childRun?.parentRunId).toBe(parentRunId);
+      expect(childRun?.depth).toBe(1);
+    });
+
+    it('returns error result for unknown child ref, parent continues', async () => {
+      const { startRun, getRun } = await import('./run-manager.js');
+      const { setAgents } = await import('./routes.js');
+      setAgents([]);
+
+      const parent = createParentAgent('parent-unknown', {
+        childRef: 'does-not-exist',
+        onChildResult: (success, output) => ({
+          type: 'result',
+          data: {
+            type: 'result',
+            success: true,
+            output: { childSuccess: success, childOutput: output },
+          },
+          timestamp: Date.now(),
+        }),
+      });
+
+      const runId = await startRun(parent, 't');
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Parent completes successfully, carrying the child's error as its output.
+      expect(getRun(runId)?.state).toBe('completed');
+    });
+
+    it('cancelling parent also cancels children', async () => {
+      const { startRun, cancelRun, getRuns } = await import('./run-manager.js');
+      const { setAgents } = await import('./routes.js');
+
+      // Slow child: yields result only when iterated; we cancel before that.
+      let childCancelled = false;
+      const child: Agent = {
+        manifest: { name: 'slow-child', path: '/test', description: 'slow' },
+        async run() {
+          async function* events(): AsyncIterable<RunEvent> {
+            await new Promise((r) => setTimeout(r, 500));
+            yield {
+              type: 'result',
+              data: { type: 'result', success: true },
+              timestamp: Date.now(),
+            };
+          }
+          return {
+            runId: 'c',
+            events: events(),
+            cancel: () => {
+              childCancelled = true;
+            },
+            sendInput: () => {},
+          };
+        },
+      };
+      setAgents([child]);
+
+      const parent = createParentAgent('parent-cancel', { childRef: 'slow-child' });
+      const parentRunId = await startRun(parent, 't');
+      await new Promise((r) => setTimeout(r, 20));
+
+      cancelRun(parentRunId);
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(childCancelled).toBe(true);
+      const children = getRuns().filter((r) => r.parentRunId === parentRunId);
+      // Child run state may be "canceled" (cascade) or still transitioning.
+      expect(children.length).toBeGreaterThan(0);
+    });
   });
 
   it('emits state changes to listeners', async () => {
