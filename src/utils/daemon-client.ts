@@ -20,10 +20,13 @@ export const get = async <T>(path: string): Promise<T> => {
   return response.json() as Promise<T>;
 };
 
-export const post = async <T>(path: string, body?: unknown): Promise<T> => {
+export const post = async <T>(path: string, body?: unknown): Promise<T> =>
+  request<T>('POST', path, body);
+
+export const request = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
   const response = await fetch(`${getBaseUrl()}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {

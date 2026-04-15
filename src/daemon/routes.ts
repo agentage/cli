@@ -260,5 +260,56 @@ export const createRoutes = (): Router => {
     }
   });
 
+  // Schedule proxy routes — CLI subcommands hit these, daemon forwards to hub
+  const withHubClient = async (
+    res: Parameters<Parameters<typeof router.get>[1]>[1],
+    fn: (client: ReturnType<typeof createHubClient>) => Promise<unknown>
+  ): Promise<void> => {
+    const auth = readAuth();
+    if (!auth) {
+      res.status(401).json({ error: 'Not logged in' });
+      return;
+    }
+    try {
+      const result = await fn(createHubClient(auth.hub.url, auth));
+      res.json(result ?? { ok: true });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(502).json({ error: message });
+    }
+  };
+
+  router.get('/api/hub/schedules', async (req, res) => {
+    await withHubClient(res, (client) =>
+      client.getSchedules({
+        machineId: req.query.machine as string | undefined,
+        enabled: req.query.enabled === undefined ? undefined : req.query.enabled === 'true',
+      })
+    );
+  });
+
+  router.post('/api/hub/schedules', async (req, res) => {
+    await withHubClient(res, (client) =>
+      client.createSchedule(req.body as Parameters<typeof client.createSchedule>[0])
+    );
+  });
+
+  router.patch('/api/hub/schedules/:id', async (req, res) => {
+    await withHubClient(res, (client) =>
+      client.updateSchedule(req.params.id, req.body as Record<string, unknown>)
+    );
+  });
+
+  router.delete('/api/hub/schedules/:id', async (req, res) => {
+    await withHubClient(res, async (client) => {
+      await client.deleteSchedule(req.params.id);
+      return { ok: true };
+    });
+  });
+
+  router.post('/api/hub/schedules/:id/run-now', async (req, res) => {
+    await withHubClient(res, (client) => client.runScheduleNow(req.params.id));
+  });
+
   return router;
 };

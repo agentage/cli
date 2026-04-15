@@ -33,6 +33,18 @@ export interface HubClient {
   sendRunInput: (runId: string, text: string) => Promise<void>;
   getRun: (runId: string) => Promise<unknown>;
   getRunEvents: (runId: string, after?: string) => Promise<unknown[]>;
+  getSchedules: (filters?: { machineId?: string; enabled?: boolean }) => Promise<unknown[]>;
+  createSchedule: (input: {
+    machineId: string;
+    agentName: string;
+    cron: string;
+    timezone?: string;
+    name?: string;
+    input?: Record<string, unknown>;
+  }) => Promise<unknown>;
+  updateSchedule: (id: string, patch: Record<string, unknown>) => Promise<unknown>;
+  deleteSchedule: (id: string) => Promise<void>;
+  runScheduleNow: (id: string) => Promise<{ runId: string }>;
 }
 
 const refreshAccessToken = async (hubUrl: string, auth: AuthState): Promise<boolean> => {
@@ -163,6 +175,28 @@ export const createHubClient = (hubUrl: string, auth: AuthState): HubClient => {
       const path = after ? `/runs/${runId}/events?after=${after}` : `/runs/${runId}/events`;
       const data = await request('GET', path);
       return data as unknown[];
+    },
+
+    getSchedules: async (filters) => {
+      const params = new URLSearchParams();
+      if (filters?.machineId) params.set('machine', filters.machineId);
+      if (filters?.enabled !== undefined) params.set('enabled', String(filters.enabled));
+      const qs = params.toString();
+      const data = await request('GET', `/schedules${qs ? `?${qs}` : ''}`);
+      return data as unknown[];
+    },
+
+    createSchedule: async (input) => request('POST', '/schedules', input),
+
+    updateSchedule: async (id, patch) => request('PATCH', `/schedules/${id}`, patch),
+
+    deleteSchedule: async (id) => {
+      await request('DELETE', `/schedules/${id}`);
+    },
+
+    runScheduleNow: async (id) => {
+      const data = await request('POST', `/schedules/${id}/run-now`);
+      return data as { runId: string };
     },
   };
 };

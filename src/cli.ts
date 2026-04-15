@@ -18,6 +18,7 @@ import { registerInit } from './commands/init.js';
 import { createCreateCommand } from './commands/create.js';
 import { registerUpdate } from './commands/update.js';
 import { registerProjects } from './commands/projects.js';
+import { registerSchedules } from './commands/schedules.js';
 import { checkForUpdateSafe, type UpdateCheckResult } from './utils/update-checker.js';
 
 const program = new Command();
@@ -43,6 +44,7 @@ registerInit(program);
 program.addCommand(createCreateCommand());
 registerUpdate(program);
 registerProjects(program);
+registerSchedules(program);
 
 program.parseAsync().then(async () => {
   // Show update notice if a newer version is available
