@@ -7,6 +7,7 @@ import {
   canTransition,
 } from '@agentage/core';
 import { logError, logInfo } from './logger.js';
+import { validateOutput, type JsonSchema } from '../utils/schema-input.js';
 
 type RunEventListener = (runId: string, event: RunEvent) => void;
 type RunStateListener = (run: Run) => void;
@@ -14,6 +15,7 @@ type RunStateListener = (run: Run) => void;
 interface TrackedRun {
   run: Run;
   process: AgentProcess;
+  outputSchema?: JsonSchema;
 }
 
 const TERMINAL_STATES: Run['state'][] = ['completed', 'failed', 'canceled'];
@@ -90,7 +92,8 @@ export const startRun = async (
 
   const runInput = { task, config, context, ...(project && { project }) };
   const process = await agent.run(runInput);
-  const tracked: TrackedRun = { run, process };
+  const outputSchema = (agent.manifest as { outputSchema?: JsonSchema }).outputSchema;
+  const tracked: TrackedRun = { run, process, outputSchema };
   runs.set(runId, tracked);
 
   updateRunState(tracked, 'working', { startedAt: Date.now() });
@@ -114,9 +117,23 @@ const consumeEvents = async (tracked: TrackedRun): Promise<void> => {
     }
 
     if (event.data.type === 'result') {
-      updateRunState(tracked, event.data.success ? 'completed' : 'failed', {
+      let success = event.data.success;
+      let errorMessage = success ? undefined : 'Agent returned unsuccessful result';
+
+      if (success && tracked.outputSchema && event.data.output !== undefined) {
+        const validation = validateOutput(tracked.outputSchema, event.data.output);
+        if (!validation.ok) {
+          success = false;
+          errorMessage = `Output does not match agent outputSchema:\n${validation.errors
+            .map((e) => `  • ${e}`)
+            .join('\n')}`;
+          logError(`Run ${tracked.run.id}: ${errorMessage}`);
+        }
+      }
+
+      updateRunState(tracked, success ? 'completed' : 'failed', {
         endedAt: Date.now(),
-        error: event.data.success ? undefined : 'Agent returned unsuccessful result',
+        error: errorMessage,
       });
     }
 

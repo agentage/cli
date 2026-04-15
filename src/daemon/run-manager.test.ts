@@ -17,8 +17,12 @@ describe('run-manager', () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  const createMockAgent = (name: string, events: RunEvent[]): Agent => ({
-    manifest: { name, path: '/test', description: `Test agent ${name}` },
+  const createMockAgent = (
+    name: string,
+    events: RunEvent[],
+    extra?: Record<string, unknown>
+  ): Agent => ({
+    manifest: { name, path: '/test', description: `Test agent ${name}`, ...extra },
     async run() {
       const canceled = { value: false };
 
@@ -142,6 +146,95 @@ describe('run-manager', () => {
 
     const run = getRun(runId);
     expect(run?.state).toBe('failed');
+  });
+
+  it('marks run failed when result.output mismatches outputSchema', async () => {
+    const { startRun, getRun } = await import('./run-manager.js');
+    const outputSchema = {
+      type: 'object',
+      properties: { verdict: { type: 'string', enum: ['approve', 'reject'] } },
+      required: ['verdict'],
+      additionalProperties: false,
+    };
+    const agent = createMockAgent(
+      'schema-fail',
+      [
+        {
+          type: 'result',
+          data: { type: 'result', success: true, output: { verdict: 'maybe' } },
+          timestamp: Date.now(),
+        },
+      ],
+      { outputSchema }
+    );
+
+    const runId = await startRun(agent, 't');
+    await new Promise((r) => setTimeout(r, 100));
+
+    const run = getRun(runId);
+    expect(run?.state).toBe('failed');
+    expect(run?.error).toMatch(/outputSchema/);
+  });
+
+  it('marks run completed when output matches schema', async () => {
+    const { startRun, getRun } = await import('./run-manager.js');
+    const outputSchema = {
+      type: 'object',
+      properties: { verdict: { type: 'string', enum: ['approve', 'reject'] } },
+      required: ['verdict'],
+    };
+    const agent = createMockAgent(
+      'schema-ok',
+      [
+        {
+          type: 'result',
+          data: { type: 'result', success: true, output: { verdict: 'approve' } },
+          timestamp: Date.now(),
+        },
+      ],
+      { outputSchema }
+    );
+
+    const runId = await startRun(agent, 't');
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(getRun(runId)?.state).toBe('completed');
+  });
+
+  it('skips output validation when outputSchema is absent', async () => {
+    const { startRun, getRun } = await import('./run-manager.js');
+    const agent = createMockAgent('no-schema', [
+      {
+        type: 'result',
+        data: { type: 'result', success: true, output: { anything: 'goes' } },
+        timestamp: Date.now(),
+      },
+    ]);
+
+    const runId = await startRun(agent, 't');
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(getRun(runId)?.state).toBe('completed');
+  });
+
+  it('skips output validation when result has no output', async () => {
+    const { startRun, getRun } = await import('./run-manager.js');
+    const outputSchema = {
+      type: 'object',
+      required: ['verdict'],
+      properties: { verdict: { type: 'string' } },
+    };
+    const agent = createMockAgent(
+      'no-output',
+      [{ type: 'result', data: { type: 'result', success: true }, timestamp: Date.now() }],
+      { outputSchema }
+    );
+
+    const runId = await startRun(agent, 't');
+    await new Promise((r) => setTimeout(r, 100));
+
+    // success=true with no output is allowed (back-compat).
+    expect(getRun(runId)?.state).toBe('completed');
   });
 
   it('handles non-recoverable error event', async () => {
