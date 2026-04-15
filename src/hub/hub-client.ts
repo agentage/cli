@@ -24,7 +24,23 @@ export interface HubClient {
       activeRunIds: string[];
       daemonVersion: string;
     }
-  ) => Promise<{ pendingCommands: unknown[]; latestCliVersion?: string }>;
+  ) => Promise<{
+    pendingCommands: unknown[];
+    latestCliVersion?: string;
+    schedules?: Array<{
+      id: string;
+      agentName: string;
+      cron: string;
+      timezone: string;
+      nextFireAt: string;
+      missedFire: 'skip' | 'run_once';
+      concurrency: 'skip' | 'queue';
+    }>;
+  }>;
+  fireSchedule: (
+    scheduleId: string,
+    expectedNextFireAt: string
+  ) => Promise<{ acquired: boolean; runId?: string; nextFireAt: string }>;
   deregister: (machineId: string) => Promise<void>;
   getMachines: () => Promise<unknown[]>;
   getAgents: (machineId?: string) => Promise<unknown[]>;
@@ -123,7 +139,14 @@ export const createHubClient = (hubUrl: string, auth: AuthState): HubClient => {
 
     heartbeat: async (machineId, body) => {
       const data = await request('POST', `/machines/${machineId}/heartbeat`, body);
-      return data as { pendingCommands: unknown[]; latestCliVersion?: string };
+      return data as Awaited<ReturnType<HubClient['heartbeat']>>;
+    },
+
+    fireSchedule: async (scheduleId, expectedNextFireAt) => {
+      const data = await request('POST', `/schedules/${scheduleId}/fire`, {
+        expectedNextFireAt,
+      });
+      return data as Awaited<ReturnType<HubClient['fireSchedule']>>;
     },
 
     deregister: async (machineId) => {
