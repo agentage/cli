@@ -4,10 +4,42 @@ import {
   type AgentProcess,
   type Run,
   type RunEvent,
+  type RunInput,
   canTransition,
 } from '@agentage/core';
 import { logError, logInfo } from './logger.js';
 import { validateOutput, type JsonSchema } from '../utils/schema-input.js';
+import { getAgents } from './routes.js';
+
+// Augment core Run with lineage info. Will move into @agentage/core canonically
+// once the Phase 2 composition work stabilises.
+declare module '@agentage/core' {
+  interface Run {
+    parentRunId?: string;
+    depth?: number;
+  }
+}
+
+// Local mirrors of types added in @agentage/core@0.8.x (ctx.run primitive).
+// Switch to importing directly once the CLI bumps its core dependency.
+interface AgentRegistryLocal {
+  resolve(ref: string): Promise<Agent | null>;
+}
+interface CtxRunResultLocal<O = unknown> {
+  success: boolean;
+  output?: O;
+  error?: string;
+}
+type CtxRunFnLocal = <O = unknown>(
+  ref: string | Agent,
+  input: RunInput
+) => AsyncGenerator<RunEvent, CtxRunResultLocal<O>, void>;
+interface AgentRuntimeLocal {
+  registry?: AgentRegistryLocal;
+  parentRunId?: string;
+  depth?: number;
+  dispatch?: CtxRunFnLocal;
+}
 
 type RunEventListener = (runId: string, event: RunEvent) => void;
 type RunStateListener = (run: Run) => void;
@@ -16,6 +48,7 @@ interface TrackedRun {
   run: Run;
   process: AgentProcess;
   outputSchema?: JsonSchema;
+  childRunIds: Set<string>;
 }
 
 const TERMINAL_STATES: Run['state'][] = ['completed', 'failed', 'canceled'];
@@ -72,28 +105,123 @@ const updateRunState = (
   }
 };
 
+interface StartRunOptions {
+  parentRunId?: string;
+  depth?: number;
+}
+
+export const DAEMON_DEPTH_LIMIT = 50;
+
+/**
+ * Build a daemon-side runtime that honours ctx.run() inside agent code.
+ * - registry: resolves agent names against the daemon's discovered agents
+ * - dispatch: creates a linked child run, streams its events to the parent
+ *   iterator, and returns the final CtxRunResultLocal
+ */
+const buildRuntime = (parentRunId: string, parentDepth: number): AgentRuntimeLocal => {
+  const registry = {
+    async resolve(ref: string): Promise<Agent | null> {
+      return getAgents().find((a) => a.manifest.name === ref) ?? null;
+    },
+  };
+
+  const dispatch: CtxRunFnLocal = async function* <O = unknown>(
+    ref: string | Agent,
+    input: RunInput
+  ): AsyncGenerator<RunEvent, CtxRunResultLocal<O>, void> {
+    const nextDepth = parentDepth + 1;
+    if (nextDepth > DAEMON_DEPTH_LIMIT) {
+      return { success: false, error: `ctx.run depth limit exceeded (${DAEMON_DEPTH_LIMIT})` };
+    }
+
+    let child: Agent | null;
+    if (typeof ref === 'string') {
+      child = await registry.resolve(ref);
+      if (!child) {
+        return { success: false, error: `agent "${ref}" not found` };
+      }
+    } else {
+      child = ref;
+    }
+
+    let childRunId: string;
+    try {
+      childRunId = await startRun(
+        child,
+        input.task ?? '',
+        input.config,
+        input.context,
+        input.project,
+        { parentRunId, depth: nextDepth }
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, error: `failed to start child run: ${message}` };
+    }
+
+    const parent = runs.get(parentRunId);
+    parent?.childRunIds.add(childRunId);
+
+    // Stream child events back to the parent iterator (the daemon already
+    // fan-outs to event listeners via consumeEvents; this surfaces the same
+    // events through the parent agent's generator so the author can observe
+    // them if they iterate the yielded events).
+    const childTracked = runs.get(childRunId);
+    let finalResult: CtxRunResultLocal<O> = { success: true };
+    if (childTracked) {
+      for await (const event of childTracked.process.events) {
+        yield event;
+        if (event.data.type === 'result') {
+          finalResult = {
+            success: event.data.success,
+            output: event.data.output as O,
+            error: event.data.success ? undefined : 'child run returned unsuccessful result',
+          };
+        }
+      }
+    }
+    return finalResult;
+  };
+
+  return { registry, dispatch, parentRunId, depth: parentDepth };
+};
+
 export const startRun = async (
   agent: Agent,
   task: string,
   config?: Record<string, unknown>,
   context?: string[],
-  project?: { name: string; path: string; branch?: string; remote?: string }
+  project?: { name: string; path: string; branch?: string; remote?: string },
+  options: StartRunOptions = {}
 ): Promise<string> => {
   const runId = randomUUID();
+  const depth = options.depth ?? 0;
   const run: Run = {
     id: runId,
     agentName: agent.manifest.name,
     input: task,
     state: 'submitted',
     createdAt: Date.now(),
+    ...(options.parentRunId && { parentRunId: options.parentRunId }),
+    ...(depth > 0 && { depth }),
   };
 
-  logInfo(`Starting run ${runId} for agent "${agent.manifest.name}"`);
+  logInfo(
+    `Starting run ${runId} for agent "${agent.manifest.name}"${options.parentRunId ? ` (child of ${options.parentRunId})` : ''}`
+  );
 
   const runInput = { task, config, context, ...(project && { project }) };
-  const process = await agent.run(runInput);
+  const runtime = buildRuntime(runId, depth);
+  // @agentage/core ^0.8 adds an optional second `runtime` arg; older versions
+  // simply ignore it at runtime (extra positional args are harmless for a
+  // regular function). Cast for type compatibility until the bump lands.
+  const runWithRuntime = agent.run as (
+    input: RunInput,
+    runtime?: AgentRuntimeLocal
+  ) => Promise<AgentProcess>;
+  const process = await runWithRuntime(runInput, runtime);
   const outputSchema = (agent.manifest as { outputSchema?: JsonSchema }).outputSchema;
-  const tracked: TrackedRun = { run, process, outputSchema };
+  const tracked: TrackedRun = { run, process, outputSchema, childRunIds: new Set() };
   runs.set(runId, tracked);
 
   updateRunState(tracked, 'working', { startedAt: Date.now() });
@@ -163,6 +291,13 @@ export const cancelRun = (runId: string): boolean => {
   if (!canTransition(tracked.run.state, 'canceled')) return false;
 
   tracked.process.cancel();
+  // Cascade to children — cooperative cancel via their AbortSignal. Agentkit's
+  // makeCtxRun already wires parent->child signal propagation in-process, but
+  // we cancel here too so the daemon's state machine marks the child runs as
+  // canceled even if the agent didn't iterate the child generator.
+  for (const childId of tracked.childRunIds) {
+    cancelRun(childId);
+  }
   updateRunState(tracked, 'canceled', { endedAt: Date.now() });
   logInfo(`Run ${runId} canceled`);
   return true;
