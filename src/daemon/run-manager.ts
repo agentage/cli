@@ -43,6 +43,7 @@ interface AgentRuntimeLocal {
 
 type RunEventListener = (runId: string, event: RunEvent) => void;
 type RunStateListener = (run: Run) => void;
+type RunStartedListener = (run: Run) => void;
 
 interface TrackedRun {
   run: Run;
@@ -57,6 +58,7 @@ const RUN_CLEANUP_TTL_MS = 5 * 60_000; // Clean up terminal runs after 5 minutes
 const runs = new Map<string, TrackedRun>();
 const eventListeners = new Set<RunEventListener>();
 const stateListeners = new Set<RunStateListener>();
+const startedListeners = new Set<RunStartedListener>();
 
 export const onRunEvent = (listener: RunEventListener): (() => void) => {
   eventListeners.add(listener);
@@ -66,6 +68,11 @@ export const onRunEvent = (listener: RunEventListener): (() => void) => {
 export const onRunStateChange = (listener: RunStateListener): (() => void) => {
   stateListeners.add(listener);
   return () => stateListeners.delete(listener);
+};
+
+export const onRunStarted = (listener: RunStartedListener): (() => void) => {
+  startedListeners.add(listener);
+  return () => startedListeners.delete(listener);
 };
 
 const emitEvent = (runId: string, event: RunEvent): void => {
@@ -223,6 +230,16 @@ export const startRun = async (
   const outputSchema = (agent.manifest as { outputSchema?: JsonSchema }).outputSchema;
   const tracked: TrackedRun = { run, process, outputSchema, childRunIds: new Set() };
   runs.set(runId, tracked);
+
+  // Fire startedListeners BEFORE the first state change so subscribers (hub-ws)
+  // can register their event/state forwarders first.
+  for (const listener of startedListeners) {
+    try {
+      listener(run);
+    } catch (err) {
+      logError(`onRunStarted listener threw: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   updateRunState(tracked, 'working', { startedAt: Date.now() });
 

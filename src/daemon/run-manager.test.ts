@@ -407,6 +407,63 @@ describe('run-manager', () => {
     expect(sendInput(runId, 'text')).toBe(false);
   });
 
+  describe('onRunStarted', () => {
+    it('fires for top-level runs with no parentRunId', async () => {
+      const { startRun, onRunStarted } = await import('./run-manager.js');
+      const seen: Array<{ id: string; parentRunId?: string }> = [];
+      const unsub = onRunStarted((run) => {
+        seen.push({ id: run.id, parentRunId: run.parentRunId });
+      });
+
+      const agent = createMockAgent('top-level', [
+        { type: 'result', data: { type: 'result', success: true }, timestamp: Date.now() },
+      ]);
+      const runId = await startRun(agent, 't');
+
+      expect(seen.length).toBeGreaterThanOrEqual(1);
+      const self = seen.find((s) => s.id === runId);
+      expect(self).toBeDefined();
+      expect(self?.parentRunId).toBeUndefined();
+      unsub();
+    });
+
+    it('fires for ctx.run children with parentRunId and depth set', async () => {
+      const { startRun, onRunStarted } = await import('./run-manager.js');
+      const { setAgents } = await import('./routes.js');
+      const seen: Array<{ id: string; parentRunId?: string; depth?: number }> = [];
+      const unsub = onRunStarted((run) => {
+        seen.push({ id: run.id, parentRunId: run.parentRunId, depth: run.depth });
+      });
+
+      const child = createMockAgent('child-started', [
+        { type: 'result', data: { type: 'result', success: true }, timestamp: Date.now() },
+      ]);
+      setAgents([child]);
+
+      const parent = createParentAgent('parent-started', { childRef: 'child-started' });
+      const parentId = await startRun(parent, 't');
+      await new Promise((r) => setTimeout(r, 50));
+
+      const childEvent = seen.find((s) => s.parentRunId === parentId);
+      expect(childEvent).toBeDefined();
+      expect(childEvent?.depth).toBe(1);
+      unsub();
+    });
+
+    it('listener errors do not break startRun', async () => {
+      const { startRun, onRunStarted } = await import('./run-manager.js');
+      const unsub = onRunStarted(() => {
+        throw new Error('listener boom');
+      });
+
+      const agent = createMockAgent('tolerant', [
+        { type: 'result', data: { type: 'result', success: true }, timestamp: Date.now() },
+      ]);
+      await expect(startRun(agent, 't')).resolves.toBeDefined();
+      unsub();
+    });
+  });
+
   describe('ctx.run — daemon dispatch', () => {
     it('creates a linked child run when parent calls ctx.run', async () => {
       const { startRun, getRuns } = await import('./run-manager.js');

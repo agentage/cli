@@ -7,6 +7,7 @@ import {
   sendInput,
   onRunEvent,
   onRunStateChange,
+  onRunStarted,
 } from '../daemon/run-manager.js';
 
 interface WsExecuteRequest {
@@ -155,6 +156,51 @@ export const createHubWs = (
       });
 
       ws.on('message', handleMessage);
+
+      // Relay child runs created by ctx.run() — the daemon starts them
+      // internally (no `execute` from hub), so we register their lineage and
+      // forward their events/state using the daemon-generated runId.
+      const unsubStarted = onRunStarted((run) => {
+        if (!run.parentRunId) return; // only mirror ctx.run children
+        send({
+          type: 'run_started',
+          runId: run.id,
+          agentName: run.agentName,
+          input: run.input,
+          parentRunId: run.parentRunId,
+          depth: run.depth ?? 1,
+          createdAt: run.createdAt,
+        });
+
+        const TERMINAL_STATES = ['completed', 'failed', 'canceled'];
+        const unsubs: Array<() => void> = [];
+        const cleanupChildListeners = (): void => {
+          for (const fn of unsubs) fn();
+          unsubs.length = 0;
+        };
+        unsubs.push(
+          onRunEvent((eventRunId, event) => {
+            if (eventRunId === run.id) {
+              send({ type: 'run_event', runId: run.id, event });
+            }
+          })
+        );
+        unsubs.push(
+          onRunStateChange((child) => {
+            if (child.id !== run.id) return;
+            send({
+              type: 'run_state',
+              runId: run.id,
+              state: child.state,
+              error: child.error,
+              stats: child.stats,
+            });
+            if (TERMINAL_STATES.includes(child.state)) cleanupChildListeners();
+          })
+        );
+        eventUnsubscribers.push(cleanupChildListeners);
+      });
+      eventUnsubscribers.push(unsubStarted);
 
       ws.on('close', () => {
         connected = false;
