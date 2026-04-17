@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.18.0] - 2026-04-17
+
+### New Features
+- Add support for configurable agents and projects directories with default and additional paths
+
 ## [0.17.1] - 2026-04-17
 
 ### New Features
