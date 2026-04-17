@@ -19,11 +19,13 @@ export interface DirConfig {
   additional: string[];
 }
 
+export interface MachineIdentity {
+  id: string;
+  name: string;
+}
+
 export interface DaemonConfig {
-  machine: {
-    id: string;
-    name: string;
-  };
+  machine: MachineIdentity;
   daemon: {
     port: number;
   };
@@ -58,11 +60,47 @@ export const getProjectsDirs = (config: DaemonConfig): string[] => {
   return Array.from(new Set(all));
 };
 
-const createDefaultConfig = (): DaemonConfig => ({
-  machine: {
-    id: randomUUID(),
-    name: hostname(),
-  },
+const getMachinePath = (): string => join(getConfigDir(), 'machine.json');
+
+const readMachineFile = (): MachineIdentity | undefined => {
+  const path = getMachinePath();
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as Partial<MachineIdentity>;
+    if (typeof parsed.id === 'string' && typeof parsed.name === 'string') {
+      return { id: parsed.id, name: parsed.name };
+    }
+  } catch {
+    // fall through
+  }
+  return undefined;
+};
+
+const writeMachineFile = (machine: MachineIdentity): void => {
+  const configDir = getConfigDir();
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true });
+  }
+  writeFileSync(getMachinePath(), JSON.stringify(machine, null, 2) + '\n', 'utf-8');
+};
+
+/**
+ * Resolve machine identity with this priority:
+ *   1. machine.json (authoritative — survives config.json regen)
+ *   2. legacy config.json `machine` block (migrated into machine.json)
+ *   3. freshly minted identity (UUID + hostname)
+ */
+const resolveMachine = (fromLegacyConfig: MachineIdentity | undefined): MachineIdentity => {
+  const fromFile = readMachineFile();
+  if (fromFile) return fromFile;
+
+  const adopted = fromLegacyConfig ?? { id: randomUUID(), name: hostname() };
+  writeMachineFile(adopted);
+  return adopted;
+};
+
+const createDefaultConfig = (machine: MachineIdentity): DaemonConfig => ({
+  machine,
   daemon: {
     port: 4243,
   },
@@ -91,13 +129,18 @@ const createDefaultConfig = (): DaemonConfig => ({
 export const loadConfig = (): DaemonConfig => {
   const configPath = join(getConfigDir(), 'config.json');
 
-  let config: DaemonConfig;
-
+  let rawConfig: Partial<DaemonConfig> | undefined;
   if (existsSync(configPath)) {
-    const raw = readFileSync(configPath, 'utf-8');
-    config = JSON.parse(raw) as DaemonConfig;
-  } else {
-    config = createDefaultConfig();
+    rawConfig = JSON.parse(readFileSync(configPath, 'utf-8')) as Partial<DaemonConfig>;
+  }
+
+  const machine = resolveMachine(rawConfig?.machine);
+
+  const config: DaemonConfig = rawConfig
+    ? ({ ...rawConfig, machine } as DaemonConfig)
+    : createDefaultConfig(machine);
+
+  if (!existsSync(configPath)) {
     saveConfig(config);
   }
 
@@ -124,6 +167,7 @@ export const saveConfig = (config: DaemonConfig): void => {
   if (!existsSync(configDir)) {
     mkdirSync(configDir, { recursive: true });
   }
+  writeMachineFile(config.machine);
   const configPath = join(configDir, 'config.json');
   writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
 };
