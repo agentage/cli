@@ -1,2 +1,2 @@
-### New Features
-- Add support for configurable agents and projects directories with default and additional paths
+### Bug Fixes
+- Fix daemon machine identity persistence by storing in machine.json file
