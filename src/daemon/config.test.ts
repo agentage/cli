@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -31,6 +31,82 @@ describe('config', () => {
     expect(config.projects.default).toBe(join(homedir(), 'projects'));
     expect(config.projects.additional).toEqual([]);
     expect(existsSync(join(testDir, 'config.json'))).toBe(true);
+    expect(existsSync(join(testDir, 'machine.json'))).toBe(true);
+  });
+
+  it('persists machine identity across config.json deletion', async () => {
+    const { loadConfig } = await import('./config.js');
+    const first = loadConfig();
+    const originalId = first.machine.id;
+    const originalName = first.machine.name;
+
+    // Simulate user deleting (or regenerating) config.json — machine.json remains
+    unlinkSync(join(testDir, 'config.json'));
+    expect(existsSync(join(testDir, 'machine.json'))).toBe(true);
+
+    // Second load: config.json regenerated, identity preserved from machine.json
+    const second = loadConfig();
+    expect(second.machine.id).toBe(originalId);
+    expect(second.machine.name).toBe(originalName);
+    expect(existsSync(join(testDir, 'config.json'))).toBe(true);
+  });
+
+  it('migrates legacy machine block from config.json into machine.json', async () => {
+    const legacyId = '260d7044-b229-4afb-bbf3-40af745c3926';
+    writeFileSync(
+      join(testDir, 'config.json'),
+      JSON.stringify({
+        machine: { id: legacyId, name: 'legacy-host' },
+        daemon: { port: 4243 },
+        agents: { default: '/a', additional: [] },
+        projects: { default: '/p', additional: [] },
+        sync: { events: {} },
+      }) + '\n'
+    );
+
+    const { loadConfig } = await import('./config.js');
+    const config = loadConfig();
+
+    expect(config.machine.id).toBe(legacyId);
+    expect(config.machine.name).toBe('legacy-host');
+
+    const machineJson = JSON.parse(readFileSync(join(testDir, 'machine.json'), 'utf-8'));
+    expect(machineJson.id).toBe(legacyId);
+    expect(machineJson.name).toBe('legacy-host');
+  });
+
+  it('machine.json is authoritative over config.json when both exist', async () => {
+    writeFileSync(
+      join(testDir, 'machine.json'),
+      JSON.stringify({ id: 'from-machine-json', name: 'auth-host' }) + '\n'
+    );
+    writeFileSync(
+      join(testDir, 'config.json'),
+      JSON.stringify({
+        machine: { id: 'from-config-json', name: 'stale-host' },
+        daemon: { port: 4243 },
+        agents: { default: '/a', additional: [] },
+        projects: { default: '/p', additional: [] },
+        sync: { events: {} },
+      }) + '\n'
+    );
+
+    const { loadConfig } = await import('./config.js');
+    const config = loadConfig();
+
+    expect(config.machine.id).toBe('from-machine-json');
+    expect(config.machine.name).toBe('auth-host');
+  });
+
+  it('saveConfig writes machine.json too', async () => {
+    const { loadConfig, saveConfig } = await import('./config.js');
+    const config = loadConfig();
+    config.machine.name = 'renamed';
+    saveConfig(config);
+
+    const machineJson = JSON.parse(readFileSync(join(testDir, 'machine.json'), 'utf-8'));
+    expect(machineJson.name).toBe('renamed');
+    expect(machineJson.id).toBe(config.machine.id);
   });
 
   it('generates machine ID as UUID v4', async () => {
