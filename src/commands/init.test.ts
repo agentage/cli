@@ -23,7 +23,8 @@ describe('init command', () => {
   const defaultConfig = {
     machine: { id: 'machine-123', name: 'test-host' },
     daemon: { port: 4243 },
-    discovery: { dirs: [] },
+    agents: { default: '/home/user/agents', additional: [] },
+    projects: { default: '/home/user/projects', additional: [] },
     sync: {
       events: {
         state: true,
@@ -61,12 +62,12 @@ describe('init command', () => {
     expect(logs.some((l) => l.includes('Machine name: my-pc'))).toBe(true);
   });
 
-  it('adds discovery dir with --dir', async () => {
+  it('adds agents dir with --dir', async () => {
     await program.parseAsync(['node', 'agentage', 'init', '--dir', '/tmp/agents']);
 
     const saved = mockSaveConfig.mock.calls[0]![0];
-    expect(saved.discovery.dirs).toContain('/tmp/agents');
-    expect(logs.some((l) => l.includes('Discovery dir:'))).toBe(true);
+    expect(saved.agents.additional).toContain('/tmp/agents');
+    expect(logs.some((l) => l.includes('Agents dir:'))).toBe(true);
   });
 
   it('sets hub URL with --hub', async () => {

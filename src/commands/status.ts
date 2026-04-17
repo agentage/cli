@@ -23,125 +23,169 @@ export const registerStatus = (program: Command): void => {
   program
     .command('status')
     .description('Show daemon and connection status')
-    .option('--add-dir <path>', 'Add directory to agent discovery')
-    .option('--remove-dir <path>', 'Remove directory from agent discovery')
+    .option('--add-dir <path>', 'Add directory to agents.additional')
+    .option('--remove-dir <path>', 'Remove directory from agents.additional')
+    .option('--set-default <path>', 'Set agents.default (install target)')
     .option('--json', 'JSON output')
-    .action(async (opts: { addDir?: string; removeDir?: string; json?: boolean }) => {
-      if (opts.addDir) {
-        handleAddDir(opts.addDir);
-        return;
-      }
+    .action(
+      async (opts: {
+        addDir?: string;
+        removeDir?: string;
+        setDefault?: string;
+        json?: boolean;
+      }) => {
+        if (opts.addDir) {
+          handleAddDir(opts.addDir);
+          return;
+        }
 
-      if (opts.removeDir) {
-        handleRemoveDir(opts.removeDir);
-        return;
-      }
+        if (opts.removeDir) {
+          handleRemoveDir(opts.removeDir);
+          return;
+        }
 
-      await ensureDaemon();
-      const [health, agents, runs, updateCheck] = await Promise.all([
-        get<HealthResponse>('/api/health'),
-        get<unknown[]>('/api/agents'),
-        get<unknown[]>('/api/runs'),
-        checkForUpdateSafe(),
-      ]);
-      const pid = getDaemonPid();
-      const config = loadConfig();
-      const dirs = config.discovery.dirs;
+        if (opts.setDefault) {
+          handleSetDefault(opts.setDefault);
+          return;
+        }
 
-      const projects = loadProjects();
+        await ensureDaemon();
+        const [health, agents, runs, updateCheck] = await Promise.all([
+          get<HealthResponse>('/api/health'),
+          get<unknown[]>('/api/agents'),
+          get<unknown[]>('/api/runs'),
+          checkForUpdateSafe(),
+        ]);
+        const pid = getDaemonPid();
+        const config = loadConfig();
 
-      if (opts.json) {
+        const projects = loadProjects();
+
+        if (opts.json) {
+          console.log(
+            JSON.stringify(
+              {
+                daemon: { status: 'running', pid, port: config.daemon.port },
+                version: {
+                  current: health.version,
+                  latest: updateCheck?.latestVersion ?? null,
+                  updateAvailable: updateCheck?.updateAvailable ?? false,
+                },
+                uptime: health.uptime,
+                hub: {
+                  connected: health.hubConnected,
+                  connecting: health.hubConnecting,
+                  url: health.hubUrl,
+                  userEmail: health.userEmail,
+                },
+                machine: health.machineId,
+                agents: agents.length,
+                projects: projects.length,
+                runs: runs.length,
+                agentsDefault: config.agents.default,
+                agentsAdditional: config.agents.additional,
+                projectsDefault: config.projects.default,
+                projectsAdditional: config.projects.additional,
+              },
+              null,
+              2
+            )
+          );
+          process.exit(0);
+          return;
+        }
+
+        const uptime = formatUptime(health.uptime);
+        const activeRuns = runs.length;
+
         console.log(
-          JSON.stringify(
-            {
-              daemon: { status: 'running', pid, port: config.daemon.port },
-              version: {
-                current: health.version,
-                latest: updateCheck?.latestVersion ?? null,
-                updateAvailable: updateCheck?.updateAvailable ?? false,
-              },
-              uptime: health.uptime,
-              hub: {
-                connected: health.hubConnected,
-                connecting: health.hubConnecting,
-                url: health.hubUrl,
-                userEmail: health.userEmail,
-              },
-              machine: health.machineId,
-              agents: agents.length,
-              projects: projects.length,
-              runs: runs.length,
-              discoveryDirs: dirs,
-            },
-            null,
-            2
-          )
+          `Daemon:     ${chalk.green('running')} (PID ${pid}, port ${config.daemon.port})`
         );
-        process.exit(0);
-        return;
-      }
+        const versionLine = updateCheck?.updateAvailable
+          ? `${health.version} ${chalk.yellow(`→ ${updateCheck.latestVersion} available`)} ${chalk.dim('(run `agentage update`)')}`
+          : health.version;
+        console.log(`Version:    ${versionLine}`);
+        console.log(`Uptime:     ${uptime}`);
 
-      const uptime = formatUptime(health.uptime);
-      const activeRuns = runs.length;
+        if (health.hubConnected) {
+          console.log(`Hub:        ${chalk.green('connected')} (${health.hubUrl})`);
+          console.log(`User:       ${health.userEmail}`);
+        } else if (health.hubConnecting) {
+          console.log(`Hub:        ${chalk.cyan('connecting')} (${health.hubUrl})`);
+          console.log(`User:       ${health.userEmail}`);
+        } else if (health.hubUrl) {
+          console.log(`Hub:        ${chalk.yellow('disconnected')} (${health.hubUrl})`);
+          console.log(`User:       ${health.userEmail}`);
+        } else {
+          console.log(`Hub:        ${chalk.yellow('not connected (standalone mode)')}`);
+        }
 
-      console.log(`Daemon:     ${chalk.green('running')} (PID ${pid}, port 4243)`);
-      const versionLine = updateCheck?.updateAvailable
-        ? `${health.version} ${chalk.yellow(`→ ${updateCheck.latestVersion} available`)} ${chalk.dim('(run `agentage update`)')}`
-        : health.version;
-      console.log(`Version:    ${versionLine}`);
-      console.log(`Uptime:     ${uptime}`);
+        console.log(`Machine:    ${health.machineId}`);
+        console.log(`Agents:     ${agents.length} discovered`);
+        console.log(`Projects:   ${projects.length} registered`);
+        console.log(`Runs:       ${activeRuns} active`);
 
-      if (health.hubConnected) {
-        console.log(`Hub:        ${chalk.green('connected')} (${health.hubUrl})`);
-        console.log(`User:       ${health.userEmail}`);
-      } else if (health.hubConnecting) {
-        console.log(`Hub:        ${chalk.cyan('connecting')} (${health.hubUrl})`);
-        console.log(`User:       ${health.userEmail}`);
-      } else if (health.hubUrl) {
-        console.log(`Hub:        ${chalk.yellow('disconnected')} (${health.hubUrl})`);
-        console.log(`User:       ${health.userEmail}`);
-      } else {
-        console.log(`Hub:        ${chalk.yellow('not connected (standalone mode)')}`);
-      }
-
-      console.log(`Machine:    ${health.machineId}`);
-      console.log(`Agents:     ${agents.length} discovered`);
-      console.log(`Projects:   ${projects.length} registered`);
-      console.log(`Runs:       ${activeRuns} active`);
-
-      if (dirs.length > 0) {
-        console.log(`Discovery:  ${dirs[0]}`);
-        for (const dir of dirs.slice(1)) {
+        console.log(`Agents:     ${config.agents.default} ${chalk.dim('(default)')}`);
+        for (const dir of config.agents.additional) {
           console.log(`            ${dir}`);
         }
-      } else {
-        console.log('Discovery:  (none)');
-      }
+        console.log(`Projects:   ${config.projects.default} ${chalk.dim('(default)')}`);
+        for (const dir of config.projects.additional) {
+          console.log(`            ${dir}`);
+        }
 
-      process.exit(0);
-    });
+        process.exit(0);
+      }
+    );
 };
 
 const handleAddDir = (path: string): void => {
   const absolute = resolve(path);
   const config = loadConfig();
-  if (config.discovery.dirs.includes(absolute)) {
-    console.log(chalk.yellow(`Directory already in discovery: ${absolute}`));
+  if (config.agents.default === absolute || config.agents.additional.includes(absolute)) {
+    console.log(chalk.yellow(`Directory already configured: ${absolute}`));
     process.exit(0);
     return;
   }
-  config.discovery.dirs.push(absolute);
+  config.agents.additional.push(absolute);
   saveConfig(config);
-  console.log(chalk.green(`Added discovery directory: ${absolute}`));
+  console.log(chalk.green(`Added agents directory: ${absolute}`));
   process.exit(0);
 };
 
 const handleRemoveDir = (path: string): void => {
   const absolute = resolve(path);
   const config = loadConfig();
-  config.discovery.dirs = config.discovery.dirs.filter((d) => d !== absolute);
+  if (config.agents.default === absolute) {
+    console.error(
+      chalk.red(`Cannot remove default directory. Use --set-default to change it first.`)
+    );
+    process.exit(1);
+    return;
+  }
+  config.agents.additional = config.agents.additional.filter((d) => d !== absolute);
   saveConfig(config);
-  console.log(chalk.green(`Removed discovery directory: ${absolute}`));
+  console.log(chalk.green(`Removed agents directory: ${absolute}`));
+  process.exit(0);
+};
+
+const handleSetDefault = (path: string): void => {
+  const absolute = resolve(path);
+  const config = loadConfig();
+  const previousDefault = config.agents.default;
+  if (previousDefault === absolute) {
+    console.log(chalk.yellow(`Already the default: ${absolute}`));
+    process.exit(0);
+    return;
+  }
+  config.agents.additional = config.agents.additional.filter((d) => d !== absolute);
+  if (previousDefault && !config.agents.additional.includes(previousDefault)) {
+    config.agents.additional.unshift(previousDefault);
+  }
+  config.agents.default = absolute;
+  saveConfig(config);
+  console.log(chalk.green(`Set agents default: ${absolute}`));
+  console.log(chalk.dim(`Previous default moved to additional: ${previousDefault}`));
   process.exit(0);
 };
 

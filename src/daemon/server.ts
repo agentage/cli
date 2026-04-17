@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import express from 'express';
 import { type Agent, type AgentFactory } from '@agentage/core';
-import { loadConfig } from './config.js';
+import { loadConfig, getAgentsDirs } from './config.js';
 import { logInfo } from './logger.js';
 import { createRoutes, setAgents, setRefreshHandler } from './routes.js';
 import { setupWebSocket } from './websocket.js';
@@ -29,7 +29,7 @@ export const createDaemonServer = (): DaemonServer => {
   // Wire up refresh to actually rescan
   setRefreshHandler(async () => {
     const config = loadConfig();
-    const agents = await scanAgents(config.discovery.dirs, factories);
+    const agents = await scanAgents(getAgentsDirs(config), factories);
     setAgents(agents);
     logInfo(`Refresh: discovered ${agents.length} agent(s)`);
     return agents;

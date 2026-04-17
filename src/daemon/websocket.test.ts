@@ -19,7 +19,8 @@ describe('websocket', () => {
       JSON.stringify({
         machine: { id: randomUUID(), name: 'test' },
         daemon: { port: 4243 },
-        discovery: { dirs: [] },
+        agents: { default: '/tmp/agents', additional: [] },
+        projects: { default: '/tmp/projects', additional: [] },
         sync: { events: {} },
       })
     );

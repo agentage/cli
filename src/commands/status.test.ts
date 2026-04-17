@@ -49,8 +49,13 @@ describe('status command', () => {
   const defaultConfig = {
     machine: { id: 'machine-123', name: 'test-host' },
     daemon: { port: 4243 },
-    discovery: {
-      dirs: ['/home/user/.agentage/agents', '/home/user/.agentage/skills'],
+    agents: {
+      default: '/home/user/agents',
+      additional: ['/home/user/.agentage/skills'],
+    },
+    projects: {
+      default: '/home/user/projects',
+      additional: [],
     },
     sync: {
       events: {
@@ -236,7 +241,7 @@ describe('status command', () => {
     expect(logs.some((l) => l.includes('45s'))).toBe(true);
   });
 
-  it('displays discovery directories in status output', async () => {
+  it('displays agent dirs in status output', async () => {
     mockGet.mockImplementation(async (path: string) => {
       if (path === '/api/health') return baseHealth;
       return [];
@@ -245,18 +250,18 @@ describe('status command', () => {
 
     await program.parseAsync(['node', 'agentage', 'status']);
 
-    expect(logs.some((l) => l.includes('Discovery:'))).toBe(true);
-    expect(logs.some((l) => l.includes('/home/user/.agentage/agents'))).toBe(true);
+    expect(logs.some((l) => l.includes('/home/user/agents'))).toBe(true);
     expect(logs.some((l) => l.includes('/home/user/.agentage/skills'))).toBe(true);
+    expect(logs.some((l) => l.includes('/home/user/projects'))).toBe(true);
   });
 
-  it('--add-dir adds a new directory to config', async () => {
+  it('--add-dir adds a new directory to agents.additional', async () => {
     await program.parseAsync(['node', 'agentage', 'status', '--add-dir', '/tmp/new-agents']);
 
     expect(mockSaveConfig).toHaveBeenCalledTimes(1);
     const savedConfig = mockSaveConfig.mock.calls[0]![0];
-    expect(savedConfig.discovery.dirs).toContain('/tmp/new-agents');
-    expect(logs.some((l) => l.includes('Added discovery directory'))).toBe(true);
+    expect(savedConfig.agents.additional).toContain('/tmp/new-agents');
+    expect(logs.some((l) => l.includes('Added agents directory'))).toBe(true);
     expect(mockExit).toHaveBeenCalledWith(0);
   });
 
@@ -266,29 +271,60 @@ describe('status command', () => {
       'agentage',
       'status',
       '--add-dir',
-      '/home/user/.agentage/agents',
+      '/home/user/.agentage/skills',
     ]);
 
     expect(mockSaveConfig).not.toHaveBeenCalled();
-    expect(logs.some((l) => l.includes('already in discovery'))).toBe(true);
+    expect(logs.some((l) => l.includes('already configured'))).toBe(true);
     expect(mockExit).toHaveBeenCalledWith(0);
   });
 
-  it('--remove-dir removes a directory from config', async () => {
+  it('--add-dir rejects path matching agents.default as duplicate', async () => {
+    await program.parseAsync(['node', 'agentage', 'status', '--add-dir', '/home/user/agents']);
+
+    expect(mockSaveConfig).not.toHaveBeenCalled();
+    expect(logs.some((l) => l.includes('already configured'))).toBe(true);
+  });
+
+  it('--remove-dir removes from agents.additional', async () => {
     await program.parseAsync([
       'node',
       'agentage',
       'status',
       '--remove-dir',
-      '/home/user/.agentage/agents',
+      '/home/user/.agentage/skills',
     ]);
 
     expect(mockSaveConfig).toHaveBeenCalledTimes(1);
     const savedConfig = mockSaveConfig.mock.calls[0]![0];
-    expect(savedConfig.discovery.dirs).not.toContain('/home/user/.agentage/agents');
-    expect(savedConfig.discovery.dirs).toContain('/home/user/.agentage/skills');
-    expect(logs.some((l) => l.includes('Removed discovery directory'))).toBe(true);
+    expect(savedConfig.agents.additional).not.toContain('/home/user/.agentage/skills');
+    expect(savedConfig.agents.default).toBe('/home/user/agents');
+    expect(logs.some((l) => l.includes('Removed agents directory'))).toBe(true);
     expect(mockExit).toHaveBeenCalledWith(0);
+  });
+
+  it('--remove-dir refuses to remove agents.default', async () => {
+    const mockExitErr = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    const errLogs: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      errLogs.push(args.map(String).join(' '));
+    });
+
+    await program.parseAsync(['node', 'agentage', 'status', '--remove-dir', '/home/user/agents']);
+
+    expect(mockSaveConfig).not.toHaveBeenCalled();
+    expect(errLogs.some((l) => l.includes('Cannot remove default'))).toBe(true);
+    expect(mockExitErr).toHaveBeenCalledWith(1);
+  });
+
+  it('--set-default swaps default and demotes old default to additional', async () => {
+    await program.parseAsync(['node', 'agentage', 'status', '--set-default', '/tmp/new-default']);
+
+    expect(mockSaveConfig).toHaveBeenCalledTimes(1);
+    const savedConfig = mockSaveConfig.mock.calls[0]![0];
+    expect(savedConfig.agents.default).toBe('/tmp/new-default');
+    expect(savedConfig.agents.additional).toContain('/home/user/agents');
+    expect(logs.some((l) => l.includes('Set agents default'))).toBe(true);
   });
 
   it('outputs JSON with --json', async () => {
@@ -314,7 +350,10 @@ describe('status command', () => {
     expect(parsed.hub.url).toBe('https://agentage.io');
     expect(parsed.agents).toBe(2);
     expect(parsed.runs).toBe(3);
-    expect(parsed.discoveryDirs).toHaveLength(2);
+    expect(parsed.agentsDefault).toBe('/home/user/agents');
+    expect(parsed.agentsAdditional).toEqual(['/home/user/.agentage/skills']);
+    expect(parsed.projectsDefault).toBe('/home/user/projects');
+    expect(parsed.projectsAdditional).toEqual([]);
     expect(mockExit).toHaveBeenCalledWith(0);
   });
 
@@ -323,8 +362,8 @@ describe('status command', () => {
 
     expect(mockSaveConfig).toHaveBeenCalledTimes(1);
     const savedConfig = mockSaveConfig.mock.calls[0]![0];
-    expect(savedConfig.discovery.dirs).toHaveLength(2);
-    expect(logs.some((l) => l.includes('Removed discovery directory'))).toBe(true);
+    expect(savedConfig.agents.additional).toHaveLength(1);
+    expect(logs.some((l) => l.includes('Removed agents directory'))).toBe(true);
     expect(mockExit).toHaveBeenCalledWith(0);
   });
 });

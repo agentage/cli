@@ -10,7 +10,7 @@ export const registerInit = (program: Command): void => {
     .description('Initialize agentage setup')
     .option('--hub <url>', 'Set hub URL')
     .option('--name <name>', 'Set machine name')
-    .option('--dir <path>', 'Add discovery directory')
+    .option('--dir <path>', 'Add to agents.additional')
     .option('--no-login', 'Skip login step')
     .action(async (opts: { hub?: string; name?: string; dir?: string; login: boolean }) => {
       const config = loadConfig();
@@ -22,13 +22,13 @@ export const registerInit = (program: Command): void => {
         steps.push(`Machine name: ${opts.name}`);
       }
 
-      // Step 2: Discovery dir
+      // Step 2: Additional agents dir
       if (opts.dir) {
         const absolute = resolve(opts.dir);
-        if (!config.discovery.dirs.includes(absolute)) {
-          config.discovery.dirs.push(absolute);
+        if (config.agents.default !== absolute && !config.agents.additional.includes(absolute)) {
+          config.agents.additional.push(absolute);
         }
-        steps.push(`Discovery dir: ${absolute}`);
+        steps.push(`Agents dir: ${absolute}`);
       }
 
       // Step 3: Hub URL

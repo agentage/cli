@@ -23,7 +23,8 @@ describe('whoami command', () => {
   const defaultConfig = {
     machine: { id: 'machine-123', name: 'test-host' },
     daemon: { port: 4243 },
-    discovery: { dirs: [] },
+    agents: { default: '/tmp/agents', additional: [] },
+    projects: { default: '/tmp/projects', additional: [] },
     hub: { url: 'https://agentage.io' },
     sync: {
       events: {

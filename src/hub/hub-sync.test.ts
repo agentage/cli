@@ -75,7 +75,8 @@ const testAuth = {
 const testConfig = {
   machine: { id: 'machine-1', name: 'test-pc' },
   daemon: { port: 4243 },
-  discovery: { dirs: [] },
+  agents: { default: '/tmp/agents', additional: [] },
+  projects: { default: '/tmp/projects', additional: [] },
 };
 
 describe('hub-sync', () => {

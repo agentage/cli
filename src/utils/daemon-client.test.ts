@@ -20,7 +20,8 @@ describe('daemon-client', () => {
       JSON.stringify({
         machine: { id: randomUUID(), name: 'test' },
         daemon: { port },
-        discovery: { dirs: [] },
+        agents: { default: '/tmp/agents', additional: [] },
+        projects: { default: '/tmp/projects', additional: [] },
         sync: { events: {} },
       })
     );

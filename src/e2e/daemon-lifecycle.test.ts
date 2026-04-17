@@ -31,7 +31,8 @@ const writeTestConfig = (): void => {
     JSON.stringify({
       machine: { id: randomUUID(), name: 'e2e-test-machine' },
       daemon: { port },
-      discovery: { dirs: [agentsDir, skillsDir] },
+      agents: { default: agentsDir, additional: [skillsDir] },
+      projects: { default: join(tmpdir(), 'projects'), additional: [] },
       sync: {
         events: {
           state: true,
@@ -169,7 +170,7 @@ describe('E2E: daemon lifecycle', () => {
     const config = JSON.parse(readFileSync(join(testDir, 'config.json'), 'utf-8'));
     expect(config.machine.id).toBeDefined();
     expect(config.daemon.port).toBe(port);
-    expect(config.discovery.dirs).toContain(agentsDir);
+    expect(config.agents.default).toBe(agentsDir);
   });
 
   it('Scenario 1: daemon is running and healthy', async () => {
