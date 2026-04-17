@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.17.1] - 2026-04-17
+
+### New Features
+- Add schedules subcommands to CLI for managing scheduled agent tasks
+- Add cron scheduler module to daemon for automated agent execution
+
+### Bug Fixes
+- Fix project loading to automatically recover from ghost entries and sync missing remote projects
+
+### Improvements
+- Update core dependencies to latest versions
+
 ## [0.17.0] - 2026-04-15
 
 ### New Features
