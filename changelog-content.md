@@ -1,6 +1,9 @@
 ### New Features
-- Add WebSocket event emission when runs start to ensure child runs appear in the hub
-- Add `ctx.run()` dispatch functionality with parent-child run linkage
+- Add schedules subcommands to CLI for managing scheduled agent tasks
+- Add cron scheduler module to daemon for automated agent execution
 
 ### Bug Fixes
-- Fix task parameter to be optional when agent's input schema allows it
+- Fix project loading to automatically recover from ghost entries and sync missing remote projects
+
+### Improvements
+- Update core dependencies to latest versions
