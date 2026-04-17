@@ -351,6 +351,98 @@ describe('discoverProjects', () => {
     expect(result[0].remote).toBeUndefined();
   });
 
+  it('accepts an array of roots and dedupes results', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('projects.json')) return false;
+      if (s === '/a/repo-x/.git') return true;
+      if (s === '/b/repo-x/.git') return true;
+      return false;
+    });
+    mockReaddirSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s === '/a') return [{ name: 'repo-x', isDirectory: () => true }] as never;
+      if (s === '/b') return [{ name: 'repo-x', isDirectory: () => true }] as never;
+      return [];
+    });
+    mockStatSync.mockReturnValue({ isDirectory: () => true } as never);
+
+    const result = discoverProjects(['/a', '/b']);
+    expect(result.map((r) => r.path).sort()).toEqual(['/a/repo-x', '/b/repo-x']);
+  });
+
+  it('skips node_modules, .git, and other ignored dirs', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('projects.json')) return false;
+      if (s === '/root/keep/.git') return true;
+      return false;
+    });
+    mockReaddirSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s === '/root')
+        return [
+          { name: 'keep', isDirectory: () => true },
+          { name: 'node_modules', isDirectory: () => true },
+          { name: '.github', isDirectory: () => true },
+          { name: '.claude', isDirectory: () => true },
+          { name: 'dist', isDirectory: () => true },
+        ] as never;
+      return [];
+    });
+    mockStatSync.mockReturnValue({ isDirectory: () => true } as never);
+
+    const result = discoverProjects('/root');
+
+    expect(result).toHaveLength(1);
+    expect(result[0].path).toBe('/root/keep');
+    // Sanity: readdirSync never called on ignored paths
+    const readCalls = mockReaddirSync.mock.calls.map((c) => String(c[0]));
+    expect(readCalls).not.toContain('/root/node_modules');
+    expect(readCalls).not.toContain('/root/.github');
+  });
+
+  it('walks recursively to find nested git repos', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('projects.json')) return false;
+      if (s === '/root/group/inner/.git') return true;
+      return false;
+    });
+    mockReaddirSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s === '/root') return [{ name: 'group', isDirectory: () => true }] as never;
+      if (s === '/root/group') return [{ name: 'inner', isDirectory: () => true }] as never;
+      return [];
+    });
+    mockStatSync.mockReturnValue({ isDirectory: () => true } as never);
+
+    const result = discoverProjects('/root');
+    expect(result).toHaveLength(1);
+    expect(result[0].path).toBe('/root/group/inner');
+  });
+
+  it('stops descending into a matched repo', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('projects.json')) return false;
+      if (s === '/root/outer/.git') return true;
+      if (s === '/root/outer/sub/.git') return true;
+      return false;
+    });
+    mockReaddirSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s === '/root') return [{ name: 'outer', isDirectory: () => true }] as never;
+      if (s === '/root/outer') return [{ name: 'sub', isDirectory: () => true }] as never;
+      return [];
+    });
+    mockStatSync.mockReturnValue({ isDirectory: () => true } as never);
+
+    const result = discoverProjects('/root');
+    expect(result).toHaveLength(1);
+    expect(result[0].path).toBe('/root/outer');
+  });
+
   it('backfills remote on existing entries that are missing it', () => {
     const existing: Project[] = [{ name: 'cli', path: '/root/cli', discovered: true }];
     mockExistsSync.mockImplementation((p) => {

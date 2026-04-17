@@ -109,6 +109,40 @@ describe('scanner', () => {
     expect(warnings[0].message).toContain('Import failed');
   });
 
+  it('skips agents inside IGNORE_DIRS (node_modules, .git, dist, etc.)', async () => {
+    const root = join(testDir, 'scan-ignore');
+    mkdirSync(join(root, 'real'), { recursive: true });
+    mkdirSync(join(root, 'node_modules', 'pkg'), { recursive: true });
+    mkdirSync(join(root, 'dist'), { recursive: true });
+    mkdirSync(join(root, '.git'), { recursive: true });
+
+    writeFileSync(join(root, 'real', 'keep.agent.md'), '---\nname: keep\n---\n');
+    writeFileSync(join(root, 'node_modules', 'pkg', 'ghost.agent.md'), '---\nname: ghost\n---\n');
+    writeFileSync(join(root, 'dist', 'built.agent.md'), '---\nname: built\n---\n');
+    writeFileSync(join(root, '.git', 'hooked.agent.md'), '---\nname: hooked\n---\n');
+
+    const factory: AgentFactory = async (path) => {
+      if (!path.endsWith('.agent.md')) return null;
+      const name = path.split('/').pop()!.replace('.agent.md', '');
+      return {
+        manifest: { name, path },
+        async run() {
+          return {
+            runId: 'x',
+            events: (async function* () {})(),
+            cancel: () => {},
+            sendInput: () => {},
+          };
+        },
+      };
+    };
+
+    const { scanAgents } = await import('./scanner.js');
+    const agents = await scanAgents([root], [factory]);
+    const names = agents.map((a) => a.manifest.name).sort();
+    expect(names).toEqual(['keep']);
+  });
+
   it('clears warnings on each scan', async () => {
     const agentsDir = join(testDir, 'agents-clear');
     mkdirSync(agentsDir, { recursive: true });

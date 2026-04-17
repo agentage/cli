@@ -10,6 +10,15 @@ vi.mock('../projects/projects.js', () => ({
   pruneClones: vi.fn(),
 }));
 
+vi.mock('../daemon/config.js', () => ({
+  loadConfig: vi.fn().mockReturnValue({
+    agents: { default: '/home/u/agents', additional: [] },
+    projects: { default: '/home/u/projects', additional: [] },
+  }),
+  getProjectsDirs: vi.fn().mockReturnValue(['/home/u/projects']),
+  getConfigDir: vi.fn().mockReturnValue('/mock/config'),
+}));
+
 import {
   loadProjects,
   addProject,
@@ -164,20 +173,20 @@ describe('projects command', () => {
 
       await program.parseAsync(['node', 'agentage', 'projects', 'discover', '/tmp/root']);
 
-      expect(mockDiscoverProjects).toHaveBeenCalledWith('/tmp/root');
+      expect(mockDiscoverProjects).toHaveBeenCalledWith(['/tmp/root']);
       expect(logs.some((l) => l.includes('Discovered 2 new project(s)'))).toBe(true);
       expect(logs.some((l) => l.includes('proj-a'))).toBe(true);
       expect(logs.some((l) => l.includes('proj-b'))).toBe(true);
       expect(mockExit).toHaveBeenCalledWith(0);
     });
 
-    it('defaults to cwd when no path given', async () => {
+    it('defaults to configured projects.dirs when no path given', async () => {
       mockLoadProjects.mockReturnValue([]);
       mockDiscoverProjects.mockReturnValue([]);
 
       await program.parseAsync(['node', 'agentage', 'projects', 'discover']);
 
-      expect(mockDiscoverProjects).toHaveBeenCalledWith(expect.any(String));
+      expect(mockDiscoverProjects).toHaveBeenCalledWith(['/home/u/projects']);
       expect(logs.some((l) => l.includes('No new projects discovered'))).toBe(true);
       expect(mockExit).toHaveBeenCalledWith(0);
     });

@@ -144,28 +144,76 @@ export const removeProject = (name: string): boolean => {
   return true;
 };
 
-export const discoverProjects = (rootDir: string): Project[] => {
-  const entries = readdirSync(rootDir, { withFileTypes: true });
-  const projects = loadProjects();
+export const PROJECTS_IGNORE_DIRS = new Set([
+  'node_modules',
+  '.github',
+  '.github-private',
+  '.claude',
+  'dist',
+  'build',
+  '.next',
+  'coverage',
+  '.turbo',
+  '.cache',
+]);
+
+const MAX_DISCOVERY_DEPTH = 5;
+
+const walkForGitRepos = (dir: string, depth: number, out: string[]): void => {
+  if (depth > MAX_DISCOVERY_DEPTH) return;
+
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+    if (PROJECTS_IGNORE_DIRS.has(entry.name)) continue;
 
-    const dirPath = join(rootDir, entry.name);
+    const dirPath = join(dir, entry.name);
     const gitPath = join(dirPath, '.git');
 
-    if (!existsSync(gitPath)) continue;
-    if (!statSync(gitPath).isDirectory()) continue;
+    let isRepo = false;
+    try {
+      isRepo = existsSync(gitPath) && statSync(gitPath).isDirectory();
+    } catch {
+      isRepo = false;
+    }
 
+    if (isRepo) {
+      out.push(dirPath);
+      // Don't descend into a matched repo — we treat it as the project boundary.
+      continue;
+    }
+
+    walkForGitRepos(dirPath, depth + 1, out);
+  }
+};
+
+export const discoverProjects = (rootDirs: string | string[]): Project[] => {
+  const roots = Array.isArray(rootDirs) ? rootDirs : [rootDirs];
+  const found: string[] = [];
+  for (const root of roots) {
+    walkForGitRepos(root, 0, found);
+  }
+
+  const projects = loadProjects();
+  const seen = new Set(projects.map((p) => p.path));
+
+  for (const dirPath of found) {
     const existing = projects.find((p) => p.path === dirPath);
     if (existing) {
-      // Backfill remote on previously-discovered entries that predate remote capture.
       if (!existing.remote) {
         const remote = getOriginUrl(dirPath);
         if (remote) existing.remote = remote;
       }
       continue;
     }
+    if (seen.has(dirPath)) continue;
+    seen.add(dirPath);
 
     const name = deriveNameFromDir(dirPath);
     const remote = getOriginUrl(dirPath);
