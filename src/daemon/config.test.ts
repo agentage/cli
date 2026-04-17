@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 
 const testDir = join(tmpdir(), `agentage-test-config-${Date.now()}`);
 
@@ -13,6 +13,8 @@ describe('config', () => {
 
   afterEach(() => {
     delete process.env['AGENTAGE_CONFIG_DIR'];
+    delete process.env['AGENTAGE_AGENTS_DIR'];
+    delete process.env['AGENTAGE_PROJECTS_DIR'];
     rmSync(testDir, { recursive: true, force: true });
   });
 
@@ -24,7 +26,10 @@ describe('config', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     );
     expect(config.daemon.port).toBe(4243);
-    expect(config.discovery.dirs).toHaveLength(2);
+    expect(config.agents.default).toBe(join(homedir(), 'agents'));
+    expect(config.agents.additional).toEqual([]);
+    expect(config.projects.default).toBe(join(homedir(), 'projects'));
+    expect(config.projects.additional).toEqual([]);
     expect(existsSync(join(testDir, 'config.json'))).toBe(true);
   });
 
@@ -41,19 +46,20 @@ describe('config', () => {
     const config = loadConfig();
     const originalId = config.machine.id;
 
-    // Load again — should return same config
     const config2 = loadConfig();
     expect(config2.machine.id).toBe(originalId);
   });
 
-  it('default discovery dirs include agents and skills', async () => {
+  it('default agents dir is homedir()/agents', async () => {
     const { loadConfig } = await import('./config.js');
     const config = loadConfig();
+    expect(config.agents.default).toBe(join(homedir(), 'agents'));
+  });
 
-    const agentsDir = config.discovery.dirs.find((d) => d.endsWith('/agents'));
-    const skillsDir = config.discovery.dirs.find((d) => d.endsWith('/skills'));
-    expect(agentsDir).toBeDefined();
-    expect(skillsDir).toBeDefined();
+  it('default projects dir is homedir()/projects', async () => {
+    const { loadConfig } = await import('./config.js');
+    const config = loadConfig();
+    expect(config.projects.default).toBe(join(homedir(), 'projects'));
   });
 
   it('respects AGENTAGE_CONFIG_DIR', async () => {
@@ -95,5 +101,43 @@ describe('config', () => {
     const config = loadConfig();
     expect(config.daemon.port).toBe(5555);
     delete process.env['AGENTAGE_PORT'];
+  });
+
+  it('AGENTAGE_AGENTS_DIR overrides agents.default (in-memory, not persisted)', async () => {
+    process.env['AGENTAGE_AGENTS_DIR'] = '/tmp/custom-agents';
+    const { loadConfig } = await import('./config.js');
+    const config = loadConfig();
+    expect(config.agents.default).toBe('/tmp/custom-agents');
+
+    const raw = readFileSync(join(testDir, 'config.json'), 'utf-8');
+    const saved = JSON.parse(raw);
+    expect(saved.agents.default).toBe(join(homedir(), 'agents'));
+  });
+
+  it('AGENTAGE_PROJECTS_DIR overrides projects.default (in-memory, not persisted)', async () => {
+    process.env['AGENTAGE_PROJECTS_DIR'] = '/tmp/custom-projects';
+    const { loadConfig } = await import('./config.js');
+    const config = loadConfig();
+    expect(config.projects.default).toBe('/tmp/custom-projects');
+
+    const raw = readFileSync(join(testDir, 'config.json'), 'utf-8');
+    const saved = JSON.parse(raw);
+    expect(saved.projects.default).toBe(join(homedir(), 'projects'));
+  });
+
+  it('getAgentsDirs returns [default, ...additional] deduped', async () => {
+    const { loadConfig, getAgentsDirs } = await import('./config.js');
+    const config = loadConfig();
+    config.agents.default = '/a';
+    config.agents.additional = ['/b', '/a', '/c'];
+    expect(getAgentsDirs(config)).toEqual(['/a', '/b', '/c']);
+  });
+
+  it('getProjectsDirs returns [default, ...additional] deduped', async () => {
+    const { loadConfig, getProjectsDirs } = await import('./config.js');
+    const config = loadConfig();
+    config.projects.default = '/a';
+    config.projects.additional = ['/b', '/a'];
+    expect(getProjectsDirs(config)).toEqual(['/a', '/b']);
   });
 });

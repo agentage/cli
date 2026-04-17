@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { loadConfig } from '../daemon/config.js';
+import { loadConfig, getAgentsDirs, getDefaultAgentsDir } from '../daemon/config.js';
 
 const TEMPLATES: Record<string, { content: (name: string) => string; deps?: string[] }> = {
   simple: {
@@ -76,12 +76,12 @@ Respond concisely and cite sources when possible.\`,
 
 const KEBAB_CASE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
 
-const getDefaultAgentsDir = (): string => {
+const resolveInstallDir = (): string => {
   try {
     const config = loadConfig();
-    return config.discovery.dirs[0] ?? join(process.env['HOME'] || '~', '.agentage', 'agents');
+    return config.agents.default;
   } catch {
-    return join(process.env['HOME'] || '~', '.agentage', 'agents');
+    return getDefaultAgentsDir();
   }
 };
 
@@ -90,7 +90,7 @@ export const createCreateCommand = (): Command => {
     .description('Scaffold a new agent from a template')
     .argument('<name>', 'Agent name (kebab-case)')
     .option('-t, --template <template>', 'Template: simple, shell, claude, copilot, llm', 'simple')
-    .option('-d, --dir <dir>', 'Output directory (default: first discovery dir)')
+    .option('-d, --dir <dir>', 'Output directory (default: agents.default)')
     .action(async (name: string, options: { template: string; dir?: string }) => {
       if (!KEBAB_CASE.test(name)) {
         console.error(chalk.red(`Invalid name "${name}". Use kebab-case (e.g. my-agent).`));
@@ -109,7 +109,7 @@ export const createCreateCommand = (): Command => {
         return;
       }
 
-      const dir = resolve(options.dir ?? getDefaultAgentsDir());
+      const dir = resolve(options.dir ?? resolveInstallDir());
       const filePath = join(dir, `${name}.agent.ts`);
 
       if (existsSync(filePath)) {
@@ -129,7 +129,7 @@ export const createCreateCommand = (): Command => {
       }
 
       const config = loadConfig();
-      const isInDiscoveryDir = config.discovery.dirs.some((d) =>
+      const isInDiscoveryDir = getAgentsDirs(config).some((d) =>
         dir.startsWith(d.replace(/^~/, process.env['HOME'] || '~'))
       );
 
@@ -138,7 +138,9 @@ export const createCreateCommand = (): Command => {
         console.log(chalk.dim(`Run: agentage run ${name} "your prompt"`));
       } else {
         console.log(
-          chalk.dim(`\nTo use:\n  cp ${filePath} ~/.agentage/agents/\n  agentage agents --refresh`)
+          chalk.dim(
+            `\nTo use:\n  cp ${filePath} ${config.agents.default}/\n  agentage agents --refresh`
+          )
         );
       }
     });

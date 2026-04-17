@@ -15,7 +15,8 @@ vi.mock('../daemon/config.js', () => ({
   loadConfig: vi.fn(() => ({
     machine: { id: '11111111-1111-1111-1111-111111111111', name: 'localdev' },
     daemon: { port: 4243 },
-    discovery: { dirs: [] },
+    agents: { default: '/tmp/agents', additional: [] },
+    projects: { default: '/tmp/projects', additional: [] },
     sync: { events: {} },
   })),
 }));

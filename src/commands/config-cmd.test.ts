@@ -19,7 +19,8 @@ describe('config command', () => {
   const defaultConfig = {
     machine: { id: 'machine-123', name: 'test-host' },
     daemon: { port: 4243 },
-    discovery: { dirs: ['/home/user/.agentage/agents'] },
+    agents: { default: '/home/user/agents', additional: [] },
+    projects: { default: '/home/user/projects', additional: [] },
     sync: {
       events: {
         state: true,

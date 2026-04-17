@@ -1,5 +1,5 @@
 import { watch } from 'node:fs';
-import { loadConfig, getConfigDir } from './daemon/config.js';
+import { loadConfig, getConfigDir, getAgentsDirs } from './daemon/config.js';
 import { logError, logInfo } from './daemon/logger.js';
 import { writePidFile, removePidFile } from './daemon/daemon.js';
 import { createDaemonServer } from './daemon/server.js';
@@ -22,7 +22,7 @@ const main = async (): Promise<void> => {
   server.setFactories(factories);
 
   // Initial agent discovery
-  const agents = await scanAgents(config.discovery.dirs, factories);
+  const agents = await scanAgents(getAgentsDirs(config), factories);
   server.updateAgents(agents);
   logInfo(`Discovered ${agents.length} agent(s)`);
 
@@ -44,10 +44,10 @@ const main = async (): Promise<void> => {
   await hubSync.start();
 
   // Watch discovery dirs for agent file changes
-  const stopWatcher = startWatcher(config.discovery.dirs, async () => {
+  const stopWatcher = startWatcher(getAgentsDirs(config), async () => {
     try {
       const freshConfig = loadConfig();
-      const updatedAgents = await scanAgents(freshConfig.discovery.dirs, factories);
+      const updatedAgents = await scanAgents(getAgentsDirs(freshConfig), factories);
       server.updateAgents(updatedAgents);
       logInfo(`Watcher rescan: discovered ${updatedAgents.length} agent(s)`);
     } catch (err) {

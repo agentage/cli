@@ -9,9 +9,12 @@ const configDir = join(testDir, '.agentage');
 describe('create command', () => {
   beforeEach(() => {
     mkdirSync(testDir, { recursive: true });
+    mkdirSync(configDir, { recursive: true });
+    process.env['AGENTAGE_CONFIG_DIR'] = configDir;
   });
 
   afterEach(() => {
+    delete process.env['AGENTAGE_CONFIG_DIR'];
     rmSync(testDir, { recursive: true, force: true });
   });
 
@@ -97,7 +100,8 @@ describe('create command', () => {
       JSON.stringify({
         machine: { id: 'test', name: 'test' },
         daemon: { port: 4243 },
-        discovery: { dirs: [agentsDir] },
+        agents: { default: agentsDir, additional: [] },
+        projects: { default: '/tmp/projects', additional: [] },
         sync: { events: {} },
       })
     );
@@ -121,7 +125,8 @@ describe('create command', () => {
       JSON.stringify({
         machine: { id: 'test', name: 'test' },
         daemon: { port: 4243 },
-        discovery: { dirs: [agentsDir] },
+        agents: { default: agentsDir, additional: [] },
+        projects: { default: '/tmp/projects', additional: [] },
         sync: { events: {} },
       })
     );
@@ -149,7 +154,8 @@ describe('create command', () => {
       JSON.stringify({
         machine: { id: 'test', name: 'test' },
         daemon: { port: 4243 },
-        discovery: { dirs: [agentsDir] },
+        agents: { default: agentsDir, additional: [] },
+        projects: { default: '/tmp/projects', additional: [] },
         sync: { events: {} },
       })
     );

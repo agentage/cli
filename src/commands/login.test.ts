@@ -61,7 +61,8 @@ describe('login command', () => {
     mockLoadConfig.mockReturnValue({
       machine: { id: 'machine-1', name: 'test-pc' },
       daemon: { port: 4243 },
-      discovery: { dirs: [] },
+      agents: { default: '/tmp/agents', additional: [] },
+      projects: { default: '/tmp/projects', additional: [] },
       sync: { events: {} },
     } as unknown as ReturnType<typeof loadConfig>);
 
