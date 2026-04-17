@@ -93,7 +93,27 @@ export const loadProjects = (): Project[] => {
     return [];
   }
 
-  return parsed;
+  // Self-heal: drop entries whose path no longer exists (hub infers removal
+  // from absence in heartbeat), and backfill missing remotes.
+  const healed: Project[] = [];
+  let changed = false;
+  for (const project of parsed) {
+    if (!existsSync(project.path)) {
+      changed = true;
+      continue;
+    }
+    if (!project.remote) {
+      const remote = getOriginUrl(project.path);
+      if (remote) {
+        healed.push({ ...project, remote });
+        changed = true;
+        continue;
+      }
+    }
+    healed.push(project);
+  }
+  if (changed) saveProjects(healed);
+  return healed;
 };
 
 export const saveProjects = (projects: Project[]): void => {

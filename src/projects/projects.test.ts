@@ -93,6 +93,57 @@ describe('loadProjects', () => {
     expect(loadProjects()).toEqual([]);
     expect(mockWriteFileSync).toHaveBeenCalled();
   });
+
+  it('drops entries whose path no longer exists on disk and persists', () => {
+    const projects: Project[] = [
+      { name: 'alive', path: '/projects/alive', discovered: true, remote: 'git@x:a/b.git' },
+      { name: 'ghost', path: '/projects/ghost', discovered: true },
+    ];
+    mockExistsSync.mockImplementation((p) => {
+      const s = String(p);
+      if (s.endsWith('projects.json')) return true;
+      return s === '/projects/alive';
+    });
+    mockReadFileSync.mockReturnValue(JSON.stringify(projects));
+
+    const result = loadProjects();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe('alive');
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      '/mock/config/projects.json',
+      expect.stringContaining('"alive"'),
+      'utf-8'
+    );
+  });
+
+  it('backfills missing remote via git origin and persists', () => {
+    const projects: Project[] = [{ name: 'cli', path: '/projects/cli', discovered: true }];
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify(projects));
+    mockExecSync.mockImplementation((cmd) => {
+      if (String(cmd).includes('git remote get-url origin')) {
+        return 'https://github.com/agentage/cli.git\n';
+      }
+      throw new Error('not expected');
+    });
+
+    const result = loadProjects();
+
+    expect(result[0].remote).toBe('https://github.com/agentage/cli.git');
+    expect(mockWriteFileSync).toHaveBeenCalled();
+  });
+
+  it('does not rewrite when all paths exist and remotes already set', () => {
+    const projects: Project[] = [
+      { name: 'cli', path: '/projects/cli', discovered: true, remote: 'git@x:a/b.git' },
+    ];
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify(projects));
+
+    expect(loadProjects()).toEqual(projects);
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
+  });
 });
 
 describe('saveProjects', () => {
@@ -137,7 +188,9 @@ describe('addProject', () => {
   });
 
   it('deduplicates by path', () => {
-    const existing: Project[] = [{ name: 'cli', path: '/projects/cli', discovered: false }];
+    const existing: Project[] = [
+      { name: 'cli', path: '/projects/cli', discovered: false, remote: 'x' },
+    ];
     mockExistsSync.mockReturnValue(true);
     mockReadFileSync.mockReturnValue(JSON.stringify(existing));
 
@@ -238,10 +291,13 @@ describe('discoverProjects', () => {
   });
 
   it('merges with existing projects without overwriting', () => {
-    const existing: Project[] = [{ name: 'manual', path: '/root/repo-a', discovered: false }];
+    const existing: Project[] = [
+      { name: 'manual', path: '/root/repo-a', discovered: false, remote: 'x' },
+    ];
     mockExistsSync.mockImplementation((p) => {
       const s = String(p);
       if (s.endsWith('projects.json')) return true;
+      if (s === '/root/repo-a') return true;
       if (s === '/root/repo-a/.git') return true;
       return false;
     });
@@ -300,6 +356,7 @@ describe('discoverProjects', () => {
     mockExistsSync.mockImplementation((p) => {
       const s = String(p);
       if (s.endsWith('projects.json')) return true;
+      if (s === '/root/cli') return true;
       if (s === '/root/cli/.git') return true;
       return false;
     });
