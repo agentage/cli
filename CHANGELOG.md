@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.18.1] - 2026-04-17
+
+### Bug Fixes
+- Fix daemon machine identity persistence by storing in machine.json file
+
 ## [0.18.0] - 2026-04-17
 
 ### New Features
