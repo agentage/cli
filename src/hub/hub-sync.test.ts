@@ -227,6 +227,8 @@ describe('hub-sync', () => {
         ],
         activeRunIds: ['run-1'],
         daemonVersion: '0.7.1',
+        agentsDefault: '/tmp/agents',
+        projectsDefault: '/tmp/projects',
       });
     });
 

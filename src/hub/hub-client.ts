@@ -23,6 +23,8 @@ export interface HubClient {
       projects?: Array<{ name: string; path: string; discovered?: boolean; remote?: string }>;
       activeRunIds: string[];
       daemonVersion: string;
+      agentsDefault?: string;
+      projectsDefault?: string;
     }
   ) => Promise<{
     pendingCommands: unknown[];

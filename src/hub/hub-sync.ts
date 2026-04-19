@@ -76,6 +76,8 @@ export const createHubSync = (): HubSync => {
   const sendHeartbeat = async (auth: AuthState): Promise<void> => {
     if (!hubClient) return;
 
+    const config = loadConfig();
+
     const agents = getAgents().map((a) => ({
       name: a.manifest.name,
       description: a.manifest.description,
@@ -103,6 +105,8 @@ export const createHubSync = (): HubSync => {
       projects,
       activeRunIds,
       daemonVersion: VERSION,
+      agentsDefault: config.agents.default,
+      projectsDefault: config.projects.default,
     });
 
     // Reconcile local cron registry against the authoritative bindings
