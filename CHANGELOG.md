@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.19.0] - 2026-04-19
+
+### New Features
+- Add recursive project discovery with configurable directory ignore patterns
+- Send default agent and project configurations in heartbeat synchronization
+
 ## [0.18.1] - 2026-04-17
 
 ### Bug Fixes
