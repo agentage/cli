@@ -1,7 +1,8 @@
 import { type Server } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { type Run, type RunEvent } from '@agentage/core';
+import { type InvokeEvent, type Run, type RunEvent } from '@agentage/core';
 import { onRunEvent, onRunStateChange } from './run-manager.js';
+import { getActionRegistry } from './actions.js';
 import { logDebug, logInfo } from './logger.js';
 
 interface SubscribeMessage {
@@ -14,7 +15,57 @@ interface UnsubscribeMessage {
   runId: string;
 }
 
-type ClientMessage = SubscribeMessage | UnsubscribeMessage;
+interface InvokeMessage {
+  type: 'invoke';
+  /** Echoed back on every action_event so clients can multiplex concurrent invocations. */
+  requestId: string;
+  action: string;
+  input?: unknown;
+  version?: string;
+  idempotencyKey?: string;
+  capabilities?: string[];
+}
+
+interface CancelInvokeMessage {
+  type: 'cancel_invoke';
+  requestId: string;
+}
+
+type ClientMessage = SubscribeMessage | UnsubscribeMessage | InvokeMessage | CancelInvokeMessage;
+
+const activeInvocations = new Map<string, AbortController>();
+
+const runInvocation = async (ws: WebSocket, msg: InvokeMessage): Promise<void> => {
+  const ac = new AbortController();
+  activeInvocations.set(msg.requestId, ac);
+  try {
+    const gen = getActionRegistry().invoke(
+      {
+        action: msg.action,
+        version: msg.version,
+        input: msg.input,
+        idempotencyKey: msg.idempotencyKey,
+        callerId: 'ws',
+        capabilities: msg.capabilities ?? ['*'],
+      },
+      ac.signal
+    );
+    for await (const event of gen) {
+      sendToClient(ws, { type: 'action_event', requestId: msg.requestId, event });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const fallback: InvokeEvent = {
+      type: 'error',
+      code: 'EXECUTION_FAILED',
+      message,
+      retryable: true,
+    };
+    sendToClient(ws, { type: 'action_event', requestId: msg.requestId, event: fallback });
+  } finally {
+    activeInvocations.delete(msg.requestId);
+  }
+};
 
 type BufferedMessage =
   | { type: 'run_event'; runId: string; event: RunEvent }
@@ -123,6 +174,19 @@ export const setupWebSocket = (server: Server): WebSocketServer => {
         if (msg.type === 'unsubscribe') {
           clientSubscriptions.get(ws)?.delete(msg.runId);
           logDebug(`Client unsubscribed from run ${msg.runId}`);
+        }
+
+        if (msg.type === 'invoke') {
+          logDebug(`Client invoked action ${msg.action} (${msg.requestId})`);
+          void runInvocation(ws, msg);
+        }
+
+        if (msg.type === 'cancel_invoke') {
+          const ac = activeInvocations.get(msg.requestId);
+          if (ac) {
+            ac.abort();
+            logDebug(`Canceled invocation ${msg.requestId}`);
+          }
         }
       } catch {
         logDebug('Invalid WebSocket message received');
