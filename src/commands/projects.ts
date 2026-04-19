@@ -9,6 +9,7 @@ import {
   getWorktrees,
   pruneClones,
 } from '../projects/projects.js';
+import { loadConfig, getProjectsDirs } from '../daemon/config.js';
 
 export const registerProjects = (program: Command): void => {
   const cmd = program.command('projects').description('Manage tracked projects');
@@ -142,13 +143,14 @@ const handleRemove = (name: string): void => {
 };
 
 const handleDiscover = (path?: string): void => {
-  const resolvedPath = resolve(path ?? process.cwd());
+  const roots = path ? [resolve(path)] : getProjectsDirs(loadConfig());
   const before = loadProjects();
-  const after = discoverProjects(resolvedPath);
+  const after = discoverProjects(roots);
   const newProjects = after.filter((p) => !before.some((b) => b.path === p.path));
 
   if (newProjects.length === 0) {
     console.log(chalk.gray('No new projects discovered.'));
+    console.log(chalk.dim(`Searched: ${roots.join(', ')}`));
   } else {
     console.log(chalk.green(`Discovered ${newProjects.length} new project(s):`));
     for (const p of newProjects) {

@@ -17,6 +17,20 @@ let lastWarnings: ScanWarning[] = [];
 
 export const getLastScanWarnings = (): ScanWarning[] => lastWarnings;
 
+export const IGNORE_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.github',
+  '.github-private',
+  '.claude',
+  'dist',
+  'build',
+  '.next',
+  'coverage',
+  '.turbo',
+  '.cache',
+]);
+
 const getAllFiles = (dir: string): string[] => {
   const results: string[] = [];
 
@@ -27,6 +41,7 @@ const getAllFiles = (dir: string): string[] => {
 
   const entries = readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
+    if (entry.isDirectory() && IGNORE_DIRS.has(entry.name)) continue;
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
       results.push(...getAllFiles(fullPath));
