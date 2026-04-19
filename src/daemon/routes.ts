@@ -1,11 +1,12 @@
-import { type Router, Router as createRouter, json } from 'express';
-import { type Agent, type JsonSchema } from '@agentage/core';
+import { type Router, Router as createRouter, json, type Request, type Response } from 'express';
+import { type Agent, type ActionRegistry, type JsonSchema } from '@agentage/core';
 import { loadConfig } from './config.js';
 import { cancelRun, getRun, getRuns, sendInput, startRun } from './run-manager.js';
 import { getHubSync } from '../hub/hub-sync.js';
 import { readAuth } from '../hub/auth.js';
 import { createHubClient } from '../hub/hub-client.js';
 import { getLastScanWarnings } from '../discovery/scanner.js';
+import { getActionRegistry } from './actions.js';
 
 import { VERSION } from '../utils/version.js';
 import { loadProjects } from '../projects/projects.js';
@@ -311,5 +312,74 @@ export const createRoutes = (): Router => {
     await withHubClient(res, (client) => client.runScheduleNow(req.params.id));
   });
 
+  wireActionRoutes(router, getActionRegistry());
+
   return router;
+};
+
+const parseCapabilities = (req: Request): string[] => {
+  const header = req.header('x-capabilities');
+  if (!header) return ['*'];
+  return header
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
+};
+
+const streamInvocation = async (
+  registry: ActionRegistry,
+  actionName: string,
+  body: Record<string, unknown>,
+  req: Request,
+  res: Response
+): Promise<void> => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const ac = new AbortController();
+  let invocationComplete = false;
+  // Detect client disconnect on the socket rather than req 'close', which can
+  // fire as soon as the request body is fully consumed — not only on real aborts.
+  res.on('close', () => {
+    if (!invocationComplete) ac.abort();
+  });
+
+  const gen = registry.invoke(
+    {
+      action: actionName,
+      version: typeof body.version === 'string' ? body.version : undefined,
+      input: body.input,
+      idempotencyKey: typeof body.idempotencyKey === 'string' ? body.idempotencyKey : undefined,
+      callerId: req.header('x-caller-id') ?? 'local',
+      capabilities: parseCapabilities(req),
+    },
+    ac.signal
+  );
+
+  for await (const event of gen) {
+    res.write(`data: ${JSON.stringify(event)}\n\n`);
+    if (event.type === 'result' || event.type === 'error') {
+      invocationComplete = true;
+    }
+  }
+  invocationComplete = true;
+  res.end();
+};
+
+export const wireActionRoutes = (router: Router, registry: ActionRegistry): void => {
+  router.get('/api/actions', (_req, res) => {
+    res.json({ success: true, data: registry.list() });
+  });
+
+  router.post('/api/actions/:name', async (req, res) => {
+    await streamInvocation(
+      registry,
+      req.params.name,
+      (req.body ?? {}) as Record<string, unknown>,
+      req,
+      res
+    );
+  });
 };
