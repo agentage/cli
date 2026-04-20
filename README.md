@@ -11,21 +11,70 @@ CLI and daemon for the [Agentage](https://agentage.io) control plane. Discovers 
 npm install -g @agentage/cli
 ```
 
-## Quick Start
+## Quick Start — 5 minutes to your first agent
+
+From `npm install` to a running agent in five commands. No hub, no login, no API key required.
+
+### 1. Install
 
 ```bash
-# Start the daemon (discovers agents, exposes REST API)
-agentage daemon
-
-# List discovered agents
-agentage agents
-
-# Run an agent
-agentage run my-agent "Summarize this project"
-
-# Check daemon + hub status
-agentage status
+npm install -g @agentage/cli
 ```
+
+### 2. Write an agent
+
+Create `~/agents/hello.agent.md` (the default agents directory — see `agentage status` to confirm or change):
+
+```markdown
+---
+description: Simple greeting agent
+---
+You greet the user by name. Reply in exactly one short sentence.
+```
+
+That's a complete agent — YAML frontmatter plus a system prompt. The daemon picks up any `.agent.md` file it finds.
+
+### 3. Verify discovery
+
+```bash
+agentage agents
+```
+
+```
+NAME    DESCRIPTION              PATH
+hello   Simple greeting agent    ~/agents/hello.agent.md
+
+1 agents discovered
+```
+
+The daemon auto-starts on first command and listens on `localhost:4243`.
+
+### 4. Run it
+
+```bash
+agentage run hello "Volodymyr"
+```
+
+Without an LLM adapter configured, markdown agents echo the prompt plus the task — enough to confirm the pipeline is wired. For a real model response, scaffold a code agent that uses the Claude adapter:
+
+```bash
+agentage create greeter -t claude    # writes greeter.agent.ts
+npm install @anthropic-ai/claude-agent-sdk
+export ANTHROPIC_API_KEY=sk-…
+agentage run greeter "Hi"
+```
+
+### 5. Explore
+
+```bash
+agentage status       # daemon + hub health, discovery dirs
+agentage runs         # history of recent runs
+agentage create --help   # other templates: simple, shell, claude, copilot, llm
+```
+
+### Real-world example
+
+The [`pr-list`](https://github.com/vreshch/agents/tree/master/plugins/pr-list) agent (private repo) is a deterministic utility that queries `gh pr list` across a set of repos and returns a structured table. It's the smallest example of a code agent (`.agent.ts`) that uses a config object and has no LLM dependency — a good reference for your first "real" agent.
 
 ## Daemon
 
