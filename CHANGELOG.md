@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### BREAKING
+
+- Replace `agentage init`, `agentage login`, `agentage logout` with unified `agentage setup` command. Interactive by default (one confirmation prompt), fully headless with `--yes` / `--token` / `--machine-id` flags. `--disconnect` replaces `logout`; `--reauth` re-runs OAuth. Callers invoking the old commands will receive `unknown command` from Commander.
+
 ## [0.19.0] - 2026-04-19
 
 ### New Features

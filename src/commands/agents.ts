@@ -80,7 +80,7 @@ const listHubAgents = async (jsonMode: boolean): Promise<void> => {
   try {
     agents = await get<HubAgent[]>('/api/hub/agents');
   } catch {
-    console.error(chalk.red("Not connected to hub. Run 'agentage login' first."));
+    console.error(chalk.red("Not connected to hub. Run 'agentage setup' first."));
     process.exitCode = 1;
     return;
   }

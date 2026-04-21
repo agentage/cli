@@ -24,7 +24,7 @@ export const registerMachines = (program: Command): void => {
       try {
         machines = await get<Machine[]>('/api/hub/machines');
       } catch {
-        console.error(chalk.red("Not connected to hub. Run 'agentage login' first."));
+        console.error(chalk.red("Not connected to hub. Run 'agentage setup' first."));
         process.exitCode = 1;
         return;
       }
