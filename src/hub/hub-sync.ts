@@ -10,6 +10,7 @@ import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
 import { getScheduler } from '../daemon/scheduler.js';
 import { loadProjects } from '../projects/projects.js';
 
+import { collectMachineMetrics } from '../daemon/metrics.js';
 import { VERSION } from '../utils/version.js';
 import { refreshTokenIfNeeded } from './token-refresh.js';
 
@@ -100,6 +101,15 @@ export const createHubSync = (): HubSync => {
       .filter((r) => r.state === 'working' || r.state === 'submitted')
       .map((r) => r.id);
 
+    let resources: Awaited<ReturnType<typeof collectMachineMetrics>> | undefined;
+    try {
+      resources = await collectMachineMetrics();
+    } catch (err) {
+      logWarn(
+        `[hub-sync] metrics collection failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
     const response = await hubClient.heartbeat(auth.hub.machineId, {
       agents,
       projects,
@@ -107,6 +117,7 @@ export const createHubSync = (): HubSync => {
       daemonVersion: VERSION,
       agentsDefault: config.agents.default,
       projectsDefault: config.projects.default,
+      ...(resources && { resources }),
     });
 
     // Reconcile local cron registry against the authoritative bindings

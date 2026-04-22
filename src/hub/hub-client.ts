@@ -25,6 +25,13 @@ export interface HubClient {
       daemonVersion: string;
       agentsDefault?: string;
       projectsDefault?: string;
+      resources?: {
+        cpuUsage?: number;
+        memoryUsedMb?: number;
+        memoryTotalMb?: number;
+        diskUsedMb?: number;
+        diskTotalMb?: number;
+      };
     }
   ) => Promise<{
     pendingCommands: unknown[];
