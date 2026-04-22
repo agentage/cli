@@ -108,7 +108,7 @@ Two built-in factories: **markdown** (`.agent.md` files with YAML frontmatter) a
 
 ### Hub Sync
 
-When authenticated (`agentage login`), the daemon connects to the hub via WebSocket — registering the machine, syncing agents, and relaying run events.
+When authenticated (`agentage setup`), the daemon connects to the hub via WebSocket — registering the machine, syncing agents, and relaying run events.
 
 | Method | Endpoint            | Description                           |
 | ------ | ------------------- | ------------------------------------- |
@@ -141,7 +141,7 @@ The daemon is designed to keep its hub connection alive across transient network
 
 **Auth handling.** Token refresh is attempted both proactively (before each heartbeat, if within 5 min of expiry) and reactively (on any hub API 401 response). Refresh uses the Supabase refresh token fetched from `/api/health`. A failed refresh surfaces as a warning but does not kill the daemon — the next reconnect cycle will retry.
 
-**Offline mode.** If no auth is present at startup, the daemon runs in standalone mode: local agent execution still works via the REST API and local WebSocket (`/ws`), but no hub sync is attempted. Running `agentage login` after the fact requires a daemon restart to pick up the new auth.
+**Offline mode.** If no auth is present at startup, the daemon runs in standalone mode: local agent execution still works via the REST API and local WebSocket (`/ws`), but no hub sync is attempted. Running `agentage setup` after the fact requires a daemon restart to pick up the new auth.
 
 ## CLI Commands
 
@@ -154,8 +154,8 @@ The daemon is designed to keep its hub connection alive across transient network
 | `agentage machines`          | List hub-connected machines |
 | `agentage status`            | Show daemon and hub status  |
 | `agentage logs`              | View daemon logs            |
-| `agentage login`             | Authenticate with the hub   |
-| `agentage logout`            | Log out                     |
+| `agentage setup`             | Configure machine + hub + auth (interactive or headless) |
+| `agentage setup --disconnect` | Deregister and remove credentials |
 
 ## Project Structure
 
@@ -171,8 +171,7 @@ src/
 │   ├── machines.ts         #   agentage machines
 │   ├── status.ts           #   agentage status
 │   ├── logs.ts             #   agentage logs
-│   ├── login.ts            #   agentage login
-│   └── logout.ts           #   agentage logout
+│   └── setup.ts           #   agentage setup
 ├── daemon/                 # Daemon server
 │   ├── server.ts           #   Express + HTTP server setup
 │   ├── routes.ts           #   REST API routes

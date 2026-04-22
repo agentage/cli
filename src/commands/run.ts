@@ -199,7 +199,7 @@ const runRemote = async (
   try {
     machines = await get<Array<{ id: string; name: string }>>('/api/hub/machines');
   } catch {
-    console.error(chalk.red("Not connected to hub. Run 'agentage login' first."));
+    console.error(chalk.red("Not connected to hub. Run 'agentage setup' first."));
     process.exitCode = 1;
     return;
   }
