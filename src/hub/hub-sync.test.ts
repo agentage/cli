@@ -44,6 +44,16 @@ vi.mock('../projects/projects.js', () => ({
   loadProjects: vi.fn(),
 }));
 
+vi.mock('../daemon/metrics.js', () => ({
+  collectMachineMetrics: vi.fn().mockResolvedValue({
+    cpuUsage: 12.3,
+    memoryUsedMb: 4096,
+    memoryTotalMb: 16384,
+    diskUsedMb: 100000,
+    diskTotalMb: 500000,
+  }),
+}));
+
 import { readAuth } from './auth.js';
 import { createHubClient } from './hub-client.js';
 import { createHubWs } from './hub-ws.js';
@@ -229,6 +239,13 @@ describe('hub-sync', () => {
         daemonVersion: '0.7.1',
         agentsDefault: '/tmp/agents',
         projectsDefault: '/tmp/projects',
+        resources: {
+          cpuUsage: 12.3,
+          memoryUsedMb: 4096,
+          memoryTotalMb: 16384,
+          diskUsedMb: 100000,
+          diskTotalMb: 500000,
+        },
       });
     });
 
