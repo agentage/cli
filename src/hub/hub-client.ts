@@ -27,10 +27,14 @@ export interface HubClient {
       projectsDefault?: string;
       resources?: {
         cpuUsage?: number;
+        cpuCount?: number;
         memoryUsedMb?: number;
         memoryTotalMb?: number;
         diskUsedMb?: number;
         diskTotalMb?: number;
+        loadAvg1m?: number;
+        loadAvg5m?: number;
+        loadAvg15m?: number;
       };
     }
   ) => Promise<{
