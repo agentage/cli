@@ -47,10 +47,14 @@ vi.mock('../projects/projects.js', () => ({
 vi.mock('../daemon/metrics.js', () => ({
   collectMachineMetrics: vi.fn().mockResolvedValue({
     cpuUsage: 12.3,
+    cpuCount: 8,
     memoryUsedMb: 4096,
     memoryTotalMb: 16384,
     diskUsedMb: 100000,
     diskTotalMb: 500000,
+    loadAvg1m: 0.5,
+    loadAvg5m: 0.7,
+    loadAvg15m: 0.9,
   }),
 }));
 
@@ -241,10 +245,14 @@ describe('hub-sync', () => {
         projectsDefault: '/tmp/projects',
         resources: {
           cpuUsage: 12.3,
+          cpuCount: 8,
           memoryUsedMb: 4096,
           memoryTotalMb: 16384,
           diskUsedMb: 100000,
           diskTotalMb: 500000,
+          loadAvg1m: 0.5,
+          loadAvg5m: 0.7,
+          loadAvg15m: 0.9,
         },
       });
     });
