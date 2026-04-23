@@ -1,6 +1,7 @@
 import { type Router, Router as createRouter, json, type Request, type Response } from 'express';
 import { type Agent, type ActionRegistry, type JsonSchema } from '@agentage/core';
 import { loadConfig } from './config.js';
+import { collectMachineMetrics } from './metrics.js';
 import { cancelRun, getRun, getRuns, sendInput, startRun } from './run-manager.js';
 import { getHubSync } from '../hub/hub-sync.js';
 import { readAuth } from '../hub/auth.js';
@@ -55,6 +56,16 @@ export const createRoutes = (): Router => {
       hubUrl: auth?.hub?.url ?? null,
       userEmail: auth?.user?.email ?? null,
     });
+  });
+
+  router.get('/api/metrics', async (_req, res) => {
+    try {
+      const metrics = await collectMachineMetrics();
+      res.json(metrics);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
+    }
   });
 
   router.get('/api/agents', (_req, res) => {

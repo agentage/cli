@@ -6,6 +6,10 @@ vi.mock('./config.js', () => ({
   loadConfig: vi.fn(),
 }));
 
+vi.mock('./metrics.js', () => ({
+  collectMachineMetrics: vi.fn(),
+}));
+
 vi.mock('./run-manager.js', () => ({
   startRun: vi.fn(),
   getRun: vi.fn(),
@@ -35,6 +39,7 @@ vi.mock('../projects/projects.js', () => ({
 }));
 
 import { loadConfig } from './config.js';
+import { collectMachineMetrics } from './metrics.js';
 import { startRun, getRun, getRuns, cancelRun, sendInput } from './run-manager.js';
 import { getHubSync } from '../hub/hub-sync.js';
 import { readAuth } from '../hub/auth.js';
@@ -45,6 +50,7 @@ import { createRoutes, setAgents, setRefreshHandler } from './routes.js';
 const mockLoadProjects = vi.mocked(loadProjects);
 
 const mockLoadConfig = vi.mocked(loadConfig);
+const mockCollectMachineMetrics = vi.mocked(collectMachineMetrics);
 const mockGetRuns = vi.mocked(getRuns);
 const mockGetRun = vi.mocked(getRun);
 const mockStartRun = vi.mocked(startRun);
@@ -119,6 +125,46 @@ describe('daemon routes', () => {
       expect(data.machineId).toBe('machine-1');
       expect(data.hubConnected).toBe(false);
       expect(typeof data.uptime).toBe('number');
+    });
+  });
+
+  describe('GET /api/metrics', () => {
+    it('returns machine metrics from collector', async () => {
+      mockCollectMachineMetrics.mockResolvedValueOnce({
+        cpuUsage: 12.3,
+        cpuCount: 8,
+        memoryUsedMb: 5000,
+        memoryTotalMb: 16000,
+        diskUsedMb: 200000,
+        diskTotalMb: 500000,
+        loadAvg1m: 0.5,
+        loadAvg5m: 0.4,
+        loadAvg15m: 0.3,
+      });
+
+      const { status, data } = await request(server, 'GET', '/api/metrics');
+
+      expect(status).toBe(200);
+      expect(data).toEqual({
+        cpuUsage: 12.3,
+        cpuCount: 8,
+        memoryUsedMb: 5000,
+        memoryTotalMb: 16000,
+        diskUsedMb: 200000,
+        diskTotalMb: 500000,
+        loadAvg1m: 0.5,
+        loadAvg5m: 0.4,
+        loadAvg15m: 0.3,
+      });
+    });
+
+    it('returns 500 when collector fails', async () => {
+      mockCollectMachineMetrics.mockRejectedValueOnce(new Error('boom'));
+
+      const { status, data } = await request(server, 'GET', '/api/metrics');
+
+      expect(status).toBe(500);
+      expect(data).toEqual({ error: 'boom' });
     });
   });
 
