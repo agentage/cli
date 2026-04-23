@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.20.2] - 2026-04-23
+
+### New Features
+- Add machine metrics endpoint for monitoring system performance via API
+
+### Infrastructure
+- Improve CI automation with fallback squash merge for clean-status PRs
+
 ## [0.20.1] - 2026-04-22
 
 ### New Features
