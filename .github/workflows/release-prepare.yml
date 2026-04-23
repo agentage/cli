@@ -171,10 +171,24 @@ jobs:
         if: steps.create_pr.outputs.pr_url && github.event.inputs.auto_merge == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ steps.create_pr.outputs.pr_url }}
         run: |
           echo "Auto-merge enabled — enabling GitHub auto-merge"
-          gh pr merge "${{ steps.create_pr.outputs.pr_url }}" --auto --squash
-          echo "Auto-merge enabled. PR will merge when all checks pass."
+          # `--auto` waits for required checks. When the PR has no required checks,
+          # GitHub rejects it with `GraphQL: Pull request is in clean status
+          # (enablePullRequestAutoMerge)` — in that case the PR is already mergeable
+          # so fall back to an immediate squash-merge.
+          if ! OUTPUT=$(gh pr merge "$PR_URL" --auto --squash 2>&1); then
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "clean status"; then
+              echo "Auto-merge rejected (clean status) — merging directly"
+              gh pr merge "$PR_URL" --squash
+            else
+              exit 1
+            fi
+          else
+            echo "Auto-merge enabled. PR will merge when all checks pass."
+          fi
 
       - name: Summary
         if: always()
