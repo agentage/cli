@@ -18,6 +18,7 @@ import { ensureDaemon } from '../utils/ensure-daemon.js';
 import { readAuth, saveAuth, deleteAuth, type AuthState } from '../hub/auth.js';
 import { startCallbackServer, getCallbackPort } from '../hub/auth-callback.js';
 import { createHubClient } from '../hub/hub-client.js';
+import { registerSetupMcp } from './setup-mcp.js';
 
 const DEFAULT_HUB_URL = 'https://agentage.io';
 
@@ -366,7 +367,7 @@ export const runSetup = async (opts: SetupOptions): Promise<void> => {
 };
 
 export const registerSetup = (program: Command): void => {
-  program
+  const setup = program
     .command('setup')
     .description('Configure machine, hub, and authentication')
     .option('--name <name>', 'Machine name (default: hostname)')
@@ -384,4 +385,6 @@ export const registerSetup = (program: Command): void => {
     .action(async (opts: SetupOptions) => {
       await runSetup(opts);
     });
+
+  registerSetupMcp(setup);
 };
