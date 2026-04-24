@@ -18,7 +18,13 @@ import { ensureDaemon } from '../utils/ensure-daemon.js';
 import { readAuth, saveAuth, deleteAuth, type AuthState } from '../hub/auth.js';
 import { startCallbackServer, getCallbackPort } from '../hub/auth-callback.js';
 import { createHubClient } from '../hub/hub-client.js';
-import { registerSetupMcp } from './setup-mcp.js';
+import {
+  printMcpResults,
+  registerSetupMcp,
+  runSetupMcp,
+  type McpCommandStyle,
+  type TargetResult,
+} from './setup-mcp.js';
 
 const DEFAULT_HUB_URL = 'https://agentage.io';
 
@@ -35,6 +41,8 @@ export interface SetupOptions {
   interactive?: boolean;
   force?: boolean;
   json?: boolean;
+  mcp?: boolean;
+  mcpStyle?: McpCommandStyle;
 }
 
 type SetupMode = 'fresh' | 'reauth' | 'disconnect' | 'standalone' | 'idempotent';
@@ -256,7 +264,8 @@ const printSummary = (
   config: DaemonConfig,
   mode: SetupMode,
   userEmail: string | null,
-  opts: SetupOptions
+  opts: SetupOptions,
+  mcp: TargetResult[] | null
 ): void => {
   if (opts.json) {
     console.log(
@@ -271,6 +280,7 @@ const printSummary = (
             userEmail,
           },
           agentsDir: config.agents.default,
+          mcp,
         },
         null,
         2
@@ -283,6 +293,10 @@ const printSummary = (
   console.log(`  Hub:        ${config.hub?.url ?? '(none)'}`);
   console.log(`  Agents dir: ${config.agents.default}`);
   if (userEmail) console.log(`  User:       ${userEmail}`);
+  if (mcp && mcp.length > 0) {
+    console.log(chalk.bold('\nMCP clients:'));
+    printMcpResults(mcp);
+  }
   if (mode === 'standalone') {
     console.log(chalk.dim('\nStandalone mode — run `agentage setup --reauth` to connect to hub.'));
   } else {
@@ -362,7 +376,21 @@ export const runSetup = async (opts: SetupOptions): Promise<void> => {
     userEmail = readAuth()?.user?.email ?? null;
   }
 
-  printSummary(config, mode, userEmail, opts);
+  // Wire user-scope MCP configs so Claude Code (any project) sees the daemon.
+  // Only on fresh setup — reauth keeps existing MCP wiring, standalone skips
+  // because we haven't proven daemon + auth yet.
+  let mcp: TargetResult[] | null = null;
+  if (mode === 'fresh' && opts.mcp !== false) {
+    try {
+      mcp = runSetupMcp({ scope: 'user', style: opts.mcpStyle ?? 'npx' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(chalk.yellow(`\nMCP wiring skipped: ${msg}`));
+      console.error(chalk.dim('Run `agentage setup mcp --scope=user` manually if desired.'));
+    }
+  }
+
+  printSummary(config, mode, userEmail, opts, mcp);
   process.exit(0);
 };
 
@@ -381,6 +409,8 @@ export const registerSetup = (program: Command): void => {
     .option('-y, --yes', 'Skip confirmation')
     .option('--no-interactive', 'Refuse to prompt; error if input would be needed')
     .option('--force', 'Overwrite existing machine identity on rename')
+    .option('--no-mcp', 'Skip the user-scope MCP wiring stage (~/.claude.json). Fresh mode only.')
+    .option('--mcp-style <style>', 'MCP command style: `npx` (default) or `binary`')
     .option('--json', 'JSON output')
     .action(async (opts: SetupOptions) => {
       await runSetup(opts);
