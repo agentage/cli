@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.20.3] - 2026-04-24
+
+### New Features
+- Add `setup mcp` subcommand to configure MCP (Model Context Protocol) settings in current directory
+
 ## [0.20.2] - 2026-04-23
 
 ### New Features
