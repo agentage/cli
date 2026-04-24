@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.21.0] - 2026-04-24
+
+### New Features
+- Add `--scope` flag to setup command for configuring MCP with user-specific scope settings
+
 ## [0.20.3] - 2026-04-24
 
 ### New Features
