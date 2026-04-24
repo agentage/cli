@@ -1,2 +1,2 @@
 ### New Features
-- Add `setup mcp` subcommand to configure MCP (Model Context Protocol) settings in current directory
+- Add `--scope` flag to setup command for configuring MCP with user-specific scope settings
