@@ -1,2 +1,2 @@
 ### Bug Fixes
-- Fix update notification appearing when CLI output is redirected or piped to other commands
+- Fix race condition in agent run initialization that could cause missed status updates

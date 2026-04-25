@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.24.2] - 2026-04-25
+
+### Bug Fixes
+- Fix race condition in agent run initialization that could cause missed status updates
+
 ## [0.24.1] - 2026-04-25
 
 ### Bug Fixes
