@@ -131,19 +131,80 @@ const createDefaultConfig = (machine: MachineIdentity): DaemonConfig => ({
   },
 });
 
+const isDirConfig = (value: unknown): value is DirConfig => {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as { default?: unknown; additional?: unknown };
+  return (
+    typeof v.default === 'string' &&
+    Array.isArray(v.additional) &&
+    v.additional.every((d) => typeof d === 'string')
+  );
+};
+
+const isValidConfigShape = (value: unknown): value is Partial<DaemonConfig> => {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Partial<DaemonConfig>;
+  // daemon.port must be a number
+  if (typeof v.daemon !== 'object' || v.daemon === null || typeof v.daemon.port !== 'number') {
+    return false;
+  }
+  if (!isDirConfig(v.agents)) return false;
+  if (!isDirConfig(v.projects)) return false;
+  if (typeof v.sync !== 'object' || v.sync === null) return false;
+  return true;
+};
+
+/**
+ * Migrate legacy `discovery.dirs` (singular config from cli@<0.18) into the
+ * current `agents.default` / `projects.default` shape. The old format
+ * carried a flat list of directories; we keep them as `agents.additional`
+ * so users don't lose their custom search paths after upgrading.
+ */
+const tryMigrateLegacyDiscovery = (raw: unknown): Partial<DaemonConfig> | undefined => {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const v = raw as { discovery?: { dirs?: unknown } };
+  if (!v.discovery || !Array.isArray(v.discovery.dirs)) return undefined;
+  const dirs = v.discovery.dirs.filter((d): d is string => typeof d === 'string');
+  if (dirs.length === 0) return undefined;
+  return {
+    agents: { default: getDefaultAgentsDir(), additional: dirs },
+    projects: { default: getDefaultProjectsDir(), additional: [] },
+  };
+};
+
 export const loadConfig = (): DaemonConfig => {
   const configPath = join(getConfigDir(), 'config.json');
 
-  let rawConfig: Partial<DaemonConfig> | undefined;
+  let rawConfig: unknown;
   if (existsSync(configPath)) {
-    rawConfig = JSON.parse(readFileSync(configPath, 'utf-8')) as Partial<DaemonConfig>;
+    try {
+      rawConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
+    } catch {
+      // Malformed JSON — treat as missing; we'll regenerate below.
+      rawConfig = undefined;
+    }
   }
 
-  const machine = resolveMachine(rawConfig?.machine);
+  const legacyMachine =
+    typeof rawConfig === 'object' && rawConfig !== null
+      ? (rawConfig as Partial<DaemonConfig>).machine
+      : undefined;
+  const machine = resolveMachine(legacyMachine);
 
-  const config: DaemonConfig = rawConfig
-    ? ({ ...rawConfig, machine } as DaemonConfig)
-    : createDefaultConfig(machine);
+  // Foreign schema (e.g. cli@<0.18 `discovery.dirs`, desktop-era files,
+  // partial writes) — migrate if we recognise it, otherwise rewrite from
+  // defaults. Either way, the on-disk file ends up valid and the daemon
+  // never spreads an underspecified object into a `DaemonConfig`.
+  let config: DaemonConfig;
+  if (rawConfig !== undefined && isValidConfigShape(rawConfig)) {
+    config = { ...(rawConfig as DaemonConfig), machine };
+  } else {
+    const migrated = tryMigrateLegacyDiscovery(rawConfig);
+    config = migrated
+      ? { ...createDefaultConfig(machine), ...migrated, machine }
+      : createDefaultConfig(machine);
+    saveConfig(config);
+  }
 
   if (!existsSync(configPath)) {
     saveConfig(config);

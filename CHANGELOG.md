@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Bug Fixes
+- Validate `~/.agentage/config.json` shape at load and rewrite the file when it
+  is malformed, partial, or carries a foreign schema. Previously a desktop-era
+  or hand-edited file could spread an underspecified object into the daemon
+  config and crash at runtime.
+
+### Migration
+- `discovery.dirs` (cli@<0.18) is now auto-migrated into the new
+  `agents.default` / `agents.additional` shape on first load. Old paths are
+  preserved as `agents.additional` entries so custom search paths survive the
+  upgrade. No user action required; the next daemon start rewrites
+  `config.json` in the new format.
+
 ## [0.22.1] - 2026-04-25
 
 ### New Features

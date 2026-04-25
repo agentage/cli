@@ -216,4 +216,84 @@ describe('config', () => {
     config.projects.additional = ['/b', '/a'];
     expect(getProjectsDirs(config)).toEqual(['/a', '/b']);
   });
+
+  // -------------------------------------------------------------------------
+  // Schema validation — mirrors cli#108 (loadProjects auto-rewrite). A foreign
+  // or malformed config.json must not crash the daemon; load returns a valid
+  // config and rewrites the file.
+  // -------------------------------------------------------------------------
+
+  it('rewrites config.json when JSON is malformed', async () => {
+    writeFileSync(join(testDir, 'config.json'), '{ this is not json');
+
+    const { loadConfig } = await import('./config.js');
+    const config = loadConfig();
+
+    expect(config.daemon.port).toBe(4243);
+    expect(config.agents.default).toBe(join(homedir(), 'agents'));
+
+    const rewritten = JSON.parse(readFileSync(join(testDir, 'config.json'), 'utf-8'));
+    expect(rewritten.daemon.port).toBe(4243);
+    expect(Array.isArray(rewritten.agents.additional)).toBe(true);
+  });
+
+  it('rewrites config.json when shape is partial / foreign', async () => {
+    writeFileSync(
+      join(testDir, 'config.json'),
+      JSON.stringify({ unrelated: 'shape', no_agents: true }) + '\n'
+    );
+
+    const { loadConfig } = await import('./config.js');
+    const config = loadConfig();
+
+    expect(config.agents.default).toBe(join(homedir(), 'agents'));
+    expect(config.projects.default).toBe(join(homedir(), 'projects'));
+    expect(config.daemon.port).toBe(4243);
+
+    const rewritten = JSON.parse(readFileSync(join(testDir, 'config.json'), 'utf-8'));
+    expect(rewritten.daemon.port).toBe(4243);
+    expect(rewritten.agents).toBeDefined();
+  });
+
+  it('migrates legacy discovery.dirs into agents.additional', async () => {
+    writeFileSync(
+      join(testDir, 'config.json'),
+      JSON.stringify({
+        machine: { id: 'legacy', name: 'old' },
+        discovery: { dirs: ['/opt/custom-agents', '/srv/team-agents'] },
+      }) + '\n'
+    );
+
+    const { loadConfig } = await import('./config.js');
+    const config = loadConfig();
+
+    expect(config.agents.default).toBe(join(homedir(), 'agents'));
+    expect(config.agents.additional).toEqual(['/opt/custom-agents', '/srv/team-agents']);
+    expect(config.projects.default).toBe(join(homedir(), 'projects'));
+    expect(config.projects.additional).toEqual([]);
+
+    // Persisted in the new shape — `discovery.dirs` is gone.
+    const rewritten = JSON.parse(readFileSync(join(testDir, 'config.json'), 'utf-8'));
+    expect(rewritten.discovery).toBeUndefined();
+    expect(rewritten.agents.additional).toEqual(['/opt/custom-agents', '/srv/team-agents']);
+  });
+
+  it('valid config is loaded as-is without rewrite churn', async () => {
+    const valid = {
+      machine: { id: 'stable-id', name: 'host' },
+      daemon: { port: 4243 },
+      agents: { default: '/a', additional: [] },
+      projects: { default: '/p', additional: [] },
+      sync: { events: {} },
+    };
+    writeFileSync(join(testDir, 'config.json'), JSON.stringify(valid, null, 2) + '\n');
+    writeFileSync(join(testDir, 'machine.json'), JSON.stringify(valid.machine, null, 2) + '\n');
+    const before = readFileSync(join(testDir, 'config.json'), 'utf-8');
+
+    const { loadConfig } = await import('./config.js');
+    loadConfig();
+
+    const after = readFileSync(join(testDir, 'config.json'), 'utf-8');
+    expect(after).toBe(before);
+  });
 });
