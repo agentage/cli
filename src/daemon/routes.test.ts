@@ -4,6 +4,8 @@ import { type Server } from 'node:http';
 
 vi.mock('./config.js', () => ({
   loadConfig: vi.fn(),
+  saveConfig: vi.fn(),
+  getVaultStorageDir: vi.fn(() => '/tmp/agentage-routes-test-vaults'),
 }));
 
 vi.mock('./metrics.js', () => ({

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { join } from 'node:path';
+import type { VaultConfig } from '../vaults/types.js';
 
 export interface SyncEvents {
   state: boolean;
@@ -34,10 +35,13 @@ export interface DaemonConfig {
   };
   agents: DirConfig;
   projects: DirConfig;
+  vaults?: Record<string, VaultConfig>;
   sync: {
     events: SyncEvents;
   };
 }
+
+export const getVaultStorageDir = (): string => join(getConfigDir(), 'vaults');
 
 export const getConfigDir = (): string => {
   const dir = process.env['AGENTAGE_CONFIG_DIR'] || join(process.env['HOME'] || '~', '.agentage');
@@ -112,6 +116,7 @@ const createDefaultConfig = (machine: MachineIdentity): DaemonConfig => ({
     default: getDefaultProjectsDir(),
     additional: [],
   },
+  vaults: {},
   sync: {
     events: {
       state: true,

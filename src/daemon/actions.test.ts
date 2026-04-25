@@ -18,21 +18,27 @@ describe('action registry bootstrap', () => {
     resetActionRegistry();
   });
 
-  it('registers the three built-in actions with expected manifests', () => {
+  it('registers the built-in actions with expected manifests', () => {
     const names = getActionRegistry()
       .list()
       .map((m) => m.name)
       .sort();
-    expect(names).toEqual(['agent:install', 'cli:update', 'project:addFromOrigin']);
+    expect(names).toEqual([
+      'agent:install',
+      'cli:update',
+      'project:addFromOrigin',
+      'vault:add',
+      'vault:list',
+      'vault:reindex',
+      'vault:remove',
+    ]);
   });
 
-  it('each action declares a distinct capability and machine scope', () => {
+  it('every action is machine-scoped with a namespace.verb capability', () => {
     const manifests = getActionRegistry().list();
-    const caps = new Set(manifests.map((m) => m.capability));
-    expect(caps.size).toBe(manifests.length);
     for (const m of manifests) {
       expect(m.scope).toBe('machine');
-      expect(m.capability).toMatch(/\.(read|write)$/);
+      expect(m.capability).toMatch(/^[a-z][a-z0-9-]*\.(read|write|admin)$/);
     }
   });
 
