@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import type { Run, RunEvent } from '@agentage/core';
 import { logInfo, logError } from '../daemon/logger.js';
 import { getAgents } from '../daemon/routes.js';
 import {
@@ -63,51 +64,88 @@ export const createHubWs = (
       return;
     }
 
+    // Listeners must be attached BEFORE awaiting startRun. run-manager fires
+    // its first state transition ('submitted' → 'working') and may stream
+    // result/completed events synchronously inside startRun for fast agents
+    // (e.g. shell echo). If we wait for startRun to resolve before subscribing,
+    // those terminal events are missed and the hub's runs row is stuck at
+    // 'working' forever. See e2e#46.
+    //
+    // Because we don't yet know the localRunId at subscription time, we buffer
+    // any events received before startRun resolves and replay them once the id
+    // is known.
+    const TERMINAL_STATES = ['completed', 'failed', 'canceled'];
+    const unsubs: Array<() => void> = [];
+    let localRunId: string | null = null;
+    const pendingEvents: Array<{ eventRunId: string; event: RunEvent }> = [];
+    const pendingStates: Run[] = [];
+
+    const cleanupRunListeners = (): void => {
+      for (const fn of unsubs) fn();
+      unsubs.length = 0;
+    };
+
+    unsubs.push(
+      onRunEvent((eventRunId, event) => {
+        if (localRunId === null) {
+          pendingEvents.push({ eventRunId, event });
+          return;
+        }
+        if (eventRunId === localRunId) {
+          send({ type: 'run_event', runId: msg.runId ?? localRunId, event });
+        }
+      })
+    );
+
+    unsubs.push(
+      onRunStateChange((run) => {
+        if (localRunId === null) {
+          pendingStates.push(run);
+          return;
+        }
+        if (run.id === localRunId) {
+          send({
+            type: 'run_state',
+            runId: msg.runId ?? localRunId,
+            state: run.state,
+            error: run.error,
+            stats: run.stats,
+          });
+          if (TERMINAL_STATES.includes(run.state)) cleanupRunListeners();
+        }
+      })
+    );
+
+    eventUnsubscribers.push(cleanupRunListeners);
+
     try {
-      const localRunId = await startRun(agent, msg.input.task, msg.input.config, msg.input.context);
+      localRunId = await startRun(agent, msg.input.task, msg.input.config, msg.input.context);
       // Use hub's runId for all messages back to hub, local ID for matching events
       const hubRunId = msg.runId ?? localRunId;
       send({ type: 'execute_accepted', requestId: msg.requestId, runId: hubRunId });
 
-      // Subscribe to run events and stream to hub
-      // Match by localRunId (what run-manager emits), send with hubRunId (what hub expects)
-      const TERMINAL_STATES = ['completed', 'failed', 'canceled'];
-      const unsubs: Array<() => void> = [];
-
-      const cleanupRunListeners = (): void => {
-        for (const fn of unsubs) fn();
-        unsubs.length = 0;
-      };
-
-      unsubs.push(
-        onRunEvent((eventRunId, event) => {
-          if (eventRunId === localRunId) {
-            send({ type: 'run_event', runId: hubRunId, event });
-          }
-        })
-      );
-
-      unsubs.push(
-        onRunStateChange((run) => {
-          if (run.id === localRunId) {
-            send({
-              type: 'run_state',
-              runId: hubRunId,
-              state: run.state,
-              error: run.error,
-              stats: run.stats,
-            });
-
-            // Unsubscribe on terminal state to prevent listener accumulation
-            if (TERMINAL_STATES.includes(run.state)) {
-              cleanupRunListeners();
-            }
-          }
-        })
-      );
-
-      eventUnsubscribers.push(cleanupRunListeners);
+      // Drain anything that arrived before localRunId was known.
+      for (const { eventRunId, event } of pendingEvents) {
+        if (eventRunId === localRunId) {
+          send({ type: 'run_event', runId: hubRunId, event });
+        }
+      }
+      pendingEvents.length = 0;
+      for (const run of pendingStates) {
+        if (run.id === localRunId) {
+          send({
+            type: 'run_state',
+            runId: hubRunId,
+            state: run.state,
+            error: run.error,
+            stats: run.stats,
+          });
+          if (TERMINAL_STATES.includes(run.state)) cleanupRunListeners();
+        }
+      }
+      pendingStates.length = 0;
     } catch (err) {
+      cleanupRunListeners();
       send({
         type: 'execute_rejected',
         requestId: msg.requestId,
