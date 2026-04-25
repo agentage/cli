@@ -28,9 +28,13 @@ describe('action registry bootstrap', () => {
       'cli:update',
       'project:addFromOrigin',
       'vault:add',
+      'vault:edit',
+      'vault:files',
       'vault:list',
+      'vault:read',
       'vault:reindex',
       'vault:remove',
+      'vault:search',
     ]);
   });
 
