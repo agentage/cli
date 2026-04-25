@@ -33,6 +33,7 @@
     "@agentage/platform": "^0.6.1",
     "@supabase/supabase-js": "2.104.1",
     "ajv": "8.20.0",
+    "better-sqlite3": "latest",
     "chalk": "latest",
     "commander": "latest",
     "croner": "*",
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "latest",
+    "@types/better-sqlite3": "latest",
     "@types/express": "latest",
     "@types/node": "latest",
     "@types/ws": "latest",
