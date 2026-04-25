@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.24.1] - 2026-04-25
+
+### Bug Fixes
+- Fix update notification appearing when CLI output is redirected or piped to other commands
+
 ## [Unreleased]
 
 ### Bug Fixes

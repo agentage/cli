@@ -1,3 +1,2 @@
-### New Features
-- Add automatic vault registration from ~/projects/vaults directory during setup
-- Add heartbeat monitoring for parent directories
+### Bug Fixes
+- Fix update notification appearing when CLI output is redirected or piped to other commands
