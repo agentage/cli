@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import express from 'express';
 import { type Agent, type AgentFactory } from '@agentage/core';
-import { loadConfig, getAgentsDirs } from './config.js';
+import { loadConfig, getAgentsDirs, getBindHost } from './config.js';
 import { logInfo } from './logger.js';
 import { createRoutes, setAgents, setRefreshHandler } from './routes.js';
 import { setupWebSocket } from './websocket.js';
@@ -38,6 +38,7 @@ export const createDaemonServer = (): DaemonServer => {
   const start = async (): Promise<void> => {
     const config = loadConfig();
     const port = config.daemon.port;
+    const host = getBindHost(config);
 
     return new Promise((resolve, reject) => {
       server.on('error', (err: NodeJS.ErrnoException) => {
@@ -48,8 +49,8 @@ export const createDaemonServer = (): DaemonServer => {
         }
       });
 
-      server.listen(port, () => {
-        logInfo(`Daemon server listening on port ${port}`);
+      server.listen(port, host, () => {
+        logInfo(`Daemon server listening on ${host}:${port}`);
         resolve();
       });
     });

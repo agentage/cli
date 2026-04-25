@@ -29,6 +29,14 @@ export interface DaemonConfig {
   machine: MachineIdentity;
   daemon: {
     port: number;
+    /**
+     * Host interface the daemon binds to. Defaults to '127.0.0.1'
+     * (loopback only — no LAN/network access). Set to '0.0.0.0' to
+     * expose to all interfaces (e.g. for tailscale, LAN testing).
+     * The daemon has no auth on its action endpoints, so non-loopback
+     * binding is opt-in.
+     */
+    bindHost?: string;
   };
   hub?: {
     url: string;
@@ -40,6 +48,11 @@ export interface DaemonConfig {
     events: SyncEvents;
   };
 }
+
+export const DEFAULT_BIND_HOST = '127.0.0.1';
+
+export const getBindHost = (config: DaemonConfig): string =>
+  config.daemon.bindHost ?? DEFAULT_BIND_HOST;
 
 export const getVaultStorageDir = (): string => join(getConfigDir(), 'vaults');
 
@@ -213,6 +226,11 @@ export const loadConfig = (): DaemonConfig => {
   const portOverride = process.env['AGENTAGE_PORT'];
   if (portOverride) {
     config.daemon.port = parseInt(portOverride, 10);
+  }
+
+  const bindHostOverride = process.env['AGENTAGE_BIND_HOST'];
+  if (bindHostOverride) {
+    config.daemon.bindHost = bindHostOverride;
   }
 
   const agentsOverride = process.env['AGENTAGE_AGENTS_DIR'];
