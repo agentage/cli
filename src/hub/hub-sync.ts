@@ -8,6 +8,7 @@ import { logInfo, logWarn } from '../daemon/logger.js';
 import { getAgents } from '../daemon/routes.js';
 import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
 import { getScheduler } from '../daemon/scheduler.js';
+import { getActionRegistry } from '../daemon/actions.js';
 import { loadProjects } from '../projects/projects.js';
 
 import { collectMachineMetrics } from '../daemon/metrics.js';
@@ -110,6 +111,20 @@ export const createHubSync = (): HubSync => {
       );
     }
 
+    const actions = getActionRegistry()
+      .list()
+      .map((m) => ({
+        name: m.name,
+        version: m.version,
+        title: m.title,
+        description: m.description,
+        scope: m.scope,
+        capability: m.capability,
+        idempotent: m.idempotent,
+        ...(m.inputSchema && { inputSchema: m.inputSchema as Record<string, unknown> }),
+        ...(m.deprecatedSince && { deprecatedSince: m.deprecatedSince }),
+      }));
+
     const response = await hubClient.heartbeat(auth.hub.machineId, {
       agents,
       projects,
@@ -117,6 +132,7 @@ export const createHubSync = (): HubSync => {
       daemonVersion: VERSION,
       agentsDefault: config.agents.default,
       projectsDefault: config.projects.default,
+      actions,
       ...(resources && { resources }),
     });
 

@@ -44,6 +44,10 @@ vi.mock('../projects/projects.js', () => ({
   loadProjects: vi.fn(),
 }));
 
+vi.mock('../daemon/actions.js', () => ({
+  getActionRegistry: vi.fn(() => ({ list: () => [] })),
+}));
+
 vi.mock('../daemon/metrics.js', () => ({
   collectMachineMetrics: vi.fn().mockResolvedValue({
     cpuUsage: 12.3,
@@ -243,6 +247,7 @@ describe('hub-sync', () => {
         daemonVersion: '0.7.1',
         agentsDefault: '/tmp/agents',
         projectsDefault: '/tmp/projects',
+        actions: [],
         resources: {
           cpuUsage: 12.3,
           cpuCount: 8,
@@ -255,6 +260,47 @@ describe('hub-sync', () => {
           loadAvg15m: 0.9,
         },
       });
+    });
+
+    it('includes daemon action capabilities in heartbeat payload', async () => {
+      const { getActionRegistry } = await import('../daemon/actions.js');
+      vi.mocked(getActionRegistry).mockReturnValue({
+        list: () => [
+          {
+            name: 'cli:update' as const,
+            version: '1.0',
+            title: 'Update CLI',
+            description: 'Reinstall daemon globally',
+            scope: 'machine',
+            capability: 'cli.write',
+            idempotent: false,
+          },
+        ],
+      } as unknown as ReturnType<typeof getActionRegistry>);
+
+      mockReadAuth.mockReturnValue(testAuth);
+      mockGetAgents.mockReturnValue([] as ReturnType<typeof getAgents>);
+      mockGetRuns.mockReturnValue([] as ReturnType<typeof getRuns>);
+      mockLoadProjects.mockReturnValue([]);
+
+      const sync = createHubSync();
+      await sync.start();
+      await sync.triggerHeartbeat();
+
+      const call = mockHubClient.heartbeat.mock.calls[0][1] as {
+        actions: Array<Record<string, unknown>>;
+      };
+      expect(call.actions).toEqual([
+        {
+          name: 'cli:update',
+          version: '1.0',
+          title: 'Update CLI',
+          description: 'Reinstall daemon globally',
+          scope: 'machine',
+          capability: 'cli.write',
+          idempotent: false,
+        },
+      ]);
     });
 
     it('includes inputSchema in agent payload when declared', async () => {

@@ -25,6 +25,17 @@ export interface HubClient {
       daemonVersion: string;
       agentsDefault?: string;
       projectsDefault?: string;
+      actions?: Array<{
+        name: string;
+        version: string;
+        title: string;
+        description: string;
+        scope: 'machine' | 'hub' | 'project';
+        capability: string;
+        idempotent: boolean;
+        inputSchema?: Record<string, unknown>;
+        deprecatedSince?: string;
+      }>;
       resources?: {
         cpuUsage?: number;
         cpuCount?: number;
