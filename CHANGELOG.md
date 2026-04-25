@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.22.1] - 2026-04-25
+
+### New Features
+- Add vault metadata to daemon heartbeat for improved monitoring and debugging
+
 ## [0.22.0] - 2026-04-25
 
 ### New Features
