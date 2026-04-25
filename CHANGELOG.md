@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.22.0] - 2026-04-25
+
+### New Features
+- Add vault system for secure content storage and management
+- Add vault file operations: read, search, and edit content through CLI
+- Add vault admin actions for content management
+- Include action capabilities in daemon heartbeat for better monitoring
+
+### Infrastructure
+- Update dependencies across multiple packages
+
 ## [0.21.0] - 2026-04-24
 
 ### New Features
