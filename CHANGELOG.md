@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Bug Fixes
+- Update-available notice no longer corrupts non-interactive output. The
+  notice is now suppressed when stdout is not a TTY (CI, pipes, `--json`
+  consumers), and respects the `NO_UPDATE_NOTIFIER` environment variable
+  to match the npm convention. Previously the trailing message could get
+  appended to JSON output and break downstream parsers.
+
 ## [0.24.0] - 2026-04-25
 
 ### New Features
