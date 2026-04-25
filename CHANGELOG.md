@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.24.0] - 2026-04-25
+
+### New Features
+- Add automatic vault registration from ~/projects/vaults directory during setup
+- Add heartbeat monitoring for parent directories
+
 ## [0.23.0] - 2026-04-25
 
 ### New Features
