@@ -2,9 +2,13 @@ import { resolve } from 'node:path';
 import chalk from 'chalk';
 import { type Command } from 'commander';
 import type { VaultAddOutput } from '../daemon/actions/vault-add.js';
+import type { VaultEditOutput } from '../daemon/actions/vault-edit.js';
+import type { VaultFilesOutput } from '../daemon/actions/vault-files.js';
 import type { VaultListOutput } from '../daemon/actions/vault-list.js';
+import type { VaultReadOutput } from '../daemon/actions/vault-read.js';
 import type { VaultReindexOutput } from '../daemon/actions/vault-reindex.js';
 import type { VaultRemoveOutput } from '../daemon/actions/vault-remove.js';
+import type { VaultSearchOutput } from '../daemon/actions/vault-search.js';
 import { invokeAction } from '../utils/action-client.js';
 import { ensureDaemon } from '../utils/ensure-daemon.js';
 
@@ -41,6 +45,44 @@ export const registerVaults = (program: Command): void => {
     .description('Force a full filesystem rescan of the vault')
     .action(async (slug: string) => {
       await handleReindex(slug);
+    });
+
+  cmd
+    .command('files <slug>')
+    .description('List files in a vault')
+    .option('--prefix <prefix>', 'Filter by path prefix (e.g. inbox/)')
+    .option('--limit <n>', 'Max results', '100')
+    .option('--json', 'JSON output')
+    .action(async (slug: string, opts: { prefix?: string; limit?: string; json?: boolean }) => {
+      await handleFiles(slug, opts);
+    });
+
+  cmd
+    .command('read <slug> <path>')
+    .description('Print the content of a vault-relative file')
+    .action(async (slug: string, path: string) => {
+      await handleRead(slug, path);
+    });
+
+  cmd
+    .command('search <slug> <query...>')
+    .description('Full-text search the vault index (FTS5)')
+    .option('--limit <n>', 'Max hits', '20')
+    .option('--json', 'JSON output')
+    .action(
+      async (slug: string, queryParts: string[], opts: { limit?: string; json?: boolean }) => {
+        await handleSearch(slug, queryParts.join(' '), opts);
+      }
+    );
+
+  cmd
+    .command('edit <slug>')
+    .description('Write content to a vault (default: new file in inbox/)')
+    .option('--content <text>', 'Content to write (otherwise reads stdin)')
+    .option('--mode <mode>', 'inbox-dated, append-daily, or overwrite')
+    .option('--path <path>', 'Vault-relative path (required for overwrite)')
+    .action(async (slug: string, opts: { content?: string; mode?: string; path?: string }) => {
+      await handleEdit(slug, opts);
     });
 };
 
@@ -137,6 +179,135 @@ const handleReindex = async (slug: string): Promise<void> => {
     console.error(
       chalk.red(`Failed to reindex vault: ${err instanceof Error ? err.message : String(err)}`)
     );
+    process.exit(1);
+  }
+};
+
+const handleFiles = async (
+  slug: string,
+  opts: { prefix?: string; limit?: string; json?: boolean }
+): Promise<void> => {
+  await ensureDaemon();
+  const input: Record<string, unknown> = { slug };
+  if (opts.prefix) input['prefix'] = opts.prefix;
+  if (opts.limit) input['limit'] = parseInt(opts.limit, 10);
+  try {
+    const result = await invokeAction<VaultFilesOutput>('vault:files', input, ['vault.read']);
+    if (opts.json) {
+      console.log(JSON.stringify(result.files, null, 2));
+      process.exit(0);
+      return;
+    }
+    if (result.files.length === 0) {
+      console.log(chalk.gray('No files.'));
+      process.exit(0);
+      return;
+    }
+    const pathWidth = Math.max(8, ...result.files.map((f) => f.path.length)) + 2;
+    console.log(
+      chalk.bold('PATH'.padEnd(pathWidth)) + chalk.bold('SIZE'.padEnd(10)) + chalk.bold('MTIME')
+    );
+    for (const f of result.files) {
+      console.log(
+        f.path.padEnd(pathWidth) +
+          chalk.dim(String(f.size).padEnd(10)) +
+          chalk.dim(new Date(f.mtime).toISOString())
+      );
+    }
+    console.log(chalk.dim(`\n${result.files.length} file(s)`));
+    process.exit(0);
+  } catch (err) {
+    console.error(
+      chalk.red(`Failed to list files: ${err instanceof Error ? err.message : String(err)}`)
+    );
+    process.exit(1);
+  }
+};
+
+const handleRead = async (slug: string, path: string): Promise<void> => {
+  await ensureDaemon();
+  try {
+    const result = await invokeAction<VaultReadOutput>('vault:read', { slug, path }, [
+      'vault.read',
+    ]);
+    process.stdout.write(result.content);
+    if (!result.content.endsWith('\n')) process.stdout.write('\n');
+    process.exit(0);
+  } catch (err) {
+    console.error(chalk.red(`Failed to read: ${err instanceof Error ? err.message : String(err)}`));
+    process.exit(1);
+  }
+};
+
+const handleSearch = async (
+  slug: string,
+  query: string,
+  opts: { limit?: string; json?: boolean }
+): Promise<void> => {
+  await ensureDaemon();
+  const input: Record<string, unknown> = { slug, query };
+  if (opts.limit) input['limit'] = parseInt(opts.limit, 10);
+  try {
+    const result = await invokeAction<VaultSearchOutput>('vault:search', input, ['vault.read']);
+    if (opts.json) {
+      console.log(JSON.stringify(result.hits, null, 2));
+      process.exit(0);
+      return;
+    }
+    if (result.hits.length === 0) {
+      console.log(chalk.gray(`No matches for "${query}".`));
+      process.exit(0);
+      return;
+    }
+    for (const hit of result.hits) {
+      console.log(chalk.bold(hit.path) + chalk.dim(`  (score ${hit.score.toFixed(3)})`));
+      console.log('  ' + hit.snippet.replace(/\n/g, ' '));
+      console.log();
+    }
+    console.log(chalk.dim(`${result.hits.length} hit(s)`));
+    process.exit(0);
+  } catch (err) {
+    console.error(
+      chalk.red(`Failed to search: ${err instanceof Error ? err.message : String(err)}`)
+    );
+    process.exit(1);
+  }
+};
+
+const readStdin = async (): Promise<string> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+};
+
+const handleEdit = async (
+  slug: string,
+  opts: { content?: string; mode?: string; path?: string }
+): Promise<void> => {
+  await ensureDaemon();
+  let content = opts.content;
+  if (content === undefined) {
+    if (process.stdin.isTTY) {
+      console.error(chalk.red('No content: pass --content "..." or pipe text to stdin'));
+      process.exit(1);
+      return;
+    }
+    content = await readStdin();
+  }
+  const input: Record<string, unknown> = { slug, content };
+  if (opts.mode) input['mode'] = opts.mode;
+  if (opts.path) input['path'] = opts.path;
+  try {
+    const result = await invokeAction<VaultEditOutput>('vault:edit', input, ['vault.write']);
+    console.log(
+      chalk.green(`Wrote ${result.bytesWritten} bytes`) +
+        chalk.dim(` to ${result.path} (mode=${result.mode})`)
+    );
+    process.exit(0);
+  } catch (err) {
+    console.error(chalk.red(`Failed to edit: ${err instanceof Error ? err.message : String(err)}`));
     process.exit(1);
   }
 };

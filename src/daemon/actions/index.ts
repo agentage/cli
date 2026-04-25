@@ -19,4 +19,16 @@ export type { VaultReindexInput, VaultReindexOutput } from './vault-reindex.js';
 export { createVaultListAction } from './vault-list.js';
 export type { VaultListInput, VaultListOutput } from './vault-list.js';
 
+export { createVaultFilesAction } from './vault-files.js';
+export type { VaultFilesInput, VaultFilesOutput } from './vault-files.js';
+
+export { createVaultReadAction } from './vault-read.js';
+export type { VaultReadInput, VaultReadOutput } from './vault-read.js';
+
+export { createVaultSearchAction } from './vault-search.js';
+export type { VaultSearchInput, VaultSearchOutput } from './vault-search.js';
+
+export { createVaultEditAction } from './vault-edit.js';
+export type { VaultEditInput, VaultEditOutput } from './vault-edit.js';
+
 export type { ActionProgress, ShellExec } from './types.js';

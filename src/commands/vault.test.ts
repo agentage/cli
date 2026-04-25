@@ -151,4 +151,183 @@ describe('vault command', () => {
       expect(all).toContain('unchanged=5');
     });
   });
+
+  describe('vault files', () => {
+    it('lists files with size + mtime', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        slug: 'notes',
+        files: [
+          { path: 'a.md', size: 10, mtime: 1700000000000, sha256: 'h1' },
+          { path: 'b.md', size: 20, mtime: 1700000001000, sha256: 'h2' },
+        ],
+      });
+      await program.parseAsync(['node', 'agentage', 'vault', 'files', 'notes']);
+      expect(mockInvoke).toHaveBeenCalledWith('vault:files', { slug: 'notes', limit: 100 }, [
+        'vault.read',
+      ]);
+      const all = logs.join('\n');
+      expect(all).toContain('a.md');
+      expect(all).toContain('b.md');
+      expect(all).toContain('2 file(s)');
+    });
+
+    it('passes prefix when given', async () => {
+      mockInvoke.mockResolvedValueOnce({ slug: 'notes', files: [] });
+      await program.parseAsync([
+        'node',
+        'agentage',
+        'vault',
+        'files',
+        'notes',
+        '--prefix',
+        'inbox/',
+      ]);
+      const call = mockInvoke.mock.calls[0];
+      expect(call?.[1]).toMatchObject({ slug: 'notes', prefix: 'inbox/' });
+    });
+
+    it('--json prints raw array', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        slug: 'notes',
+        files: [{ path: 'a.md', size: 1, mtime: 1, sha256: 'h' }],
+      });
+      await program.parseAsync(['node', 'agentage', 'vault', 'files', 'notes', '--json']);
+      expect(logs[0]).toContain('"path": "a.md"');
+    });
+  });
+
+  describe('vault read', () => {
+    it('writes file content to stdout', async () => {
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      mockInvoke.mockResolvedValueOnce({
+        slug: 'notes',
+        path: 'a.md',
+        content: 'hello world\n',
+        size: 12,
+        mtime: 1,
+      });
+      await program.parseAsync(['node', 'agentage', 'vault', 'read', 'notes', 'a.md']);
+      expect(mockInvoke).toHaveBeenCalledWith('vault:read', { slug: 'notes', path: 'a.md' }, [
+        'vault.read',
+      ]);
+      expect(stdoutSpy).toHaveBeenCalledWith('hello world\n');
+      stdoutSpy.mockRestore();
+    });
+
+    it('appends trailing newline if file lacks one', async () => {
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      mockInvoke.mockResolvedValueOnce({
+        slug: 'notes',
+        path: 'a.md',
+        content: 'no newline',
+        size: 10,
+        mtime: 1,
+      });
+      await program.parseAsync(['node', 'agentage', 'vault', 'read', 'notes', 'a.md']);
+      expect(stdoutSpy).toHaveBeenCalledWith('no newline');
+      expect(stdoutSpy).toHaveBeenCalledWith('\n');
+      stdoutSpy.mockRestore();
+    });
+  });
+
+  describe('vault search', () => {
+    it('prints ranked hits', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        slug: 'notes',
+        query: 'rust',
+        hits: [
+          { path: 'a.md', score: -1.5, snippet: 'about <<rust>> language' },
+          { path: 'b.md', score: -0.8, snippet: 'mention of <<rust>>' },
+        ],
+      });
+      await program.parseAsync(['node', 'agentage', 'vault', 'search', 'notes', 'rust']);
+      expect(mockInvoke).toHaveBeenCalledWith(
+        'vault:search',
+        { slug: 'notes', query: 'rust', limit: 20 },
+        ['vault.read']
+      );
+      const all = logs.join('\n');
+      expect(all).toContain('a.md');
+      expect(all).toContain('rust');
+      expect(all).toContain('2 hit(s)');
+    });
+
+    it('joins multi-word query', async () => {
+      mockInvoke.mockResolvedValueOnce({ slug: 'notes', query: 'foo bar', hits: [] });
+      await program.parseAsync(['node', 'agentage', 'vault', 'search', 'notes', 'foo', 'bar']);
+      const call = mockInvoke.mock.calls[0];
+      expect(call?.[1]).toMatchObject({ query: 'foo bar' });
+    });
+
+    it('reports no matches gracefully', async () => {
+      mockInvoke.mockResolvedValueOnce({ slug: 'notes', query: 'x', hits: [] });
+      await program.parseAsync(['node', 'agentage', 'vault', 'search', 'notes', 'x']);
+      const all = logs.join('\n');
+      expect(all).toContain('No matches');
+    });
+  });
+
+  describe('vault edit', () => {
+    it('passes --content to vault:edit with vault.write', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        slug: 'notes',
+        path: 'inbox/2026-04-25-120000-abcd.md',
+        mode: 'inbox-dated',
+        bytesWritten: 5,
+      });
+      await program.parseAsync([
+        'node',
+        'agentage',
+        'vault',
+        'edit',
+        'notes',
+        '--content',
+        'hello',
+      ]);
+      expect(mockInvoke).toHaveBeenCalledWith('vault:edit', { slug: 'notes', content: 'hello' }, [
+        'vault.write',
+      ]);
+      const all = logs.join('\n');
+      expect(all).toContain('Wrote 5 bytes');
+    });
+
+    it('passes --mode and --path through', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        slug: 'notes',
+        path: 'a.md',
+        mode: 'overwrite',
+        bytesWritten: 3,
+      });
+      await program.parseAsync([
+        'node',
+        'agentage',
+        'vault',
+        'edit',
+        'notes',
+        '--content',
+        'foo',
+        '--mode',
+        'overwrite',
+        '--path',
+        'a.md',
+      ]);
+      const call = mockInvoke.mock.calls[0];
+      expect(call?.[1]).toMatchObject({ mode: 'overwrite', path: 'a.md' });
+    });
+
+    it('errors if no --content and stdin is a TTY', async () => {
+      const originalIsTTY = process.stdin.isTTY;
+      Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+      try {
+        await program.parseAsync(['node', 'agentage', 'vault', 'edit', 'notes']);
+        expect(errorLogs.some((l) => l.includes('No content'))).toBe(true);
+        expect(mockExit).toHaveBeenCalledWith(1);
+      } finally {
+        Object.defineProperty(process.stdin, 'isTTY', {
+          value: originalIsTTY,
+          configurable: true,
+        });
+      }
+    });
+  });
 });
