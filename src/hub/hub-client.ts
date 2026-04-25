@@ -25,6 +25,7 @@ export interface HubClient {
       daemonVersion: string;
       agentsDefault?: string;
       projectsDefault?: string;
+      vaultsDefault?: string;
       actions?: Array<{
         name: string;
         version: string;

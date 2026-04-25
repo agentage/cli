@@ -1,5 +1,5 @@
 import { platform, arch } from 'node:os';
-import { loadConfig } from '../daemon/config.js';
+import { loadConfig, getDefaultVaultsDir } from '../daemon/config.js';
 import { type AuthState, readAuth, saveAuth } from './auth.js';
 import { createHubClient, type HubClient } from './hub-client.js';
 import { createHubWs, type HubWs } from './hub-ws.js';
@@ -135,6 +135,8 @@ export const createHubSync = (): HubSync => {
       );
     }
 
+    const vaultsDefault = getDefaultVaultsDir(config);
+
     const response = await hubClient.heartbeat(auth.hub.machineId, {
       agents,
       projects,
@@ -142,6 +144,7 @@ export const createHubSync = (): HubSync => {
       daemonVersion: VERSION,
       agentsDefault: config.agents.default,
       projectsDefault: config.projects.default,
+      vaultsDefault,
       actions,
       ...(vaults.length > 0 && { vaults }),
       ...(resources && { resources }),

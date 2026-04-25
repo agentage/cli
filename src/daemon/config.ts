@@ -44,6 +44,14 @@ export interface DaemonConfig {
   agents: DirConfig;
   projects: DirConfig;
   vaults?: Record<string, VaultConfig>;
+  /**
+   * Parent directory holding multiple vaults (one subdirectory = one vault).
+   * Default `~/projects/vaults`. Set during `agentage setup --vaults-dir`
+   * or by editing config.json. Env var AGENTAGE_DEFAULT_VAULTS_DIR
+   * overrides at runtime. Hub heartbeat ships this value as `vaultsDefault`
+   * so the dashboard knows where the user keeps vaults.
+   */
+  vaultsDefault?: string;
   sync: {
     events: SyncEvents;
   };
@@ -66,6 +74,20 @@ export const getConfigDir = (): string => {
 
 export const getDefaultAgentsDir = (): string => join(homedir(), 'agents');
 export const getDefaultProjectsDir = (): string => join(homedir(), 'projects');
+
+/**
+ * Resolve the parent directory holding the user's vaults, with this priority:
+ *   1. AGENTAGE_DEFAULT_VAULTS_DIR (env, runtime override)
+ *   2. config.vaultsDefault (persistent, set by `agentage setup --vaults-dir`)
+ *   3. ~/projects/vaults (built-in default)
+ *
+ * Each subdirectory under this path is treated as one vault during
+ * `agentage setup` auto-registration.
+ */
+export const getDefaultVaultsDir = (config?: DaemonConfig): string =>
+  process.env['AGENTAGE_DEFAULT_VAULTS_DIR'] ||
+  config?.vaultsDefault ||
+  join(homedir(), 'projects', 'vaults');
 
 export const getAgentsDirs = (config: DaemonConfig): string[] => {
   const all = [config.agents.default, ...config.agents.additional];

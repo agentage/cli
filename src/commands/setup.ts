@@ -1,5 +1,5 @@
 import { type Command } from 'commander';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -11,10 +11,13 @@ import {
   loadConfig,
   saveConfig,
   getConfigDir,
+  getDefaultVaultsDir,
   type DaemonConfig,
   type MachineIdentity,
 } from '../daemon/config.js';
+import type { VaultAddOutput } from '../daemon/actions/vault-add.js';
 import { ensureDaemon } from '../utils/ensure-daemon.js';
+import { invokeAction } from '../utils/action-client.js';
 import { readAuth, saveAuth, deleteAuth, type AuthState } from '../hub/auth.js';
 import { startCallbackServer, getCallbackPort } from '../hub/auth-callback.js';
 import { createHubClient } from '../hub/hub-client.js';
@@ -43,6 +46,9 @@ export interface SetupOptions {
   json?: boolean;
   mcp?: boolean;
   mcpStyle?: McpCommandStyle;
+  vault?: string | boolean;
+  vaultSlug?: string;
+  vaultsDir?: string;
 }
 
 type SetupMode = 'fresh' | 'reauth' | 'disconnect' | 'standalone' | 'idempotent';
@@ -260,12 +266,104 @@ const printIdempotent = (
   );
 };
 
+/**
+ * Resolve which vault to register during setup, mirroring how
+ * agents.default / projects.default work — the path is auto-applied
+ * without prompting:
+ *   - --no-vault                → skip entirely
+ *   - --vault <path>            → register that explicit path
+ *   - default                   → register getDefaultVaultPath() if it exists
+ *                                 on disk; otherwise skip silently (no warning)
+ *
+ * Failures from the daemon (slug clash, etc.) emit a warning but
+ * never crash setup.
+ */
+interface VaultStepResult {
+  registered: VaultAddOutput[];
+  vaultsDir: string;
+}
+
+/**
+ * Auto-register vaults during setup — no prompting, mirrors how
+ * agents.default / projects.default work:
+ *
+ *   1. --no-vault                 → skip entirely
+ *   2. --vaults-dir <path>        → persist as config.vaultsDefault
+ *   3. Scan getDefaultVaultsDir() → each subdirectory becomes one vault.
+ *      Slug clashes (already-registered) are silent re-runs. Per-subdir
+ *      failures get dim warnings; the loop continues.
+ *   4. --vault <path>             → register an additional explicit vault
+ *      (--vault-slug overrides slug for this one only).
+ *
+ * Returns the parent dir + every successfully-registered vault. The
+ * dir gets shipped on heartbeat (`vaultsDefault`) so the hub knows
+ * where the user keeps vaults even when the registry is empty.
+ */
+const runVaultStep = async (opts: SetupOptions, mode: SetupMode): Promise<VaultStepResult> => {
+  const empty: VaultStepResult = { registered: [], vaultsDir: '' };
+  if (opts.vault === false) return empty;
+  if (mode !== 'fresh') return empty;
+
+  if (typeof opts.vaultsDir === 'string' && opts.vaultsDir.length > 0) {
+    const cfg = loadConfig();
+    cfg.vaultsDefault = resolve(opts.vaultsDir);
+    saveConfig(cfg);
+  }
+
+  const vaultsDir = getDefaultVaultsDir(loadConfig());
+  const registered: VaultAddOutput[] = [];
+
+  if (existsSync(vaultsDir) && statSync(vaultsDir).isDirectory()) {
+    const entries = readdirSync(vaultsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith('.')) continue;
+      const subPath = join(vaultsDir, entry.name);
+      try {
+        const result = await invokeAction<VaultAddOutput>('vault:add', { path: subPath }, [
+          'vault.admin',
+        ]);
+        registered.push(result);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/already exists/i.test(msg)) {
+          console.error(chalk.dim(`  vault scan: ${entry.name} skipped (${msg})`));
+        }
+      }
+    }
+  }
+
+  if (typeof opts.vault === 'string' && opts.vault.length > 0) {
+    const absPath = resolve(opts.vault);
+    if (!existsSync(absPath) || !statSync(absPath).isDirectory()) {
+      console.error(
+        chalk.yellow(`--vault path "${absPath}" is not a directory — skipping vault registration.`)
+      );
+    } else {
+      try {
+        const result = await invokeAction<VaultAddOutput>(
+          'vault:add',
+          { path: absPath, ...(opts.vaultSlug && { slug: opts.vaultSlug }) },
+          ['vault.admin']
+        );
+        registered.push(result);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(chalk.yellow(`Vault registration skipped: ${msg}`));
+      }
+    }
+  }
+
+  return { registered, vaultsDir };
+};
+
 const printSummary = (
   config: DaemonConfig,
   mode: SetupMode,
   userEmail: string | null,
   opts: SetupOptions,
-  mcp: TargetResult[] | null
+  mcp: TargetResult[] | null,
+  vaultStep: VaultStepResult
 ): void => {
   if (opts.json) {
     console.log(
@@ -281,6 +379,15 @@ const printSummary = (
           },
           agentsDir: config.agents.default,
           mcp,
+          vaults: {
+            defaultDir: vaultStep.vaultsDir || null,
+            registered: vaultStep.registered.map((v) => ({
+              slug: v.slug,
+              uuid: v.uuid,
+              path: v.path,
+              fileCount: v.fileCount,
+            })),
+          },
         },
         null,
         2
@@ -293,6 +400,15 @@ const printSummary = (
   console.log(`  Hub:        ${config.hub?.url ?? '(none)'}`);
   console.log(`  Agents dir: ${config.agents.default}`);
   if (userEmail) console.log(`  User:       ${userEmail}`);
+  if (vaultStep.vaultsDir) {
+    console.log(`  Vaults dir: ${vaultStep.vaultsDir}`);
+  }
+  if (vaultStep.registered.length > 0) {
+    const summary = vaultStep.registered
+      .map((v) => `${v.slug} ${chalk.dim(`(${v.fileCount})`)}`)
+      .join(', ');
+    console.log(`  Vaults:     ${summary}`);
+  }
   if (mcp && mcp.length > 0) {
     console.log(chalk.bold('\nMCP clients:'));
     printMcpResults(mcp);
@@ -390,7 +506,9 @@ export const runSetup = async (opts: SetupOptions): Promise<void> => {
     }
   }
 
-  printSummary(config, mode, userEmail, opts, mcp);
+  const vaultStep = await runVaultStep(opts, mode);
+
+  printSummary(config, mode, userEmail, opts, mcp, vaultStep);
   process.exit(0);
 };
 
@@ -411,6 +529,16 @@ export const registerSetup = (program: Command): void => {
     .option('--force', 'Overwrite existing machine identity on rename')
     .option('--no-mcp', 'Skip the user-scope MCP wiring stage (~/.claude.json). Fresh mode only.')
     .option('--mcp-style <style>', 'MCP command style: `npx` (default) or `binary`')
+    .option(
+      '--vaults-dir <path>',
+      'Parent dir holding vaults (default: ~/projects/vaults). Each subdir = one vault. Persisted to config.'
+    )
+    .option('--vault <path>', 'Register an additional vault outside the vaults-dir.')
+    .option(
+      '--vault-slug <slug>',
+      'Override the slug for the --vault explicit add (basename otherwise).'
+    )
+    .option('--no-vault', 'Skip the vault step entirely (no auto-scan, no explicit add).')
     .option('--json', 'JSON output')
     .action(async (opts: SetupOptions) => {
       await runSetup(opts);
