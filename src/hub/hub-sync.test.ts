@@ -48,6 +48,10 @@ vi.mock('../daemon/actions.js', () => ({
   getActionRegistry: vi.fn(() => ({ list: () => [] })),
 }));
 
+vi.mock('../vaults/instance.js', () => ({
+  getVaultRegistry: vi.fn(() => ({ metadata: async () => [] })),
+}));
+
 vi.mock('../daemon/metrics.js', () => ({
   collectMachineMetrics: vi.fn().mockResolvedValue({
     cpuUsage: 12.3,
@@ -260,6 +264,57 @@ describe('hub-sync', () => {
           loadAvg15m: 0.9,
         },
       });
+    });
+
+    it('omits vaults key when no vaults registered', async () => {
+      mockReadAuth.mockReturnValue(testAuth);
+      mockGetAgents.mockReturnValue([] as ReturnType<typeof getAgents>);
+      mockGetRuns.mockReturnValue([] as ReturnType<typeof getRuns>);
+      mockLoadProjects.mockReturnValue([]);
+
+      const sync = createHubSync();
+      await sync.start();
+      await sync.triggerHeartbeat();
+
+      const call = mockHubClient.heartbeat.mock.calls[0][1] as Record<string, unknown>;
+      expect(call.vaults).toBeUndefined();
+    });
+
+    it('includes vault metadata in heartbeat when vaults registered', async () => {
+      const { getVaultRegistry } = await import('../vaults/instance.js');
+      vi.mocked(getVaultRegistry).mockReturnValueOnce({
+        metadata: async () => [
+          {
+            slug: 'notes',
+            uuid: 'b6377f6d-ae6e-40b6-9435-48f3414374ed',
+            path: '/home/u/notes',
+            fileCount: 42,
+            indexedAt: '2026-04-25T01:19:33.453Z',
+          },
+        ],
+      } as unknown as ReturnType<typeof getVaultRegistry>);
+
+      mockReadAuth.mockReturnValue(testAuth);
+      mockGetAgents.mockReturnValue([] as ReturnType<typeof getAgents>);
+      mockGetRuns.mockReturnValue([] as ReturnType<typeof getRuns>);
+      mockLoadProjects.mockReturnValue([]);
+
+      const sync = createHubSync();
+      await sync.start();
+      await sync.triggerHeartbeat();
+
+      const call = mockHubClient.heartbeat.mock.calls[0][1] as {
+        vaults?: Array<Record<string, unknown>>;
+      };
+      expect(call.vaults).toEqual([
+        {
+          slug: 'notes',
+          uuid: 'b6377f6d-ae6e-40b6-9435-48f3414374ed',
+          path: '/home/u/notes',
+          fileCount: 42,
+          indexedAt: '2026-04-25T01:19:33.453Z',
+        },
+      ]);
     });
 
     it('includes daemon action capabilities in heartbeat payload', async () => {

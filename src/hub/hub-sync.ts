@@ -10,6 +10,7 @@ import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
 import { getScheduler } from '../daemon/scheduler.js';
 import { getActionRegistry } from '../daemon/actions.js';
 import { loadProjects } from '../projects/projects.js';
+import { getVaultRegistry } from '../vaults/instance.js';
 
 import { collectMachineMetrics } from '../daemon/metrics.js';
 import { VERSION } from '../utils/version.js';
@@ -125,6 +126,15 @@ export const createHubSync = (): HubSync => {
         ...(m.deprecatedSince && { deprecatedSince: m.deprecatedSince }),
       }));
 
+    let vaults: Awaited<ReturnType<ReturnType<typeof getVaultRegistry>['metadata']>> = [];
+    try {
+      vaults = await getVaultRegistry().metadata();
+    } catch (err) {
+      logWarn(
+        `[hub-sync] vault metadata collection failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
     const response = await hubClient.heartbeat(auth.hub.machineId, {
       agents,
       projects,
@@ -133,6 +143,7 @@ export const createHubSync = (): HubSync => {
       agentsDefault: config.agents.default,
       projectsDefault: config.projects.default,
       actions,
+      ...(vaults.length > 0 && { vaults }),
       ...(resources && { resources }),
     });
 
