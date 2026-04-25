@@ -179,6 +179,39 @@ describe('config', () => {
     delete process.env['AGENTAGE_PORT'];
   });
 
+  it('getBindHost defaults to 127.0.0.1 when daemon.bindHost is unset', async () => {
+    const { loadConfig, getBindHost } = await import('./config.js');
+    const config = loadConfig();
+    expect(getBindHost(config)).toBe('127.0.0.1');
+  });
+
+  it('getBindHost returns daemon.bindHost when set in config', async () => {
+    const { loadConfig, getBindHost, saveConfig } = await import('./config.js');
+    const config = loadConfig();
+    config.daemon.bindHost = '0.0.0.0';
+    saveConfig(config);
+    const reloaded = loadConfig();
+    expect(getBindHost(reloaded)).toBe('0.0.0.0');
+  });
+
+  it('AGENTAGE_BIND_HOST overrides daemon.bindHost (in-memory, not persisted)', async () => {
+    process.env['AGENTAGE_BIND_HOST'] = '192.168.1.5';
+    const { loadConfig, getBindHost, saveConfig } = await import('./config.js');
+    const config = loadConfig();
+    expect(getBindHost(config)).toBe('192.168.1.5');
+
+    // Persisted config still reflects the on-disk value (undefined here)
+    const raw = readFileSync(join(testDir, 'config.json'), 'utf-8');
+    const saved = JSON.parse(raw);
+    expect(saved.daemon.bindHost).toBeUndefined();
+
+    delete process.env['AGENTAGE_BIND_HOST'];
+    // Re-save without the env var so subsequent tests see clean config
+    const cleanConfig = loadConfig();
+    delete cleanConfig.daemon.bindHost;
+    saveConfig(cleanConfig);
+  });
+
   it('AGENTAGE_AGENTS_DIR overrides agents.default (in-memory, not persisted)', async () => {
     process.env['AGENTAGE_AGENTS_DIR'] = '/tmp/custom-agents';
     const { loadConfig } = await import('./config.js');
