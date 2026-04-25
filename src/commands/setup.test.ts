@@ -8,6 +8,12 @@ vi.mock('../daemon/config.js', () => ({
   loadConfig: vi.fn(),
   saveConfig: vi.fn(),
   getConfigDir: vi.fn(),
+  getDefaultVaultsDir: vi.fn(
+    (cfg?: { vaultsDefault?: string }) =>
+      process.env['AGENTAGE_DEFAULT_VAULTS_DIR'] ||
+      cfg?.vaultsDefault ||
+      '/nonexistent-default-vaults'
+  ),
 }));
 
 vi.mock('../utils/ensure-daemon.js', () => ({
@@ -33,6 +39,10 @@ vi.mock('open', () => ({
   default: vi.fn(),
 }));
 
+vi.mock('../utils/action-client.js', () => ({
+  invokeAction: vi.fn(),
+}));
+
 const mockQuestion = vi.fn();
 vi.mock('node:readline/promises', () => ({
   createInterface: () => ({
@@ -45,6 +55,7 @@ import { loadConfig, saveConfig, getConfigDir } from '../daemon/config.js';
 import { readAuth, saveAuth, deleteAuth } from '../hub/auth.js';
 import { startCallbackServer, getCallbackPort } from '../hub/auth-callback.js';
 import { createHubClient } from '../hub/hub-client.js';
+import { invokeAction } from '../utils/action-client.js';
 import { registerSetup } from './setup.js';
 
 const mockLoadConfig = vi.mocked(loadConfig);
@@ -56,6 +67,7 @@ const mockDeleteAuth = vi.mocked(deleteAuth);
 const mockStartCallback = vi.mocked(startCallbackServer);
 const mockGetCallbackPort = vi.mocked(getCallbackPort);
 const mockCreateHubClient = vi.mocked(createHubClient);
+const mockInvokeAction = vi.mocked(invokeAction);
 
 const baseConfig = () => ({
   machine: { id: 'machine-existing-1', name: 'test-host' },
@@ -447,6 +459,238 @@ describe('setup command', () => {
       registerSetup(cleanProgram);
 
       await expect(cleanProgram.parseAsync(['node', 'agentage', 'logout'])).rejects.toThrow();
+    });
+  });
+
+  describe('vault step (multi-vault directory scan)', () => {
+    let vaultsParent: string;
+
+    beforeEach(() => {
+      vaultsParent = mkdtempSync(join(tmpdir(), 'agentage-vaults-parent-'));
+      process.env['AGENTAGE_DEFAULT_VAULTS_DIR'] = vaultsParent;
+    });
+
+    afterEach(() => {
+      delete process.env['AGENTAGE_DEFAULT_VAULTS_DIR'];
+      rmSync(vaultsParent, { recursive: true, force: true });
+    });
+
+    it('auto-registers each subdirectory in the vaults dir as a vault', async () => {
+      const { mkdirSync: mk } = await import('node:fs');
+      mk(join(vaultsParent, 'notes'), { recursive: true });
+      mk(join(vaultsParent, 'work'), { recursive: true });
+
+      mockInvokeAction.mockImplementation(async (_name, input) => {
+        const i = input as { path: string };
+        return {
+          slug: i.path.endsWith('notes') ? 'notes' : 'work',
+          uuid: `uuid-${i.path}`,
+          path: i.path,
+          fileCount: i.path.endsWith('notes') ? 5 : 12,
+        };
+      });
+
+      try {
+        await program.parseAsync(['node', 'agentage', 'setup', '--token', 't1']);
+      } catch {
+        // ignore exitOverride
+      }
+
+      const calledPaths = mockInvokeAction.mock.calls.map((c) => (c[1] as { path: string }).path);
+      expect(calledPaths.sort()).toEqual([join(vaultsParent, 'notes'), join(vaultsParent, 'work')]);
+    });
+
+    it('skips dotfiles and non-directories under the vaults dir', async () => {
+      const { mkdirSync: mk } = await import('node:fs');
+      mk(join(vaultsParent, '.hidden'), { recursive: true });
+      mk(join(vaultsParent, 'real'), { recursive: true });
+      writeFileSync(join(vaultsParent, 'NOT-A-DIR.md'), 'x');
+
+      mockInvokeAction.mockResolvedValue({
+        slug: 'real',
+        uuid: 'u',
+        path: join(vaultsParent, 'real'),
+        fileCount: 0,
+      });
+
+      try {
+        await program.parseAsync(['node', 'agentage', 'setup', '--token', 't1']);
+      } catch {}
+
+      expect(mockInvokeAction).toHaveBeenCalledTimes(1);
+      const call = mockInvokeAction.mock.calls[0];
+      expect((call?.[1] as { path: string }).path).toBe(join(vaultsParent, 'real'));
+    });
+
+    it('silently skips already-registered subdirs on re-run', async () => {
+      const { mkdirSync: mk } = await import('node:fs');
+      mk(join(vaultsParent, 'notes'), { recursive: true });
+
+      mockInvokeAction.mockRejectedValueOnce(
+        new Error('action vault:add failed: INVALID_INPUT: vault "notes" already exists')
+      );
+      const errLogs: string[] = [];
+      const errSpy = vi.spyOn(console, 'error').mockImplementation((m) => {
+        errLogs.push(String(m));
+      });
+
+      try {
+        await program.parseAsync(['node', 'agentage', 'setup', '--token', 't1']);
+      } catch {}
+
+      // "already exists" must not produce a warning
+      expect(errLogs.some((l) => l.includes('already exists'))).toBe(false);
+      expect(errLogs.some((l) => l.includes('vault scan'))).toBe(false);
+      errSpy.mockRestore();
+    });
+
+    it('--no-vault skips the scan entirely', async () => {
+      const { mkdirSync: mk } = await import('node:fs');
+      mk(join(vaultsParent, 'notes'), { recursive: true });
+
+      try {
+        await program.parseAsync(['node', 'agentage', 'setup', '--token', 't1', '--no-vault']);
+      } catch {}
+      expect(mockInvokeAction).not.toHaveBeenCalled();
+    });
+
+    it('--vault <path> adds an extra vault on top of the dir scan', async () => {
+      const { mkdirSync: mk } = await import('node:fs');
+      mk(join(vaultsParent, 'notes'), { recursive: true });
+      const extra = mkdtempSync(join(tmpdir(), 'agentage-extra-'));
+
+      try {
+        mockInvokeAction.mockResolvedValue({
+          slug: 'x',
+          uuid: 'u',
+          path: '',
+          fileCount: 0,
+        });
+
+        try {
+          await program.parseAsync([
+            'node',
+            'agentage',
+            'setup',
+            '--token',
+            't1',
+            '--vault',
+            extra,
+            '--vault-slug',
+            'extra',
+          ]);
+        } catch {}
+
+        const paths = mockInvokeAction.mock.calls.map((c) => (c[1] as { path: string }).path);
+        expect(paths).toContain(join(vaultsParent, 'notes'));
+        expect(paths).toContain(extra);
+
+        const extraCall = mockInvokeAction.mock.calls.find(
+          (c) => (c[1] as { path: string }).path === extra
+        );
+        expect((extraCall?.[1] as { slug?: string }).slug).toBe('extra');
+      } finally {
+        rmSync(extra, { recursive: true, force: true });
+      }
+    });
+
+    it('--vaults-dir overrides the default and persists to config', async () => {
+      const customDir = mkdtempSync(join(tmpdir(), 'agentage-custom-vaults-'));
+      try {
+        const { mkdirSync: mk } = await import('node:fs');
+        mk(join(customDir, 'a'), { recursive: true });
+
+        mockInvokeAction.mockResolvedValue({
+          slug: 'a',
+          uuid: 'u',
+          path: join(customDir, 'a'),
+          fileCount: 0,
+        });
+
+        try {
+          await program.parseAsync([
+            'node',
+            'agentage',
+            'setup',
+            '--token',
+            't1',
+            '--vaults-dir',
+            customDir,
+          ]);
+        } catch {}
+
+        // Persisted into config.vaultsDefault via saveConfig
+        const lastSave = mockSaveConfig.mock.calls.at(-1);
+        expect((lastSave?.[0] as { vaultsDefault?: string }).vaultsDefault).toBe(customDir);
+      } finally {
+        rmSync(customDir, { recursive: true, force: true });
+      }
+    });
+
+    it('--reauth skips vault step (only fresh mode auto-registers)', async () => {
+      const { mkdirSync: mk } = await import('node:fs');
+      mk(join(vaultsParent, 'notes'), { recursive: true });
+
+      mockReadAuth.mockReturnValue({
+        session: { access_token: 'tok', refresh_token: '', expires_at: 0 },
+        user: { id: 'u', email: 'u@example.com' },
+        hub: { url: 'https://h.example.com', machineId: 'm-1' },
+      });
+
+      try {
+        await program.parseAsync(['node', 'agentage', 'setup', '--reauth', '--token', 't2']);
+      } catch {}
+      expect(mockInvokeAction).not.toHaveBeenCalled();
+    });
+
+    it('JSON output includes vaults.defaultDir + vaults.registered', async () => {
+      const { mkdirSync: mk } = await import('node:fs');
+      mk(join(vaultsParent, 'notes'), { recursive: true });
+
+      mockInvokeAction.mockResolvedValueOnce({
+        slug: 'notes',
+        uuid: 'json-uuid',
+        path: join(vaultsParent, 'notes'),
+        fileCount: 3,
+      });
+
+      const logs: string[] = [];
+      const logSpy = vi.spyOn(console, 'log').mockImplementation((m) => {
+        logs.push(String(m));
+      });
+
+      try {
+        await program.parseAsync(['node', 'agentage', 'setup', '--token', 't1', '--json']);
+      } catch {}
+
+      const jsonLog = logs.find((l) => l.startsWith('{'));
+      expect(jsonLog).toBeDefined();
+      const parsed = JSON.parse(jsonLog as string);
+      expect(parsed.vaults.defaultDir).toBe(vaultsParent);
+      expect(parsed.vaults.registered).toHaveLength(1);
+      expect(parsed.vaults.registered[0]).toMatchObject({
+        slug: 'notes',
+        uuid: 'json-uuid',
+        fileCount: 3,
+      });
+      logSpy.mockRestore();
+    });
+
+    it('absent vaults dir → no action calls, no warning', async () => {
+      // Point env to a non-existent path
+      process.env['AGENTAGE_DEFAULT_VAULTS_DIR'] = '/this/path/does/not/exist';
+      const errLogs: string[] = [];
+      const errSpy = vi.spyOn(console, 'error').mockImplementation((m) => {
+        errLogs.push(String(m));
+      });
+
+      try {
+        await program.parseAsync(['node', 'agentage', 'setup', '--token', 't1']);
+      } catch {}
+
+      expect(mockInvokeAction).not.toHaveBeenCalled();
+      expect(errLogs.some((l) => l.toLowerCase().includes('vault'))).toBe(false);
+      errSpy.mockRestore();
     });
   });
 });

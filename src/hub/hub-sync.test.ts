@@ -24,6 +24,7 @@ vi.mock('../daemon/logger.js', () => ({
 
 vi.mock('../daemon/config.js', () => ({
   loadConfig: vi.fn(),
+  getDefaultVaultsDir: vi.fn(() => '/tmp/test-vaults-default'),
 }));
 
 vi.mock('../daemon/routes.js', () => ({
@@ -251,6 +252,7 @@ describe('hub-sync', () => {
         daemonVersion: '0.7.1',
         agentsDefault: '/tmp/agents',
         projectsDefault: '/tmp/projects',
+        vaultsDefault: '/tmp/test-vaults-default',
         actions: [],
         resources: {
           cpuUsage: 12.3,
