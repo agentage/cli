@@ -36,6 +36,13 @@ export interface HubClient {
         inputSchema?: Record<string, unknown>;
         deprecatedSince?: string;
       }>;
+      vaults?: Array<{
+        slug: string;
+        uuid: string;
+        path: string;
+        fileCount: number;
+        indexedAt: string | null;
+      }>;
       resources?: {
         cpuUsage?: number;
         cpuCount?: number;
