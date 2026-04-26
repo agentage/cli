@@ -4,7 +4,7 @@ import { type AuthState, readAuth, saveAuth } from './auth.js';
 import { createHubClient, type HubClient } from './hub-client.js';
 import { createHubWs, type HubWs } from './hub-ws.js';
 import { createReconnector, type Reconnector } from './reconnection.js';
-import { logInfo, logWarn } from '../daemon/logger.js';
+import { logError, logInfo, logWarn } from '../daemon/logger.js';
 import { getAgents } from '../daemon/routes.js';
 import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
 import { getScheduler } from '../daemon/scheduler.js';
@@ -14,7 +14,7 @@ import { getVaultRegistry } from '../vaults/instance.js';
 
 import { collectMachineMetrics } from '../daemon/metrics.js';
 import { VERSION } from '../utils/version.js';
-import { refreshTokenIfNeeded } from './token-refresh.js';
+import { AuthExpiredError, refreshTokenIfNeeded } from './token-refresh.js';
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -23,6 +23,7 @@ export interface HubSync {
   stop: () => Promise<void>;
   isConnected: () => boolean;
   isConnecting: () => boolean;
+  isAuthExpired: () => boolean;
   triggerHeartbeat: () => Promise<void>;
 }
 
@@ -33,6 +34,20 @@ export const createHubSync = (): HubSync => {
   let reconnector: Reconnector | null = null;
   let connected = false;
   let connecting = false;
+  let authExpired = false;
+
+  const markAuthExpired = (err: AuthExpiredError): void => {
+    if (authExpired) return;
+    authExpired = true;
+    connected = false;
+    connecting = false;
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    reconnector?.stop();
+    logError(`[hub-sync] ${err.message}`);
+  };
 
   const connectAll = async (auth: AuthState): Promise<void> => {
     const config = loadConfig();
@@ -185,9 +200,16 @@ export const createHubSync = (): HubSync => {
     const scheduleNext = (): void => {
       heartbeatTimer = setTimeout(async () => {
         try {
-          await refreshTokenIfNeeded();
+          const refresh = await refreshTokenIfNeeded();
+          if (!refresh.ok && refresh.terminal) {
+            throw new AuthExpiredError(refresh.reason);
+          }
           await sendHeartbeat(auth);
         } catch (err) {
+          if (err instanceof AuthExpiredError) {
+            markAuthExpired(err);
+            return; // do not reschedule — terminal
+          }
           logWarn(`Heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
         }
         // Schedule next heartbeat AFTER current one finishes (no overlap)
@@ -212,9 +234,14 @@ export const createHubSync = (): HubSync => {
           startHeartbeat(auth);
         },
         onError: (err) => {
+          if (err instanceof AuthExpiredError) {
+            markAuthExpired(err);
+            return { stop: true };
+          }
           logWarn(
             `Hub connection failed: ${err instanceof Error ? err.message : String(err)}. Retrying...`
           );
+          return undefined;
         },
       });
 
@@ -223,6 +250,10 @@ export const createHubSync = (): HubSync => {
         startHeartbeat(auth);
         logInfo(`Connected to hub at ${auth.hub.url}`);
       } catch (err) {
+        if (err instanceof AuthExpiredError) {
+          markAuthExpired(err);
+          return;
+        }
         logWarn(
           `Initial hub connection failed: ${err instanceof Error ? err.message : String(err)}. Will retry.`
         );
@@ -267,6 +298,7 @@ export const createHubSync = (): HubSync => {
 
     isConnected: () => connected,
     isConnecting: () => connecting,
+    isAuthExpired: () => authExpired,
 
     triggerHeartbeat: async () => {
       const auth = readAuth();

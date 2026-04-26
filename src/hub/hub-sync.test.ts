@@ -17,9 +17,18 @@ vi.mock('./reconnection.js', () => ({
   createReconnector: vi.fn(),
 }));
 
+vi.mock('./token-refresh.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof TokenRefreshModule>();
+  return {
+    ...actual,
+    refreshTokenIfNeeded: vi.fn().mockResolvedValue({ ok: true }),
+  };
+});
+
 vi.mock('../daemon/logger.js', () => ({
   logInfo: vi.fn(),
   logWarn: vi.fn(),
+  logError: vi.fn(),
 }));
 
 vi.mock('../daemon/config.js', () => ({
@@ -70,11 +79,13 @@ vi.mock('../daemon/metrics.js', () => ({
 import { readAuth } from './auth.js';
 import { createHubClient } from './hub-client.js';
 import { createHubWs } from './hub-ws.js';
-import { createReconnector } from './reconnection.js';
+import { createReconnector, type ReconnectorOptions } from './reconnection.js';
 import { loadConfig } from '../daemon/config.js';
 import { getAgents } from '../daemon/routes.js';
 import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
 import { loadProjects } from '../projects/projects.js';
+import type * as TokenRefreshModule from './token-refresh.js';
+import { AuthExpiredError, refreshTokenIfNeeded } from './token-refresh.js';
 import { createHubSync, resetHubSync, getHubSync } from './hub-sync.js';
 
 const mockLoadProjects = vi.mocked(loadProjects);
@@ -111,6 +122,7 @@ describe('hub-sync', () => {
   let mockWs: { connect: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
   let mockReconnector: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> };
   let capturedOnConnect: (() => void) | undefined;
+  let capturedReconnectorOpts: ReconnectorOptions | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -140,9 +152,11 @@ describe('hub-sync', () => {
       capturedOnConnect = onConnect;
       return mockWs as unknown as ReturnType<typeof createHubWs>;
     });
-    mockCreateReconnector.mockReturnValue(
-      mockReconnector as unknown as ReturnType<typeof createReconnector>
-    );
+    capturedReconnectorOpts = undefined;
+    mockCreateReconnector.mockImplementation((opts) => {
+      capturedReconnectorOpts = opts;
+      return mockReconnector as unknown as ReturnType<typeof createReconnector>;
+    });
     mockLoadConfig.mockReturnValue({ ...testConfig, sync: { events: {} } } as unknown as ReturnType<
       typeof loadConfig
     >);
@@ -445,6 +459,79 @@ describe('hub-sync', () => {
 
       // Should not throw
       await sync.triggerHeartbeat();
+    });
+  });
+
+  describe('auth expired', () => {
+    it('marks authExpired when initial connection throws AuthExpiredError', async () => {
+      mockReadAuth.mockReturnValue(testAuth);
+      mockHubClient.register.mockRejectedValue(new AuthExpiredError('status_400'));
+
+      const sync = createHubSync();
+      await sync.start();
+
+      expect(sync.isAuthExpired()).toBe(true);
+      expect(sync.isConnected()).toBe(false);
+      expect(sync.isConnecting()).toBe(false);
+      // Reconnector must NOT be started — the error is non-recoverable
+      expect(mockReconnector.start).not.toHaveBeenCalled();
+    });
+
+    it('reconnector onError returns { stop: true } for AuthExpiredError', async () => {
+      mockReadAuth.mockReturnValue(testAuth);
+      const sync = createHubSync();
+      await sync.start();
+      capturedOnConnect?.();
+
+      expect(capturedReconnectorOpts).toBeDefined();
+
+      const result = capturedReconnectorOpts!.onError?.(new AuthExpiredError('status_403'));
+
+      expect(result).toEqual({ stop: true });
+      expect(sync.isAuthExpired()).toBe(true);
+      expect(sync.isConnected()).toBe(false);
+      expect(mockReconnector.stop).toHaveBeenCalled();
+    });
+
+    it('reconnector onError returns void for transient errors', async () => {
+      mockReadAuth.mockReturnValue(testAuth);
+      const sync = createHubSync();
+      await sync.start();
+      capturedOnConnect?.();
+
+      const result = capturedReconnectorOpts!.onError?.(new Error('timeout'));
+
+      expect(result).toBeUndefined();
+      expect(sync.isAuthExpired()).toBe(false);
+    });
+
+    it('isAuthExpired defaults to false', async () => {
+      mockReadAuth.mockReturnValue(null);
+      const sync = createHubSync();
+      await sync.start();
+      expect(sync.isAuthExpired()).toBe(false);
+    });
+
+    it('stops heartbeat loop when refreshTokenIfNeeded returns terminal', async () => {
+      mockReadAuth.mockReturnValue(testAuth);
+      vi.mocked(refreshTokenIfNeeded).mockResolvedValueOnce({
+        ok: false,
+        terminal: true,
+        reason: 'status_400',
+      });
+
+      const sync = createHubSync();
+      await sync.start();
+      capturedOnConnect?.();
+
+      // Advance fake timer to fire scheduled heartbeat
+      await vi.advanceTimersByTimeAsync(30_000);
+      // Yield microtasks so the async heartbeat handler completes
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(sync.isAuthExpired()).toBe(true);
+      expect(sync.isConnected()).toBe(false);
     });
   });
 

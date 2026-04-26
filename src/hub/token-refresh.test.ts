@@ -12,7 +12,12 @@ vi.mock('../daemon/logger.js', () => ({
 
 import { readAuth, saveAuth, type AuthState } from './auth.js';
 import { logWarn } from '../daemon/logger.js';
-import { isTokenExpiringSoon, refreshTokenIfNeeded } from './token-refresh.js';
+import {
+  AuthExpiredError,
+  isTerminalRefreshStatus,
+  isTokenExpiringSoon,
+  refreshTokenIfNeeded,
+} from './token-refresh.js';
 
 const mockReadAuth = vi.mocked(readAuth);
 const mockSaveAuth = vi.mocked(saveAuth);
@@ -72,27 +77,30 @@ describe('refreshTokenIfNeeded', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns early when readAuth returns null', async () => {
+  it('returns ok when readAuth returns null', async () => {
     mockReadAuth.mockReturnValue(null);
 
-    await refreshTokenIfNeeded();
+    const result = await refreshTokenIfNeeded();
 
+    expect(result).toEqual({ ok: true });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('returns early when token is not expiring soon', async () => {
+  it('returns ok when token is not expiring soon', async () => {
     mockReadAuth.mockReturnValue(makeAuth({ expires_at: nowSecs() + 600 }));
 
-    await refreshTokenIfNeeded();
+    const result = await refreshTokenIfNeeded();
 
+    expect(result).toEqual({ ok: true });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('warns and returns when expiring soon but refresh_token is missing', async () => {
+  it('returns terminal when expiring soon but refresh_token is missing', async () => {
     mockReadAuth.mockReturnValue(makeAuth({ expires_at: nowSecs() + 100, refresh_token: '' }));
 
-    await refreshTokenIfNeeded();
+    const result = await refreshTokenIfNeeded();
 
+    expect(result).toEqual({ ok: false, terminal: true, reason: 'no_refresh_token' });
     expect(mockFetch).not.toHaveBeenCalled();
     expect(mockLogWarn).toHaveBeenCalledWith(expect.stringContaining('no refresh token available'));
   });
@@ -121,8 +129,9 @@ describe('refreshTokenIfNeeded', () => {
         }),
       });
 
-    await refreshTokenIfNeeded();
+    const result = await refreshTokenIfNeeded();
 
+    expect(result).toEqual({ ok: true });
     expect(mockFetch).toHaveBeenNthCalledWith(1, `${auth.hub.url}/api/health`);
     expect(mockFetch).toHaveBeenNthCalledWith(
       2,
@@ -143,17 +152,32 @@ describe('refreshTokenIfNeeded', () => {
     );
   });
 
-  it('returns without crashing when health fetch throws', async () => {
+  it('classifies network error as transient', async () => {
     mockReadAuth.mockReturnValue(makeAuth({ expires_at: nowSecs() + 100 }));
 
     mockFetch.mockRejectedValueOnce(new Error('network error'));
 
-    await expect(refreshTokenIfNeeded()).resolves.toBeUndefined();
+    const result = await refreshTokenIfNeeded();
+    expect(result).toEqual({
+      ok: false,
+      terminal: false,
+      reason: expect.stringContaining('network'),
+    });
     expect(mockSaveAuth).not.toHaveBeenCalled();
     expect(mockLogWarn).toHaveBeenCalledWith(expect.stringContaining('network error'));
   });
 
-  it('logs warning and returns when token endpoint returns non-ok', async () => {
+  it.each([
+    [400, true],
+    [401, true],
+    [403, true],
+    [404, true],
+    [408, false],
+    [429, false],
+    [500, false],
+    [502, false],
+    [503, false],
+  ])('classifies status %i as terminal=%s', async (status, terminal) => {
     const auth = makeAuth({ expires_at: nowSecs() + 100 });
     mockReadAuth.mockReturnValue(auth);
 
@@ -168,34 +192,57 @@ describe('refreshTokenIfNeeded', () => {
           },
         }),
       })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-      });
+      .mockResolvedValueOnce({ ok: false, status });
 
-    await refreshTokenIfNeeded();
+    const result = await refreshTokenIfNeeded();
 
+    expect(result).toEqual({ ok: false, terminal, reason: `status_${status}` });
     expect(mockSaveAuth).not.toHaveBeenCalled();
-    expect(mockLogWarn).toHaveBeenCalledWith(expect.stringContaining('401'));
+    expect(mockLogWarn).toHaveBeenCalledWith(expect.stringContaining(String(status)));
   });
 
-  it('catches and logs network errors without crashing', async () => {
-    mockReadAuth.mockReturnValue(makeAuth({ expires_at: nowSecs() + 100 }));
-
-    mockFetch.mockRejectedValue(new Error('connection refused'));
-
-    await expect(refreshTokenIfNeeded()).resolves.toBeUndefined();
-    expect(mockSaveAuth).not.toHaveBeenCalled();
-    expect(mockLogWarn).toHaveBeenCalledWith(expect.stringContaining('connection refused'));
-  });
-
-  it('catches and logs non-Error thrown values without crashing', async () => {
+  it('classifies non-Error thrown values as transient', async () => {
     mockReadAuth.mockReturnValue(makeAuth({ expires_at: nowSecs() + 100 }));
 
     mockFetch.mockRejectedValue('string error');
 
-    await expect(refreshTokenIfNeeded()).resolves.toBeUndefined();
+    const result = await refreshTokenIfNeeded();
+    expect(result).toEqual({
+      ok: false,
+      terminal: false,
+      reason: expect.stringContaining('string error'),
+    });
     expect(mockSaveAuth).not.toHaveBeenCalled();
     expect(mockLogWarn).toHaveBeenCalledWith(expect.stringContaining('string error'));
+  });
+});
+
+describe('isTerminalRefreshStatus', () => {
+  it.each([
+    [400, true],
+    [401, true],
+    [403, true],
+    [404, true],
+    [408, false],
+    [429, false],
+    [499, true],
+    [500, false],
+    [502, false],
+    [503, false],
+    [504, false],
+  ])('status %i → terminal=%s', (status, expected) => {
+    expect(isTerminalRefreshStatus(status)).toBe(expected);
+  });
+});
+
+describe('AuthExpiredError', () => {
+  it('exposes reason and is instanceof Error', () => {
+    const err = new AuthExpiredError('status_400');
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(AuthExpiredError);
+    expect(err.reason).toBe('status_400');
+    expect(err.message).toContain('status_400');
+    expect(err.message).toContain('agentage setup --reauth');
+    expect(err.name).toBe('AuthExpiredError');
   });
 });

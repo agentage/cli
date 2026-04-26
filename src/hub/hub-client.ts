@@ -1,5 +1,6 @@
 import { type AuthState, saveAuth } from './auth.js';
 import { logInfo, logWarn } from '../daemon/logger.js';
+import { AuthExpiredError, isTerminalRefreshStatus } from './token-refresh.js';
 
 export interface HubClient {
   register: (machineData: {
@@ -96,7 +97,9 @@ export interface HubClient {
 }
 
 const refreshAccessToken = async (hubUrl: string, auth: AuthState): Promise<boolean> => {
-  if (!auth.session.refresh_token) return false;
+  if (!auth.session.refresh_token) {
+    throw new AuthExpiredError('no_refresh_token');
+  }
 
   try {
     const healthRes = await fetch(`${hubUrl}/api/health`);
@@ -114,7 +117,12 @@ const refreshAccessToken = async (hubUrl: string, auth: AuthState): Promise<bool
       body: JSON.stringify({ refresh_token: auth.session.refresh_token }),
     });
 
-    if (!res.ok) return false;
+    if (!res.ok) {
+      if (isTerminalRefreshStatus(res.status)) {
+        throw new AuthExpiredError(`status_${res.status}`);
+      }
+      return false;
+    }
 
     const data = (await res.json()) as {
       access_token: string;
@@ -129,7 +137,8 @@ const refreshAccessToken = async (hubUrl: string, auth: AuthState): Promise<bool
 
     logInfo('Token refreshed successfully');
     return true;
-  } catch {
+  } catch (err) {
+    if (err instanceof AuthExpiredError) throw err;
     logWarn('Token refresh failed');
     return false;
   }

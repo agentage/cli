@@ -21,6 +21,7 @@ vi.mock('../hub/hub-sync.js', () => ({
   getHubSync: () => ({
     isConnected: () => false,
     isConnecting: () => false,
+    isAuthExpired: () => false,
     start: vi.fn(),
     stop: vi.fn(),
     triggerHeartbeat: vi.fn().mockResolvedValue(undefined),

@@ -12,6 +12,7 @@ vi.mock('../daemon/logger.js', () => ({
 import { saveAuth } from './auth.js';
 import { createHubClient, type HubClient } from './hub-client.js';
 import { type AuthState } from './auth.js';
+import { AuthExpiredError } from './token-refresh.js';
 
 const mockSaveAuth = vi.mocked(saveAuth);
 
@@ -259,12 +260,63 @@ describe('hub-client', () => {
       expect(fetchMock).toHaveBeenCalledTimes(4);
     });
 
-    it('does not refresh when no refresh_token', async () => {
+    it('throws AuthExpiredError when no refresh_token is available', async () => {
       auth = makeAuth({ session: { access_token: 'tk', refresh_token: '', expires_at: 0 } });
       client = createHubClient('https://hub.test', auth);
 
       mockFetchError('Unauthorized', 401);
 
+      await expect(client.getMachines()).rejects.toBeInstanceOf(AuthExpiredError);
+    });
+
+    it('throws AuthExpiredError when refresh endpoint returns terminal status', async () => {
+      const fetchMock = vi
+        .fn()
+        // Initial request → 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: async () => ({ success: false, error: 'Unauthorized' }),
+        })
+        // Health check (refresh path)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: { supabaseUrl: 'https://supabase.test', supabaseAnonKey: 'key' },
+          }),
+        })
+        // Token refresh → 400 (terminal)
+        .mockResolvedValueOnce({ ok: false, status: 400 });
+
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(client.getMachines()).rejects.toBeInstanceOf(AuthExpiredError);
+    });
+
+    it('returns false (transient) when refresh endpoint returns 5xx', async () => {
+      const fetchMock = vi
+        .fn()
+        // Initial request → 401
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: async () => ({ success: false, error: 'Unauthorized' }),
+        })
+        // Health check (refresh path)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: { supabaseUrl: 'https://supabase.test', supabaseAnonKey: 'key' },
+          }),
+        })
+        // Token refresh → 503 (transient)
+        .mockResolvedValueOnce({ ok: false, status: 503 });
+
+      vi.stubGlobal('fetch', fetchMock);
+
+      // Refresh fails non-terminally → original 401 error surfaces (not AuthExpiredError)
       await expect(client.getMachines()).rejects.toThrow('Hub API error (401)');
     });
   });
