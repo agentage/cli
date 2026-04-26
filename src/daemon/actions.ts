@@ -12,6 +12,7 @@ import { createVaultReadAction } from './actions/vault-read.js';
 import { createVaultReindexAction } from './actions/vault-reindex.js';
 import { createVaultRemoveAction } from './actions/vault-remove.js';
 import { createVaultSearchAction } from './actions/vault-search.js';
+import { createSettingsUpdateAction } from './actions/settings-update.js';
 import type { ShellExec } from './actions/types.js';
 
 const shellExec: ShellExec = (command, options) => shell(command, options);
@@ -40,6 +41,10 @@ export const getActionRegistry = (): ActionRegistry => {
   registry.register(createVaultReadAction({ vaults }));
   registry.register(createVaultSearchAction({ vaults }));
   registry.register(createVaultEditAction({ vaults }));
+
+  // Powers the editable Settings form on /machines/:id once dashboard γ
+  // ships. Default deps read/write ~/.agentage/config.json.
+  registry.register(createSettingsUpdateAction());
 
   registrySingleton = registry;
   return registry;

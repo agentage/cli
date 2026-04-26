@@ -180,15 +180,50 @@ export const createHubSync = (): HubSync => {
     if (response.pendingCommands && Array.isArray(response.pendingCommands)) {
       for (const cmd of response.pendingCommands as Array<{
         type: string;
-        runId: string;
+        runId?: string;
         payload?: string;
+        commandId?: string;
+        action?: string;
+        version?: string;
+        input?: unknown;
+        idempotencyKey?: string;
       }>) {
-        if (cmd.type === 'cancel') {
+        if (cmd.type === 'cancel' && cmd.runId) {
           cancelRun(cmd.runId);
           logInfo(`Processed pending cancel for run ${cmd.runId}`);
-        } else if (cmd.type === 'input' && cmd.payload) {
+        } else if (cmd.type === 'input' && cmd.runId && cmd.payload) {
           sendInput(cmd.runId, cmd.payload);
           logInfo(`Processed pending input for run ${cmd.runId}`);
+        } else if (cmd.type === 'invoke-action' && cmd.commandId && cmd.action) {
+          // Heartbeat-drain (hub α.4): the WS-push branch missed this row
+          // because the WS was flapping when the user clicked. Hub already
+          // marked it 'accepted' on its side, so we just need to execute
+          // and stream events back. If the WS isn't open right now we
+          // still execute (events get dropped on the floor — hub row
+          // ends up stuck 'accepted', operator-visible). Once the WS
+          // reconnects, future events from this same dispatch flow back
+          // normally. Acceptable for MVP — see daemon-command-bridge §
+          // open follow-ups.
+          if (!hubWs?.isConnected()) {
+            logWarn(
+              `[hub-sync] Skipping invoke-action ${cmd.commandId}: WS not connected (will surface as stuck 'accepted' on hub)`
+            );
+            continue;
+          }
+          hubWs
+            .invokeAction({
+              commandId: cmd.commandId,
+              action: cmd.action,
+              version: cmd.version,
+              input: cmd.input,
+              idempotencyKey: cmd.idempotencyKey,
+            })
+            .catch((err) => {
+              logError(
+                `[hub-sync] invoke-action ${cmd.commandId} dispatch failed: ${err instanceof Error ? err.message : String(err)}`
+              );
+            });
+          logInfo(`Processed pending invoke-action ${cmd.action} (commandId=${cmd.commandId})`);
         }
       }
     }
