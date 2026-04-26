@@ -144,7 +144,21 @@ const confirmConnect = async (config: DaemonConfig): Promise<boolean> => {
   }
 };
 
-const doAuthBrowser = async (hubUrl: string, machineId: string): Promise<void> => {
+export const buildAuthUrl = (
+  hubUrl: string,
+  port: number,
+  machineName: string | undefined
+): string => {
+  const params = new URLSearchParams({ cli_port: String(port) });
+  if (machineName) params.set('machine_name', machineName);
+  return `${hubUrl}/login?${params.toString()}`;
+};
+
+const doAuthBrowser = async (
+  hubUrl: string,
+  machineId: string,
+  machineName: string | undefined
+): Promise<void> => {
   console.log('Opening browser for authentication...');
 
   const authPromise = startCallbackServer(hubUrl);
@@ -157,7 +171,7 @@ const doAuthBrowser = async (hubUrl: string, machineId: string): Promise<void> =
     return;
   }
 
-  const authUrl = `${hubUrl}/login?cli_port=${port}`;
+  const authUrl = buildAuthUrl(hubUrl, port, machineName);
 
   try {
     await open(authUrl);
@@ -487,7 +501,7 @@ export const runSetup = async (opts: SetupOptions): Promise<void> => {
     if (opts.token) {
       doAuthToken(opts.token, hubUrl, config.machine.id);
     } else {
-      await doAuthBrowser(hubUrl, config.machine.id);
+      await doAuthBrowser(hubUrl, config.machine.id, config.machine.name);
     }
     userEmail = readAuth()?.user?.email ?? null;
   }

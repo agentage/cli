@@ -694,3 +694,32 @@ describe('setup command', () => {
     });
   });
 });
+
+describe('buildAuthUrl', () => {
+  it('builds bare URL with cli_port only when machineName missing', async () => {
+    const { buildAuthUrl } = await import('./setup.js');
+    expect(buildAuthUrl('https://agentage.io', 4243, undefined)).toBe(
+      'https://agentage.io/login?cli_port=4243'
+    );
+  });
+
+  it('appends URL-encoded machine_name when provided', async () => {
+    const { buildAuthUrl } = await import('./setup.js');
+    expect(buildAuthUrl('https://agentage.io', 4243, 'vreshch-laptop')).toBe(
+      'https://agentage.io/login?cli_port=4243&machine_name=vreshch-laptop'
+    );
+  });
+
+  it('URL-encodes spaces and special chars in machine_name', async () => {
+    const { buildAuthUrl } = await import('./setup.js');
+    const url = buildAuthUrl('https://agentage.io', 4243, "Bob's Mac Mini");
+    expect(url).toContain('machine_name=Bob%27s+Mac+Mini');
+  });
+
+  it('omits machine_name when empty string', async () => {
+    const { buildAuthUrl } = await import('./setup.js');
+    expect(buildAuthUrl('https://agentage.io', 4243, '')).toBe(
+      'https://agentage.io/login?cli_port=4243'
+    );
+  });
+});
