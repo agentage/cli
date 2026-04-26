@@ -1,2 +1,2 @@
-### Bug Fixes
-- Fix authentication token refresh handling to properly detect expired credentials and surface auth errors
+### New Features
+- Add machine name parameter to authentication login flow for better device identification
