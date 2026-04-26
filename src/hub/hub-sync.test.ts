@@ -5,9 +5,13 @@ vi.mock('./auth.js', () => ({
   saveAuth: vi.fn(),
 }));
 
-vi.mock('./hub-client.js', () => ({
-  createHubClient: vi.fn(),
-}));
+vi.mock('./hub-client.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof HubClientModule>();
+  return {
+    ...actual,
+    createHubClient: vi.fn(),
+  };
+});
 
 vi.mock('./hub-ws.js', () => ({
   createHubWs: vi.fn(),
@@ -76,8 +80,8 @@ vi.mock('../daemon/metrics.js', () => ({
   }),
 }));
 
-import { readAuth } from './auth.js';
-import { createHubClient } from './hub-client.js';
+import { readAuth, saveAuth } from './auth.js';
+import { createHubClient, MachineTombstonedError } from './hub-client.js';
 import { createHubWs } from './hub-ws.js';
 import { createReconnector, type ReconnectorOptions } from './reconnection.js';
 import { loadConfig } from '../daemon/config.js';
@@ -85,6 +89,7 @@ import { getAgents } from '../daemon/routes.js';
 import { cancelRun, sendInput, getRuns } from '../daemon/run-manager.js';
 import { loadProjects } from '../projects/projects.js';
 import type * as TokenRefreshModule from './token-refresh.js';
+import type * as HubClientModule from './hub-client.js';
 import { AuthExpiredError, refreshTokenIfNeeded } from './token-refresh.js';
 import { createHubSync, resetHubSync, getHubSync } from './hub-sync.js';
 
@@ -491,6 +496,28 @@ describe('hub-sync', () => {
       expect(sync.isAuthExpired()).toBe(true);
       expect(sync.isConnected()).toBe(false);
       expect(mockReconnector.stop).toHaveBeenCalled();
+    });
+
+    it('marks tombstoned when initial register throws MachineTombstonedError', async () => {
+      // Hub returned 410 MACHINE_TOMBSTONED — the operator disconnected this
+      // machine_id earlier. Daemon must stop retrying + clear local id so
+      // `agentage setup` is the operator's clear next step.
+      mockReadAuth.mockReturnValue(testAuth);
+      mockHubClient.register.mockRejectedValue(
+        new MachineTombstonedError('Machine has been disconnected')
+      );
+
+      const sync = createHubSync();
+      await sync.start();
+
+      expect(sync.isAuthExpired()).toBe(false);
+      expect(sync.isConnected()).toBe(false);
+      expect(sync.isConnecting()).toBe(false);
+      // Reconnector must NOT be started — the id is permanently dead.
+      expect(mockReconnector.start).not.toHaveBeenCalled();
+      // saveAuth called with cleared machineId — `agentage setup` rewrites it.
+      const lastSaveAuthCall = vi.mocked(saveAuth).mock.calls.at(-1);
+      expect(lastSaveAuthCall?.[0].hub.machineId).toBe('');
     });
 
     it('reconnector onError returns void for transient errors', async () => {

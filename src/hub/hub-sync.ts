@@ -1,7 +1,7 @@
 import { platform, arch } from 'node:os';
 import { loadConfig, getDefaultVaultsDir } from '../daemon/config.js';
 import { type AuthState, readAuth, saveAuth } from './auth.js';
-import { createHubClient, type HubClient } from './hub-client.js';
+import { createHubClient, type HubClient, MachineTombstonedError } from './hub-client.js';
 import { createHubWs, type HubWs } from './hub-ws.js';
 import { createReconnector, type Reconnector } from './reconnection.js';
 import { logError, logInfo, logWarn } from '../daemon/logger.js';
@@ -35,6 +35,7 @@ export const createHubSync = (): HubSync => {
   let connected = false;
   let connecting = false;
   let authExpired = false;
+  let tombstoned = false;
 
   const markAuthExpired = (err: AuthExpiredError): void => {
     if (authExpired) return;
@@ -49,18 +50,55 @@ export const createHubSync = (): HubSync => {
     logError(`[hub-sync] ${err.message}`);
   };
 
+  // Hub returned 410 MACHINE_TOMBSTONED — this machine_id has been
+  // permanently disconnected on the hub side (agentage/web#228 tombstone).
+  // Stop the reconnect loop; the local config still holds the dead id, so
+  // wipe auth.hub.machineId so a follow-up `agentage daemon start` fails
+  // fast with a clear "run agentage setup" path. Mirrors markAuthExpired's
+  // shape — same terminal-state effect.
+  const markTombstoned = (err: MachineTombstonedError, auth: AuthState | null): void => {
+    if (tombstoned) return;
+    tombstoned = true;
+    connected = false;
+    connecting = false;
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    reconnector?.stop();
+    if (auth) {
+      auth.hub.machineId = '';
+      saveAuth(auth);
+    }
+    logError(
+      `[hub-sync] ${err.message} (Run \`agentage setup\` to register this host with a fresh machine_id.)`
+    );
+  };
+
   const connectAll = async (auth: AuthState): Promise<void> => {
     const config = loadConfig();
 
     hubClient = createHubClient(auth.hub.url, auth);
 
-    const result = await hubClient.register({
-      id: config.machine.id,
-      name: config.machine.name,
-      platform: platform(),
-      arch: arch(),
-      daemonVersion: VERSION,
-    });
+    let result: { machineId: string };
+    try {
+      result = await hubClient.register({
+        id: config.machine.id,
+        name: config.machine.name,
+        platform: platform(),
+        arch: arch(),
+        daemonVersion: VERSION,
+      });
+    } catch (err) {
+      if (err instanceof MachineTombstonedError) {
+        markTombstoned(err, auth);
+        // Don't rethrow — caller treats this as an unrecoverable
+        // "this id is dead, stop trying" state, same shape as
+        // AuthExpiredError. The reconnect loop is already stopped.
+        return;
+      }
+      throw err;
+    }
 
     // Save machineId in auth
     auth.hub.machineId = result.machineId;

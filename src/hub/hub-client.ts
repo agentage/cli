@@ -2,6 +2,21 @@ import { type AuthState, saveAuth } from './auth.js';
 import { logInfo, logWarn } from '../daemon/logger.js';
 import { AuthExpiredError, isTerminalRefreshStatus } from './token-refresh.js';
 
+/**
+ * Hub returned 410 Gone with `code: MACHINE_TOMBSTONED` — the operator
+ * disconnected this machine_id (DELETE /api/machines/:id wrote a tombstone
+ * row that the hub's register() now refuses). The daemon should stop
+ * retrying register/heartbeat for this id; recovery is `agentage setup`
+ * which issues a fresh machine_id.
+ */
+export class MachineTombstonedError extends Error {
+  readonly code = 'MACHINE_TOMBSTONED';
+  constructor(message: string) {
+    super(message);
+    this.name = 'MachineTombstonedError';
+  }
+}
+
 export interface HubClient {
   register: (machineData: {
     id: string;
@@ -171,13 +186,27 @@ export const createHubClient = (hubUrl: string, auth: AuthState): HubClient => {
       }
     }
 
-    const json = (await res.json()) as { success: boolean; data?: unknown; error?: unknown };
+    const json = (await res.json()) as {
+      success: boolean;
+      data?: unknown;
+      error?: { code?: string; message?: string } | unknown;
+    };
 
     if (!res.ok || !json.success) {
-      const errMsg =
+      const errObj =
         typeof json.error === 'object' && json.error !== null
-          ? ((json.error as { message?: string }).message ?? 'Unknown error')
-          : String(json.error ?? 'Request failed');
+          ? (json.error as { code?: string; message?: string })
+          : null;
+      const errMsg = errObj?.message ?? String(json.error ?? 'Request failed');
+
+      // 410 + MACHINE_TOMBSTONED — hub has marked this machine_id as
+      // permanently disconnected. Surface as a typed error so hub-sync
+      // can stop retrying and clear the local id.
+      // See agentage/web#228 + work/tasks/machine-disconnect-tombstone.
+      if (res.status === 410 && errObj?.code === 'MACHINE_TOMBSTONED') {
+        throw new MachineTombstonedError(errMsg);
+      }
+
       throw new Error(`Hub API error (${res.status}): ${errMsg}`);
     }
 
