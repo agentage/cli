@@ -59,7 +59,7 @@ describe('update-checker', () => {
     it('queries npm when cache is expired', async () => {
       const cache = {
         latestVersion: '0.1.0',
-        checkedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+        checkedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
       };
       writeFileSync(join(testDir, 'update-check.json'), JSON.stringify(cache));
 

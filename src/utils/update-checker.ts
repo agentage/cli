@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { getConfigDir } from '../daemon/config.js';
 import { VERSION } from './version.js';
 
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const NPM_REGISTRY_URL = 'https://registry.npmjs.org/@agentage/cli/latest';
 const CACHE_FILE = 'update-check.json';
 
