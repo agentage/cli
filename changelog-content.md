@@ -1,2 +1,2 @@
 ### New Features
-- Add machine name parameter to authentication login flow for better device identification
+- Add redesigned authentication callback pages for improved user experience
