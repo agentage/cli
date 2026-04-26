@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.24.4] - 2026-04-26
+
+### New Features
+- Add machine name parameter to authentication login flow for better device identification
+
 ## [0.24.3] - 2026-04-26
 
 ### Bug Fixes
