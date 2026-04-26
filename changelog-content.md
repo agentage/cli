@@ -1,2 +1,2 @@
 ### New Features
-- Add redesigned authentication callback pages for improved user experience
+- Add hub command bridge with invoke-action handler and settings update functionality
