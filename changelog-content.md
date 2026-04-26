@@ -1,2 +1,2 @@
 ### Bug Fixes
-- Fix race condition in agent run initialization that could cause missed status updates
+- Fix authentication token refresh handling to properly detect expired credentials and surface auth errors

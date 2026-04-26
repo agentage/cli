@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.24.3] - 2026-04-26
+
+### Bug Fixes
+- Fix authentication token refresh handling to properly detect expired credentials and surface auth errors
+
 ## [0.24.2] - 2026-04-25
 
 ### Bug Fixes
