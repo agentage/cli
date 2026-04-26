@@ -53,6 +53,7 @@ export const createRoutes = (): Router => {
       machineId: config.machine.id,
       hubConnected: hubSync.isConnected(),
       hubConnecting: hubSync.isConnecting(),
+      authExpired: hubSync.isAuthExpired(),
       hubUrl: auth?.hub?.url ?? null,
       userEmail: auth?.user?.email ?? null,
     });

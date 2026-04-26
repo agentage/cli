@@ -8,7 +8,9 @@ export interface ReconnectorOptions {
   initialDelayMs?: number;
   maxDelayMs?: number;
   onReconnect: () => Promise<void>;
-  onError?: (err: unknown) => void;
+  // Return `{ stop: true }` to terminate the retry loop (non-recoverable error,
+  // e.g. expired refresh token). Returning void/undefined keeps retrying.
+  onError?: (err: unknown) => { stop?: boolean } | void;
 }
 
 export const createReconnector = (opts: ReconnectorOptions): Reconnector => {
@@ -28,7 +30,12 @@ export const createReconnector = (opts: ReconnectorOptions): Reconnector => {
       currentDelay = initialDelay;
       running = false;
     } catch (err) {
-      opts.onError?.(err);
+      const result = opts.onError?.(err);
+      if (result?.stop) {
+        stopped = true;
+        running = false;
+        return;
+      }
       timer = setTimeout(() => {
         attempt();
       }, currentDelay);
