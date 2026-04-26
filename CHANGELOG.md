@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.24.5] - 2026-04-26
+
+### New Features
+- Add redesigned authentication callback pages for improved user experience
+
 ## [0.24.4] - 2026-04-26
 
 ### New Features
