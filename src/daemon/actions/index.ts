@@ -31,4 +31,7 @@ export type { VaultSearchInput, VaultSearchOutput } from './vault-search.js';
 export { createVaultEditAction } from './vault-edit.js';
 export type { VaultEditInput, VaultEditOutput } from './vault-edit.js';
 
+export { createSettingsUpdateAction } from './settings-update.js';
+export type { SettingsUpdateInput, SettingsUpdateOutput } from './settings-update.js';
+
 export type { ActionProgress, ShellExec } from './types.js';

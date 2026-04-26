@@ -27,6 +27,7 @@ describe('action registry bootstrap', () => {
       'agent:install',
       'cli:update',
       'project:addFromOrigin',
+      'settings:update',
       'vault:add',
       'vault:edit',
       'vault:files',

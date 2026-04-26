@@ -10,6 +10,7 @@ import {
   onRunStateChange,
   onRunStarted,
 } from '../daemon/run-manager.js';
+import { dispatchInvokeAction, type InvokeActionCommand } from './command-dispatch.js';
 
 interface WsExecuteRequest {
   type: 'execute';
@@ -30,12 +31,26 @@ interface WsSendInput {
   text: string;
 }
 
-type HubMessage = WsExecuteRequest | WsCancel | WsSendInput;
+interface WsInvokeAction {
+  type: 'invoke-action';
+  commandId: string;
+  action: string;
+  version?: string;
+  input: unknown;
+  idempotencyKey?: string;
+}
+
+type HubMessage = WsExecuteRequest | WsCancel | WsSendInput | WsInvokeAction;
 
 export interface HubWs {
   connect: () => void;
   disconnect: () => void;
   isConnected: () => boolean;
+  // Heartbeat-drained invoke-actions (hub-sync.ts) reuse the same dispatch
+  // path so the per-WS `send` closure routes command_event frames back over
+  // the live WS. No-op-equivalent when the WS isn't open — caller checks
+  // isConnected() before delegating.
+  invokeAction: (cmd: InvokeActionCommand) => Promise<void>;
 }
 
 export const createHubWs = (
@@ -174,6 +189,14 @@ export const createHubWs = (
           sendInput(msg.runId, msg.text);
           logInfo(`Hub sent input for run ${msg.runId}`);
           break;
+
+        case 'invoke-action':
+          dispatchInvokeAction(msg, send).catch((err) => {
+            logError(
+              `Invoke-action handler error: ${err instanceof Error ? err.message : String(err)}`
+            );
+          });
+          break;
       }
     } catch {
       logError('[hub-ws] Failed to parse message from hub');
@@ -262,6 +285,8 @@ export const createHubWs = (
     },
 
     isConnected: () => connected,
+
+    invokeAction: (cmd) => dispatchInvokeAction(cmd, send),
   };
 
   function cleanup(): void {
