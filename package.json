@@ -31,7 +31,7 @@
   "dependencies": {
     "@agentage/core": "^0.10.0",
     "@agentage/platform": "^0.6.1",
-    "@supabase/supabase-js": "2.104.1",
+    "@supabase/supabase-js": "2.105.1",
     "ajv": "8.20.0",
     "better-sqlite3": "latest",
     "chalk": "latest",
