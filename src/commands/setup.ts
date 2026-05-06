@@ -18,6 +18,11 @@ import {
 import type { VaultAddOutput } from '../daemon/actions/vault-add.js';
 import { ensureDaemon } from '../utils/ensure-daemon.js';
 import { invokeAction } from '../utils/action-client.js';
+import {
+  installAutostart,
+  uninstallAutostart,
+  type AutostartResult,
+} from '../daemon/autostart/index.js';
 import { readAuth, saveAuth, deleteAuth, type AuthState } from '../hub/auth.js';
 import { startCallbackServer, getCallbackPort } from '../hub/auth-callback.js';
 import { createHubClient } from '../hub/hub-client.js';
@@ -49,6 +54,7 @@ export interface SetupOptions {
   vault?: string | boolean;
   vaultSlug?: string;
   vaultsDir?: string;
+  autostart?: boolean;
 }
 
 type SetupMode = 'fresh' | 'reauth' | 'disconnect' | 'standalone' | 'idempotent';
@@ -235,10 +241,24 @@ const doDisconnect = async (opts: SetupOptions): Promise<void> => {
 
   deleteAuth();
 
+  let autostartRemoved = false;
+  if (opts.autostart !== false) {
+    try {
+      uninstallAutostart();
+      autostartRemoved = true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!opts.json) {
+        console.error(chalk.dim(`Autostart removal skipped: ${msg}`));
+      }
+    }
+  }
+
   if (opts.json) {
-    console.log(JSON.stringify({ ok: true, mode: 'disconnect' }, null, 2));
+    console.log(JSON.stringify({ ok: true, mode: 'disconnect', autostartRemoved }, null, 2));
   } else {
     console.log(chalk.green('Disconnected from hub. Machine deregistered.'));
+    if (autostartRemoved) console.log(chalk.dim('Autostart unit removed.'));
     console.log(chalk.dim('Daemon continues running in standalone mode.'));
     console.log(chalk.dim('Run `agentage daemon restart` to apply.'));
   }
@@ -377,7 +397,8 @@ const printSummary = (
   userEmail: string | null,
   opts: SetupOptions,
   mcp: TargetResult[] | null,
-  vaultStep: VaultStepResult
+  vaultStep: VaultStepResult,
+  autostart: AutostartResult | null
 ): void => {
   if (opts.json) {
     console.log(
@@ -402,6 +423,7 @@ const printSummary = (
               fileCount: v.fileCount,
             })),
           },
+          autostart,
         },
         null,
         2
@@ -422,6 +444,10 @@ const printSummary = (
       .map((v) => `${v.slug} ${chalk.dim(`(${v.fileCount})`)}`)
       .join(', ');
     console.log(`  Vaults:     ${summary}`);
+  }
+  if (autostart) {
+    const trigger = autostart.startsAtBoot ? 'starts at boot' : 'starts at login';
+    console.log(`  Autostart:  ${autostart.mechanism} ${chalk.dim(`(${trigger})`)}`);
   }
   if (mcp && mcp.length > 0) {
     console.log(chalk.bold('\nMCP clients:'));
@@ -522,7 +548,21 @@ export const runSetup = async (opts: SetupOptions): Promise<void> => {
 
   const vaultStep = await runVaultStep(opts, mode);
 
-  printSummary(config, mode, userEmail, opts, mcp, vaultStep);
+  // Install autostart so the daemon comes back up automatically on reboot
+  // (Linux: systemd --user + linger → boot; macOS/Windows → user login).
+  // Only on fresh setup; reauth/standalone leave existing wiring alone.
+  let autostart: AutostartResult | null = null;
+  if (mode === 'fresh' && opts.autostart !== false) {
+    try {
+      autostart = installAutostart();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(chalk.yellow(`\nAutostart wiring skipped: ${msg}`));
+      console.error(chalk.dim('Daemon will not start automatically on reboot.'));
+    }
+  }
+
+  printSummary(config, mode, userEmail, opts, mcp, vaultStep, autostart);
   process.exit(0);
 };
 
@@ -553,6 +593,10 @@ export const registerSetup = (program: Command): void => {
       'Override the slug for the --vault explicit add (basename otherwise).'
     )
     .option('--no-vault', 'Skip the vault step entirely (no auto-scan, no explicit add).')
+    .option(
+      '--no-autostart',
+      'Skip wiring the daemon to start on boot/login (systemd-user / launchd / Task Scheduler).'
+    )
     .option('--json', 'JSON output')
     .action(async (opts: SetupOptions) => {
       await runSetup(opts);

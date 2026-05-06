@@ -43,6 +43,11 @@ vi.mock('../utils/action-client.js', () => ({
   invokeAction: vi.fn(),
 }));
 
+vi.mock('../daemon/autostart/index.js', () => ({
+  installAutostart: vi.fn(),
+  uninstallAutostart: vi.fn(),
+}));
+
 const mockQuestion = vi.fn();
 vi.mock('node:readline/promises', () => ({
   createInterface: () => ({
@@ -56,6 +61,7 @@ import { readAuth, saveAuth, deleteAuth } from '../hub/auth.js';
 import { startCallbackServer, getCallbackPort } from '../hub/auth-callback.js';
 import { createHubClient } from '../hub/hub-client.js';
 import { invokeAction } from '../utils/action-client.js';
+import { installAutostart, uninstallAutostart } from '../daemon/autostart/index.js';
 import { registerSetup } from './setup.js';
 
 const mockLoadConfig = vi.mocked(loadConfig);
@@ -68,6 +74,8 @@ const mockStartCallback = vi.mocked(startCallbackServer);
 const mockGetCallbackPort = vi.mocked(getCallbackPort);
 const mockCreateHubClient = vi.mocked(createHubClient);
 const mockInvokeAction = vi.mocked(invokeAction);
+const mockInstallAutostart = vi.mocked(installAutostart);
+const mockUninstallAutostart = vi.mocked(uninstallAutostart);
 
 const baseConfig = () => ({
   machine: { id: 'machine-existing-1', name: 'test-host' },
@@ -691,6 +699,95 @@ describe('setup command', () => {
       expect(mockInvokeAction).not.toHaveBeenCalled();
       expect(errLogs.some((l) => l.toLowerCase().includes('vault'))).toBe(false);
       errSpy.mockRestore();
+    });
+  });
+
+  describe('autostart wiring', () => {
+    it('installs autostart on fresh setup with --token (headless)', async () => {
+      setTty(true);
+      mockInstallAutostart.mockReturnValue({
+        mechanism: 'systemd-user',
+        unitPath: '/home/u/.config/systemd/user/agentage.service',
+        startsAtBoot: true,
+      });
+
+      await program.parseAsync(['node', 'agentage', 'setup', '--token', 'tok']);
+
+      expect(mockInstallAutostart).toHaveBeenCalledTimes(1);
+      expect(logs.some((l) => l.includes('Autostart:') && l.includes('starts at boot'))).toBe(true);
+      expect(mockExit).toHaveBeenCalledWith(0);
+    });
+
+    it('skips autostart when --no-autostart is passed', async () => {
+      setTty(true);
+      await program.parseAsync(['node', 'agentage', 'setup', '--token', 'tok', '--no-autostart']);
+
+      expect(mockInstallAutostart).not.toHaveBeenCalled();
+    });
+
+    it('skips autostart on standalone (--no-login)', async () => {
+      setTty(true);
+      await program.parseAsync(['node', 'agentage', 'setup', '--no-login']);
+
+      expect(mockInstallAutostart).not.toHaveBeenCalled();
+    });
+
+    it('warns and continues when autostart install throws', async () => {
+      setTty(true);
+      mockInstallAutostart.mockImplementation(() => {
+        throw new Error('systemctl missing');
+      });
+
+      await program.parseAsync(['node', 'agentage', 'setup', '--token', 'tok']);
+
+      expect(errorLogs.some((l) => l.includes('Autostart wiring skipped'))).toBe(true);
+      expect(mockExit).toHaveBeenCalledWith(0);
+    });
+
+    it('renders "starts at login" when startsAtBoot is false', async () => {
+      setTty(true);
+      mockInstallAutostart.mockReturnValue({
+        mechanism: 'launchd-agent',
+        unitPath: '/Users/u/Library/LaunchAgents/io.agentage.daemon.plist',
+        startsAtBoot: false,
+      });
+
+      await program.parseAsync(['node', 'agentage', 'setup', '--token', 'tok']);
+
+      expect(logs.some((l) => l.includes('Autostart:') && l.includes('starts at login'))).toBe(
+        true
+      );
+    });
+
+    it('uninstalls autostart on --disconnect', async () => {
+      mockReadAuth.mockReturnValue({
+        session: { access_token: 't', refresh_token: 'r', expires_at: 9999 },
+        user: { id: 'u1', email: 'e@x.io' },
+        hub: { url: 'https://hub.x', machineId: 'machine-existing-1' },
+      });
+      mockCreateHubClient.mockReturnValue({
+        deregister: vi.fn().mockResolvedValue(undefined),
+      } as unknown as ReturnType<typeof createHubClient>);
+
+      await program.parseAsync(['node', 'agentage', 'setup', '--disconnect']);
+
+      expect(mockUninstallAutostart).toHaveBeenCalledTimes(1);
+      expect(logs.some((l) => l.includes('Autostart unit removed'))).toBe(true);
+    });
+
+    it('skips autostart removal on --disconnect --no-autostart', async () => {
+      mockReadAuth.mockReturnValue({
+        session: { access_token: 't', refresh_token: 'r', expires_at: 9999 },
+        user: { id: 'u1', email: 'e@x.io' },
+        hub: { url: 'https://hub.x', machineId: 'machine-existing-1' },
+      });
+      mockCreateHubClient.mockReturnValue({
+        deregister: vi.fn().mockResolvedValue(undefined),
+      } as unknown as ReturnType<typeof createHubClient>);
+
+      await program.parseAsync(['node', 'agentage', 'setup', '--disconnect', '--no-autostart']);
+
+      expect(mockUninstallAutostart).not.toHaveBeenCalled();
     });
   });
 });
