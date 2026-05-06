@@ -1,28 +1,62 @@
-import { describe, it, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const testDir = join(tmpdir(), `agentage-test-ensure-${Date.now()}`);
+vi.mock('../daemon/daemon.js', () => ({
+  isDaemonRunning: vi.fn(),
+  startDaemon: vi.fn(),
+  restartDaemon: vi.fn(),
+}));
 
-describe('ensure-daemon', () => {
+vi.mock('./daemon-client.js', () => ({
+  get: vi.fn(),
+}));
+
+import { ensureDaemon } from './ensure-daemon.js';
+import { isDaemonRunning, startDaemon, restartDaemon } from '../daemon/daemon.js';
+import { get } from './daemon-client.js';
+import { VERSION } from './version.js';
+
+describe('ensureDaemon', () => {
   beforeEach(() => {
-    mkdirSync(testDir, { recursive: true });
-    process.env['AGENTAGE_CONFIG_DIR'] = testDir;
+    vi.resetAllMocks();
   });
 
-  afterEach(() => {
-    delete process.env['AGENTAGE_CONFIG_DIR'];
-    rmSync(testDir, { recursive: true, force: true });
-    vi.restoreAllMocks();
-  });
+  it('returns immediately when daemon is running with matching version', async () => {
+    vi.mocked(isDaemonRunning).mockReturnValue(true);
+    vi.mocked(get).mockResolvedValue({ version: VERSION });
 
-  it('returns immediately if daemon is running', async () => {
-    // Write a PID file with current process PID (which is alive)
-    writeFileSync(join(testDir, 'daemon.pid'), String(process.pid));
-
-    const { ensureDaemon } = await import('./ensure-daemon.js');
-    // Should not throw — daemon PID file points to a live process
     await ensureDaemon();
+
+    expect(get).toHaveBeenCalledWith('/api/health');
+    expect(startDaemon).not.toHaveBeenCalled();
+    expect(restartDaemon).not.toHaveBeenCalled();
+  });
+
+  it('restarts daemon when running version differs from CLI version', async () => {
+    vi.mocked(isDaemonRunning).mockReturnValue(true);
+    vi.mocked(get).mockResolvedValue({ version: 'mismatched-version' });
+
+    await ensureDaemon();
+
+    expect(restartDaemon).toHaveBeenCalledOnce();
+    expect(startDaemon).not.toHaveBeenCalled();
+  });
+
+  it('starts daemon when not running', async () => {
+    vi.mocked(isDaemonRunning).mockReturnValue(false);
+
+    await ensureDaemon();
+
+    expect(startDaemon).toHaveBeenCalledOnce();
+    expect(get).not.toHaveBeenCalled();
+    expect(restartDaemon).not.toHaveBeenCalled();
+  });
+
+  it('swallows health-check errors without restarting', async () => {
+    vi.mocked(isDaemonRunning).mockReturnValue(true);
+    vi.mocked(get).mockRejectedValue(new Error('ECONNREFUSED'));
+
+    await expect(ensureDaemon()).resolves.toBeUndefined();
+    expect(restartDaemon).not.toHaveBeenCalled();
+    expect(startDaemon).not.toHaveBeenCalled();
   });
 });
