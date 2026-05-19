@@ -57,7 +57,11 @@ program.parseAsync().then(async () => {
     const result = await updateCheckPromise;
     if (result?.updateAvailable) {
       const { default: chalk } = await import('chalk');
-      console.log(
+      // Route to stderr — the update notice is meta-information, not command
+      // output. Even with the TTY guard above, keeping stdout pure means
+      // consumers that capture stdout (e.g. `agentage status | jq`) never
+      // see this string in their pipeline.
+      console.error(
         chalk.yellow(
           `\nUpdate available: ${result.currentVersion} → ${result.latestVersion} — run ${chalk.white('agentage update')} to install.`
         )
