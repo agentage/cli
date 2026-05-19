@@ -17,7 +17,10 @@ export const ensureDaemon = async (): Promise<void> => {
   try {
     const health = await get<HealthResponse>('/api/health');
     if (health.version !== VERSION) {
-      console.log(
+      // Route to stderr — this is an operational notice, not command output.
+      // Without this, `--json` / pipe consumers get the yellow string mixed
+      // into their stdout when the daemon is upgraded mid-session.
+      console.error(
         chalk.yellow(
           `Daemon version mismatch (daemon: ${health.version}, cli: ${VERSION}) — restarting...`
         )
