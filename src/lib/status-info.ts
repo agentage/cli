@@ -1,6 +1,7 @@
 import { AuthRequiredError, introspectToken } from './api.js';
 import { type AuthState } from './config.js';
 import { environment, links, type Env } from './origins.js';
+import { checkForUpdate, type UpdateInfo } from './update-check.js';
 import { VERSION } from '../utils/version.js';
 
 export interface StatusReport {
@@ -9,6 +10,7 @@ export interface StatusReport {
   env: Env;
   auth: { signedIn: boolean; tokenExpiresAt?: string; note?: string };
   endpoint: { url: string; reachable: boolean };
+  update: UpdateInfo;
 }
 
 const checkEndpoint = async (apiUrl: string): Promise<boolean> => {
@@ -22,12 +24,19 @@ const checkEndpoint = async (apiUrl: string): Promise<boolean> => {
 
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {
   const target = links(fqdn);
+  // Reachability + update check share the api base and don't depend on each other - run
+  // them together so `status` stays snappy.
+  const [reachable, update] = await Promise.all([
+    checkEndpoint(target.api),
+    checkForUpdate(target.api, VERSION),
+  ]);
   const report: StatusReport = {
     version: VERSION,
     fqdn,
     env: environment(fqdn),
     auth: { signedIn: false, note: 'not signed in - run: agentage setup' },
-    endpoint: { url: target.api, reachable: await checkEndpoint(target.api) },
+    endpoint: { url: target.api, reachable },
+    update,
   };
   if (!auth) return report;
   try {
