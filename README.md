@@ -52,7 +52,8 @@ agentage status --json
 
 ```bash
 npm ci
-npm run verify   # type-check + lint + format + test + build
+npm run verify                    # type-check + lint + format + unit tests + build
+npm run build && npm run test:e2e # live e2e (Playwright) against the dev stack
 ```
 
 ## License

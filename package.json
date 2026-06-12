@@ -19,13 +19,15 @@
     "type-check": "tsc --noEmit",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\"",
+    "format": "prettier --write \"{src,e2e}/**/*.ts\"",
+    "format:check": "prettier --check \"{src,e2e}/**/*.ts\"",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "clean": "rm -rf dist *.tsbuildinfo coverage",
-    "verify": "npm run type-check && npm run lint && npm run format:check && npm run test && npm run build",
+    "test:e2e": "playwright test",
+    "type-check:e2e": "tsc -p e2e",
+    "clean": "rm -rf dist *.tsbuildinfo coverage playwright-report test-results",
+    "verify": "npm run type-check && npm run type-check:e2e && npm run lint && npm run format:check && npm run test && npm run build",
     "prepublishOnly": "npm run verify"
   },
   "dependencies": {
@@ -34,6 +36,7 @@
     "open": "latest"
   },
   "devDependencies": {
+    "@playwright/test": "latest",
     "@types/node": "latest",
     "@typescript-eslint/eslint-plugin": "latest",
     "@typescript-eslint/parser": "latest",
