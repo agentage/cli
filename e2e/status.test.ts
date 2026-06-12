@@ -3,8 +3,12 @@
  * unauthenticated, against the live deployed target (AGENTAGE_SITE_FQDN,
  * default dev). No credentials needed.
  */
+import { createRequire } from 'node:module';
 import { expect, test } from '@playwright/test';
 import { assertCliBuilt, createCliMachine, statusJson, type CliMachine } from './helpers.js';
+
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json') as { version: string };
 
 let machine: CliMachine;
 
@@ -15,13 +19,10 @@ test.beforeAll(() => {
 
 test.afterAll(() => machine.cleanup());
 
-test('version identifies the memory client line @smoke', async () => {
+test('version matches the package version @smoke', async () => {
   const result = await machine.exec(['--version']);
   expect(result.code, result.stderr).toBe(0);
-  const version = result.stdout.trim();
-  expect(version).toMatch(/^\d+\.\d+\.\d+/);
-  const [major = 0, minor = 0] = version.split('.').map(Number);
-  expect(major > 0 || minor >= 25, `expected the 0.25+ memory client, got ${version}`).toBe(true);
+  expect(result.stdout.trim()).toBe(pkg.version);
 });
 
 test('unauthenticated status degrades with a setup hint @smoke', async () => {

@@ -1,8 +1,10 @@
 # CLAUDE.md - @agentage/cli
 
-Terminal client for agentage Memory. v0.25 reboot: `setup` (OAuth sign-in) + `status` only.
-The pre-0.25 agent-runtime CLI (daemon, run/agents/machines/...) lives in git history only -
-do not resurrect patterns from it.
+Terminal client for agentage Memory. Rebooted 2026-06 with versioning RESTARTED at 0.0.x
+(old npm versions were unpublished; earliest burned slot is 0.1.19 - stay below it until
+the line naturally passes). Commands: `setup` (OAuth sign-in) + `status` only. The old
+agent-runtime CLI (daemon, run/agents/machines/...) lives in git history only - do not
+resurrect patterns from it.
 
 ## Layout
 - `src/cli.ts` - commander entry (excluded from coverage; keep logic out of it)

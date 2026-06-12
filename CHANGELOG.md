@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.25.0] - 2026-06-12
+## [0.0.1] - 2026-06-12
+
+> Versioning restarts at 0.0.x: the Memory client is a new product line. Entries
+> below 0.0.1 document the retired agent-runtime CLI (unpublished from npm).
 
 ### Changed
 - **BREAKING - Memory client reboot.** The CLI is now the agentage Memory client.
