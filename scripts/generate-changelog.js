@@ -17,7 +17,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { execSync } from 'child_process';
 
 const CHANGELOG_PROMPT = `You are a changelog generator for Agentage CLI.
-Agentage CLI is the daemon and command-line interface for running and managing AI agents.
+Agentage CLI is the agentage command-line tool.
 
 Given the following git commits, generate a concise, user-friendly changelog entry.
 

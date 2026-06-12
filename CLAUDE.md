@@ -1,8 +1,8 @@
 # CLAUDE.md - @agentage/cli
 
-Terminal client for agentage Memory. Rebooted 2026-06 with versioning RESTARTED at 0.0.x
-(old npm versions were unpublished; earliest burned slot is 0.1.19 - stay below it until
-the line naturally passes). Commands: `setup` (OAuth sign-in) + `status` only. The old
+The agentage CLI. Versioning RESTARTED at 0.0.x (old npm versions were
+unpublished; earliest burned slot is 0.1.19 - stay below it until the line naturally
+passes). Commands: `setup` (OAuth sign-in) + `status` only. The old
 agent-runtime CLI (daemon, run/agents/machines/...) lives in git history only - do not
 resurrect patterns from it.
 
@@ -19,8 +19,8 @@ resurrect patterns from it.
 Fresh DCR public client per `setup` run (the redirect URI binds the ephemeral callback
 port); `client_id` stored in auth.json for the refresh grant. Tokens are opaque; `status`
 validates them via the OAuth introspection endpoint (`/api/auth/mcp/get-session`).
-Account details (email/plan/memories) in `status` are pending OAuth-bearer support in the
-backend REST API - it currently accepts session cookies only.
+`status` omits account details (email/plan/memories): the backend REST API accepts
+session cookies only, not OAuth bearers.
 
 ## E2E (`./e2e`, Playwright)
 Drives the built `dist/cli.js` as a subprocess against a live stack (default dev target).

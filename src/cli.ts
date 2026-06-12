@@ -7,10 +7,7 @@ import { VERSION } from './utils/version.js';
 
 const program = new Command();
 
-program
-  .name('agentage')
-  .description('agentage Memory CLI - one memory, every AI, owned by you')
-  .version(VERSION);
+program.name('agentage').description('The agentage CLI').version(VERSION);
 
 registerSetup(program);
 registerStatus(program);

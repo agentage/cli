@@ -1,2 +1,2 @@
-### New Features
-- Add hub command bridge with invoke-action handler and settings update functionality
+- `setup` - browser OAuth 2.1 sign-in (Dynamic Client Registration + PKCE) with a localhost callback.
+- `status` - CLI version, target, sign-in state, and endpoint reachability (`--json` supported).
