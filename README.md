@@ -5,8 +5,9 @@
 
 The terminal client for [agentage Memory](https://agentage.io) - one memory, every AI, owned by you.
 
-> v0.25 is a reboot: the CLI is now the agentage **Memory client**. All agent-runtime
-> commands from 0.24.x and earlier (daemon, run, agents, machines, ...) were removed.
+> This package was rebooted as the agentage **Memory client** and its versioning
+> restarts at 0.0.x. The old agent-runtime CLI (daemon, run, agents, machines, ...)
+> was removed and unpublished.
 
 ## Install
 

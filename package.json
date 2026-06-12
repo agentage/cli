@@ -1,6 +1,6 @@
 {
   "name": "@agentage/cli",
-  "version": "0.25.0",
+  "version": "0.0.1",
   "description": "agentage Memory CLI - connect, clone, and manage your memory from the terminal",
   "type": "module",
   "main": "./dist/index.js",
