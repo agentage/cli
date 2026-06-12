@@ -1,7 +1,7 @@
 {
   "name": "@agentage/cli",
-  "version": "0.24.6",
-  "description": "Agentage CLI and daemon — control plane for AI agents",
+  "version": "0.25.0",
+  "description": "agentage Memory CLI - connect, clone, and manage your memory from the terminal",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
@@ -29,26 +29,12 @@
     "prepublishOnly": "npm run verify"
   },
   "dependencies": {
-    "@agentage/core": "^0.10.0",
-    "@agentage/platform": "^0.6.1",
-    "@supabase/supabase-js": "2.106.2",
-    "ajv": "8.20.0",
-    "better-sqlite3": "latest",
     "chalk": "latest",
     "commander": "latest",
-    "croner": "*",
-    "express": "latest",
-    "gray-matter": "latest",
-    "jiti": "latest",
-    "open": "latest",
-    "ws": "latest"
+    "open": "latest"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "latest",
-    "@types/better-sqlite3": "latest",
-    "@types/express": "latest",
     "@types/node": "latest",
-    "@types/ws": "latest",
     "@typescript-eslint/eslint-plugin": "latest",
     "@typescript-eslint/parser": "latest",
     "@vitest/coverage-v8": "latest",

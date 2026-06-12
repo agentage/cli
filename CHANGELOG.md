@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.25.0] - 2026-06-12
+
+### Changed
+- **BREAKING - Memory client reboot.** The CLI is now the agentage Memory client.
+  All agent-runtime commands were removed: run, agents, runs, machines, schedules,
+  projects, vault, daemon, logs, create, config, whoami (folded into status),
+  completions, update, setup mcp. The local daemon (:4243) is gone - the CLI is stateless.
+- `setup` now signs in via OAuth 2.1 (Dynamic Client Registration + PKCE) against
+  auth.agentage.io with a localhost callback; flags: `--disconnect`, `--reauth`, `--no-browser`.
+- `status` shows account, plan, memories, and endpoint health (`--json` supported).
+- Dependencies reduced to chalk + commander + open.
+
 ## [0.24.6] - 2026-04-26
 
 ### New Features
