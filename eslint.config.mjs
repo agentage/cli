@@ -5,16 +5,16 @@ import prettierConfig from 'eslint-config-prettier';
 
 export default [
   {
-    ignores: ['dist/**', 'coverage/**', 'node_modules/**'],
+    ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'playwright-report/**'],
   },
   {
-    files: ['src/**/*.ts'],
+    files: ['src/**/*.ts', 'e2e/**/*.ts'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
         ecmaVersion: 2024,
         sourceType: 'module',
-        project: './tsconfig.json',
+        project: ['./tsconfig.json', './e2e/tsconfig.json'],
       },
     },
     plugins: {

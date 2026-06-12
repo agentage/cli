@@ -6,15 +6,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
-      exclude: [
-        '**/*.test.ts',
-        '**/index.ts',
-        'src/cli.ts',
-        'src/daemon-entry.ts',
-        'src/e2e/**',
-        'src/examples/claude-agent.agent.ts',
-        'src/examples/copilot.agent.ts',
-      ],
+      exclude: ['**/*.test.ts', '**/index.ts', 'src/cli.ts'],
       thresholds: {
         branches: 65,
         functions: 70,
