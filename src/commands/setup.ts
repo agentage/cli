@@ -116,7 +116,7 @@ export const runSetup = async (
 export const registerSetup = (program: Command): void => {
   program
     .command('setup')
-    .description('Sign in and connect this machine to your agentage memory')
+    .description('Sign in and connect this machine to your agentage account')
     .option('--disconnect', 'sign out and remove local credentials')
     .option('--reauth', 'force a fresh sign-in')
     .option('--no-browser', 'print the sign-in URL instead of opening a browser')

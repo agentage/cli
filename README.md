@@ -3,11 +3,7 @@
 [![CI](https://github.com/agentage/cli/actions/workflows/ci.yml/badge.svg)](https://github.com/agentage/cli/actions/workflows/ci.yml)
 [![npm version](https://badge.fury.io/js/%40agentage%2Fcli.svg)](https://badge.fury.io/js/%40agentage%2Fcli)
 
-The terminal client for [agentage Memory](https://agentage.io) - one memory, every AI, owned by you.
-
-> This package was rebooted as the agentage **Memory client** and its versioning
-> restarts at 0.0.x. The old agent-runtime CLI (daemon, run, agents, machines, ...)
-> was removed and unpublished.
+The [agentage](https://agentage.io) command line.
 
 ## Install
 
@@ -21,7 +17,7 @@ Requires Node.js >= 22.
 
 ### `agentage setup`
 
-Signs this machine in to your agentage memory. Opens a browser for OAuth 2.1
+Signs this machine in to your agentage account. Opens a browser for OAuth 2.1
 sign-in (PKCE) and stores the resulting tokens in `~/.agentage/auth.json`
 (mode 0600). No passwords ever touch the terminal.
 
@@ -44,9 +40,9 @@ agentage status --json
 
 ## Environment
 
-| Variable | Purpose | Default |
-|---|---|---|
-| `AGENTAGE_SITE_FQDN` | Target host | `agentage.io` |
+| Variable              | Purpose                     | Default       |
+| --------------------- | --------------------------- | ------------- |
+| `AGENTAGE_SITE_FQDN`  | Target host                 | `agentage.io` |
 | `AGENTAGE_CONFIG_DIR` | Credential/config directory | `~/.agentage` |
 
 ## Development
