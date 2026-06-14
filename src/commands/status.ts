@@ -3,6 +3,7 @@ import { type Command } from 'commander';
 import { readAuth } from '../lib/config.js';
 import { siteFqdn } from '../lib/origins.js';
 import { gatherStatus, type StatusReport } from '../lib/status-info.js';
+import { INSTALL_HINT, type UpdateInfo } from '../lib/update-check.js';
 
 const mark = (good: boolean): string => (good ? chalk.green('✓') : chalk.red('✗'));
 
@@ -16,8 +17,22 @@ const authLine = (auth: StatusReport['auth']): string => {
   return `${mark(true)} signed in${until}`;
 };
 
+const updateLine = (update: UpdateInfo): string => {
+  switch (update.status.kind) {
+    case 'current':
+      return `${mark(true)} up to date`;
+    case 'update-available':
+      return chalk.yellow(`↑ ${update.status.latest} available - ${INSTALL_HINT}`);
+    case 'unsupported':
+      return chalk.red(`${mark(false)} unsupported, update required - ${INSTALL_HINT}`);
+    case 'unknown':
+      return chalk.dim('- update check unavailable');
+  }
+};
+
 export const printStatus = (report: StatusReport): void => {
   row('version', report.version);
+  row('update', updateLine(report.update));
   row('target', `${report.fqdn} (${report.env})`);
   row('auth', authLine(report.auth));
   row(
@@ -25,6 +40,7 @@ export const printStatus = (report: StatusReport): void => {
     `${mark(report.endpoint.reachable)} ${report.endpoint.url} ` +
       (report.endpoint.reachable ? 'reachable' : 'unreachable')
   );
+  if (report.update.message) console.log(chalk.yellow(`\n${report.update.message}`));
 };
 
 export const runStatus = async (opts: { json?: boolean } = {}): Promise<void> => {
