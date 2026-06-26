@@ -2,6 +2,8 @@ export type Env = 'development' | 'production';
 
 export interface Links {
   site: string;
+  // Backend REST base. Dedicated `api.<fqdn>` host (the apex `<fqdn>/api` was
+  // retired in the 2026-06-17 subdomain cutover); mirrors @agentage/shared links().
   api: string;
   auth: string;
   mcp: string;
@@ -36,7 +38,7 @@ export const links = (fqdn: string): Links =>
       }
     : {
         site: `https://${fqdn}`,
-        api: `https://${fqdn}/api`,
+        api: `https://api.${fqdn}/api`,
         auth: `https://auth.${fqdn}`,
         mcp: `https://memory.${fqdn}/mcp`,
       };

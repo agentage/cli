@@ -48,10 +48,12 @@ export interface TokenSession {
 // The OAuth introspection endpoint: the only live surface that validates the
 // CLI's bearer token today (backend REST accepts session cookies only).
 export const introspectToken = async (auth: AuthState, links: Links): Promise<TokenSession> => {
-  const body = await authedGet<IntrospectionResponse>(
+  const body = await authedGet<IntrospectionResponse | null>(
     auth,
     links,
     `${links.auth}/api/auth/mcp/get-session`
   );
+  // get-session returns 200 + null when the bearer maps to no active session.
+  if (!body) throw new AuthRequiredError('no active session');
   return { userId: body.userId, expiresAt: body.accessTokenExpiresAt };
 };

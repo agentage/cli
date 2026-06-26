@@ -52,6 +52,17 @@ describe('gatherStatus', () => {
     expect(report.auth).toEqual({ signedIn: true, tokenExpiresAt: '2026-06-12T20:00:00Z' });
   });
 
+  it('treats a 200 + null session as signed-out instead of crashing', async () => {
+    stubFetch({
+      '/health': () => jsonResponse(200, {}),
+      '/get-session': () => jsonResponse(200, null),
+    });
+    const report = await gatherStatus(auth, 'dev.agentage.io');
+    expect(report.auth.signedIn).toBe(false);
+    expect(report.auth.note).toContain('agentage setup');
+    expect(report.auth.note).not.toContain('Cannot read properties');
+  });
+
   it('downgrades to signed-out with a hint when the token is rejected', async () => {
     stubFetch({
       '/health': () => jsonResponse(200, {}),
