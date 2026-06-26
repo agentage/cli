@@ -36,6 +36,7 @@
     "open": "latest"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "0.106.0",
     "@playwright/test": "latest",
     "@types/node": "latest",
     "@typescript-eslint/eslint-plugin": "latest",
