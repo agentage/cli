@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.3] - 2026-06-27
+
+### Fixed
+
+- `status` now reaches the backend at the dedicated `api.<fqdn>` host (the apex `<fqdn>/api` was retired in the 2026-06-17 subdomain cutover), so production no longer reports the endpoint unreachable.
+- `status` no longer crashes when the bearer maps to no active session (`get-session` returns `200 + null`); it now reports signed-out with a `run: agentage setup` hint.
+
 ## [0.0.2] - 2026-06-26
 
 ### New Features
