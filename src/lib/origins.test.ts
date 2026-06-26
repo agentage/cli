@@ -31,7 +31,7 @@ describe('links', () => {
   it('derives all service urls from one fqdn', () => {
     expect(links('agentage.io')).toEqual({
       site: 'https://agentage.io',
-      api: 'https://agentage.io/api',
+      api: 'https://api.agentage.io/api',
       auth: 'https://auth.agentage.io',
       mcp: 'https://memory.agentage.io/mcp',
     });
