@@ -3,7 +3,7 @@
 [![CI](https://github.com/agentage/cli/actions/workflows/ci.yml/badge.svg)](https://github.com/agentage/cli/actions/workflows/ci.yml)
 [![npm version](https://badge.fury.io/js/%40agentage%2Fcli.svg)](https://badge.fury.io/js/%40agentage%2Fcli)
 
-The [agentage](https://agentage.io) command line.
+The [agentage](https://agentage.io) command-line interface.
 
 ## Install
 
