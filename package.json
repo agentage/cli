@@ -33,7 +33,9 @@
   "dependencies": {
     "chalk": "latest",
     "commander": "latest",
-    "open": "latest"
+    "open": "latest",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "0.110.0",

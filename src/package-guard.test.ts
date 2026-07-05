@@ -40,7 +40,15 @@ describe('package guard (R6)', () => {
       dependencies: Record<string, string>;
       bin: Record<string, string>;
     };
-    expect(Object.keys(pkg.dependencies).sort()).toEqual(['chalk', 'commander', 'open']);
+    // zod + yaml join at M1 for vaults.json validation + YAML parsing (both are the exact
+    // runtime deps of the sibling @agentage/memory-core); the set grows again at M3.
+    expect(Object.keys(pkg.dependencies).sort()).toEqual([
+      'chalk',
+      'commander',
+      'open',
+      'yaml',
+      'zod',
+    ]);
     expect(pkg.bin['agentage']).toBe('./dist/cli.js');
   });
 });

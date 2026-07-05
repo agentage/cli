@@ -12,6 +12,7 @@ import {
   type TokenResponse,
 } from '../lib/oauth.js';
 import { links, siteFqdn } from '../lib/origins.js';
+import { ensureVaultsConfig } from '../lib/vaults.js';
 import { runStatus } from './status.js';
 
 export interface SetupOptions {
@@ -80,6 +81,7 @@ export const runSetup = async (
   const fqdn = siteFqdn();
   const target = links(fqdn);
   ensureConfigDir();
+  ensureVaultsConfig();
   const { verifier, challenge } = pkcePair();
   const state = randomState();
   const server = await deps.startServer(state);
