@@ -1,22 +1,27 @@
 import chalk from 'chalk';
-import { isAccountVault, type VaultsConfig } from '@agentage/memory-core';
-import { health, syncRun } from '../lib/daemon-client.js';
+import { type VaultsConfig } from '@agentage/memory-core';
+import { health, syncRun, type SyncRunResult } from '../lib/daemon-client.js';
 import { daemonDisabled } from '../lib/daemon-pref.js';
 import { loadVaultsConfig } from '../lib/vaults.js';
 import { resolvePort } from '../daemon/lifecycle.js';
 import { runSyncCycle, type SyncResult } from '../sync/cycle.js';
+import { createCouchSyncManager, type CouchSyncResult } from '../sync/couch/manager.js';
+import { couchTargets } from '../sync/couch/targets.js';
 import { syncTargets, type SyncTarget } from '../sync/planner.js';
 
 export interface VaultSyncDeps {
   loadConfig: () => VaultsConfig;
   // The port of a reachable daemon, or null to run in-process (daemon down or --no-daemon).
   daemonPort: () => Promise<number | null>;
-  runViaDaemon: (port: number, vault: string) => Promise<SyncResult>;
-  runInProcess: (target: SyncTarget) => Promise<SyncResult>;
+  runViaDaemon: (port: number, vault: string) => Promise<SyncRunResult>;
+  runGitInProcess: (target: SyncTarget) => Promise<SyncResult>;
+  runCouchInProcess: (vault: string) => Promise<CouchSyncResult>;
   log: (msg: string) => void;
 }
 
-const describe = (r: SyncResult): string => {
+const isCouch = (r: SyncRunResult): r is CouchSyncResult => 'channel' in r && r.channel === 'couch';
+
+const describeGit = (r: SyncResult): string => {
   if (!r.ok) return chalk.red(`failed (${r.reason ?? 'error'})${r.error ? `: ${r.error}` : ''}`);
   if (r.skipped) return chalk.yellow(`skipped (${r.skipped})`);
   const bits: string[] = [];
@@ -26,43 +31,54 @@ const describe = (r: SyncResult): string => {
   return chalk.green(bits.length ? bits.join(', ') : 'up to date');
 };
 
-const report = (log: (msg: string) => void, r: SyncResult): void => {
-  log(`${r.vault} -> ${r.remote}: ${describe(r)}`);
+const describeCouch = (r: CouchSyncResult): string => {
+  if (r.paused) return chalk.yellow(`paused (${r.paused})`);
+  if (!r.ok) return chalk.red(`failed${r.error ? `: ${r.error}` : ''}`);
+  const bits: string[] = [];
+  if (r.committed) bits.push('committed');
+  if (r.pulled) bits.push('pulled');
+  if (r.pendingCount) bits.push(`${r.pendingCount} pending`);
+  return chalk.green(bits.length ? bits.join(', ') : 'up to date');
+};
+
+const report = (log: (msg: string) => void, r: SyncRunResult): void => {
+  if (isCouch(r)) {
+    log(`${r.vault} (account): ${describeCouch(r)}`);
+    return;
+  }
+  log(`${r.vault} -> ${r.remote}: ${describeGit(r)}`);
   for (const c of r.conflicts) log(`  kept remote copy: ${c}`);
 };
 
-// `agentage vault sync [name]`: sync one vault (or every origin-carrying vault). Prefers a running
-// daemon (single writer), else runs the cycle in-process. Works for interval-0 (manual-only)
-// vaults and with the daemon down. Sync failures are surfaced, not thrown (V6: never a crash).
+// `agentage vault sync [name]`: sync one vault (or every syncable vault). Git-origin vaults
+// commit + push + pull-rebase; account (agentage) vaults sync the couch channel. Prefers a running
+// daemon (single writer), else runs the cycle in-process. Works for interval-0 (manual-only) vaults
+// and with the daemon down. Failures are surfaced, not thrown (V6: never a crash).
 export const runVaultSync = async (
   name: string | undefined,
   deps: VaultSyncDeps
 ): Promise<void> => {
   const config = deps.loadConfig();
-  const targets = syncTargets(config).filter((t) => !name || t.vault === name);
-  if (targets.length === 0) {
-    const entry = name ? config.vaults?.[name] : undefined;
-    if (entry && isAccountVault(entry))
-      // The account channel is not a git remote, so `vault sync` never touches it.
-      deps.log(
-        `Vault '${name}' is an account vault - not a git remote, so \`vault sync\` skips it.`
-      );
-    else
-      deps.log(
-        name
-          ? `No git origin configured for vault '${name}'.`
-          : 'No git-synced vaults. Add one with `agentage vault add <name> --git <remote>`.'
-      );
+  const gitTargets = syncTargets(config).filter((t) => !name || t.vault === name);
+  const couchVaults = couchTargets(config)
+    .filter((t) => !name || t.vault === name)
+    .map((t) => t.vault);
+  if (gitTargets.length === 0 && couchVaults.length === 0) {
+    deps.log(
+      name
+        ? `No syncable origin configured for vault '${name}'.`
+        : 'No syncable vaults. Add one with `agentage vault add <name>`.'
+    );
     return;
   }
   const port = await deps.daemonPort();
   if (port !== null) {
-    for (const vault of [...new Set(targets.map((t) => t.vault))]) {
-      report(deps.log, await deps.runViaDaemon(port, vault));
-    }
+    const vaults = [...new Set([...gitTargets.map((t) => t.vault), ...couchVaults])];
+    for (const vault of vaults) report(deps.log, await deps.runViaDaemon(port, vault));
     return;
   }
-  for (const target of targets) report(deps.log, await deps.runInProcess(target));
+  for (const target of gitTargets) report(deps.log, await deps.runGitInProcess(target));
+  for (const vault of couchVaults) report(deps.log, await deps.runCouchInProcess(vault));
 };
 
 const resolveDaemonPort = async (): Promise<number | null> => {
@@ -75,6 +91,7 @@ export const defaultVaultSyncDeps = (): VaultSyncDeps => ({
   loadConfig: () => loadVaultsConfig().config,
   daemonPort: resolveDaemonPort,
   runViaDaemon: syncRun,
-  runInProcess: runSyncCycle,
+  runGitInProcess: runSyncCycle,
+  runCouchInProcess: (vault) => createCouchSyncManager().runNow(vault),
   log: (msg) => console.log(msg),
 });

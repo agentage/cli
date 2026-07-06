@@ -34,8 +34,10 @@ describe('links', () => {
       api: 'https://api.agentage.io/api',
       auth: 'https://auth.agentage.io',
       mcp: 'https://memory.agentage.io/mcp',
+      sync: 'https://sync.agentage.io',
     });
     expect(links('dev.agentage.io').auth).toBe('https://auth.dev.agentage.io');
+    expect(links('dev.agentage.io').sync).toBe('https://sync.dev.agentage.io');
   });
 
   it('maps localhost to the local port set', () => {
@@ -44,6 +46,17 @@ describe('links', () => {
       api: 'http://localhost:3001/api',
       auth: 'http://localhost:3010',
       mcp: 'http://localhost:3003/mcp',
+      sync: 'http://localhost:3011',
+    });
+  });
+
+  it('collapses a 127.0.0.1:<port> fqdn onto one stub origin', () => {
+    expect(links('127.0.0.1:8080')).toEqual({
+      site: 'http://127.0.0.1:8080',
+      api: 'http://127.0.0.1:8080/api',
+      auth: 'http://127.0.0.1:8080',
+      mcp: 'http://127.0.0.1:8080/mcp',
+      sync: 'http://127.0.0.1:8080',
     });
   });
 });

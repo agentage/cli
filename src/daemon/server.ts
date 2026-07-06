@@ -2,15 +2,17 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type MemoryClient } from '../lib/memory-client.js';
 import { type SyncResult } from '../sync/cycle.js';
+import { type CouchSyncResult } from '../sync/couch/manager.js';
 import { type SyncStatus } from '../sync/manager.js';
-import { dispatchMemory, isMemoryVerb } from './actions.js';
+import { dispatchMemory, isMemoryVerb, type MemoryVerb } from './actions.js';
 import { handleMcp } from './mcp-http.js';
 
 const LOOPBACK = '127.0.0.1';
 
 export interface DaemonSyncApi {
   status: () => SyncStatus;
-  runNow: (vault: string) => Promise<SyncResult>;
+  // A git vault yields a SyncResult, an account vault a CouchSyncResult - the caller branches.
+  runNow: (vault: string) => Promise<SyncResult | CouchSyncResult>;
 }
 
 export interface DaemonServerOptions {
@@ -19,6 +21,9 @@ export interface DaemonServerOptions {
   buildMcpServer?: () => Promise<McpServer>;
   // The git-sync surface: GET /api/sync/status + POST /api/sync/run; omit to leave both unmounted.
   sync?: DaemonSyncApi;
+  // Fired after a successful write/edit/delete so the account channel can push-on-save. Never
+  // awaited: a couch failure must not affect the memory API response.
+  onMutation?: (verb: MemoryVerb, body: unknown) => void;
   version: string;
   startedAt?: number;
 }
@@ -91,8 +96,10 @@ export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
       const verb = match[1];
       if (!isMemoryVerb(verb)) return send(res, 404, { error: `unknown verb: ${verb}` });
       try {
-        const result = await dispatchMemory(await opts.getClient(), verb, await readBody(req));
+        const body = await readBody(req);
+        const result = await dispatchMemory(await opts.getClient(), verb, body);
         served += 1;
+        opts.onMutation?.(verb, body); // fire-and-forget account push-on-save
         return send(res, 200, result);
       } catch (err) {
         return send(res, 400, { error: err instanceof Error ? err.message : String(err) });
