@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { type VaultsConfig } from '@agentage/memory-core';
+import { isAccountVault, type VaultsConfig } from '@agentage/memory-core';
 import { health, syncRun } from '../lib/daemon-client.js';
 import { daemonDisabled } from '../lib/daemon-pref.js';
 import { loadVaultsConfig } from '../lib/vaults.js';
@@ -38,13 +38,21 @@ export const runVaultSync = async (
   name: string | undefined,
   deps: VaultSyncDeps
 ): Promise<void> => {
-  const targets = syncTargets(deps.loadConfig()).filter((t) => !name || t.vault === name);
+  const config = deps.loadConfig();
+  const targets = syncTargets(config).filter((t) => !name || t.vault === name);
   if (targets.length === 0) {
-    deps.log(
-      name
-        ? `No git origin configured for vault '${name}'.`
-        : 'No git-synced vaults. Add one with `agentage vault add <name> --git <remote>`.'
-    );
+    const entry = name ? config.vaults?.[name] : undefined;
+    if (entry && isAccountVault(entry))
+      // The account channel is not a git remote, so `vault sync` never touches it.
+      deps.log(
+        `Vault '${name}' is an account vault - not a git remote, so \`vault sync\` skips it.`
+      );
+    else
+      deps.log(
+        name
+          ? `No git origin configured for vault '${name}'.`
+          : 'No git-synced vaults. Add one with `agentage vault add <name> --git <remote>`.'
+      );
     return;
   }
   const port = await deps.daemonPort();

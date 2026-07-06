@@ -29,12 +29,20 @@ test.describe('offline vault registry @p0', () => {
     }
   });
 
-  test('vault add without --local/--git fails clearly', async () => {
+  test('vault add without --local/--git is the account path (registered locally, no network)', async () => {
     const machine = createCliMachine();
     try {
-      const res = await machine.exec(['vault', 'add', 'acct']);
-      expect(res.code).not.toBe(0);
-      expect(res.stderr + res.stdout).toMatch(/--local|--git/);
+      // --path keeps the mirror in the isolated config dir; no auth + offline stays exit 0.
+      const res = await machine.exec([
+        'vault',
+        'add',
+        'acct',
+        '--path',
+        join(machine.configDir, 'acct'),
+      ]);
+      expect(res.code, res.stderr).toBe(0);
+      expect(res.stdout).toContain('(account)');
+      expect(res.stdout).toContain('registered locally');
     } finally {
       machine.cleanup();
     }

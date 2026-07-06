@@ -77,6 +77,16 @@ describe('syncTargets', () => {
   it('skips blank remotes', () => {
     expect(syncTargets(cfg({ v: { path: '/tmp/v', origin: [{ remote: '   ' }] } }))).toEqual([]);
   });
+
+  it('never picks up an account (agentage-origin) vault, even with a local path', () => {
+    const config = cfg({
+      acct: { path: '/tmp/acct', origin: [{ remote: 'agentage' }] },
+      work: { path: '/tmp/work', origin: [{ remote: 'git@h:me/w.git' }] },
+    });
+    // The account vault is filtered out of both the on-demand targets and the auto loop.
+    expect(syncTargets(config).map((t) => t.vault)).toEqual(['work']);
+    expect(autoSyncTargets(config).map((t) => t.vault)).toEqual(['work']);
+  });
 });
 
 describe('autoSyncTargets', () => {
