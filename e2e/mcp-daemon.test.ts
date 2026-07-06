@@ -116,7 +116,12 @@ test.describe('daemon /mcp exposes the frozen tools @p0', () => {
       const stop = await m.exec(['daemon', 'stop']);
       expect(stop.code, stop.stderr).toBe(0);
     } finally {
-      if (daemonPid !== null && alive(daemonPid)) process.kill(daemonPid, 'SIGKILL');
+      try {
+        // the daemon may exit between the alive() check and the kill (ESRCH race)
+        if (daemonPid !== null && alive(daemonPid)) process.kill(daemonPid, 'SIGKILL');
+      } catch {
+        // already gone - the SIGKILL is only a leak guard
+      }
       m.cleanup();
     }
   });
