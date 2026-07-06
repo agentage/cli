@@ -8,8 +8,9 @@ import { assertCliBuilt, createCliMachine, freePort, type CliMachine } from './h
 // dual-channel output); this proves the BEHAVIORS a bad @agentage/server-memory or
 // @agentage/memory-core bump could regress: str_replace edit edge cases, @<vault>/ routing over
 // two vaults, bounded search pagination, soft-delete recoverability from git, list-tree shapes,
-// and the per-connection instructions block. Ephemeral port + isolated AGENTAGE_CONFIG_DIR keep it
-// off the real daemon; fully offline (local git working-copy vaults, loopback transport). @p0
+// the per-connection instructions block, secret refusal, and the read-budget clamp. Ephemeral
+// port + isolated AGENTAGE_CONFIG_DIR keep it off the real daemon; fully offline (local git
+// working-copy vaults, loopback transport). @p0
 
 interface ToolResult {
   content?: Array<{ type: string; text: string }>;
@@ -340,12 +341,89 @@ test.describe('frozen MCP contract behaviors @p0', () => {
     }
   });
 
-  // FINDING: secret refusal is DESCRIPTION-ONLY upstream - memory__write/edit descriptions say
-  // secrets "are refused" but neither register-tools.js nor memory-core enforces it, so a
-  // credential body writes through. Nothing to assert without a fake-passing test.
-  test.skip('memory__write refuses obvious secrets (not enforced upstream)', () => {});
+  test('memory__write/edit refuse obvious secrets and never persist them', async () => {
+    const d = await startDaemon(['main']);
+    const vaultDir = join(d.m.configDir, 'main');
+    try {
+      // Ordinary prose that merely mentions "password" is NOT a false positive - it writes,
+      // establishing a HEAD to prove a refused write never moves.
+      const clean = await callTool(d.port, 'memory__write', {
+        path: 'ops/runbook.md',
+        body: 'Rotate the router password every quarter; see the ops calendar.',
+      });
+      expect(clean.isError, text(clean)).toBeFalsy();
+      const headBefore = git(vaultDir, ['rev-parse', 'HEAD']).trim();
 
-  // FINDING: memory__read returns the full body verbatim (memory-core local-backend read ->
-  // doc.body); there is no byte/line budget or truncation on read. Nothing to assert.
-  test.skip('memory__read returns a bounded body (no read budget upstream)', () => {});
+      // (a) A fake-but-shape-valid AWS access key in the body is refused with the canonical text.
+      const akia = await callTool(d.port, 'memory__write', {
+        path: 'secrets/aws.md',
+        body: 'export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE',
+      });
+      expect(akia.isError).toBe(true);
+      expect(text(akia)).toContain('Refused: this appears to contain');
+
+      // The refused doc does not exist: a read is not-found, git never recorded it, HEAD is unmoved.
+      const readBack = await callTool(d.port, 'memory__read', { path: 'secrets/aws.md' });
+      expect(readBack.isError).toBe(true);
+      expect(text(readBack)).toContain('No memory at path "secrets/aws.md"');
+      expect(git(vaultDir, ['log', '--oneline', '--', 'secrets/aws.md']).trim()).toBe('');
+      expect(git(vaultDir, ['rev-parse', 'HEAD']).trim()).toBe(headBefore);
+
+      // (b) A PEM private-key block is refused too (a different restricted class).
+      const pem = await callTool(d.port, 'memory__write', {
+        path: 'secrets/key.md',
+        body: '-----BEGIN RSA PRIVATE KEY-----\nMIIfakefakefake\n-----END RSA PRIVATE KEY-----',
+      });
+      expect(pem.isError).toBe(true);
+      expect(text(pem)).toContain('Refused: this appears to contain');
+
+      // (c) An edit whose new_str injects a secret is refused; the note stays exactly as written.
+      await callTool(d.port, 'memory__write', { path: 'ops/creds.md', body: 'placeholder value' });
+      const inject = await callTool(d.port, 'memory__edit', {
+        path: 'ops/creds.md',
+        mode: 'str_replace',
+        old_str: 'placeholder value',
+        new_str: 'token AKIAIOSFODNN7EXAMPLE',
+      });
+      expect(inject.isError).toBe(true);
+      expect(text(inject)).toContain('Refused: this appears to contain');
+      const unchanged = await callTool(d.port, 'memory__read', { path: 'ops/creds.md' });
+      expect(unchanged.structuredContent?.body).toBe('placeholder value');
+    } finally {
+      await stopDaemon(d);
+    }
+  });
+
+  test('memory__read clamps an oversized body on both channels; the stored file stays whole', async () => {
+    const d = await startDaemon(['main']);
+    const vaultDir = join(d.m.configDir, 'main');
+    try {
+      // A body well over the 64 KB read budget; no digits/secret shapes, so the write is accepted.
+      const big = 'the quokka keeps durable notes and knowledge here forever '.repeat(4000);
+      const originalBytes = Buffer.byteLength(big, 'utf8');
+      expect(originalBytes).toBeGreaterThan(200_000);
+      const w = await callTool(d.port, 'memory__write', { path: 'big/tome.md', body: big });
+      expect(w.isError, text(w)).toBeFalsy();
+
+      const read = await callTool(d.port, 'memory__read', { path: 'big/tome.md' });
+      expect(read.isError, text(read)).toBeFalsy();
+      const structuredBody = read.structuredContent?.body as string;
+      const marker = '[Truncated for display:';
+      // Both MCP channels carry the clamped body plus the marker line.
+      expect(structuredBody).toContain(marker);
+      expect(text(read)).toContain(marker);
+      // Clamped to the 65536-byte budget plus the short marker, far below the original.
+      expect(Buffer.byteLength(structuredBody, 'utf8')).toBeLessThanOrEqual(65536 + 256);
+      expect(Buffer.byteLength(structuredBody, 'utf8')).toBeLessThan(originalBytes);
+      expect(structuredBody).toContain(`of ${originalBytes} bytes`);
+
+      // The stored file on disk is the full, unclamped original - the marker never touches it.
+      const onDisk = readFileSync(join(vaultDir, 'big', 'tome.md'), 'utf-8');
+      expect(Buffer.byteLength(onDisk, 'utf-8')).toBe(originalBytes);
+      expect(onDisk).not.toContain(marker);
+      expect(onDisk.endsWith(big.slice(-80))).toBe(true);
+    } finally {
+      await stopDaemon(d);
+    }
+  });
 });

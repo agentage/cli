@@ -31,8 +31,8 @@
     "prepublishOnly": "npm run verify"
   },
   "dependencies": {
-    "@agentage/memory-core": "^0.1.2",
-    "@agentage/server-memory": "^0.0.2",
+    "@agentage/memory-core": "^0.1.3",
+    "@agentage/server-memory": "^0.0.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "chalk": "latest",
     "commander": "latest",
