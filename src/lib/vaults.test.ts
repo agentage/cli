@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { VaultsConfig } from '@agentage/memory-core';
-import { ensureConfigDir } from './config.js';
+import { ensureConfigDir, getConfigDir } from './config.js';
 import {
   ensureVaultsConfig,
   loadVaultsConfig,
@@ -69,9 +69,31 @@ describe('vaults config store', () => {
     expect(loadVaultsConfig().config.vaults).toEqual(config.vaults);
   });
 
+  it('preserves the discover roots through a save round-trip', () => {
+    const config: VaultsConfig = {
+      version: 1,
+      discover: [{ path: '~/roots', autosync: false, ignore: ['skip'] }],
+      vaults: { work: { path: '~/w', mcp: ['local'] } },
+    };
+    saveVaultsConfig(config);
+    expect(loadVaultsConfig().config.discover).toEqual(config.discover);
+  });
+
   it('always rewrites the canonical $schema url on save', () => {
     const path = saveVaultsConfig({ $schema: 'https://evil/x.json', version: 1, vaults: {} });
     expect(JSON.parse(readFileSync(path, 'utf-8'))['$schema']).toBe(SCHEMA);
+  });
+
+  // Per-save unique tmp names make cross-process tmp clobbering structurally impossible.
+  it('rapid successive saves never throw and the survivor is valid JSON', () => {
+    let path = '';
+    for (let i = 0; i < 25; i++) {
+      path = saveVaultsConfig({ version: 1, vaults: { [`v${i}`]: { path: `/tmp/v${i}` } } });
+    }
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { vaults: Record<string, unknown> };
+    expect(Object.keys(parsed.vaults)).toEqual(['v24']);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(readdirSync(getConfigDir()).filter((f) => f.endsWith('.tmp'))).toEqual([]);
   });
 
   it('scaffolds an empty, $schema-linked vaults.json when none exists', () => {

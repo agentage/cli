@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -45,11 +46,12 @@ export const readAuth = (): AuthState | null => {
 };
 
 // Atomic 0600 write: a token file is never left half-written or briefly world-readable. Write a
-// sibling temp, chmod it 0600 BEFORE the rename, then rename over the target in one step.
+// per-save sibling temp (unique name: concurrent savers can never clobber each other's tmp),
+// chmod it 0600 BEFORE the rename, then rename over the target in one step.
 export const saveAuth = (state: AuthState): void => {
   ensureConfigDir();
   const path = authPath();
-  const tmp = `${path}.tmp`;
+  const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, path);

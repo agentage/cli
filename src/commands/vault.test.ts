@@ -148,6 +148,29 @@ describe('vault remove', () => {
     const h = makeDeps();
     expect(() => runVaultRemove('nope', h.deps)).toThrow(/not found/);
   });
+
+  it('appends the name to the discover-root ignore when the path sits under it', () => {
+    const h = makeDeps({
+      version: 1,
+      discover: [{ path: '/data/roots' }],
+      vaults: { teamnotes: { path: '/data/roots/teamnotes', origin: [{ remote: 'agentage' }] } },
+    });
+    runVaultRemove('teamnotes', h.deps);
+    expect(h.get().vaults).toEqual({});
+    expect(h.get().discover?.[0]?.ignore).toEqual(['teamnotes']);
+    expect(h.logs.join()).toContain('/data/roots ignore');
+  });
+
+  it('leaves the discover config untouched for a vault outside every root', () => {
+    const h = makeDeps({
+      version: 1,
+      discover: [{ path: '/data/roots' }],
+      vaults: { work: { path: '/elsewhere/work', mcp: ['local'] } },
+    });
+    runVaultRemove('work', h.deps);
+    expect(h.get().discover?.[0]?.ignore).toBeUndefined();
+    expect(h.logs.join()).not.toContain('ignore');
+  });
 });
 
 describe('vault list', () => {

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { VaultsConfig } from '@agentage/memory-core';
 import {
   addVault,
+  appendDiscoverIgnore,
   ensureVaultDir,
   formatVaultLine,
   removeVault,
@@ -65,6 +66,43 @@ describe('removeVault', () => {
 
   it('throws when the vault is absent', () => {
     expect(() => removeVault(base(), 'nope')).toThrow(/not found/);
+  });
+});
+
+describe('appendDiscoverIgnore', () => {
+  const withRoot = (ignore?: string[]): VaultsConfig => ({
+    version: 1,
+    discover: [{ path: '/data/roots', ...(ignore ? { ignore } : {}) }],
+    vaults: {},
+  });
+
+  it('appends the name to the root the vault path sits directly under', () => {
+    const res = appendDiscoverIgnore(withRoot(), 'teamnotes', '/data/roots/teamnotes');
+    expect(res).not.toBeNull();
+    expect(res!.root).toBe('/data/roots');
+    expect(res!.config.discover?.[0]?.ignore).toEqual(['teamnotes']);
+  });
+
+  it('preserves an existing ignore list', () => {
+    const res = appendDiscoverIgnore(withRoot(['old']), 'teamnotes', '/data/roots/teamnotes');
+    expect(res!.config.discover?.[0]?.ignore).toEqual(['old', 'teamnotes']);
+  });
+
+  it('is idempotent when the name is already ignored', () => {
+    const res = appendDiscoverIgnore(withRoot(['teamnotes']), 'teamnotes', '/data/roots/teamnotes');
+    expect(res!.config.discover?.[0]?.ignore).toEqual(['teamnotes']);
+  });
+
+  it('returns null for a vault nested deeper than a direct child of the root', () => {
+    expect(appendDiscoverIgnore(withRoot(), 'x', '/data/roots/sub/x')).toBeNull();
+  });
+
+  it('returns null when the path is not under any discover root', () => {
+    expect(appendDiscoverIgnore(withRoot(), 'elsewhere', '/other/place/elsewhere')).toBeNull();
+  });
+
+  it('returns null when there are no discover roots', () => {
+    expect(appendDiscoverIgnore({ version: 1, vaults: {} }, 'x', '/data/roots/x')).toBeNull();
   });
 });
 

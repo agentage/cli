@@ -3,6 +3,7 @@ import { type Command } from 'commander';
 import { isAccountVault, type VaultEntry, type VaultsConfig } from '@agentage/memory-core';
 import {
   addVault,
+  appendDiscoverIgnore,
   ensureVaultDir,
   formatVaultLine,
   removeVault,
@@ -76,9 +77,14 @@ export const runVaultAdd = async (
 export const runVaultRemove = (name: string, deps: VaultDeps = defaultDeps): void => {
   const { config } = deps.load();
   const wasDefault = config.default === name;
-  const next = removeVault(config, name);
+  const path = config.vaults?.[name]?.path;
+  let next = removeVault(config, name);
+  // V8: keep the removal and the ignore in one atomic save, else the next scan re-adds the folder.
+  const ignored = path ? appendDiscoverIgnore(next, name, path) : null;
+  if (ignored) next = ignored.config;
   deps.save(next);
   deps.log(`Removed vault '${name}' (files left on disk).`);
+  if (ignored) deps.log(`Added '${name}' to ${ignored.root} ignore so it is not re-discovered.`);
   if (wasDefault && next.default) deps.log(`Default vault is now '${next.default}'.`);
 };
 

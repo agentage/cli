@@ -9,7 +9,7 @@
  */
 import { execFile, execFileSync } from 'node:child_process';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as netServer, type AddressInfo } from 'node:net';
@@ -195,14 +195,36 @@ interface Stub {
   requests(): number;
   setDb(db: string): void;
   setTokenFail(fail: boolean): void;
+  // Map an extra vault name onto the current db (the discover tier registers 'teamnotes' at runtime).
+  addVault(name: string): void;
+  // The vault names the daemon POSTed to /api/memories (proves the discover watcher provisioned).
+  provisioned(): string[];
   stop(): Promise<void>;
 }
+
+const readJson = (req: IncomingMessage): Promise<Record<string, unknown>> =>
+  new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => {
+      try {
+        resolve(
+          JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Record<string, unknown>
+        );
+      } catch {
+        resolve({});
+      }
+    });
+    req.on('error', () => resolve({}));
+  });
 
 const startStub = async (couch: Couch): Promise<Stub> => {
   const port = await freeTcpPort();
   let db = '';
   let count = 0;
   let tokenFail = false;
+  const vaultNames = new Set<string>([VAULT]);
+  const provisioned: string[] = [];
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     count += 1;
     const url = (req.url ?? '').split('?')[0] ?? '';
@@ -216,7 +238,7 @@ const startStub = async (couch: Couch): Promise<Stub> => {
         vaults: [],
         couch_endpoint: couch.url,
         couch_token_url: `http://127.0.0.1:${port}/account/couch-token`,
-        couch_vaults: [{ vault: VAULT, db }],
+        couch_vaults: [...vaultNames].map((vault) => ({ vault, db })),
         ttl: 60,
       });
     if (req.method === 'POST' && url === '/account/couch-token') {
@@ -228,7 +250,13 @@ const startStub = async (couch: Couch): Promise<Stub> => {
         data: { jwt: mintJwt(couch.jwtSecret), db, sub: SUB, expSec: 61 },
       });
     }
-    if (req.method === 'POST' && url === '/api/memories') return send(200, { success: true });
+    if (req.method === 'POST' && url === '/api/memories') {
+      void readJson(req).then((body) => {
+        if (typeof body['name'] === 'string') provisioned.push(body['name']);
+        send(200, { success: true });
+      });
+      return;
+    }
     send(404, { error: 'not found' });
   };
   const server = createServer(handle);
@@ -242,6 +270,8 @@ const startStub = async (couch: Couch): Promise<Stub> => {
     setTokenFail: (f) => {
       tokenFail = f;
     },
+    addVault: (name) => void vaultNames.add(name),
+    provisioned: () => [...provisioned],
     stop: () => new Promise((resolve) => server.close(() => resolve())),
   };
 };
@@ -496,6 +526,92 @@ test.describe('couch account sync (hermetic) @couch', () => {
       await waitFor(async () => (await getDoc(couch, db, 'f:notes/q.md')).status === 404);
     } finally {
       await cleanup();
+    }
+  });
+
+  test('live-discovers a folder dropped into a discover root, then honors remove+ignore', async () => {
+    const db = await createDb(couch);
+    stub.setDb(db);
+    stub.addVault('teamnotes'); // the discovered account vault resolves to this test's db
+    const daemonPort = await freePort();
+    const m = createCliMachine({
+      AGENTAGE_SITE_FQDN: `127.0.0.1:${stub.port}`,
+      AGENTAGE_NO_DAEMON: '',
+      AGENTAGE_DAEMON_PORT: String(daemonPort),
+      // Short knobs (floored at 1000/50ms) keep the tier deterministic even where fs.watch is flaky.
+      AGENTAGE_DISCOVER_POLL_MS: '1000',
+      AGENTAGE_DISCOVER_DEBOUNCE_MS: '150',
+    });
+    fakeAuth(m, stub.port);
+    const rootDir = join(m.configDir, 'discover-root');
+    mkdirSync(rootDir, { recursive: true });
+    const vaultsPath = join(m.configDir, 'vaults.json');
+    // autosync:false -> discovered entries are interval 0 (manual-only): no background timer race.
+    writeFileSync(
+      vaultsPath,
+      JSON.stringify(
+        { version: 1, discover: [{ path: rootDir, autosync: false }], vaults: {} },
+        null,
+        2
+      )
+    );
+    interface Cfg {
+      vaults?: Record<string, { origin?: { remote: string; interval?: number }[]; mcp?: string[] }>;
+      discover?: { path: string; ignore?: string[] }[];
+    }
+    const readCfg = (): Cfg => JSON.parse(readFileSync(vaultsPath, 'utf8')) as Cfg;
+
+    const start = await m.exec(['daemon', 'start']);
+    expect(start.code, start.stderr).toBe(0);
+    try {
+      // Drop a new folder (with a note) plus an invalid-named folder into the watched root.
+      mkdirSync(join(rootDir, 'teamnotes'));
+      writeFileSync(
+        join(rootDir, 'teamnotes', 'note.md'),
+        '# team note\nfrom a discovered folder\n'
+      );
+      mkdirSync(join(rootDir, 'bad name!'));
+
+      // WITHOUT a daemon restart the watcher registers teamnotes as an account vault.
+      await waitFor(async () => Boolean(readCfg().vaults?.teamnotes));
+      const entry = readCfg().vaults!.teamnotes!;
+      expect(entry.origin?.[0]).toEqual({ remote: 'agentage', interval: 0 }); // account shape
+      expect(entry.mcp).toEqual(['local']);
+      expect(readCfg().vaults?.['bad name!'], 'invalid names never register').toBeUndefined();
+
+      // The watcher provisioned the discovered vault's cloud channel.
+      await waitFor(async () => stub.provisioned().includes('teamnotes'));
+
+      // /api/sync/status lists both the discover root and the new couch target.
+      await waitFor(async () => {
+        const s = (await (
+          await fetch(`http://127.0.0.1:${daemonPort}/api/sync/status`)
+        ).json()) as { couch?: { vault: string }[]; discover?: { roots: string[] } };
+        return (
+          (s.discover?.roots ?? []).includes(rootDir) &&
+          (s.couch ?? []).some((c) => c.vault === 'teamnotes')
+        );
+      });
+
+      // A manual sync pushes the dropped note to couch as f:note.md.
+      const sync = await m.exec(['vault', 'sync', 'teamnotes']);
+      expect(sync.code, sync.stderr).toBe(0);
+      await waitFor(async () => (await getDoc(couch, db, 'f:note.md')).status === 200);
+
+      // Remove appends the name to the root's ignore in the same save (V8).
+      const removed = await m.exec(['vault', 'remove', 'teamnotes']);
+      expect(removed.code, removed.stderr).toBe(0);
+      expect(removed.stdout).toContain('ignore');
+      expect(readCfg().discover?.[0]?.ignore).toContain('teamnotes');
+      expect(readCfg().vaults?.teamnotes).toBeUndefined();
+
+      // Touch the folder again: an ignored name is never re-discovered.
+      writeFileSync(join(rootDir, 'teamnotes', 'note2.md'), 'second note\n');
+      await sleep(2500); // > debounce + several poll cycles
+      expect(readCfg().vaults?.teamnotes, 'ignored folder must not be re-added').toBeUndefined();
+    } finally {
+      await m.exec(['daemon', 'stop']).catch(() => {});
+      m.cleanup();
     }
   });
 });
