@@ -7,7 +7,7 @@ import {
 } from '@agentage/memory-core';
 import { defaultProvisionDeps, provisionAccountVault } from '../../lib/provision.js';
 import { addVault } from '../../lib/vault-registry.js';
-import { loadVaultsConfig, saveVaultsConfig } from '../../lib/vaults.js';
+import { loadVaultsConfig, mutateVaultsConfig } from '../../lib/vaults.js';
 
 // The daemon-side live-autodiscovery loop (M5): fs.watch each `discover` root plus a slow polling
 // fallback for watch-unreliable filesystems, register any new subfolder as an account vault, and
@@ -24,8 +24,8 @@ interface Watcher {
 
 export interface DiscoverWatcherDeps {
   getConfig?: () => VaultsConfig;
-  loadConfig?: () => VaultsConfig; // re-read at save time (re-load-check-save)
-  saveConfig?: (config: VaultsConfig) => void;
+  // The cross-process-locked read-modify-write: re-reads fresh, folds new candidates in, saves.
+  mutate?: (fn: (config: VaultsConfig) => VaultsConfig | null | void) => Promise<VaultsConfig>;
   scan?: (config: VaultsConfig) => DiscoverCandidate[];
   provision?: (name: string) => Promise<unknown>;
   isDirectory?: (path: string) => boolean;
@@ -64,8 +64,7 @@ const defaultWatch = (dir: string, onChange: () => void): Watcher => {
 
 export const createDiscoverWatcher = (deps: DiscoverWatcherDeps = {}): DiscoverWatcher => {
   const getConfig = deps.getConfig ?? (() => loadVaultsConfig().config);
-  const loadConfig = deps.loadConfig ?? (() => loadVaultsConfig().config);
-  const saveConfig = deps.saveConfig ?? saveVaultsConfig;
+  const mutate = deps.mutate ?? mutateVaultsConfig;
   const scan = deps.scan ?? scanDiscoverRoots;
   const provision =
     deps.provision ?? ((name: string) => provisionAccountVault(name, defaultProvisionDeps()));
@@ -93,35 +92,32 @@ export const createDiscoverWatcher = (deps: DiscoverWatcherDeps = {}): DiscoverW
       return [];
     }
     if (candidates.length === 0) return [];
-    // Re-load-check-save: re-read the on-disk config right before the save so a recent edit by
-    // another writer is folded in. In-process safe + atomic rename; a lockless cross-process RMW
-    // can still lose an update (follow-up: cross-process config locking).
-    let fresh: VaultsConfig;
+    // Fold the candidates onto the FRESH on-disk config inside the cross-process lock (issue #231):
+    // re-read, register any still-absent-and-present folder, save - so a concurrent `vault add` (or
+    // a second daemon) is never clobbered. Return null when nothing changed so the file is left
+    // untouched (a redundant write would loop the daemon's own config watcher).
+    let added: DiscoverCandidate[] = [];
     try {
-      fresh = loadConfig();
-    } catch (err) {
-      log(`reload failed: ${msgOf(err)}`);
-      return [];
-    }
-    let next = fresh;
-    const added: DiscoverCandidate[] = [];
-    for (const c of candidates) {
-      if (fresh.vaults?.[c.name]) continue; // registered by a concurrent writer
-      if (!c.entry.path || !isDirectory(c.entry.path)) continue; // vanished before we wrote it
-      try {
-        next = addVault(next, c.name, c.entry);
-        added.push(c);
-      } catch (err) {
-        log(`register '${c.name}' failed: ${msgOf(err)}`);
-      }
-    }
-    if (added.length === 0) return [];
-    try {
-      saveConfig(next);
+      await mutate((fresh) => {
+        added = [];
+        let next = fresh;
+        for (const c of candidates) {
+          if (next.vaults?.[c.name]) continue; // registered by a concurrent writer
+          if (!c.entry.path || !isDirectory(c.entry.path)) continue; // vanished before we wrote it
+          try {
+            next = addVault(next, c.name, c.entry);
+            added.push(c);
+          } catch (err) {
+            log(`register '${c.name}' failed: ${msgOf(err)}`);
+          }
+        }
+        return added.length > 0 ? next : null;
+      });
     } catch (err) {
       log(`save failed: ${msgOf(err)}`);
       return [];
     }
+    if (added.length === 0) return [];
     for (const c of added) {
       log(`discovered account vault '${c.name}' -> ${c.entry.path}`);
       void provision(c.name).catch(() => {}); // never fatal: the couch loop re-provisions

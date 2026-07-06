@@ -12,6 +12,18 @@ const candidate = (name: string): DiscoverCandidate => ({
   entry: { path: `/root/${name}`, origin: [{ remote: 'agentage' }], mcp: ['local'] },
 });
 
+// Mirror mutateVaultsConfig: re-read fresh, apply fn, honor the null no-op skip, save otherwise.
+const fakeMutate =
+  (read: () => VaultsConfig, onSave: (c: VaultsConfig) => void) =>
+  async (fn: (c: VaultsConfig) => VaultsConfig | null | void): Promise<VaultsConfig> => {
+    const fresh = read();
+    const next = fn(fresh);
+    if (next === null) return fresh;
+    const result = next ?? fresh;
+    onSave(result);
+    return result;
+  };
+
 describe('discover watcher', () => {
   it('coalesces rapid change events into a single debounced rescan', async () => {
     vi.useFakeTimers();
@@ -80,8 +92,10 @@ describe('discover watcher', () => {
     const provisioned: string[] = [];
     const w = createDiscoverWatcher({
       getConfig: () => snapshot,
-      loadConfig: () => disk,
-      saveConfig: (c) => void (saved = c),
+      mutate: fakeMutate(
+        () => disk,
+        (c) => void (saved = c)
+      ),
       scan: () => [candidate('teamnotes')],
       isDirectory: () => true,
       provision: async (n) => void provisioned.push(n),
@@ -100,12 +114,14 @@ describe('discover watcher', () => {
     let saved: VaultsConfig | undefined;
     const w = createDiscoverWatcher({
       getConfig: () => ({ version: 1, discover: [{ path: '/root' }], vaults: {} }),
-      loadConfig: () => ({
-        version: 1,
-        discover: [{ path: '/root' }],
-        vaults: { teamnotes: { path: '/root/teamnotes', mcp: ['local'] } },
-      }),
-      saveConfig: (c) => void (saved = c),
+      mutate: fakeMutate(
+        () => ({
+          version: 1,
+          discover: [{ path: '/root' }],
+          vaults: { teamnotes: { path: '/root/teamnotes', mcp: ['local'] } },
+        }),
+        (c) => void (saved = c)
+      ),
       scan: () => [candidate('teamnotes')],
       isDirectory: () => true,
       watch: () => ({ close: () => {} }),
@@ -121,8 +137,10 @@ describe('discover watcher', () => {
     const cfg: VaultsConfig = { version: 1, discover: [{ path: '/root' }], vaults: {} };
     const w = createDiscoverWatcher({
       getConfig: () => cfg,
-      loadConfig: () => cfg,
-      saveConfig: (c) => void (saved = c),
+      mutate: fakeMutate(
+        () => cfg,
+        (c) => void (saved = c)
+      ),
       scan: () => [candidate('gone')],
       isDirectory: (p) => p !== '/root/gone', // the candidate dir is no longer a directory
       watch: () => ({ close: () => {} }),
@@ -146,8 +164,10 @@ describe('discover watcher', () => {
       // Real scanDiscoverRoots + real isDirectory here: this exercises the autosync=false path.
       const w = createDiscoverWatcher({
         getConfig: () => cfg,
-        loadConfig: () => cfg,
-        saveConfig: (c) => void (saved = c),
+        mutate: fakeMutate(
+          () => cfg,
+          (c) => void (saved = c)
+        ),
         provision: async () => {},
         watch: () => ({ close: () => {} }),
         pollMs: HUGE,

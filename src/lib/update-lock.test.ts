@@ -52,7 +52,7 @@ describe('update lock', () => {
   const raceProcesses = async (count: number, now: number): Promise<string[]> => {
     const libDir = join(dir, 'lib');
     mkdirSync(libDir, { recursive: true });
-    for (const src of ['config.ts', 'update-lock.ts']) {
+    for (const src of ['config.ts', 'file-lock.ts', 'update-lock.ts']) {
       const out = ts.transpileModule(readFileSync(join(import.meta.dirname, src), 'utf-8'), {
         compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
       }).outputText;

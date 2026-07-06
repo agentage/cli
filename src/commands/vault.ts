@@ -14,12 +14,13 @@ import {
   provisionAccountVault,
   type ProvisionResult,
 } from '../lib/provision.js';
-import { loadVaultsConfig, saveVaultsConfig, type LoadedVaults } from '../lib/vaults.js';
+import { loadVaultsConfig, mutateVaultsConfig, type LoadedVaults } from '../lib/vaults.js';
 import { defaultVaultSyncDeps, runVaultSync } from './vault-sync.js';
 
 export interface VaultDeps {
   load: () => LoadedVaults;
-  save: (config: VaultsConfig) => string;
+  // A cross-process-locked read-modify-write; add/remove run their whole change through this.
+  mutate: (fn: (config: VaultsConfig) => VaultsConfig | null | void) => Promise<VaultsConfig>;
   ensureDir: (path: string) => void;
   provision: (name: string) => Promise<ProvisionResult>;
   log: (msg: string) => void;
@@ -27,7 +28,7 @@ export interface VaultDeps {
 
 const defaultDeps: VaultDeps = {
   load: loadVaultsConfig,
-  save: saveVaultsConfig,
+  mutate: mutateVaultsConfig,
   ensureDir: ensureVaultDir,
   provision: (name) => provisionAccountVault(name, defaultProvisionDeps()),
   log: (msg) => console.log(msg),
@@ -63,9 +64,9 @@ export const runVaultAdd = async (
   deps: VaultDeps = defaultDeps
 ): Promise<void> => {
   const entry = buildEntry(name, opts);
-  const config = addVault(deps.load().config, name, entry);
+  // The dup check + save run together under the lock, against the FRESH on-disk config.
+  await deps.mutate((config) => addVault(config, name, entry));
   if (entry.path) deps.ensureDir(entry.path);
-  deps.save(config);
   const kind = vaultType(entry);
   const where = entry.path ?? entry.origin?.[0]?.remote ?? '';
   const via = kind === 'git' && entry.origin?.length ? ` <- ${entry.origin[0]!.remote}` : '';
@@ -74,17 +75,27 @@ export const runVaultAdd = async (
   if (isAccountVault(entry)) deps.log((await deps.provision(name)).message);
 };
 
-export const runVaultRemove = (name: string, deps: VaultDeps = defaultDeps): void => {
-  const { config } = deps.load();
-  const wasDefault = config.default === name;
-  const path = config.vaults?.[name]?.path;
-  let next = removeVault(config, name);
-  // V8: keep the removal and the ignore in one atomic save, else the next scan re-adds the folder.
-  const ignored = path ? appendDiscoverIgnore(next, name, path) : null;
-  if (ignored) next = ignored.config;
-  deps.save(next);
+export const runVaultRemove = async (
+  name: string,
+  deps: VaultDeps = defaultDeps
+): Promise<void> => {
+  let wasDefault = false;
+  let ignoredRoot: string | null = null;
+  // The removal and the discover-ignore append run as one locked read-modify-write, against the
+  // FRESH on-disk config, else a concurrent writer's update is lost or the next scan re-adds the folder.
+  const next = await deps.mutate((config) => {
+    wasDefault = config.default === name;
+    const path = config.vaults?.[name]?.path;
+    let updated = removeVault(config, name);
+    const ignored = path ? appendDiscoverIgnore(updated, name, path) : null;
+    if (ignored) {
+      updated = ignored.config;
+      ignoredRoot = ignored.root;
+    }
+    return updated;
+  });
   deps.log(`Removed vault '${name}' (files left on disk).`);
-  if (ignored) deps.log(`Added '${name}' to ${ignored.root} ignore so it is not re-discovered.`);
+  if (ignoredRoot) deps.log(`Added '${name}' to ${ignoredRoot} ignore so it is not re-discovered.`);
   if (wasDefault && next.default) deps.log(`Default vault is now '${next.default}'.`);
 };
 
@@ -145,7 +156,7 @@ export const registerVault = (program: Command): void => {
   vault
     .command('remove <name>')
     .description('Unregister a vault (files stay on disk)')
-    .action((name: string) => guard(() => runVaultRemove(name)));
+    .action((name: string) => guardAsync(() => runVaultRemove(name)));
 
   vault
     .command('sync [name]')

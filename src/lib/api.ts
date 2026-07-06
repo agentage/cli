@@ -1,4 +1,4 @@
-import { saveAuth, type AuthState } from './config.js';
+import { mutateAuth, type AuthState, type StoredTokens } from './config.js';
 import { refreshTokens } from './oauth.js';
 import { type Links } from './origins.js';
 
@@ -13,12 +13,19 @@ const tryRefresh = async (auth: AuthState, links: Links): Promise<boolean> => {
   if (!auth.tokens.refreshToken) return false;
   try {
     const fresh = await refreshTokens(links.auth, auth.clientId, auth.tokens.refreshToken);
-    auth.tokens = {
+    const tokens: StoredTokens = {
       accessToken: fresh.access_token,
       refreshToken: fresh.refresh_token ?? auth.tokens.refreshToken,
       expiresAt: fresh.expires_in ? Date.now() + fresh.expires_in * 1000 : undefined,
     };
-    saveAuth(auth);
+    auth.tokens = tokens; // the caller retries its request with this in-memory copy
+    // Persist under the lock, folding the new tokens onto the freshly-read state so a concurrent
+    // writer's other fields (clientId, siteFqdn) are not clobbered by a stale in-memory copy.
+    await mutateAuth((current) => {
+      const base = current ?? auth;
+      base.tokens = tokens;
+      return base;
+    });
     return true;
   } catch {
     return false;
