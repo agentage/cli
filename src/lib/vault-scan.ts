@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { expandHome, indexDbPath } from './vault-registry.js';
-import { openIndex, type DiskDiff, type FileChange, type FileEntry } from './vault-index.js';
+import {
+  openIndex,
+  type DiskDiff,
+  type FileChange,
+  type FileEntry,
+  type VaultIndex,
+} from './vault-index.js';
 
 // Reconcile a vault's markdown tree against its index: walk the folder, diff by mtime/size
 // then sha256, and apply added/modified/removed. Dot-dirs and node_modules are skipped.
@@ -77,20 +83,29 @@ const buildDiff = (walk: WalkResult, inIndex: Map<string, FileEntry>): DiskDiff 
   return { added: walk.added, modified: walk.modified, removed };
 };
 
+// Reconcile an already-open index against the markdown tree at vaultPath (no open/close).
+// Lets a caller keep the index open to query right after refreshing it.
+export const reconcileIndex = async (
+  index: VaultIndex,
+  vaultPath: string
+): Promise<ReindexStats> => {
+  const inIndex = new Map(index.list().map((e) => [e.path, e]));
+  const walk = await walkMarkdown(expandHome(vaultPath), inIndex);
+  const diff = buildDiff(walk, inIndex);
+  index.reconcile(diff);
+  return {
+    added: diff.added.length,
+    modified: diff.modified.length,
+    removed: diff.removed.length,
+    unchanged: walk.unchanged,
+  };
+};
+
 // Open the index at dbPath, reconcile it against the markdown tree at vaultPath, close.
 export const reindexVault = async (vaultPath: string, dbPath: string): Promise<ReindexStats> => {
   const index = openIndex(dbPath);
   try {
-    const inIndex = new Map(index.list().map((e) => [e.path, e]));
-    const walk = await walkMarkdown(expandHome(vaultPath), inIndex);
-    const diff = buildDiff(walk, inIndex);
-    index.reconcile(diff);
-    return {
-      added: diff.added.length,
-      modified: diff.modified.length,
-      removed: diff.removed.length,
-      unchanged: walk.unchanged,
-    };
+    return await reconcileIndex(index, vaultPath);
   } finally {
     index.close();
   }
