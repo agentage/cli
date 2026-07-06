@@ -15,7 +15,7 @@
     "npm": ">=10.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "type-check": "tsc --noEmit",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
@@ -60,5 +60,6 @@
     "type": "git",
     "url": "https://github.com/agentage/cli.git"
   },
+  "homepage": "https://agentage.io",
   "license": "MIT"
 }
