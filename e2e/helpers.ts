@@ -10,6 +10,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, request as apiRequest, type APIRequestContext } from '@playwright/test';
@@ -48,6 +49,10 @@ export const createCliMachine = (extraEnv: NodeJS.ProcessEnv = {}): CliMachine =
     AGENTAGE_CONFIG_DIR: configDir,
     AGENTAGE_SITE_FQDN: TARGET_FQDN,
     NO_COLOR: '1',
+    // Default the offline tiers to the in-process engine: deterministic, never forks a daemon
+    // (the sandbox kills forked children), never probes the real :4243. The daemon tier opts
+    // back in with AGENTAGE_NO_DAEMON='' plus its own ephemeral AGENTAGE_DAEMON_PORT.
+    AGENTAGE_NO_DAEMON: '1',
     ...extraEnv,
   };
 
@@ -84,6 +89,19 @@ export const createCliMachine = (extraEnv: NodeJS.ProcessEnv = {}): CliMachine =
     cleanup: () => rmSync(configDir, { recursive: true, force: true }),
   };
 };
+
+// An ephemeral loopback port for the daemon tier - the OS picks it, so tests never touch a
+// real daemon's port.
+export const freePort = (): Promise<number> =>
+  new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 0;
+      srv.close(() => (port > 0 ? resolve(port) : reject(new Error('no free port'))));
+    });
+    srv.on('error', reject);
+  });
 
 // Poll the CLI's streamed output until the OAuth authorize URL is printed.
 export const waitForAuthorizeUrl = async (

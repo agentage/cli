@@ -2,9 +2,9 @@
 
 The agentage CLI. Versioning RESTARTED at 0.0.x (old npm versions were
 unpublished; earliest burned slot is 0.1.19 - stay below it until the line naturally
-passes). Commands: `setup` (OAuth sign-in) + `status` only. The old
-agent-runtime CLI (daemon, run/agents/machines/...) lives in git history only - do not
-resurrect patterns from it.
+passes). Commands: `setup` (OAuth sign-in), `status`, `vault`, `memory`, `daemon`. The old
+agent-runtime CLI (run/agents/machines/...) lives in git history only - do not resurrect
+its agent-runtime patterns (the local memory daemon was deliberately ported from it).
 
 ## Layout
 - `src/cli.ts` - commander entry (excluded from coverage; keep logic out of it)
@@ -14,8 +14,14 @@ resurrect patterns from it.
   status-info
 - `src/lib/memory-client.ts` - the memory-verb seam; DirectClient wraps `@agentage/memory-core`
   (the one local engine: git-per-vault backends + federation router). No FTS5/SQLite.
-- `src/package-guard.test.ts` - CI guard: no daemon/agent-runtime remnants, runtime deps
-  stay exactly `@agentage/memory-core + chalk + commander + open`
+- `src/lib/daemon-client.ts` - DaemonClient (MemoryClient over loopback HTTP) + `ensureDaemon`
+  autostart; verbs default to the daemon, DirectClient fallback (`--no-daemon`,
+  `AGENTAGE_NO_DAEMON=1`, or fork blocked)
+- `src/daemon/` + `src/daemon-entry.ts` - the local daemon (node:http, 127.0.0.1 only): one
+  in-process engine serialises vault mutations; `agentage daemon start|stop|status`
+- `src/package-guard.test.ts` - CI guard: no agent-runtime remnants (express/ws/sqlite/
+  core/platform/supabase), runtime deps stay exactly `@agentage/memory-core + chalk +
+  commander + open`
 
 ## Auth model
 Fresh DCR public client per `setup` run (the redirect URI binds the ephemeral callback

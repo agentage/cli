@@ -1,10 +1,19 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
 import { type TreeEntry } from '@agentage/memory-core';
+import { ensureDaemon } from '../lib/daemon-client.js';
+import { daemonDisabled } from '../lib/daemon-pref.js';
 import { createDirectClient, type MemoryClient } from '../lib/memory-client.js';
 import { loadVaultsConfig } from '../lib/vaults.js';
 
-const defaultClient = (): MemoryClient => createDirectClient(loadVaultsConfig().config);
+// Default engine path (DO3/DO4): the daemon - single writer, autostarted - when reachable; the
+// in-process DirectClient as a seamless fallback (--no-daemon, sandbox/CI, or fork blocked).
+const resolveClient = async (): Promise<MemoryClient> => {
+  const direct = (): MemoryClient => createDirectClient(loadVaultsConfig().config);
+  if (daemonDisabled()) return direct();
+  const daemon = await ensureDaemon();
+  return daemon ?? direct();
+};
 
 const readStdin = async (): Promise<string> => {
   const chunks: Buffer[] = [];
@@ -29,9 +38,10 @@ interface CommonOpts {
 export const runSearch = async (
   query: string,
   opts: CommonOpts & { limit?: string },
-  client: MemoryClient = defaultClient()
+  client?: MemoryClient
 ): Promise<void> => {
-  const out = await client.search(query, {
+  const c = client ?? (await resolveClient());
+  const out = await c.search(query, {
     vault: opts.vault,
     limit: opts.limit ? Number.parseInt(opts.limit, 10) : undefined,
   });
@@ -44,44 +54,48 @@ export const runSearch = async (
 export const runRead = async (
   ref: string,
   opts: CommonOpts,
-  client: MemoryClient = defaultClient()
+  client?: MemoryClient
 ): Promise<void> => {
-  const doc = await client.read(ref, { vault: opts.vault });
+  const c = client ?? (await resolveClient());
+  const doc = await c.read(ref, { vault: opts.vault });
   emit(opts.json ?? false, doc, () => console.log(doc.body));
 };
 
 export const runWrite = async (
   ref: string,
   opts: CommonOpts & { body?: string; frontmatter?: string },
-  client: MemoryClient = defaultClient()
+  client?: MemoryClient
 ): Promise<void> => {
+  const c = client ?? (await resolveClient());
   const body = opts.body !== undefined && opts.body !== '-' ? opts.body : await readStdin();
   const frontmatter = opts.frontmatter
     ? (JSON.parse(opts.frontmatter) as Record<string, unknown>)
     : undefined;
-  const out = await client.write(ref, body, { vault: opts.vault, frontmatter });
+  const out = await c.write(ref, body, { vault: opts.vault, frontmatter });
   emit(opts.json ?? false, out, () => console.log(chalk.green(`Wrote ${out.path}`)));
 };
 
 export const runEdit = async (
   ref: string,
   opts: CommonOpts & { old?: string; new?: string; body?: string; append?: boolean },
-  client: MemoryClient = defaultClient()
+  client?: MemoryClient
 ): Promise<void> => {
+  const c = client ?? (await resolveClient());
   const op =
     opts.old !== undefined
       ? { mode: 'str_replace' as const, old_str: opts.old, new_str: opts.new ?? '' }
       : { mode: opts.append ? ('append' as const) : ('replace' as const), body: opts.body };
-  const out = await client.edit(ref, op, { vault: opts.vault });
+  const out = await c.edit(ref, op, { vault: opts.vault });
   emit(opts.json ?? false, out, () => console.log(chalk.green(`Edited ${out.path}`)));
 };
 
 export const runList = async (
   folder: string | undefined,
   opts: CommonOpts,
-  client: MemoryClient = defaultClient()
+  client?: MemoryClient
 ): Promise<void> => {
-  const out = await client.list(folder, { vault: opts.vault });
+  const c = client ?? (await resolveClient());
+  const out = await c.list(folder, { vault: opts.vault });
   emit(opts.json ?? false, out, () => {
     const files = treeFiles(out.entries);
     if (files.length === 0) console.log('No documents.');
@@ -92,9 +106,10 @@ export const runList = async (
 export const runDelete = async (
   ref: string,
   opts: CommonOpts,
-  client: MemoryClient = defaultClient()
+  client?: MemoryClient
 ): Promise<void> => {
-  const out = await client.delete(ref, { vault: opts.vault });
+  const c = client ?? (await resolveClient());
+  const out = await c.delete(ref, { vault: opts.vault });
   emit(opts.json ?? false, out, () =>
     console.log(`Deleted ${out.path} (recoverable from git history)`)
   );
