@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { authedGet, AuthRequiredError, introspectToken } from './api.js';
+import { authedGet, authedPost, AuthRequiredError, introspectToken } from './api.js';
 import { readAuth, type AuthState } from './config.js';
 import { links } from './origins.js';
 
@@ -78,6 +78,59 @@ describe('authedGet', () => {
   it('surfaces non-auth errors with the status code', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(500, {})));
     await expect(authedGet(makeAuth(), target, 'https://x.example/x')).rejects.toThrow('500');
+  });
+});
+
+describe('authedPost', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agentage-api-'));
+    process.env['AGENTAGE_CONFIG_DIR'] = dir;
+  });
+
+  afterEach(() => {
+    delete process.env['AGENTAGE_CONFIG_DIR'];
+    rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+  });
+
+  it('sends the bearer token, a JSON body, and returns the raw response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(201, { ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    const res = await authedPost(makeAuth(), target, 'https://x.example/api/memories', {
+      name: 'acct',
+      channel: 'couch',
+    });
+    expect(res.status).toBe(201);
+    expect(fetchMock).toHaveBeenCalledWith('https://x.example/api/memories', {
+      method: 'POST',
+      headers: { authorization: 'Bearer old-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'acct', channel: 'couch' }),
+    });
+  });
+
+  it('refreshes once on 401, persists the new tokens, and retries the POST', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.includes('/token'))
+        return Promise.resolve(jsonResponse(200, { access_token: 'new-token', expires_in: 60 }));
+      const bearer = (init?.headers as Record<string, string> | undefined)?.['authorization'];
+      return Promise.resolve(
+        bearer === 'Bearer new-token' ? jsonResponse(201, { ok: true }) : jsonResponse(401, {})
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = makeAuth();
+    const res = await authedPost(auth, target, 'https://x.example/api/memories', { name: 'a' });
+    expect(res.status).toBe(201);
+    expect(auth.tokens.accessToken).toBe('new-token');
+    expect(readAuth()?.tokens.accessToken).toBe('new-token');
+  });
+
+  it('returns a non-2xx response without throwing so the caller can branch', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(403, { error: { code: 'X' } })));
+    const res = await authedPost(makeAuth(), target, 'https://x.example/api/memories', {});
+    expect(res.status).toBe(403);
   });
 });
 

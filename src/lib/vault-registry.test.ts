@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { VaultsConfig } from '@agentage/memory-core';
-import { addVault, ensureVaultDir, formatVaultLine, removeVault } from './vault-registry.js';
+import {
+  addVault,
+  ensureVaultDir,
+  formatVaultLine,
+  removeVault,
+  vaultType,
+} from './vault-registry.js';
 
 const base = (): VaultsConfig => ({ version: 1, vaults: {} });
 
@@ -62,6 +68,21 @@ describe('removeVault', () => {
   });
 });
 
+describe('vaultType', () => {
+  it('classifies an agentage-origin entry as account', () => {
+    expect(vaultType({ path: '~/vaults/acct', origin: [{ remote: 'agentage' }] })).toBe('account');
+  });
+
+  it('classifies a path with an external origin as git', () => {
+    expect(vaultType({ path: '~/w', origin: [{ remote: 'git@h:me/w.git' }] })).toBe('git');
+  });
+
+  it('classifies a bare path as local and an origin-only entry as remote', () => {
+    expect(vaultType({ path: '/tmp/a' })).toBe('local');
+    expect(vaultType({ origin: [{ remote: 'git@h:me/r.git' }] })).toBe('remote');
+  });
+});
+
 describe('formatVaultLine', () => {
   it('labels a local vault', () => {
     expect(formatVaultLine('a', { path: '/tmp/a' })).toContain('local');
@@ -71,6 +92,12 @@ describe('formatVaultLine', () => {
     const line = formatVaultLine('work', { origin: [{ remote: 'git@github.com:me/w.git' }] });
     expect(line).toContain('remote');
     expect(line).toContain('git@github.com:me/w.git');
+  });
+
+  it('labels an account vault by type and does not echo the agentage channel as a git remote', () => {
+    const line = formatVaultLine('acct', { path: '/tmp/acct', origin: [{ remote: 'agentage' }] });
+    expect(line).toContain('account');
+    expect(line).not.toContain('<- agentage');
   });
 });
 

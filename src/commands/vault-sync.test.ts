@@ -43,6 +43,24 @@ describe('runVaultSync', () => {
     expect(logs.join()).toContain('No git-synced vaults');
   });
 
+  it('reports an account vault clearly and never attempts a git sync', async () => {
+    const runViaDaemon = vi.fn(async () => result());
+    const runInProcess = vi.fn(async () => result());
+    const { deps, logs } = makeDeps({
+      loadConfig: () => ({
+        version: 1,
+        vaults: { acct: { path: '/tmp/acct', origin: [{ remote: 'agentage' }] } },
+      }),
+      daemonPort: async () => 4243,
+      runViaDaemon,
+      runInProcess,
+    });
+    await runVaultSync('acct', deps);
+    expect(logs.join()).toContain("Vault 'acct' is an account vault");
+    expect(runViaDaemon).not.toHaveBeenCalled();
+    expect(runInProcess).not.toHaveBeenCalled();
+  });
+
   it('runs in-process when the daemon is down', async () => {
     const runInProcess = vi.fn(async (_t: SyncTarget) => result({ committed: true }));
     const { deps, logs } = makeDeps({ daemonPort: async () => null, runInProcess });

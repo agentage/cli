@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import {
   expandPath,
+  isAccountVault,
   validateConfig,
   type VaultEntry,
   type VaultsConfig,
@@ -8,7 +9,18 @@ import {
 import { isValidVaultName } from './vaults.schema.js';
 
 // Offline registry operations over the unified vaults.json (object map keyed by name). No
-// network, no provisioning: local (--local) and git-origin (--git) entries only.
+// network here: account (agentage channel), local (--local) and git-origin (--git) entries.
+
+export type VaultType = 'account' | 'git' | 'local' | 'remote';
+
+// The human-facing type of an entry: an agentage origin is an account vault (local mirror +
+// cloud channel); otherwise a path with an external origin is git, a bare path is local, and an
+// origin without a path is remote.
+export const vaultType = (entry: VaultEntry): VaultType => {
+  if (isAccountVault(entry)) return 'account';
+  if (entry.path) return entry.origin?.length ? 'git' : 'local';
+  return 'remote';
+};
 
 // A local vault's markdown directory is created on `vault add` (~ is expanded).
 export const ensureVaultDir = (path: string): void => {
@@ -17,9 +29,10 @@ export const ensureVaultDir = (path: string): void => {
 };
 
 export const formatVaultLine = (name: string, entry: VaultEntry): string => {
-  const kind = entry.path ? (entry.origin?.length ? 'git' : 'local') : 'remote';
+  const kind = vaultType(entry);
   const where = entry.path ? expandPath(entry.path) : (entry.origin?.[0]?.remote ?? '');
-  const remote = entry.path && entry.origin?.length ? `  <- ${entry.origin[0]!.remote}` : '';
+  // Only an external git remote is worth echoing; the account channel is implied by the type.
+  const remote = kind === 'git' && entry.origin?.length ? `  <- ${entry.origin[0]!.remote}` : '';
   return `${name.padEnd(16)} ${kind.padEnd(8)} ${where}${remote}`;
 };
 

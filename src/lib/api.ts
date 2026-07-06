@@ -35,6 +35,28 @@ export const authedGet = async <T>(auth: AuthState, links: Links, url: string): 
   return (await res.json()) as T;
 };
 
+// A bearer POST with the same refresh-once dance as authedGet. Unlike authedGet it returns the
+// raw Response (never throws on a non-2xx): callers branch on the status codes themselves.
+export const authedPost = async (
+  auth: AuthState,
+  links: Links,
+  url: string,
+  body: unknown
+): Promise<Response> => {
+  const call = (): Promise<Response> =>
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${auth.tokens.accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+  let res = await call();
+  if (res.status === 401 && (await tryRefresh(auth, links))) res = await call();
+  return res;
+};
+
 interface IntrospectionResponse {
   userId?: string;
   accessTokenExpiresAt?: string;
