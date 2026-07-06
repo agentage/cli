@@ -183,6 +183,34 @@ describe('runSyncCycle', () => {
     expect(next.pushed).toBe(true);
   });
 
+  it('recovers when a user edited a merge-touched file after a mid-merge crash', async () => {
+    await diverge();
+    // Crash state + a user edit to a file the staged merge touched: `merge --abort` refuses
+    // ("entry not uptodate"), so recovery must complete the merge instead of leaking MERGE_HEAD.
+    g(work, ['fetch', 'sync']);
+    g(work, ['merge', '--no-commit', '-X', 'ours', 'sync/main']);
+    writeFile(work, 'note.md', 'USER-EDIT\n');
+
+    const results = [];
+    for (let i = 0; i < 3; i++)
+      results.push(await runSyncCycle(target({ path: work, remote: bare })));
+    // No permanent ok:false loop.
+    expect(results.map((r) => r.ok)).toEqual([true, true, true]);
+    expect(results.map((r) => r.pushed)).toEqual([true, true, true]);
+    expect(existsSync(join(work, '.git', 'MERGE_HEAD'))).toBe(false);
+
+    // No phantom conflict-file accumulation across cycles.
+    const conflictFiles = g(work, ['ls-files'])
+      .split('\n')
+      .filter((f) => f.includes('.conflict'));
+    expect(conflictFiles.length).toBeLessThanOrEqual(1);
+
+    // The user edit survived and reached the remote; the remote side stays reachable in history.
+    expect(readFileSync(join(work, 'note.md'), 'utf8')).toContain('USER-EDIT');
+    expect(g(bare, ['show', 'main:note.md'])).toContain('USER-EDIT');
+    expect(g(bare, ['show', 'main:extra.md'])).toContain('remote extra');
+  });
+
   it('recovers when a previous cycle died mid-rebase', async () => {
     await diverge();
     g(work, ['fetch', 'sync']);

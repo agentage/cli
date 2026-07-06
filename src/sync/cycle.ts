@@ -61,7 +61,12 @@ const ensureRemote = async (git: SyncGit, name: string, url: string): Promise<vo
 // interrupted operation before touching the tree.
 const abortInterrupted = async (git: SyncGit, path: string): Promise<void> => {
   const gitDir = join(path, '.git');
-  if (existsSync(join(gitDir, 'MERGE_HEAD'))) await git.exec(['merge', '--abort']);
+  if (existsSync(join(gitDir, 'MERGE_HEAD'))) {
+    await git.exec(['merge', '--abort']);
+    // The abort refuses when the user edited a merge-touched file meanwhile ("entry not uptodate");
+    // complete the staged merge instead so MERGE_HEAD never leaks into commitIfDirty.
+    if (existsSync(join(gitDir, 'MERGE_HEAD'))) await git.exec(['commit', '--no-edit']);
+  }
   if (existsSync(join(gitDir, 'rebase-merge')) || existsSync(join(gitDir, 'rebase-apply')))
     await git.exec(['rebase', '--abort']);
 };
@@ -71,7 +76,12 @@ const abortInterrupted = async (git: SyncGit, path: string): Promise<void> => {
 // file's remote copy is written alongside as `<name>.conflict.md`. The `.conflict.md` copies are
 // staged into the SAME merge commit (`merge --no-commit`), so no single commit boundary ever
 // leaves the remote side merged-away yet unsurfaced. Returns the conflict-copy paths written.
-const reconcile = async (git: SyncGit, cwd: string, ref: string): Promise<string[]> => {
+const reconcile = async (
+  git: SyncGit,
+  cwd: string,
+  ref: string,
+  now: string
+): Promise<string[]> => {
   const rebase = await git.exec(['rebase', ref]);
   if (rebase.code === 0) return [];
 
@@ -105,7 +115,14 @@ const reconcile = async (git: SyncGit, cwd: string, ref: string): Promise<string
     written.push(name);
   }
   await git.run(['add', '-A']);
-  await git.run(['commit', '--no-edit']);
+  // Self-sufficient close: nothing staged and no merge to conclude = nothing to commit (a bare
+  // `commit --no-edit` would abort on the empty message and wedge the cycle); an absent MERGE_MSG
+  // (recovered state) falls back to an explicit -m.
+  const staged = await git.exec(['diff', '--cached', '--quiet']);
+  const merging = existsSync(join(cwd, '.git', 'MERGE_HEAD'));
+  if (staged.code === 0 && !merging) return written;
+  if (existsSync(join(cwd, '.git', 'MERGE_MSG'))) await git.run(['commit', '--no-edit']);
+  else await git.run(['commit', '-m', `sync: merge ${ref} (${now})`]);
   return written;
 };
 
@@ -143,7 +160,7 @@ export const runSyncCycle = async (
     if (fetch.code !== 0) throw new GitError(fetch);
 
     if ((await git.exec(['rev-parse', '--verify', ref])).code === 0) {
-      conflicts = await reconcile(git, target.path, ref);
+      conflicts = await reconcile(git, target.path, ref, now);
     }
 
     const push = await git.exec(['push', target.remoteName, `HEAD:${branch}`]);

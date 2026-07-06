@@ -47,9 +47,9 @@ describe('update lock', () => {
     expect(existsSync(lockFile())).toBe(false);
   });
 
-  // The TOCTOU proof: real concurrent PROCESSES (a check-then-write lock lets most of them win;
-  // the O_EXCL create admits exactly one). Runs the actual module, transpiled on the fly.
-  it('exactly one of many concurrent processes wins the lock', async () => {
+  // The TOCTOU proof: real concurrent PROCESSES running the actual module, transpiled on the fly
+  // (a check-then-write lock lets most of them win; the O_EXCL create admits exactly one).
+  const raceProcesses = async (count: number, now: number): Promise<string[]> => {
     const libDir = join(dir, 'lib');
     mkdirSync(libDir, { recursive: true });
     for (const src of ['config.ts', 'update-lock.ts']) {
@@ -63,19 +63,33 @@ describe('update lock', () => {
     writeFileSync(
       script,
       `import { acquireUpdateLock } from '${mod}';\n` +
-        `process.stdout.write(acquireUpdateLock(1000000) ? '1' : '0');\n`,
+        `process.stdout.write(acquireUpdateLock(${now}) ? '1' : '0');\n`,
       'utf-8'
     );
     const env = { ...process.env, AGENTAGE_CONFIG_DIR: join(dir, 'cfg') };
-    const runs = await Promise.all(
+    return Promise.all(
       Array.from(
-        { length: 12 },
+        { length: count },
         () =>
           new Promise<string>((resolve) => {
             execFile(process.execPath, [script], { env }, (_err, stdout) => resolve(stdout));
           })
       )
     );
+  };
+
+  it('exactly one of many concurrent processes wins the lock', async () => {
+    const runs = await raceProcesses(12, 1_000_000);
+    expect(runs.filter((r) => r === '1')).toHaveLength(1);
+  }, 20_000);
+
+  it('exactly one of many concurrent processes takes over a STALE lock', async () => {
+    // The ABA proof: a naive unlink-takeover lets a taker delete the fresh winner's lock and
+    // re-win; the rename takeover admits exactly one.
+    const now = 1_000_000;
+    mkdirSync(join(dir, 'cfg'), { recursive: true });
+    writeFileSync(lockFile(), String(now - 11 * 60_000), 'utf-8'); // >10min old = stale
+    const runs = await raceProcesses(12, now);
     expect(runs.filter((r) => r === '1')).toHaveLength(1);
   }, 20_000);
 });

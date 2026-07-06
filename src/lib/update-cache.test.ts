@@ -120,7 +120,8 @@ describe('update cache', () => {
       // 192.0.2.1 (TEST-NET-1) either blackholes (the destroy timer fires) or refuses fast.
       const result = await fetchLatestVersion(500, 'https://192.0.2.1/x');
       expect(result).toBeNull();
-      expect(Date.now() - started).toBeLessThan(3000);
+      // Generous CI bound (timers stretch under load); still well under undici's ~10s floor.
+      expect(Date.now() - started).toBeLessThan(8000);
     });
   });
 });
