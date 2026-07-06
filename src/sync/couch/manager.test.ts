@@ -35,7 +35,8 @@ const makeManager = (over: Partial<CouchSyncManagerDeps> = {}) => {
   const couch = {
     pushFileLive: vi.fn(async () => {}),
     removeFile: vi.fn(async () => {}),
-    syncNow: vi.fn(async () => {}),
+    flushPending: vi.fn(async () => {}),
+    syncNow: vi.fn(async () => ({ pushed: true, pulled: true })),
   };
   const discovery: Discovery = {
     channelFor: vi.fn(async () => couchDecision),
@@ -142,6 +143,44 @@ describe('createCouchSyncManager.onWrite', () => {
     expect(discovery.channelFor).not.toHaveBeenCalled();
     expect(couch.pushFileLive).not.toHaveBeenCalled();
   });
+
+  it('a signed-out delete enqueues a durable deletion, zero network', async () => {
+    const deletions: string[] = [];
+    const { mgr, couch, discovery } = makeManager({
+      getBearer: async () => null,
+      makeStatePersistence: () => ({
+        load: async () => null,
+        save: async (s) => {
+          deletions.push(...(s.deletions ?? []));
+        },
+      }),
+    });
+    mgr.onWrite('delete', { ref: 'notes/x.md' });
+    await vi.waitFor(() => expect(deletions).toContain('notes/x.md'));
+    expect(discovery.channelFor).not.toHaveBeenCalled();
+    expect(couch.removeFile).not.toHaveBeenCalled();
+  });
+
+  it('a delete surviving a discovery failure is enqueued, never dropped', async () => {
+    const deletions: string[] = [];
+    const { mgr, couch } = makeManager({
+      discovery: {
+        channelFor: vi.fn(async () => {
+          throw new Error('well-known unreachable');
+        }),
+        reset: vi.fn(),
+      },
+      makeStatePersistence: () => ({
+        load: async () => null,
+        save: async (s) => {
+          deletions.push(...(s.deletions ?? []));
+        },
+      }),
+    });
+    mgr.onWrite('delete', { ref: 'notes/x.md' });
+    await vi.waitFor(() => expect(deletions).toContain('notes/x.md'));
+    expect(couch.removeFile).not.toHaveBeenCalled();
+  });
 });
 
 describe('createCouchSyncManager.status and runNow', () => {
@@ -187,5 +226,42 @@ describe('createCouchSyncManager.status and runNow', () => {
     expect(result).toMatchObject({ vault: 'acct', ok: true });
     expect(result.paused).toBeUndefined();
     expect(mgr.status()[0]!.lastSync).toBe('2026-01-01T00:00:00Z');
+  });
+
+  it('commits dirty local changes BEFORE syncNow, even when couch is unreachable', async () => {
+    const order: string[] = [];
+    const couch = {
+      pushFileLive: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
+      flushPending: vi.fn(async () => {
+        order.push('flush');
+      }),
+      syncNow: vi.fn(async () => {
+        order.push('sync');
+        return { pushed: false, pulled: false, error: 'couch unreachable' };
+      }),
+    };
+    const { mgr } = makeManager({
+      makeCouchSync: () => couch,
+      commitDirty: vi.fn(async (_path: string, message: string) => {
+        order.push(message.startsWith('sync: couch') ? 'commit-post' : 'commit-pre');
+        return { committed: message.startsWith('sync: couch') === false, skipped: false };
+      }),
+    });
+    const result = await mgr.runNow('acct');
+    // The dirty working tree is committed first, so a couch outage never loses the local truth.
+    expect(order).toEqual(['commit-pre', 'flush', 'sync', 'commit-post']);
+    expect(result).toMatchObject({ ok: false, committed: true, error: 'couch unreachable' });
+    expect(mgr.status()[0]!.lastError).toBe('couch unreachable');
+    expect(mgr.status()[0]!.lastSync).toBeUndefined();
+  });
+
+  it('flushes queued deletions on a manual run before the push/pull round', async () => {
+    const { mgr, couch } = makeManager();
+    await mgr.runNow('acct');
+    expect(couch.flushPending).toHaveBeenCalledTimes(1);
+    expect(couch.flushPending.mock.invocationCallOrder[0]!).toBeLessThan(
+      couch.syncNow.mock.invocationCallOrder[0]!
+    );
   });
 });

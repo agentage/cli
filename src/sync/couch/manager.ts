@@ -10,6 +10,7 @@ import {
   type FetchLike,
   type FetchJson,
   type FileStore,
+  type SyncResult as CouchChannelResult,
   type VaultsConfig,
 } from '@agentage/memory-core';
 import { currentBearer } from '../../lib/api.js';
@@ -51,7 +52,8 @@ export interface CouchTargetStatus {
 interface CouchLike {
   pushFileLive(path: string): Promise<void>;
   removeFile(path: string): Promise<void>;
-  syncNow(): Promise<void>;
+  flushPending(): Promise<void>;
+  syncNow(): Promise<CouchChannelResult>;
 }
 
 type MakeCouchSync = (
@@ -188,6 +190,10 @@ export const createCouchSyncManager = (deps: CouchSyncManagerDeps = {}): CouchSy
   const states = new Map<string, TargetState>();
   const timers = new Map<string, NodeJS.Timeout>();
 
+  // Everything queued for retry: failed/deferred pushes plus not-yet-tombstoned deletions.
+  const pendingCount = (st: TargetState | undefined): number =>
+    st?.state ? st.state.pendingPaths().length + st.state.deletionPaths().length : 0;
+
   const ensureTargetState = (target: CouchTarget): TargetState => {
     const existing = states.get(target.vault);
     if (existing) {
@@ -231,7 +237,7 @@ export const createCouchSyncManager = (deps: CouchSyncManagerDeps = {}): CouchSy
       ok: true,
       committed: false,
       pulled: false,
-      pendingCount: st.state?.pendingPaths().length ?? 0,
+      pendingCount: pendingCount(st),
       ...extra,
     });
     if (st.running) return build({});
@@ -252,8 +258,18 @@ export const createCouchSyncManager = (deps: CouchSyncManagerDeps = {}): CouchSy
       st.paused = undefined;
       const couch = await ensureWire(st, decision);
       const pre = await commitDirty(st.target.path, `sync: ${nowIso()}`);
-      await couch.syncNow(); // pushAll (rev-cache skips no-ops) then pullOnce
+      await couch.flushPending(); // drain queued pushes AND queued deletions first
+      const res = await couch.syncNow(); // pushAll + reconcile deletions, then pullOnce
       const post = await commitDirty(st.target.path, `sync: couch ${nowIso()}`);
+      if (res.error) {
+        st.lastError = res.error;
+        return build({
+          ok: false,
+          committed: pre.committed,
+          pulled: post.committed,
+          error: res.error,
+        });
+      }
       st.lastSync = nowIso();
       st.lastError = undefined;
       return build({ committed: pre.committed, pulled: post.committed });
@@ -267,8 +283,15 @@ export const createCouchSyncManager = (deps: CouchSyncManagerDeps = {}): CouchSy
   };
 
   // Sync-on-save: push (or tombstone) one path right after the engine committed it. Failures queue
-  // the path in the module's pending set (retried by the next cycle) and never surface to the API.
+  // the path in the module's persisted pending/deletion sets (retried by the next cycle) and never
+  // surface to the API. A delete is durable regardless of auth/network state at delete time: with
+  // no wire it enqueues the deletion, and removeFile itself self-enqueues on transport failure.
   const pushOnWrite = async (st: TargetState, verb: MemoryVerb, path: string): Promise<void> => {
+    const defer = async (): Promise<void> => {
+      const state = await getState(st);
+      if (verb === 'delete') await state.enqueueDeletion(path);
+      else await state.enqueue(path);
+    };
     try {
       const bearer = await getBearer();
       if (bearer) {
@@ -280,13 +303,10 @@ export const createCouchSyncManager = (deps: CouchSyncManagerDeps = {}): CouchSy
           return;
         }
       }
-      if (verb !== 'delete') await (await getState(st)).enqueue(path); // deferred until a wire exists
+      await defer(); // no wire yet (signed out / paused) - queued until one exists
     } catch (err) {
       log(`couch push-on-write ${path}: ${err instanceof Error ? err.message : String(err)}`);
-      if (verb !== 'delete')
-        await getState(st)
-          .then((s) => s.enqueue(path))
-          .catch(() => {});
+      await defer().catch(() => {});
     }
   };
 
@@ -329,7 +349,7 @@ export const createCouchSyncManager = (deps: CouchSyncManagerDeps = {}): CouchSy
           intervalSeconds: t.intervalSeconds,
           lastSync: st?.lastSync,
           lastError: st?.lastError,
-          pendingCount: st?.state?.pendingPaths().length ?? 0,
+          pendingCount: pendingCount(st),
           paused: st?.paused,
           running: st?.running ?? false,
         };

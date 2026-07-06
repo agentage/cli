@@ -9,14 +9,14 @@
  */
 import { execFile, execFileSync } from 'node:child_process';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as netServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { encodeFile } from '@agentage/memory-core';
+import { CouchSync, createCouchState, encodeFile, type FetchLike } from '@agentage/memory-core';
 import { expect, test } from '@playwright/test';
 import { createCliMachine, freePort, type CliMachine } from './helpers.js';
 
@@ -194,6 +194,7 @@ interface Stub {
   port: number;
   requests(): number;
   setDb(db: string): void;
+  setTokenFail(fail: boolean): void;
   stop(): Promise<void>;
 }
 
@@ -201,6 +202,7 @@ const startStub = async (couch: Couch): Promise<Stub> => {
   const port = await freeTcpPort();
   let db = '';
   let count = 0;
+  let tokenFail = false;
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     count += 1;
     const url = (req.url ?? '').split('?')[0] ?? '';
@@ -217,11 +219,15 @@ const startStub = async (couch: Couch): Promise<Stub> => {
         couch_vaults: [{ vault: VAULT, db }],
         ttl: 60,
       });
-    if (req.method === 'POST' && url === '/account/couch-token')
+    if (req.method === 'POST' && url === '/account/couch-token') {
+      if (tokenFail) return send(401, { error: 'unauthorized' });
+      // expSec 61 = the client cache lapses after ~1s (60s skew), so a test can force a re-mint;
+      // the JWT itself stays valid for an hour.
       return send(200, {
         success: true,
-        data: { jwt: mintJwt(couch.jwtSecret), db, sub: SUB, expSec: 3600 },
+        data: { jwt: mintJwt(couch.jwtSecret), db, sub: SUB, expSec: 61 },
       });
+    }
     if (req.method === 'POST' && url === '/api/memories') return send(200, { success: true });
     send(404, { error: 'not found' });
   };
@@ -232,6 +238,9 @@ const startStub = async (couch: Couch): Promise<Stub> => {
     requests: () => count,
     setDb: (d) => {
       db = d;
+    },
+    setTokenFail: (f) => {
+      tokenFail = f;
     },
     stop: () => new Promise((resolve) => server.close(() => resolve())),
   };
@@ -410,6 +419,81 @@ test.describe('couch account sync (hermetic) @couch', () => {
 
       await sleep(400); // let any fire-and-forget push settle
       expect(stub.requests(), 'signed-out sync must make zero network calls').toBe(before);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('a signed-out delete tombstones after sign-in; a fresh replica never resurrects it', async () => {
+    const db = await createDb(couch);
+    stub.setDb(db);
+    const { m, cleanup } = await bootMachine(stub, { signedIn: true });
+    try {
+      // Two synced docs: keep.md stays, del.md is deleted while signed out.
+      expect((await m.exec(['memory', 'write', 'notes/keep.md', '--body', 'stays'])).code).toBe(0);
+      expect((await m.exec(['memory', 'write', 'notes/del.md', '--body', 'doomed'])).code).toBe(0);
+      expect((await m.exec(['vault', 'sync', VAULT])).code).toBe(0);
+      await waitFor(async () => (await getDoc(couch, db, 'f:notes/del.md')).status === 200);
+
+      // Signed out: the delete succeeds locally and queues a durable deletion, no tombstone yet.
+      rmSync(join(m.configDir, 'auth.json'));
+      const del = await m.exec(['memory', 'delete', 'notes/del.md']);
+      expect(del.code, del.stderr).toBe(0);
+      await sleep(500); // let the fire-and-forget enqueue persist
+      expect((await getDoc(couch, db, 'f:notes/del.md')).status).toBe(200);
+
+      // Sign back in and sync: the queued deletion becomes the couch tombstone.
+      fakeAuth(m, stub.port);
+      expect((await m.exec(['vault', 'sync', VAULT])).code).toBe(0);
+      await waitFor(async () => (await getDoc(couch, db, 'f:notes/del.md')).status === 404);
+
+      // A fresh second replica replaying the feed from cursor 0 pulls keep.md but never del.md.
+      const files = new Map<string, string>();
+      const store = {
+        listMarkdown: async () => [...files.keys()],
+        read: async (p: string) => files.get(p) ?? null,
+        write: async (p: string, b: string) => void files.set(p, b),
+        remove: async (p: string) => void files.delete(p),
+      };
+      const state = await createCouchState({ load: async () => null, save: async () => {} });
+      const fetchLike: FetchLike = (url, init) => fetch(url, init as RequestInit);
+      const replica = new CouchSync(
+        store,
+        { endpoint: couch.url, db },
+        fetchLike,
+        async () => mintJwt(couch.jwtSecret),
+        () => {},
+        state
+      );
+      await replica.pullOnce();
+      expect(files.has('notes/keep.md'), 'replica pulled live content').toBe(true);
+      expect(files.has('notes/del.md'), 'deleted doc must not resurrect').toBe(false);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('a delete during a token-endpoint outage converges once tokens recover', async () => {
+    const db = await createDb(couch);
+    stub.setDb(db);
+    const { m, cleanup } = await bootMachine(stub, { signedIn: true });
+    try {
+      expect((await m.exec(['memory', 'write', 'notes/q.md', '--body', 'target'])).code).toBe(0);
+      expect((await m.exec(['vault', 'sync', VAULT])).code).toBe(0);
+      await waitFor(async () => (await getDoc(couch, db, 'f:notes/q.md')).status === 200);
+
+      // Let the daemon's short-lived token cache lapse, then 401 every mint during the delete.
+      await sleep(1200);
+      stub.setTokenFail(true);
+      const del = await m.exec(['memory', 'delete', 'notes/q.md']);
+      expect(del.code, del.stderr).toBe(0);
+      await sleep(500); // the live tombstone fails against the 401 and self-queues
+      expect((await getDoc(couch, db, 'f:notes/q.md')).status).toBe(200);
+
+      // Token endpoint recovers: the next cycle drains the queued deletion.
+      stub.setTokenFail(false);
+      expect((await m.exec(['vault', 'sync', VAULT])).code).toBe(0);
+      await waitFor(async () => (await getDoc(couch, db, 'f:notes/q.md')).status === 404);
     } finally {
       await cleanup();
     }
