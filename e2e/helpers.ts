@@ -41,13 +41,14 @@ export interface CliMachine {
   cleanup: () => void;
 }
 
-export const createCliMachine = (): CliMachine => {
+export const createCliMachine = (extraEnv: NodeJS.ProcessEnv = {}): CliMachine => {
   const configDir = mkdtempSync(join(tmpdir(), 'agentage-cli-e2e-'));
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     AGENTAGE_CONFIG_DIR: configDir,
     AGENTAGE_SITE_FQDN: TARGET_FQDN,
     NO_COLOR: '1',
+    ...extraEnv,
   };
 
   const exec = (args: string[], timeoutMs = 30_000): Promise<ExecResult> =>

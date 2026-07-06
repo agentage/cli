@@ -31,11 +31,10 @@
     "prepublishOnly": "npm run verify"
   },
   "dependencies": {
+    "@agentage/memory-core": "^0.1.1",
     "chalk": "latest",
     "commander": "latest",
-    "open": "latest",
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "open": "latest"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "0.110.0",

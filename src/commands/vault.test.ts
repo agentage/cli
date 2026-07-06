@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { VaultsConfig } from '../lib/vaults.schema.js';
+import type { VaultsConfig } from '@agentage/memory-core';
 import { runVaultAdd, runVaultList, runVaultRemove, type VaultDeps } from './vault.js';
 
-const makeDeps = (initial: VaultsConfig = VaultsConfig.parse({ version: 1 })) => {
+const makeDeps = (initial: VaultsConfig = { version: 1, vaults: {} }) => {
   let config = initial;
   const logs: string[] = [];
   const ensured: string[] = [];
-  const removedIndex: string[] = [];
   const deps: VaultDeps = {
     load: () => ({ config, source: null }),
     save: (c) => {
@@ -14,47 +13,38 @@ const makeDeps = (initial: VaultsConfig = VaultsConfig.parse({ version: 1 })) =>
       return '/tmp/vaults.json';
     },
     ensureDir: (p) => ensured.push(p),
-    removeIndex: (n) => removedIndex.push(n),
     log: (m) => logs.push(m),
   };
-  return { deps, logs, ensured, removedIndex, get: () => config };
+  return { deps, logs, ensured, get: () => config };
 };
 
 describe('vault add', () => {
-  it('registers a --local vault, creates its dir, saves', () => {
+  it('registers a --local vault, creates its dir, sets the default', () => {
     const h = makeDeps();
-    runVaultAdd('scratch', { local: true, path: '/tmp/scratch' }, h.deps);
-    expect(h.get().vaults).toMatchObject([
-      { name: 'scratch', type: 'local', path: '/tmp/scratch' },
-    ]);
+    runVaultAdd('scratch', { local: '/tmp/scratch' }, h.deps);
+    expect(h.get().vaults?.scratch).toEqual({ path: '/tmp/scratch', mcp: ['local'] });
+    expect(h.get().default).toBe('scratch');
     expect(h.ensured).toEqual(['/tmp/scratch']);
     expect(h.logs.join()).toContain("Added vault 'scratch'");
   });
 
-  it('registers a --git vault with a remote + interval', () => {
-    const h = makeDeps();
-    runVaultAdd(
-      'work',
-      { git: 'git@github.com:me/w.git', interval: '10m', path: '/tmp/w' },
-      h.deps
-    );
-    expect(h.get().vaults[0]).toMatchObject({
-      type: 'git',
-      remote: 'git@github.com:me/w.git',
-      sync: { interval: '10m' },
-    });
-  });
-
-  it('defaults the path to ~/vaults/<name>', () => {
+  it('defaults the --local path to ~/vaults/<name> when no value is given', () => {
     const h = makeDeps();
     runVaultAdd('notes', { local: true }, h.deps);
+    expect(h.get().vaults?.notes).toMatchObject({ path: '~/vaults/notes' });
     expect(h.ensured).toEqual(['~/vaults/notes']);
-    expect(h.get().vaults[0]).toMatchObject({ path: '~/vaults/notes' });
   });
 
-  it('rejects the couchdb default (no flag) as needing provisioning', () => {
+  it('registers a --git vault as an origin (no dir created)', () => {
     const h = makeDeps();
-    expect(() => runVaultAdd('acct', {}, h.deps)).toThrow(/provisioning/);
+    runVaultAdd('work', { git: 'git@github.com:me/w.git' }, h.deps);
+    expect(h.get().vaults?.work.origin?.[0]?.remote).toBe('git@github.com:me/w.git');
+    expect(h.ensured).toEqual([]);
+  });
+
+  it('rejects add with no flag', () => {
+    const h = makeDeps();
+    expect(() => runVaultAdd('acct', {}, h.deps)).toThrow(/--local .* --git/);
   });
 
   it('rejects --local and --git together', () => {
@@ -64,20 +54,21 @@ describe('vault add', () => {
 
   it('rejects a duplicate name', () => {
     const h = makeDeps();
-    runVaultAdd('a', { local: true, path: '/tmp/a' }, h.deps);
-    expect(() => runVaultAdd('a', { local: true, path: '/tmp/a2' }, h.deps)).toThrow(
-      /already exists/
-    );
+    runVaultAdd('a', { local: '/tmp/a' }, h.deps);
+    expect(() => runVaultAdd('a', { local: '/tmp/a2' }, h.deps)).toThrow(/already exists/);
   });
 });
 
 describe('vault remove', () => {
-  it('removes the vault, drops its index, keeps files', () => {
+  it('removes the vault and reassigns the default', () => {
     const h = makeDeps();
-    runVaultAdd('a', { local: true, path: '/tmp/a' }, h.deps);
+    runVaultAdd('a', { local: '/tmp/a' }, h.deps);
+    runVaultAdd('b', { local: '/tmp/b' }, h.deps);
+    h.logs.length = 0;
     runVaultRemove('a', h.deps);
-    expect(h.get().vaults).toHaveLength(0);
-    expect(h.removedIndex).toEqual(['a']);
+    expect(Object.keys(h.get().vaults ?? {})).toEqual(['b']);
+    expect(h.get().default).toBe('b');
+    expect(h.logs.join()).toContain("Default vault is now 'b'");
   });
 
   it('throws when the vault is absent', () => {
@@ -93,20 +84,21 @@ describe('vault list', () => {
     expect(h.logs.join()).toContain('No vaults registered');
   });
 
-  it('prints one line per vault', () => {
+  it('prints one line per vault and marks the default', () => {
     const h = makeDeps();
-    runVaultAdd('a', { local: true, path: '/tmp/a' }, h.deps);
-    runVaultAdd('b', { git: 'g@h:x.git', path: '/tmp/b' }, h.deps);
+    runVaultAdd('a', { local: '/tmp/a' }, h.deps);
+    runVaultAdd('b', { git: 'g@h:x.git' }, h.deps);
     h.logs.length = 0;
     runVaultList({}, h.deps);
     expect(h.logs).toHaveLength(2);
+    expect(h.logs[0]).toContain('(default)');
   });
 
-  it('emits JSON with --json', () => {
+  it('emits the vaults map with --json', () => {
     const h = makeDeps();
-    runVaultAdd('a', { local: true, path: '/tmp/a' }, h.deps);
+    runVaultAdd('a', { local: '/tmp/a' }, h.deps);
     h.logs.length = 0;
     runVaultList({ json: true }, h.deps);
-    expect(JSON.parse(h.logs[0] ?? '[]')).toHaveLength(1);
+    expect(Object.keys(JSON.parse(h.logs[0] ?? '{}'))).toEqual(['a']);
   });
 });
