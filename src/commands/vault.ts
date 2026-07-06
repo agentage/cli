@@ -9,6 +9,7 @@ import {
 } from '../lib/vault-registry.js';
 import { loadVaultsConfig, saveVaultsConfig, type LoadedVaults } from '../lib/vaults.js';
 import { type VaultsConfig } from '../lib/vaults.schema.js';
+import { runReindex } from './reindex.js';
 
 export interface VaultDeps {
   load: () => LoadedVaults;
@@ -92,6 +93,15 @@ const guard = (fn: () => void): void => {
   }
 };
 
+const guardAsync = async (fn: () => Promise<void>): Promise<void> => {
+  try {
+    await fn();
+  } catch (err) {
+    console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+    process.exitCode = 1;
+  }
+};
+
 export const registerVault = (program: Command): void => {
   const vault = program.command('vault').description('Manage local memory vaults');
 
@@ -114,4 +124,9 @@ export const registerVault = (program: Command): void => {
     .command('remove <name>')
     .description('Unregister a vault and drop its index (files stay)')
     .action((name: string) => guard(() => runVaultRemove(name)));
+
+  vault
+    .command('reindex [name]')
+    .description('Rebuild a vault index from its markdown (all vaults if omitted)')
+    .action((name: string | undefined) => guardAsync(() => runReindex(name)));
 };
