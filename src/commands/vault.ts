@@ -3,6 +3,7 @@ import { type Command } from 'commander';
 import { type VaultEntry, type VaultsConfig } from '@agentage/memory-core';
 import { addVault, ensureVaultDir, formatVaultLine, removeVault } from '../lib/vault-registry.js';
 import { loadVaultsConfig, saveVaultsConfig, type LoadedVaults } from '../lib/vaults.js';
+import { defaultVaultSyncDeps, runVaultSync } from './vault-sync.js';
 
 export interface VaultDeps {
   load: () => LoadedVaults;
@@ -27,7 +28,9 @@ export interface VaultAddOptions {
 const buildEntry = (name: string, opts: VaultAddOptions): VaultEntry => {
   const hasLocal = opts.local !== undefined;
   if (hasLocal && opts.git) throw new Error('choose one of --local or --git, not both');
-  if (opts.git) return { origin: [{ remote: opts.git }], mcp: ['local'] };
+  // A --git vault is a local working copy that syncs to an external git remote (path + origin);
+  // the daemon commits/pushes and pulls it per its interval.
+  if (opts.git) return { path: `~/vaults/${name}`, origin: [{ remote: opts.git }], mcp: ['local'] };
   if (hasLocal) {
     const path = typeof opts.local === 'string' ? opts.local : `~/vaults/${name}`;
     return { path, mcp: ['local'] };
@@ -44,9 +47,10 @@ export const runVaultAdd = (
   const config = addVault(deps.load().config, name, entry);
   if (entry.path) deps.ensureDir(entry.path);
   deps.save(config);
-  const kind = entry.path ? 'local' : 'remote';
+  const kind = entry.path ? (entry.origin?.length ? 'git' : 'local') : 'remote';
   const where = entry.path ?? entry.origin?.[0]?.remote ?? '';
-  deps.log(chalk.green(`Added vault '${name}' (${kind}) -> ${where}`));
+  const via = entry.path && entry.origin?.length ? ` <- ${entry.origin[0]!.remote}` : '';
+  deps.log(chalk.green(`Added vault '${name}' (${kind}) -> ${where}${via}`));
 };
 
 export const runVaultRemove = (name: string, deps: VaultDeps = defaultDeps): void => {
@@ -105,4 +109,14 @@ export const registerVault = (program: Command): void => {
     .command('remove <name>')
     .description('Unregister a vault (files stay on disk)')
     .action((name: string) => guard(() => runVaultRemove(name)));
+
+  vault
+    .command('sync [name]')
+    .description('Sync git-synced vaults now (commit + push, pull-rebase)')
+    .action((name: string | undefined) =>
+      runVaultSync(name, defaultVaultSyncDeps()).catch((err: unknown) => {
+        console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+        process.exitCode = 1;
+      })
+    );
 };

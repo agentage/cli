@@ -35,11 +35,17 @@ describe('vault add', () => {
     expect(h.ensured).toEqual(['~/vaults/notes']);
   });
 
-  it('registers a --git vault as an origin (no dir created)', () => {
+  it('registers a --git vault as a local working copy synced to an origin', () => {
     const h = makeDeps();
     runVaultAdd('work', { git: 'git@github.com:me/w.git' }, h.deps);
-    expect(h.get().vaults?.work.origin?.[0]?.remote).toBe('git@github.com:me/w.git');
-    expect(h.ensured).toEqual([]);
+    expect(h.get().vaults?.work).toEqual({
+      path: '~/vaults/work',
+      origin: [{ remote: 'git@github.com:me/w.git' }],
+      mcp: ['local'],
+    });
+    // The working copy dir is created so the daemon has somewhere to commit/push from.
+    expect(h.ensured).toEqual(['~/vaults/work']);
+    expect(h.logs.join()).toContain('(git)');
   });
 
   it('rejects add with no flag', () => {
