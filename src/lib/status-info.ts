@@ -24,11 +24,11 @@ const checkEndpoint = async (apiUrl: string): Promise<boolean> => {
 
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {
   const target = links(fqdn);
-  // Reachability + update check share the api base and don't depend on each other - run
-  // them together so `status` stays snappy.
+  // Endpoint reachability and the (npm-registry) update check are independent - run them
+  // together so `status` stays snappy.
   const [reachable, update] = await Promise.all([
     checkEndpoint(target.api),
-    checkForUpdate(target.api, VERSION),
+    checkForUpdate(VERSION),
   ]);
   const report: StatusReport = {
     version: VERSION,

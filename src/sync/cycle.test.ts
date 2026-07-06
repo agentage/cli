@@ -116,6 +116,29 @@ describe('runSyncCycle', () => {
     // Remote: the push landed, both sides preserved there too.
     expect(g(bare, ['show', 'main:note.md'])).toContain('LOCAL-CHANGE');
     expect(g(bare, ['show', 'main:note.conflict.md'])).toContain('REMOTE-CHANGE');
+
+    // Crash-window closed: the conflict copy is committed in the SAME (merge) commit, never a
+    // follow-up. HEAD is a merge (two parents) and its own diff lists the conflict file.
+    expect(g(work, ['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(' ')).toHaveLength(3);
+    const mergeFiles = g(work, ['show', '--name-only', '--format=', 'HEAD']).trim().split('\n');
+    expect(mergeFiles).toContain('note.conflict.md');
+  });
+
+  it('auto-commit message is an ISO-stamped `sync:` line', async () => {
+    writeFile(work, 'a.md', 'x');
+    await runSyncCycle(target({ path: work, remote: bare }));
+    expect(g(work, ['log', '-1', '--format=%s']).trim()).toMatch(/^sync: \d{4}-/);
+  });
+
+  it('keeps syncing a file that is tracked before being added to ignore', async () => {
+    writeFile(work, 'tracked.md', 'v1\n');
+    await runSyncCycle(target({ path: work, remote: bare }));
+    // gitignore semantics only affect untracked paths: a tracked file's edits still commit + push.
+    writeFile(work, 'tracked.md', 'v2\n');
+    const result = await runSyncCycle(target({ path: work, remote: bare, ignore: ['tracked.md'] }));
+    expect(result.ok).toBe(true);
+    expect(result.committed).toBe(true);
+    expect(g(bare, ['show', 'main:tracked.md'])).toContain('v2');
   });
 
   it('merges remote non-conflicting changes cleanly', async () => {

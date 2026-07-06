@@ -22,50 +22,44 @@ describe('compareVersions', () => {
 });
 
 describe('fetchCliLatest', () => {
-  it('parses the data envelope', async () => {
+  it('reads .version from the npm registry (no server floor or notice)', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        jsonResponse(200, {
-          success: true,
-          data: { version: '0.2.0', minSupported: '0.1.0', message: 'note' },
-        })
-      )
+      vi.fn(async () => jsonResponse(200, { name: '@agentage/cli', version: '0.2.0' }))
     );
-    expect(await fetchCliLatest('https://x/api')).toEqual({
+    expect(await fetchCliLatest()).toEqual({
       version: '0.2.0',
-      minSupported: '0.1.0',
-      message: 'note',
+      minSupported: '0.0.0',
+      message: null,
     });
   });
 
-  it('returns null on a non-2xx, a throw, or a malformed body', async () => {
+  it('hits the public npm registry with a JSON Accept header', async () => {
+    const spy = vi.fn(async (_url: string, _init?: RequestInit) =>
+      jsonResponse(200, { version: '0.2.0' })
+    );
+    vi.stubGlobal('fetch', spy);
+    await fetchCliLatest();
+    const [url, init] = spy.mock.calls[0]!;
+    expect(url).toBe('https://registry.npmjs.org/@agentage/cli/latest');
+    expect(init?.headers).toMatchObject({ Accept: 'application/json' });
+  });
+
+  it('returns null on a non-2xx, a throw, or a body without a version', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse(503, {}))
     );
-    expect(await fetchCliLatest('https://x/api')).toBeNull();
+    expect(await fetchCliLatest()).toBeNull();
 
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('net')));
-    expect(await fetchCliLatest('https://x/api')).toBeNull();
+    expect(await fetchCliLatest()).toBeNull();
 
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse(200, { nope: true }))
     );
-    expect(await fetchCliLatest('https://x/api')).toBeNull();
-  });
-
-  it('defaults missing fields (floor 0.0.0, no message) when version is present', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse(200, { data: { version: '0.2.0' } }))
-    );
-    expect(await fetchCliLatest('https://x/api')).toEqual({
-      version: '0.2.0',
-      minSupported: '0.0.0',
-      message: null,
-    });
+    expect(await fetchCliLatest()).toBeNull();
   });
 });
 

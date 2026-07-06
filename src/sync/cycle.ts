@@ -58,14 +58,10 @@ const ensureRemote = async (git: SyncGit, name: string, url: string): Promise<vo
 
 // Reconcile a diverged history keeping BOTH sides. A rebase probes for a true conflict; on a clean
 // replay history stays linear. On conflict the local files are kept as-is and each conflicted
-// file's remote copy is written alongside as `<name>.conflict.md`, so no write is lost on either
-// side. Returns the conflict-copy paths written.
-const reconcile = async (
-  git: SyncGit,
-  cwd: string,
-  ref: string,
-  now: string
-): Promise<string[]> => {
+// file's remote copy is written alongside as `<name>.conflict.md`. The `.conflict.md` copies are
+// staged into the SAME merge commit (`merge --no-commit`), so no single commit boundary ever
+// leaves the remote side merged-away yet unsurfaced. Returns the conflict-copy paths written.
+const reconcile = async (git: SyncGit, cwd: string, ref: string): Promise<string[]> => {
   const rebase = await git.exec(['rebase', ref]);
   if (rebase.code === 0) return [];
 
@@ -81,13 +77,13 @@ const reconcile = async (
     if (show.code === 0) remoteSides.set(p, show.stdout);
   }
 
-  // Merge remote in, auto-resolving content conflicts to the local side; keeps remote's
-  // non-conflicting changes and yields a push-able (descendant-of-remote) history.
-  const merge = await git.exec(['merge', '-X', 'ours', '--no-edit', ref]);
+  // Stage the merge WITHOUT committing (auto-resolving content conflicts to the local side); an
+  // unresolvable conflict (add/add, modify/delete) falls back to keeping ours. Everything stays
+  // staged so the conflict copies land in the very same commit.
+  const merge = await git.exec(['merge', '--no-commit', '-X', 'ours', '--no-edit', ref]);
   if (merge.code !== 0) {
     await git.exec(['checkout', '--ours', '--', '.']);
     await git.run(['add', '-A']);
-    await git.run(['commit', '--no-edit']);
   }
 
   const written: string[] = [];
@@ -98,14 +94,8 @@ const reconcile = async (
     await writeFile(abs, content, 'utf8');
     written.push(name);
   }
-  if (written.length) {
-    await git.run(['add', '-A']);
-    await git.run([
-      'commit',
-      '-m',
-      `sync: preserve remote copy of ${written.length} conflicted file(s) (${now})`,
-    ]);
-  }
+  await git.run(['add', '-A']);
+  await git.run(['commit', '--no-edit']);
   return written;
 };
 
@@ -142,7 +132,7 @@ export const runSyncCycle = async (
     if (fetch.code !== 0) throw new GitError(fetch);
 
     if ((await git.exec(['rev-parse', '--verify', ref])).code === 0) {
-      conflicts = await reconcile(git, target.path, ref, now);
+      conflicts = await reconcile(git, target.path, ref);
     }
 
     const push = await git.exec(['push', target.remoteName, `HEAD:${branch}`]);

@@ -12,10 +12,12 @@ const jsonResponse = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 const stubFetch = (routes: Record<string, () => Response>): void => {
+  // The update check now reads the npm registry; default it to "current" so it never adds noise.
+  const all = { 'cli/latest': () => jsonResponse(200, { version: '0.0.0' }), ...routes };
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
-      for (const [suffix, response] of Object.entries(routes)) {
+      for (const [suffix, response] of Object.entries(all)) {
         if (url.endsWith(suffix)) return Promise.resolve(response());
       }
       return Promise.reject(new Error(`unmatched url: ${url}`));

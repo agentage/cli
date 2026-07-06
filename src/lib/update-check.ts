@@ -1,8 +1,10 @@
-// Self-update check for `setup`/`status`. Hits the PUBLIC GET {api}/cli/latest (no token -
-// it's the one server call that works without auth) to learn the latest published version
-// and the server-set support floor. Never throws: an unreachable endpoint = 'unknown'.
+// Self-update check. Reads the latest published version straight from the public npm registry
+// (the canonical source of truth for a published package). Never throws: an unreachable registry
+// or any malformed payload yields 'unknown'.
 
 export const INSTALL_HINT = 'npm i -g @agentage/cli@latest';
+
+const REGISTRY_URL = 'https://registry.npmjs.org/@agentage/cli/latest';
 
 export interface CliLatest {
   version: string | null;
@@ -38,21 +40,18 @@ export const compareVersions = (a: string, b: string): number => {
   return 0;
 };
 
-export const fetchCliLatest = async (
-  apiUrl: string,
-  timeoutMs = 3000
-): Promise<CliLatest | null> => {
+export const fetchCliLatest = async (timeoutMs = 5000): Promise<CliLatest | null> => {
   try {
-    const res = await fetch(`${apiUrl}/cli/latest`, { signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetch(REGISTRY_URL, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     if (!res.ok) return null;
-    const body = (await res.json().catch(() => null)) as { data?: Partial<CliLatest> } | null;
-    const d = body?.data;
-    if (!d) return null;
-    return {
-      version: typeof d.version === 'string' ? d.version : null,
-      minSupported: typeof d.minSupported === 'string' ? d.minSupported : '0.0.0',
-      message: typeof d.message === 'string' ? d.message : null,
-    };
+    const body = (await res.json().catch(() => null)) as { version?: unknown } | null;
+    const version = typeof body?.version === 'string' ? body.version : null;
+    if (!version) return null;
+    // The registry carries no support floor or notice, so neither gates an update hint.
+    return { version, minSupported: '0.0.0', message: null };
   } catch {
     return null;
   }
@@ -73,5 +72,5 @@ export const evaluateUpdate = (installed: string, latest: CliLatest | null): Upd
   return { status: { kind: 'current' }, message };
 };
 
-export const checkForUpdate = async (apiUrl: string, installed: string): Promise<UpdateInfo> =>
-  evaluateUpdate(installed, await fetchCliLatest(apiUrl));
+export const checkForUpdate = async (installed: string): Promise<UpdateInfo> =>
+  evaluateUpdate(installed, await fetchCliLatest());
