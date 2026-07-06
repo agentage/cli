@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
+import { registerMemory } from './commands/memory.js';
 import { registerSetup } from './commands/setup.js';
 import { registerStatus } from './commands/status.js';
 import { registerUpdate } from './commands/update.js';
@@ -54,6 +55,7 @@ program.name('agentage').description('The agentage CLI').version(VERSION);
 registerSetup(program);
 registerStatus(program);
 registerVault(program);
+registerMemory(program);
 registerUpdate(program);
 
 program.parseAsync().catch((err: unknown) => {
