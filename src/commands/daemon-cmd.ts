@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
 import { isDaemonRunning, resolvePort, stopDaemon } from '../daemon/lifecycle.js';
-import { health, mismatchNotice, spawnDaemon } from '../lib/daemon-client.js';
+import { health, mismatchNotice, spawnDaemon, syncStatus } from '../lib/daemon-client.js';
 
 const startAction = async (): Promise<void> => {
   const port = resolvePort();
@@ -46,6 +46,22 @@ const statusAction = async (): Promise<void> => {
   console.log(`version  ${h.version}`);
   const notice = mismatchNotice(h.version);
   if (notice) console.log(chalk.yellow(notice));
+
+  const sync = await syncStatus(port);
+  if (sync && sync.vaults.length > 0) {
+    console.log('sync');
+    for (const v of sync.vaults) {
+      const cadence = v.intervalSeconds > 0 ? `every ${v.intervalSeconds}s` : 'manual';
+      const state = v.running
+        ? 'running'
+        : v.lastError
+          ? `error: ${v.lastError}`
+          : v.lastRun
+            ? `ok ${v.lastRun}`
+            : 'scheduled';
+      console.log(`  ${v.vault.padEnd(16)} ${cadence.padEnd(12)} ${state}`);
+    }
+  }
 };
 
 export const registerDaemon = (program: Command): void => {

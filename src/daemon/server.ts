@@ -1,15 +1,24 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type MemoryClient } from '../lib/memory-client.js';
+import { type SyncResult } from '../sync/cycle.js';
+import { type SyncStatus } from '../sync/manager.js';
 import { dispatchMemory, isMemoryVerb } from './actions.js';
 import { handleMcp } from './mcp-http.js';
 
 const LOOPBACK = '127.0.0.1';
 
+export interface DaemonSyncApi {
+  status: () => SyncStatus;
+  runNow: (vault: string) => Promise<SyncResult>;
+}
+
 export interface DaemonServerOptions {
   getClient: () => MemoryClient | Promise<MemoryClient>;
   // Builds a fresh MCP server per request for POST /mcp; omit to leave the endpoint unmounted.
   buildMcpServer?: () => Promise<McpServer>;
+  // The git-sync surface: GET /api/sync/status + POST /api/sync/run; omit to leave both unmounted.
+  sync?: DaemonSyncApi;
   version: string;
   startedAt?: number;
 }
@@ -62,6 +71,20 @@ export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
     if ((url.split('?')[0] ?? url) === '/mcp') {
       if (!opts.buildMcpServer) return send(res, 404, { error: 'not found' });
       return handleMcp(req, res, opts.buildMcpServer);
+    }
+    if (req.method === 'GET' && url === '/api/sync/status') {
+      if (!opts.sync) return send(res, 404, { error: 'not found' });
+      return send(res, 200, opts.sync.status());
+    }
+    if (req.method === 'POST' && url === '/api/sync/run') {
+      if (!opts.sync) return send(res, 404, { error: 'not found' });
+      const body = (await readBody(req)) as { vault?: string };
+      if (!body.vault) return send(res, 400, { error: 'vault is required' });
+      try {
+        return send(res, 200, await opts.sync.runNow(body.vault));
+      } catch (err) {
+        return send(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
     }
     const match = url.match(/^\/api\/memory\/([a-z]+)$/);
     if (req.method === 'POST' && match) {

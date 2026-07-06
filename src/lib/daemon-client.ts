@@ -9,6 +9,8 @@ import {
   type WriteResult,
 } from '@agentage/memory-core';
 import { resolvePort } from '../daemon/lifecycle.js';
+import { type SyncResult } from '../sync/cycle.js';
+import { type SyncStatus } from '../sync/manager.js';
 import { VERSION } from '../utils/version.js';
 import {
   type DeleteResult,
@@ -50,6 +52,33 @@ export const health = async (port: number, timeoutMs = 1000): Promise<Health | n
   } catch {
     return null;
   }
+};
+
+// Read the daemon's per-vault sync state (last run, last error); null when the endpoint is absent
+// (an older daemon) or unreachable.
+export const syncStatus = async (port: number, timeoutMs = 1000): Promise<SyncStatus | null> => {
+  try {
+    const res = await fetch(`${base(port)}/api/sync/status`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.ok ? ((await res.json()) as SyncStatus) : null;
+  } catch {
+    return null;
+  }
+};
+
+// Ask the daemon to sync one vault now; the daemon runs the cycle in its own process.
+export const syncRun = async (port: number, vault: string): Promise<SyncResult> => {
+  const res = await fetch(`${base(port)}/api/sync/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vault }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `sync request failed: ${res.status}`);
+  }
+  return res.json() as Promise<SyncResult>;
 };
 
 export const waitForHealth = async (
