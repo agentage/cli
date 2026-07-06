@@ -1,11 +1,15 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type MemoryClient } from '../lib/memory-client.js';
 import { dispatchMemory, isMemoryVerb } from './actions.js';
+import { handleMcp } from './mcp-http.js';
 
 const LOOPBACK = '127.0.0.1';
 
 export interface DaemonServerOptions {
   getClient: () => MemoryClient | Promise<MemoryClient>;
+  // Builds a fresh MCP server per request for POST /mcp; omit to leave the endpoint unmounted.
+  buildMcpServer?: () => Promise<McpServer>;
   version: string;
   startedAt?: number;
 }
@@ -37,8 +41,9 @@ const send = (res: ServerResponse, status: number, body: unknown): void => {
   res.end(JSON.stringify(body));
 };
 
-// Loopback-only JSON HTTP: GET /api/health + POST /api/memory/<verb>. No auth (local socket
-// trust); the six verbs are the whole surface, dispatched to one shared MemoryClient.
+// Loopback-only JSON HTTP: GET /api/health + POST /api/memory/<verb> (the CLI verbs) + POST /mcp
+// (the frozen 6 tools for on-machine AI clients, stateless Streamable HTTP). No auth (local socket
+// trust); the verbs dispatch to one shared MemoryClient, /mcp builds a fresh server per request.
 export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
   const startedAt = opts.startedAt ?? Date.now();
   let served = 0;
@@ -53,6 +58,10 @@ export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
         uptime: Math.floor((Date.now() - startedAt) / 1000),
         served,
       });
+    }
+    if ((url.split('?')[0] ?? url) === '/mcp') {
+      if (!opts.buildMcpServer) return send(res, 404, { error: 'not found' });
+      return handleMcp(req, res, opts.buildMcpServer);
     }
     const match = url.match(/^\/api\/memory\/([a-z]+)$/);
     if (req.method === 'POST' && match) {

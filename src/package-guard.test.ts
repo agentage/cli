@@ -38,10 +38,13 @@ describe('package guard (R6)', () => {
       dependencies: Record<string, string>;
       bin: Record<string, string>;
     };
-    // @agentage/memory-core is the one local engine at M2-C (decision V7/V11-C); it replaces
-    // the retired FTS5/SQLite stack and the direct zod/yaml deps. Still minimal: no daemon.
+    // @agentage/memory-core is the one local engine at M2-C (decision V7/V11-C). M3 adds the MCP
+    // contract layer: @agentage/server-memory (the frozen 6-tool builder, wrapped verbatim) and
+    // @modelcontextprotocol/sdk (stdio + Streamable HTTP transports). Still minimal: no daemon.
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
       '@agentage/memory-core',
+      '@agentage/server-memory',
+      '@modelcontextprotocol/sdk',
       'chalk',
       'commander',
       'open',

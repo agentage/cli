@@ -32,6 +32,8 @@
   },
   "dependencies": {
     "@agentage/memory-core": "^0.1.1",
+    "@agentage/server-memory": "^0.0.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "chalk": "latest",
     "commander": "latest",
     "open": "latest"

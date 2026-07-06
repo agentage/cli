@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { registerDaemon } from './commands/daemon-cmd.js';
+import { registerMcp } from './commands/mcp.js';
 import { registerMemory } from './commands/memory.js';
 import { registerSetup } from './commands/setup.js';
 import { registerStatus } from './commands/status.js';
@@ -27,6 +28,7 @@ registerStatus(program);
 registerVault(program);
 registerMemory(program);
 registerDaemon(program);
+registerMcp(program);
 registerUpdate(program);
 
 program.parseAsync().catch((err: unknown) => {
