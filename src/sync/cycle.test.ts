@@ -141,6 +141,67 @@ describe('runSyncCycle', () => {
     expect(g(bare, ['show', 'main:tracked.md'])).toContain('v2');
   });
 
+  // Set up a diverged pair: remote holds REMOTE-CHANGE on note.md + extra.md, local holds
+  // LOCAL-CHANGE on note.md; both committed. Used by the crash-recovery tests below.
+  const diverge = async (): Promise<void> => {
+    writeFile(work, 'note.md', 'base\n');
+    await runSyncCycle(target({ path: work, remote: bare }));
+    const other = join(root, 'other');
+    g(root, ['clone', bare, other]);
+    writeFile(other, 'note.md', 'REMOTE-CHANGE\n');
+    writeFile(other, 'extra.md', 'remote extra\n');
+    g(other, ['add', '-A']);
+    g(other, ['commit', '-m', 'remote change']);
+    g(other, ['push', 'origin', 'HEAD:main']);
+    writeFile(work, 'note.md', 'LOCAL-CHANGE\n');
+    g(work, ['commit', '-am', 'local change']);
+  };
+
+  it('recovers when a previous cycle died between `merge --no-commit` and its commit', async () => {
+    await diverge();
+    // Simulate the crash: the merge is staged (MERGE_HEAD present) but never committed.
+    g(work, ['fetch', 'sync']);
+    g(work, ['merge', '--no-commit', '-X', 'ours', 'sync/main']);
+    expect(existsSync(join(work, '.git', 'MERGE_HEAD'))).toBe(true);
+
+    const result = await runSyncCycle(target({ path: work, remote: bare }));
+    expect(result.ok).toBe(true);
+    expect(result.pushed).toBe(true);
+    expect(result.conflicts).toEqual(['note.conflict.md']);
+    expect(existsSync(join(work, '.git', 'MERGE_HEAD'))).toBe(false);
+    // No bogus half-merge minted as a `sync:` auto-commit: HEAD is a proper merge commit
+    // carrying the conflict copy, and both sides survived to the remote.
+    expect(g(work, ['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(' ')).toHaveLength(3);
+    expect(g(bare, ['show', 'main:note.md'])).toContain('LOCAL-CHANGE');
+    expect(g(bare, ['show', 'main:note.conflict.md'])).toContain('REMOTE-CHANGE');
+    expect(g(bare, ['show', 'main:extra.md'])).toContain('remote extra');
+
+    // Pushes resume: the next cycle is a clean no-op, not a wedge.
+    const next = await runSyncCycle(target({ path: work, remote: bare }));
+    expect(next.ok).toBe(true);
+    expect(next.committed).toBe(false);
+    expect(next.pushed).toBe(true);
+  });
+
+  it('recovers when a previous cycle died mid-rebase', async () => {
+    await diverge();
+    g(work, ['fetch', 'sync']);
+    try {
+      g(work, ['rebase', 'sync/main']); // conflicts -> leaves .git/rebase-merge behind
+    } catch {
+      // expected: conflicted rebase exits non-zero
+    }
+    expect(existsSync(join(work, '.git', 'rebase-merge'))).toBe(true);
+
+    const result = await runSyncCycle(target({ path: work, remote: bare }));
+    expect(result.ok).toBe(true);
+    expect(result.pushed).toBe(true);
+    expect(result.conflicts).toEqual(['note.conflict.md']);
+    expect(existsSync(join(work, '.git', 'rebase-merge'))).toBe(false);
+    expect(g(bare, ['show', 'main:note.md'])).toContain('LOCAL-CHANGE');
+    expect(g(bare, ['show', 'main:note.conflict.md'])).toContain('REMOTE-CHANGE');
+  });
+
   it('merges remote non-conflicting changes cleanly', async () => {
     writeFile(work, 'a.md', 'a\n');
     await runSyncCycle(target({ path: work, remote: bare }));

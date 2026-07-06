@@ -69,3 +69,17 @@ export const stopDaemon = (): boolean => {
   removePortFile();
   return alive;
 };
+
+// Stop, then wait (bounded) for the old process to actually exit so a restart can rebind the
+// port without an EADDRINUSE window. Returns whether the process is confirmed gone.
+export const stopDaemonAndWait = async (timeoutMs = 2000): Promise<boolean> => {
+  const pid = readPid();
+  const signalled = stopDaemon();
+  if (!signalled || pid === null) return true;
+  const deadline = Date.now() + timeoutMs;
+  while (isProcessAlive(pid)) {
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return true;
+};

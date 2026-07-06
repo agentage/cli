@@ -4,7 +4,7 @@
 
 export const INSTALL_HINT = 'npm i -g @agentage/cli@latest';
 
-const REGISTRY_URL = 'https://registry.npmjs.org/@agentage/cli/latest';
+export const REGISTRY_URL = 'https://registry.npmjs.org/@agentage/cli/latest';
 
 export interface CliLatest {
   version: string | null;

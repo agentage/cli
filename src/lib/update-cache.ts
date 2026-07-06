@@ -1,16 +1,17 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { get } from 'node:https';
 import { join } from 'node:path';
 import { ensureConfigDir, getConfigDir } from './config.js';
-import { compareVersions, fetchCliLatest, INSTALL_HINT, type CliLatest } from './update-check.js';
+import { compareVersions, INSTALL_HINT, REGISTRY_URL } from './update-check.js';
 import { VERSION } from '../utils/version.js';
 
 const CACHE_FILE = 'update-check.json';
 const TTL_MS = 60 * 60 * 1000; // passive checks refresh at most once an hour
-const BG_TIMEOUT_MS = 3000; // tighter than the foreground check so a cold run never lingers
+const BG_TIMEOUT_MS = 3000; // hard cap on the whole background attempt, connect included
 
 export interface UpdateCache {
-  checkedAt: number; // epoch ms of the last successful check
-  latest: string | null; // latest published version, or null when unknown
+  checkedAt: number; // epoch ms of the last attempt, success or failure (throttles retries)
+  latest: string | null; // latest published version, or null when never fetched
 }
 
 const cachePath = (): string => join(getConfigDir(), CACHE_FILE);
@@ -24,7 +25,7 @@ export const readUpdateCache = (): UpdateCache | null => {
   }
 };
 
-const writeUpdateCache = (latest: string, now: number): void => {
+const writeUpdateCache = (latest: string | null, now: number): void => {
   ensureConfigDir();
   writeFileSync(cachePath(), JSON.stringify({ checkedAt: now, latest }) + '\n', 'utf-8');
 };
@@ -39,22 +40,60 @@ export const updateHint = (): string | null => {
     : null;
 };
 
+// node:https instead of global fetch: undici keeps a ref'd ~10s connect timer alive even after
+// its AbortSignal fires, stalling process exit on an unreachable network. req.destroy() from an
+// unref'd timer caps the whole attempt and frees the event loop the moment it settles.
+export const fetchLatestVersion = (
+  timeoutMs: number,
+  url: string = REGISTRY_URL
+): Promise<string | null> =>
+  new Promise((resolve) => {
+    const req = get(url, { headers: { Accept: 'application/json' } }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => {
+        body += chunk;
+      });
+      res.on('end', () => {
+        if (res.statusCode !== 200) return resolve(null);
+        try {
+          const v = (JSON.parse(body) as { version?: unknown }).version;
+          resolve(typeof v === 'string' ? v : null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    const timer = setTimeout(() => req.destroy(), timeoutMs);
+    timer.unref();
+    req.once('error', () => resolve(null));
+    req.once('close', () => {
+      clearTimeout(timer);
+      resolve(null); // no-op when already resolved
+    });
+  });
+
 export interface RefreshDeps {
   now?: () => number;
   read?: () => UpdateCache | null;
-  fetch?: () => Promise<CliLatest | null>;
-  write?: (latest: string, now: number) => void;
+  fetch?: () => Promise<string | null>;
+  write?: (latest: string | null, now: number) => void;
 }
 
-// Fire-and-forget refresh: only fetches when the cache is absent or older than the TTL, so a warm
-// cache keeps the process instant. Bounded by fetch's own timeout; every failure is swallowed.
+// Fire-and-forget refresh, throttled by the TTL. checkedAt advances on FAILURE too (keeping any
+// previously known version), so an offline machine retries once an hour, not on every command.
 export const refreshUpdateCache = async (deps: RefreshDeps = {}): Promise<void> => {
   const now = (deps.now ?? Date.now)();
   const cached = (deps.read ?? readUpdateCache)();
   if (cached && now - cached.checkedAt < TTL_MS) return;
+  let version: string | null = null;
   try {
-    const latest = await (deps.fetch ?? (() => fetchCliLatest(BG_TIMEOUT_MS)))();
-    if (latest?.version) (deps.write ?? writeUpdateCache)(latest.version, now);
+    version = await (deps.fetch ?? (() => fetchLatestVersion(BG_TIMEOUT_MS)))();
+  } catch {
+    version = null;
+  }
+  try {
+    (deps.write ?? writeUpdateCache)(version ?? cached?.latest ?? null, now);
   } catch {
     // total silence: a background check never disrupts a command
   }

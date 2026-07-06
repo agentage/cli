@@ -7,17 +7,35 @@ const LOCK_TTL_MS = 10 * 60 * 1000; // a lock older than this is treated as stal
 
 const lockPath = (): string => join(getConfigDir(), LOCK_FILE);
 
-// Acquire the single-writer update lock. Returns false when a fresh lock (younger than the TTL) is
-// already held by a concurrent run; a stale lock is overridden and acquired. `now` is injectable.
-export const acquireUpdateLock = (now: number = Date.now()): boolean => {
-  const path = lockPath();
-  if (existsSync(path)) {
-    const held = Number.parseInt(readFileSync(path, 'utf-8').trim(), 10);
-    if (!Number.isNaN(held) && now - held < LOCK_TTL_MS) return false;
+const heldAt = (path: string): number | null => {
+  try {
+    const n = Number.parseInt(readFileSync(path, 'utf-8').trim(), 10);
+    return Number.isNaN(n) ? null : n;
+  } catch {
+    return null;
   }
+};
+
+// Acquire the single-writer update lock. The O_EXCL ('wx') create IS the mutex - concurrent runs
+// cannot both win it, unlike a check-then-write. A fresh holder (younger than the TTL) refuses;
+// a stale one (crashed run) is unlinked and re-raced exactly once. `now` is injectable.
+export const acquireUpdateLock = (now: number = Date.now()): boolean => {
   ensureConfigDir();
-  writeFileSync(path, String(now), 'utf-8');
-  return true;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      writeFileSync(lockPath(), String(now), { flag: 'wx' });
+      return true;
+    } catch {
+      const held = heldAt(lockPath());
+      if (held !== null && now - held < LOCK_TTL_MS) return false;
+      try {
+        unlinkSync(lockPath());
+      } catch {
+        // already gone: lost the unlink race, retry the exclusive create
+      }
+    }
+  }
+  return false;
 };
 
 export const releaseUpdateLock = (): void => {

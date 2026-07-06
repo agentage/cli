@@ -56,6 +56,16 @@ const ensureRemote = async (git: SyncGit, name: string, url: string): Promise<vo
   else await git.run(['remote', 'add', name, url]);
 };
 
+// A previous cycle may have died mid-merge/rebase (daemon crash). A leftover MERGE_HEAD or rebase
+// dir would let commitIfDirty mint a bogus half-merge and wedge every later cycle, so abort any
+// interrupted operation before touching the tree.
+const abortInterrupted = async (git: SyncGit, path: string): Promise<void> => {
+  const gitDir = join(path, '.git');
+  if (existsSync(join(gitDir, 'MERGE_HEAD'))) await git.exec(['merge', '--abort']);
+  if (existsSync(join(gitDir, 'rebase-merge')) || existsSync(join(gitDir, 'rebase-apply')))
+    await git.exec(['rebase', '--abort']);
+};
+
 // Reconcile a diverged history keeping BOTH sides. A rebase probes for a true conflict; on a clean
 // replay history stays linear. On conflict the local files are kept as-is and each conflicted
 // file's remote copy is written alongside as `<name>.conflict.md`. The `.conflict.md` copies are
@@ -122,6 +132,7 @@ export const runSyncCycle = async (
     if (!existsSync(target.path)) return { ...base, ok: true }; // nothing on disk yet
     if (!existsSync(join(target.path, '.git'))) await git.run(['init', '-b', 'main']);
 
+    await abortInterrupted(git, target.path);
     await writeExclude(target.path, target.ignore);
     await ensureRemote(git, target.remoteName, target.remote);
     committed = await commitIfDirty(git, `sync: ${now}`);

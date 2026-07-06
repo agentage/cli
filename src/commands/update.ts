@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import chalk from 'chalk';
 import { type Command } from 'commander';
-import { isDaemonRunning, resolvePort, stopDaemon } from '../daemon/lifecycle.js';
+import { isDaemonRunning, resolvePort, stopDaemonAndWait } from '../daemon/lifecycle.js';
 import { spawnDaemon } from '../lib/daemon-client.js';
 import { checkForUpdate, INSTALL_HINT, type UpdateInfo } from '../lib/update-check.js';
 import { acquireUpdateLock, releaseUpdateLock } from '../lib/update-lock.js';
@@ -10,26 +10,29 @@ import { VERSION } from '../utils/version.js';
 
 const pexec = promisify(execFile);
 
+export type RestartOutcome = 'restarted' | 'failed' | 'not-running';
+
 export interface RestartDeps {
   running?: () => boolean;
-  stop?: () => boolean;
+  stop?: () => Promise<boolean>;
   start?: (port: number) => Promise<boolean>;
 }
 
 // Restart a running daemon so it picks up the freshly installed binary; a stopped daemon is left
-// stopped. Returns whether a restart happened.
-export const restartDaemonIfRunning = async (deps: RestartDeps = {}): Promise<boolean> => {
+// stopped. Waits for the old process to exit (port free) before spawning, and reports honestly
+// when the new daemon did not come up.
+export const restartDaemonIfRunning = async (deps: RestartDeps = {}): Promise<RestartOutcome> => {
   const running = deps.running ?? isDaemonRunning;
-  if (!running()) return false;
-  (deps.stop ?? stopDaemon)();
-  await (deps.start ?? spawnDaemon)(resolvePort());
-  return true;
+  if (!running()) return 'not-running';
+  await (deps.stop ?? stopDaemonAndWait)();
+  const up = await (deps.start ?? spawnDaemon)(resolvePort());
+  return up ? 'restarted' : 'failed';
 };
 
 export interface UpdateDeps {
   check: (installed: string) => Promise<UpdateInfo>;
   install: () => Promise<void>;
-  restartDaemon: () => Promise<boolean>;
+  restartDaemon: () => Promise<RestartOutcome>;
   acquireLock: () => boolean;
   releaseLock: () => void;
   log: (msg: string) => void;
@@ -71,7 +74,10 @@ const install = async (deps: UpdateDeps): Promise<void> => {
   deps.log('Installing the latest @agentage/cli...');
   await deps.install();
   deps.log(chalk.green('Updated. Run `agentage status` to confirm.'));
-  if (await deps.restartDaemon()) deps.log(chalk.green('Restarted the daemon on the new version.'));
+  const outcome = await deps.restartDaemon();
+  if (outcome === 'restarted') deps.log(chalk.green('Restarted the daemon on the new version.'));
+  if (outcome === 'failed')
+    deps.log(chalk.yellow('Daemon did not restart cleanly - run `agentage daemon start`.'));
 };
 
 // --check reports the verdict and never installs. Otherwise, install only when the registry says
