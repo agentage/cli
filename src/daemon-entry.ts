@@ -7,13 +7,18 @@ import {
   writePortFile,
 } from './daemon/lifecycle.js';
 import { createDaemonServer } from './daemon/server.js';
+import { loadLocalMemoryServer } from './mcp/local-server.js';
 import { VERSION } from './utils/version.js';
 
-// The forked, long-lived engine host: one loopback HTTP server that owns a single in-process
+// The detached, long-lived engine host: one loopback HTTP server that owns a single in-process
 // engine and serialises every vault mutation, avoiding concurrent git index.lock collisions.
 const main = async (): Promise<void> => {
   const port = resolvePort();
-  const server = createDaemonServer({ getClient: createClientProvider(), version: VERSION });
+  const server = createDaemonServer({
+    getClient: createClientProvider(),
+    buildMcpServer: loadLocalMemoryServer,
+    version: VERSION,
+  });
   await server.start(port);
   writePidFile(process.pid);
   writePortFile(port);
