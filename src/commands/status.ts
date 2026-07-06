@@ -1,6 +1,8 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
+import { isDaemonRunning, resolvePort } from '../daemon/lifecycle.js';
 import { readAuth } from '../lib/config.js';
+import { health, mismatchNotice } from '../lib/daemon-client.js';
 import { siteFqdn } from '../lib/origins.js';
 import { gatherStatus, type StatusReport } from '../lib/status-info.js';
 import { INSTALL_HINT, type UpdateInfo } from '../lib/update-check.js';
@@ -43,10 +45,24 @@ export const printStatus = (report: StatusReport): void => {
   if (report.update.message) console.log(chalk.yellow(`\n${report.update.message}`));
 };
 
+// Warn only about a daemon this config dir owns (a live pidfile) so `status` never probes an
+// unrelated daemon; the hint tells the user to restart it after a CLI upgrade.
+const warnDaemonMismatch = async (): Promise<void> => {
+  if (!isDaemonRunning()) return;
+  const h = await health(resolvePort());
+  if (!h) return;
+  const notice = mismatchNotice(h.version);
+  if (notice) console.log(chalk.yellow(notice));
+};
+
 export const runStatus = async (opts: { json?: boolean } = {}): Promise<void> => {
   const report = await gatherStatus(readAuth(), siteFqdn());
-  if (opts.json) console.log(JSON.stringify(report, null, 2));
-  else printStatus(report);
+  if (opts.json) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  printStatus(report);
+  await warnDaemonMismatch();
 };
 
 export const registerStatus = (program: Command): void => {
