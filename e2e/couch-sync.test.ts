@@ -112,10 +112,15 @@ const startCouch = async (): Promise<Couch> => {
     const adminAuth = 'Basic ' + Buffer.from(`${ADMIN_USER}:${ADMIN_PASS}`).toString('base64');
     await waitUp(url);
     for (const db of ['_users', '_replicator']) {
-      const res = await fetch(`${url}/${db}`, {
+      // /_up can 200 before the env-provided admin is active - retry the cold-start 401 window
+      let res = await fetch(`${url}/${db}`, {
         method: 'PUT',
         headers: { Authorization: adminAuth },
       });
+      for (let attempt = 0; res.status === 401 && attempt < 40; attempt++) {
+        await new Promise((r) => setTimeout(r, 250));
+        res = await fetch(`${url}/${db}`, { method: 'PUT', headers: { Authorization: adminAuth } });
+      }
       if (!res.ok && res.status !== 412) throw new Error(`system db ${db} failed (${res.status})`);
     }
     const jwtSecret = `m5-secret-${randomUUID()}`;
