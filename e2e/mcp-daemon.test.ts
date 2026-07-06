@@ -5,8 +5,9 @@ import { assertCliBuilt, createCliMachine, freePort, type CliMachine } from './h
 
 // M3 daemon MCP tier: the daemon exposes the frozen 6 memory__* tools at POST /mcp (stateless
 // Streamable HTTP). An ephemeral port + isolated AGENTAGE_CONFIG_DIR keep it off the real daemon /
-// :4243; stop only signals the pid this test started. Asserts the full contract: 6 tools, @<vault>/
-// routing, and dual-channel output (rendered markdown text AND structuredContent). @p0
+// :4243; stop only signals the pid this test started. Asserts the surface over one vault: 6 tools,
+// plain-path routing, and dual-channel output (text AND structuredContent). @<vault>/ routing and
+// the frozen contract behaviors live in mcp-contract.test.ts. @p0
 
 const pidOf = (m: CliMachine): number | null => {
   const p = join(m.configDir, 'daemon.pid');
