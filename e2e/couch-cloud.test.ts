@@ -256,8 +256,12 @@ test.describe('couch <-> cloud MCP roundtrip vs live dev @full', () => {
         'cloud read text channel'
       ).toBe(true);
       expect(JSON.stringify(fwd!.structuredContent)).toContain(FWD_PATH);
+      // Bare cloud search scopes to the default vault by design - use the @-scoped convention.
       const search = asResult(
-        await mcp.callTool({ name: 'memory__search', arguments: { query: fwdMark } })
+        await mcp.callTool({
+          name: 'memory__search',
+          arguments: { query: fwdMark, folder: `@${VAULT}` },
+        })
       );
       expect(
         JSON.stringify(search.structuredContent ?? {}),
