@@ -3,6 +3,7 @@ import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path';
 import { validateConfig, type VaultsConfig } from '@agentage/memory-core';
 import { ensureConfigDir, getConfigDir } from './config.js';
+import { withFileLock } from './file-lock.js';
 import { VAULTS_SCHEMA_URL } from './vaults.schema.js';
 
 export const vaultsJsonPath = (): string => join(getConfigDir(), 'vaults.json');
@@ -48,4 +49,24 @@ export const saveVaultsConfig = (config: VaultsConfig): string => {
   renameSync(tmp, path);
   chmodSync(path, 0o600);
   return path;
+};
+
+// Cross-process-safe read-modify-write on vaults.json (issue #231). Under the advisory lock, re-read
+// FRESH from disk, apply `fn`, then atomic-save - so a concurrent `vault add` or the daemon's
+// discovery write-back can never clobber each other's update. `fn` may return a new config, mutate
+// the fresh one in place and return void, or return null to skip the write entirely (a no-op scan
+// must not re-touch the file, else the daemon's config watcher would loop). Returns the config on
+// disk after the call. A plain read stays lock-free via loadVaultsConfig.
+export const mutateVaultsConfig = async (
+  fn: (config: VaultsConfig) => VaultsConfig | null | void
+): Promise<VaultsConfig> => {
+  ensureConfigDir();
+  return withFileLock(vaultsJsonPath(), () => {
+    const fresh = loadVaultsConfig().config;
+    const next = fn(fresh);
+    if (next === null) return fresh; // explicit no-op: leave the file untouched
+    const result = next ?? fresh;
+    saveVaultsConfig(result);
+    return result;
+  });
 };

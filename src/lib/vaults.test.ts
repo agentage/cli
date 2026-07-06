@@ -3,10 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { VaultsConfig } from '@agentage/memory-core';
+import { addVault } from './vault-registry.js';
 import { ensureConfigDir, getConfigDir } from './config.js';
 import {
   ensureVaultsConfig,
   loadVaultsConfig,
+  mutateVaultsConfig,
   saveVaultsConfig,
   vaultsJsonPath,
 } from './vaults.js';
@@ -110,5 +112,64 @@ describe('vaults config store', () => {
     write(vaultsJsonPath(), original);
     ensureVaultsConfig();
     expect(readFileSync(vaultsJsonPath(), 'utf-8')).toBe(original);
+  });
+});
+
+describe('mutateVaultsConfig (cross-process locked read-modify-write)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agentage-mutate-'));
+    process.env['AGENTAGE_CONFIG_DIR'] = join(dir, 'cfg');
+  });
+
+  afterEach(() => {
+    delete process.env['AGENTAGE_CONFIG_DIR'];
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('applies the mutation and returns the saved config', async () => {
+    const next = await mutateVaultsConfig((cfg) => addVault(cfg, 'work', { path: '~/w' }));
+    expect(next.vaults?.work).toMatchObject({ path: '~/w' });
+    expect(loadVaultsConfig().config.vaults?.work).toMatchObject({ path: '~/w' });
+  });
+
+  it('leaves the file untouched when fn returns null (no-op skip)', async () => {
+    saveVaultsConfig({ version: 1, vaults: { a: { path: '/a' } } });
+    const before = readFileSync(vaultsJsonPath(), 'utf-8');
+    const result = await mutateVaultsConfig(() => null);
+    expect(result.vaults?.a).toMatchObject({ path: '/a' });
+    expect(readFileSync(vaultsJsonPath(), 'utf-8')).toBe(before);
+  });
+
+  it('releases the lock and leaves no lockfile when fn throws', async () => {
+    await expect(
+      mutateVaultsConfig(() => {
+        throw new Error('nope');
+      })
+    ).rejects.toThrow('nope');
+    expect(readdirSync(getConfigDir()).filter((f) => f.endsWith('.lock'))).toEqual([]);
+  });
+
+  it('folds 20 concurrent in-process mutations together, losing none', async () => {
+    await Promise.all(
+      Array.from({ length: 20 }, (_, i) =>
+        mutateVaultsConfig((cfg) => addVault(cfg, `v${i}`, { path: `/tmp/v${i}` }))
+      )
+    );
+    const names = Object.keys(loadVaultsConfig().config.vaults ?? {}).sort();
+    expect(names).toEqual(Array.from({ length: 20 }, (_, i) => `v${i}`).sort());
+    expect(readdirSync(getConfigDir()).filter((f) => f.endsWith('.lock'))).toEqual([]);
+  });
+
+  it('re-reads FRESH under the lock: a mutation sees a write that landed after its own load', async () => {
+    // Both mutators start from the same empty outer view; the second to run must still see the
+    // first's write (fresh re-read), else its save would clobber it and one vault would be lost.
+    await Promise.all([
+      mutateVaultsConfig((cfg) => addVault(cfg, 'first', { path: '/first' })),
+      mutateVaultsConfig((cfg) => addVault(cfg, 'second', { path: '/second' })),
+    ]);
+    const names = Object.keys(loadVaultsConfig().config.vaults ?? {}).sort();
+    expect(names).toEqual(['first', 'second']);
   });
 });

@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import {
@@ -268,6 +268,30 @@ test.describe('store data integrity @p0', () => {
       expect(existsSync(join(vaultDir, 'notes', 'keep.md'))).toBe(true);
       expect(existsSync(join(vaultDir, '.git'))).toBe(true);
       expect(commitCount(vaultDir)).toBe(commits);
+    } finally {
+      m.cleanup();
+    }
+  });
+
+  // Issue #231: two batches of real `vault add` processes racing one shared vaults.json - the exact
+  // lockless read-modify-write that silently dropped a reported add (2/40 in the prior probe). With
+  // the advisory config lock every entry must survive: valid JSON, all names present, no stale lock.
+  test('30 concurrent vault-add processes on one config all land, none lost', async () => {
+    const m = createCliMachine(OFFLINE);
+    try {
+      const names = [
+        ...Array.from({ length: 20 }, (_, i) => `cli${i}`),
+        ...Array.from({ length: 10 }, (_, i) => `other${i}`), // the competing writer batch
+      ];
+      const results = await Promise.all(
+        names.map((n) => m.exec(['vault', 'add', n, '--local', join(m.configDir, n)]))
+      );
+      results.forEach((r, i) => expect(r.code, `add ${names[i]} failed:\n${r.stderr}`).toBe(0));
+
+      const raw = readFileSync(join(m.configDir, 'vaults.json'), 'utf-8');
+      const parsed = JSON.parse(raw) as { vaults: Record<string, unknown> }; // valid JSON, not torn
+      expect(Object.keys(parsed.vaults).sort()).toEqual([...names].sort());
+      expect(readdirSync(m.configDir).filter((f) => f.endsWith('.lock'))).toEqual([]);
     } finally {
       m.cleanup();
     }

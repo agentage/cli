@@ -13,9 +13,11 @@ const makeDeps = (
   const provisioned: string[] = [];
   const deps: VaultDeps = {
     load: () => ({ config, source: null }),
-    save: (c) => {
-      config = c;
-      return '/tmp/vaults.json';
+    // Mirror mutateVaultsConfig: apply fn to the current config, honoring the null no-op skip.
+    mutate: async (fn) => {
+      const next = fn(config);
+      if (next !== null) config = next ?? config;
+      return config;
     },
     ensureDir: (p) => ensured.push(p),
     provision: async (name) => {
@@ -126,7 +128,7 @@ describe('vault remove', () => {
     await runVaultAdd('a', { local: '/tmp/a' }, h.deps);
     await runVaultAdd('b', { local: '/tmp/b' }, h.deps);
     h.logs.length = 0;
-    runVaultRemove('a', h.deps);
+    await runVaultRemove('a', h.deps);
     expect(Object.keys(h.get().vaults ?? {})).toEqual(['b']);
     expect(h.get().default).toBe('b');
     expect(h.logs.join()).toContain("Default vault is now 'b'");
@@ -137,37 +139,37 @@ describe('vault remove', () => {
     await runVaultAdd('acct', {}, h.deps);
     h.logs.length = 0;
     h.provisioned.length = 0;
-    runVaultRemove('acct', h.deps);
+    await runVaultRemove('acct', h.deps);
     expect(h.get().vaults).toEqual({});
     // Remove is purely local: it never re-enters the provisioning path.
     expect(h.provisioned).toEqual([]);
     expect(h.logs.join()).toContain('files left on disk');
   });
 
-  it('throws when the vault is absent', () => {
+  it('throws when the vault is absent', async () => {
     const h = makeDeps();
-    expect(() => runVaultRemove('nope', h.deps)).toThrow(/not found/);
+    await expect(runVaultRemove('nope', h.deps)).rejects.toThrow(/not found/);
   });
 
-  it('appends the name to the discover-root ignore when the path sits under it', () => {
+  it('appends the name to the discover-root ignore when the path sits under it', async () => {
     const h = makeDeps({
       version: 1,
       discover: [{ path: '/data/roots' }],
       vaults: { teamnotes: { path: '/data/roots/teamnotes', origin: [{ remote: 'agentage' }] } },
     });
-    runVaultRemove('teamnotes', h.deps);
+    await runVaultRemove('teamnotes', h.deps);
     expect(h.get().vaults).toEqual({});
     expect(h.get().discover?.[0]?.ignore).toEqual(['teamnotes']);
     expect(h.logs.join()).toContain('/data/roots ignore');
   });
 
-  it('leaves the discover config untouched for a vault outside every root', () => {
+  it('leaves the discover config untouched for a vault outside every root', async () => {
     const h = makeDeps({
       version: 1,
       discover: [{ path: '/data/roots' }],
       vaults: { work: { path: '/elsewhere/work', mcp: ['local'] } },
     });
-    runVaultRemove('work', h.deps);
+    await runVaultRemove('work', h.deps);
     expect(h.get().discover?.[0]?.ignore).toBeUndefined();
     expect(h.logs.join()).not.toContain('ignore');
   });

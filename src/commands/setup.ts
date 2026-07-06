@@ -1,7 +1,13 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
 import { startCallbackServer } from '../lib/callback-server.js';
-import { deleteAuth, ensureConfigDir, readAuth, saveAuth, type AuthState } from '../lib/config.js';
+import {
+  deleteAuth,
+  ensureConfigDir,
+  mutateAuth,
+  readAuth,
+  type AuthState,
+} from '../lib/config.js';
 import {
   buildAuthorizeUrl,
   exchangeCode,
@@ -107,7 +113,7 @@ export const runSetup = async (
       redirectUri: server.redirectUri,
       verifier,
     });
-    saveAuth(toAuthState(fqdn, clientId, tokens));
+    await mutateAuth(() => toAuthState(fqdn, clientId, tokens));
     console.log(chalk.green('\nSigned in.\n'));
     await deps.printStatus();
   } finally {
