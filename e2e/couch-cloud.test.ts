@@ -13,9 +13,10 @@
  *   - the account OAuth bearer cannot be obtained from the live stack;
  *   - the couch channel is off (403 CHANNEL_DISABLED) or discovery exposes no
  *     couch fields for the vault;
- *   - the couch->git cloud bridge is not materializing writes yet (the couch
- *     write lands but the cloud MCP never surfaces it) - a deployment gap, not
- *     a regression. Once the bridge is live the roundtrip legs run and assert.
+ *   - the cloud MCP does not surface the couch write (the couch push lands and
+ *     the bridge materializes it to git; the known gate is cloud MCP vault
+ *     routing - wildcard tokens are default-only, no @-addressing, web#411).
+ *     Once routing lands the roundtrip legs run and assert.
  *
  * ADR-013: a wildcard OAuth token routes BARE cloud-MCP paths to the account's
  * DEFAULT memory only. On dev the default memory is git-channel (auto-seeded on
@@ -243,7 +244,7 @@ test.describe('couch <-> cloud MCP roundtrip vs live dev @full', () => {
         ).toBe(true);
         test.skip(
           true,
-          `couch->git cloud bridge not live on ${TARGET_FQDN}: couch has ${FWD_PATH} but the cloud MCP did not surface it within ${LEG_TIMEOUT_MS / 1000}s (roundtrip assertions skipped)`
+          `cloud MCP did not surface ${FWD_PATH} on ${TARGET_FQDN} within ${LEG_TIMEOUT_MS / 1000}s (couch push landed; known gate: cloud MCP vault routing is default-only - web#411; roundtrip assertions skipped)`
         );
       }
       const fwdSecs = ((Date.now() - fwdStart) / 1000).toFixed(1);
