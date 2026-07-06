@@ -3,26 +3,34 @@ import type { MemoryClient } from '../lib/memory-client.js';
 import { runDelete, runEdit, runList, runRead, runSearch, runWrite } from './memory.js';
 
 const client = (): MemoryClient => ({
-  search: vi.fn(async () => ({ vault: 'v', results: [{ path: 'a.md', snippet: 's', score: -1 }] })),
+  search: vi.fn(async () => ({
+    results: [{ path: 'a.md', title: 'A', snippet: 's', score: 2, updated: 'now' }],
+  })),
   read: vi.fn(async () => ({
-    vault: 'v',
     path: 'a.md',
     title: 'A',
     frontmatter: {},
     body: 'hi',
     tags: [],
     updated: 'now',
-    size: 2,
-    truncated: false,
+    deleted: false,
   })),
-  write: vi.fn(async () => ({ vault: 'v', path: 'a.md', bytesWritten: 5 })),
-  edit: vi.fn(async () => ({ vault: 'v', path: 'a.md', bytesWritten: 3 })),
+  write: vi.fn(async () => ({ path: 'a.md', rev: 'sha', updated: 'now' })),
+  edit: vi.fn(async () => ({ path: 'a.md', rev: 'sha', updated: 'now' })),
   list: vi.fn(async () => ({
-    vault: 'v',
     folder: '',
-    entries: [{ path: 'a.md', updated: 'now' }],
+    entries: [
+      {
+        type: 'folder' as const,
+        path: 'notes',
+        files: 1,
+        entries: [{ type: 'file' as const, path: 'notes/a.md', title: 'a', updated: 'now' }],
+      },
+    ],
+    truncated: false,
+    files: 1,
   })),
-  delete: vi.fn(async () => ({ vault: 'v', path: 'a.md', trashedTo: '.trash/a.md' })),
+  delete: vi.fn(async () => ({ path: 'a.md', deleted: true })),
 });
 
 let logs: string[];
@@ -41,10 +49,19 @@ describe('memory command wiring', () => {
     expect(logs.join()).toContain('a.md');
   });
 
-  it('search --json emits JSON', async () => {
+  it('search --json emits the SearchResult', async () => {
     const c = client();
     await runSearch('q', { json: true }, c);
-    expect(JSON.parse(logs[0] ?? '{}')).toMatchObject({ vault: 'v' });
+    expect(JSON.parse(logs[0] ?? '{}').results[0].path).toBe('a.md');
+  });
+
+  it('read prints the body; --json emits the MemoryView', async () => {
+    const c = client();
+    await runRead('a.md', {}, c);
+    expect(logs.join()).toContain('hi');
+    logs.length = 0;
+    await runRead('a.md', { json: true }, c);
+    expect(JSON.parse(logs[0] ?? '{}')).toMatchObject({ path: 'a.md', deleted: false });
   });
 
   it('write passes an inline --body and parsed --frontmatter', async () => {
@@ -54,6 +71,7 @@ describe('memory command wiring', () => {
       vault: undefined,
       frontmatter: { title: 'T' },
     });
+    expect(logs.join()).toContain('Wrote a.md');
   });
 
   it('edit maps --old/--new to a str_replace op', async () => {
@@ -61,7 +79,7 @@ describe('memory command wiring', () => {
     await runEdit('a.md', { old: 'x', new: 'y' }, c);
     expect(c.edit).toHaveBeenCalledWith(
       'a.md',
-      { oldStr: 'x', newStr: 'y', body: undefined, mode: 'replace' },
+      { mode: 'str_replace', old_str: 'x', new_str: 'y' },
       { vault: undefined }
     );
   });
@@ -71,34 +89,25 @@ describe('memory command wiring', () => {
     await runEdit('a.md', { body: 'more', append: true }, c);
     expect(c.edit).toHaveBeenCalledWith(
       'a.md',
-      { oldStr: undefined, newStr: undefined, body: 'more', mode: 'append' },
+      { mode: 'append', body: 'more' },
       { vault: undefined }
     );
   });
 
-  it('read warns when the output was truncated', async () => {
-    const c = client();
-    c.read = vi.fn(async () => ({
-      vault: 'v',
-      path: 'a.md',
-      title: 'A',
-      frontmatter: {},
-      body: 'big',
-      tags: [],
-      updated: 'now',
-      size: 3,
-      truncated: true,
-    }));
-    await runRead('a.md', {}, c);
-    expect(logs.join()).toContain('truncated');
-  });
-
-  it('list and delete call through to the client', async () => {
+  it('list flattens the tree to file paths; --json emits the tree', async () => {
     const c = client();
     await runList('notes', { vault: 'v' }, c);
     expect(c.list).toHaveBeenCalledWith('notes', { vault: 'v' });
+    expect(logs.join()).toContain('notes/a.md');
+    logs.length = 0;
+    await runList(undefined, { json: true }, c);
+    expect(JSON.parse(logs[0] ?? '{}').entries[0].type).toBe('folder');
+  });
+
+  it('delete calls through and reports git recovery', async () => {
+    const c = client();
     await runDelete('a.md', {}, c);
     expect(c.delete).toHaveBeenCalledWith('a.md', { vault: undefined });
-    expect(logs.join()).toContain('.trash/a.md');
+    expect(logs.join()).toContain('git history');
   });
 });

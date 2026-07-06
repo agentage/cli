@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
+import { type TreeEntry } from '@agentage/memory-core';
 import { createDirectClient, type MemoryClient } from '../lib/memory-client.js';
 import { loadVaultsConfig } from '../lib/vaults.js';
 
@@ -15,6 +16,10 @@ const emit = (json: boolean, data: unknown, human: () => void): void => {
   if (json) console.log(JSON.stringify(data, null, 2));
   else human();
 };
+
+// Flatten a folder-tree to the file paths it contains, in tree order.
+const treeFiles = (entries: TreeEntry[]): string[] =>
+  entries.flatMap((e) => (e.type === 'file' ? [e.path] : e.entries ? treeFiles(e.entries) : []));
 
 interface CommonOpts {
   vault?: string;
@@ -42,10 +47,7 @@ export const runRead = async (
   client: MemoryClient = defaultClient()
 ): Promise<void> => {
   const doc = await client.read(ref, { vault: opts.vault });
-  emit(opts.json ?? false, doc, () => {
-    console.log(doc.body);
-    if (doc.truncated) console.error(chalk.yellow('(output truncated)'));
-  });
+  emit(opts.json ?? false, doc, () => console.log(doc.body));
 };
 
 export const runWrite = async (
@@ -58,9 +60,7 @@ export const runWrite = async (
     ? (JSON.parse(opts.frontmatter) as Record<string, unknown>)
     : undefined;
   const out = await client.write(ref, body, { vault: opts.vault, frontmatter });
-  emit(opts.json ?? false, out, () =>
-    console.log(chalk.green(`Wrote @${out.vault}/${out.path} (${out.bytesWritten} bytes)`))
-  );
+  emit(opts.json ?? false, out, () => console.log(chalk.green(`Wrote ${out.path}`)));
 };
 
 export const runEdit = async (
@@ -68,17 +68,12 @@ export const runEdit = async (
   opts: CommonOpts & { old?: string; new?: string; body?: string; append?: boolean },
   client: MemoryClient = defaultClient()
 ): Promise<void> => {
-  const out = await client.edit(
-    ref,
-    {
-      oldStr: opts.old,
-      newStr: opts.new,
-      body: opts.body,
-      mode: opts.append ? 'append' : 'replace',
-    },
-    { vault: opts.vault }
-  );
-  emit(opts.json ?? false, out, () => console.log(chalk.green(`Edited @${out.vault}/${out.path}`)));
+  const op =
+    opts.old !== undefined
+      ? { mode: 'str_replace' as const, old_str: opts.old, new_str: opts.new ?? '' }
+      : { mode: opts.append ? ('append' as const) : ('replace' as const), body: opts.body };
+  const out = await client.edit(ref, op, { vault: opts.vault });
+  emit(opts.json ?? false, out, () => console.log(chalk.green(`Edited ${out.path}`)));
 };
 
 export const runList = async (
@@ -88,8 +83,9 @@ export const runList = async (
 ): Promise<void> => {
   const out = await client.list(folder, { vault: opts.vault });
   emit(opts.json ?? false, out, () => {
-    if (out.entries.length === 0) console.log('No documents.');
-    for (const e of out.entries) console.log(e.path);
+    const files = treeFiles(out.entries);
+    if (files.length === 0) console.log('No documents.');
+    for (const p of files) console.log(p);
   });
 };
 
@@ -100,7 +96,7 @@ export const runDelete = async (
 ): Promise<void> => {
   const out = await client.delete(ref, { vault: opts.vault });
   emit(opts.json ?? false, out, () =>
-    console.log(`Deleted @${out.vault}/${out.path} (recoverable in ${out.trashedTo})`)
+    console.log(`Deleted ${out.path} (recoverable from git history)`)
   );
 };
 
@@ -115,7 +111,7 @@ export const registerMemory = (program: Command): void => {
 
   memory
     .command('search <query...>')
-    .description('Full-text search a vault (FTS5)')
+    .description('Search a vault (git grep)')
     .option('--vault <name>', 'target vault')
     .option('--limit <n>', 'max hits (default 20)')
     .option('--json', 'machine-readable output')
@@ -166,7 +162,7 @@ export const registerMemory = (program: Command): void => {
 
   memory
     .command('delete <ref>')
-    .description('Soft-delete a document (moved to .trash/, recoverable)')
+    .description('Delete a document (recoverable from git history)')
     .option('--vault <name>', 'target vault')
     .option('--json', 'machine-readable output')
     .action((ref: string, opts: CommonOpts) => guard(() => runDelete(ref, opts)));

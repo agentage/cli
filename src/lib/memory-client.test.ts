@@ -2,34 +2,22 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { VaultsConfig } from '@agentage/memory-core';
 import { createDirectClient } from './memory-client.js';
-import { VaultsConfig, type VaultType } from './vaults.schema.js';
 
-// Each test gets its own config dir (for the index) + vault dir(s).
-const configFor = (vaults: { name: string; path: string; type?: VaultType }[]): VaultsConfig =>
-  VaultsConfig.parse({
-    version: 1,
-    vaults: vaults.map((v) => ({
-      name: v.name,
-      path: v.path,
-      ...(v.type === 'couchdb'
-        ? { type: 'couchdb', server: 'agentage' }
-        : v.type === 'git'
-          ? { type: 'git', remote: 'git@x:y.git' }
-          : { type: 'local' }),
-    })),
-  });
+// Each test gets its own vault dir(s); memory-core git-inits them in place (autoInit).
+const configFor = (vaults: { name: string; path: string }[], def?: string): VaultsConfig => ({
+  version: 1,
+  ...(def ? { default: def } : vaults.length === 1 ? { default: vaults[0]!.name } : {}),
+  vaults: Object.fromEntries(
+    vaults.map((v) => [v.name, { path: v.path, mcp: ['local'] as const }])
+  ),
+});
 
 describe('DirectClient', () => {
   let root: string;
-  beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'agentage-mc-'));
-    process.env['AGENTAGE_CONFIG_DIR'] = join(root, 'cfg');
-  });
-  afterEach(() => {
-    delete process.env['AGENTAGE_CONFIG_DIR'];
-    rmSync(root, { recursive: true, force: true });
-  });
+  beforeEach(() => (root = mkdtempSync(join(tmpdir(), 'agentage-mc-'))));
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
 
   const single = () => {
     const vault = join(root, 'v');
@@ -38,46 +26,43 @@ describe('DirectClient', () => {
 
   it('write -> read round-trips', async () => {
     const { client } = single();
-    await client.write('a.md', 'hello memory');
-    const doc = await client.read('a.md');
-    expect(doc.body).toBe('hello memory');
-    expect(doc.vault).toBe('main');
+    const receipt = await client.write('a.md', 'hello memory');
+    expect(receipt.path).toBe('a.md');
+    expect(receipt.rev).toMatch(/^[0-9a-f]{7,}$/);
+    expect((await client.read('a.md')).body).toBe('hello memory');
   });
 
-  it('search finds a written doc after its index refresh', async () => {
+  it('search finds a written doc via git grep', async () => {
     const { client } = single();
     await client.write('notes/x.md', 'the quokka is a marsupial');
     const out = await client.search('quokka');
     expect(out.results.map((r) => r.path)).toEqual(['notes/x.md']);
+    expect(out.results[0]!.snippet).toContain('quokka');
   });
 
-  it('list reflects writes and deletes; delete is soft', async () => {
+  it('list returns a folder tree; delete removes and read then fails', async () => {
     const { client } = single();
     await client.write('a.md', 'one');
-    await client.write('b.md', 'two');
-    expect((await client.list(undefined)).entries.map((e) => e.path).sort()).toEqual([
-      'a.md',
-      'b.md',
-    ]);
+    await client.write('sub/b.md', 'two');
+    const tree = await client.list(undefined);
+    expect(tree.files).toBe(2);
     await client.delete('a.md');
-    expect((await client.list(undefined)).entries.map((e) => e.path)).toEqual(['b.md']);
+    expect((await client.list(undefined)).files).toBe(1);
     await expect(client.read('a.md')).rejects.toThrow(/not found/);
   });
 
-  it('edits via str_replace through the client', async () => {
+  it('edits via str_replace', async () => {
     const { client } = single();
     await client.write('a.md', 'alpha beta');
-    await client.edit('a.md', { oldStr: 'beta', newStr: 'BETA' });
+    await client.edit('a.md', { mode: 'str_replace', old_str: 'beta', new_str: 'BETA' });
     expect((await client.read('a.md')).body).toBe('alpha BETA');
   });
 
-  it('routes by @vault/ prefix and by --vault', async () => {
-    const work = join(root, 'work');
-    const notes = join(root, 'notes');
+  it('routes by @vault prefix and by --vault', async () => {
     const client = createDirectClient(
       configFor([
-        { name: 'work', path: work },
-        { name: 'notes', path: notes },
+        { name: 'work', path: join(root, 'work') },
+        { name: 'notes', path: join(root, 'notes') },
       ])
     );
     await client.write('@work/a.md', 'in work');
@@ -94,22 +79,16 @@ describe('DirectClient', () => {
       ])
     );
     await expect(client.read('x.md')).rejects.toThrow(/multiple vaults/);
-    await expect(client.read('x.md', { vault: 'nope' })).rejects.toThrow(/unknown vault/);
+    await expect(client.read('@nope/x.md')).rejects.toThrow(/Unknown vault/);
   });
 
-  it('enforces the 8 MB cap on account-synced (couchdb) vaults only', async () => {
-    const client = createDirectClient(
-      configFor([{ name: 'cloud', path: join(root, 'c'), type: 'couchdb' }])
-    );
-    const tooBig = 'x'.repeat(8 * 1024 * 1024 + 1);
-    await expect(client.write('big.md', tooBig)).rejects.toThrow(/8 MB/);
+  it('errors when no local vault is registered', async () => {
+    const client = createDirectClient({ version: 1, vaults: {} });
+    await expect(client.read('x.md')).rejects.toThrow(/no local vaults/);
   });
 
-  it('bounds read output with a truncation flag', async () => {
+  it('delete of a missing doc reports not found', async () => {
     const { client } = single();
-    await client.write('big.md', 'y'.repeat(1_000_050));
-    const doc = await client.read('big.md');
-    expect(doc.truncated).toBe(true);
-    expect(doc.body.length).toBe(1_000_000);
+    await expect(client.delete('ghost.md')).rejects.toThrow(/not found/);
   });
 });

@@ -12,8 +12,10 @@ resurrect patterns from it.
 - `src/lib/` - origins (one FQDN -> service URLs), config (`~/.agentage`, 0600 auth.json),
   oauth (DCR + PKCE), callback-server (one-shot localhost), api (bearer + refresh-once),
   status-info
+- `src/lib/memory-client.ts` - the memory-verb seam; DirectClient wraps `@agentage/memory-core`
+  (the one local engine: git-per-vault backends + federation router). No FTS5/SQLite.
 - `src/package-guard.test.ts` - CI guard: no daemon/agent-runtime remnants, runtime deps
-  stay exactly `chalk + commander + open`
+  stay exactly `@agentage/memory-core + chalk + commander + open`
 
 ## Auth model
 Fresh DCR public client per `setup` run (the redirect URI binds the ephemeral callback
