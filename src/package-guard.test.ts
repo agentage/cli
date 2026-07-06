@@ -51,4 +51,16 @@ describe('package guard (R6)', () => {
     ]);
     expect(pkg.bin['agentage']).toBe('./dist/cli.js');
   });
+
+  it('homepage is set to the canonical site URL', () => {
+    const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as { homepage: string };
+    expect(pkg.homepage).toBe('https://agentage.io');
+  });
+
+  it('build script cleans dist before compiling', () => {
+    const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as { scripts: Record<string, string> };
+    // rmSync in the build command ensures stale dist files can't ship in a tarball
+    expect(pkg.scripts['build']).toContain('rmSync');
+    expect(pkg.scripts['build']).toContain('tsc');
+  });
 });
