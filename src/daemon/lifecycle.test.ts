@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
 import {
   DEFAULT_DAEMON_PORT,
   isDaemonRunning,
@@ -10,6 +11,7 @@ import {
   removePortFile,
   resolvePort,
   stopDaemon,
+  stopDaemonAndWait,
   writePidFile,
   writePortFile,
 } from './lifecycle.js';
@@ -99,5 +101,22 @@ describe('stopDaemon', () => {
     removePortFile();
     removePidFile();
     expect(isDaemonRunning()).toBe(false);
+  });
+});
+
+describe('stopDaemonAndWait', () => {
+  it('returns true immediately when nothing is running', async () => {
+    expect(await stopDaemonAndWait()).toBe(true);
+    writePidFile(DEAD_PID);
+    expect(await stopDaemonAndWait()).toBe(true);
+  });
+
+  it('signals a real process and waits for it to be gone', async () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore',
+    });
+    writePidFile(child.pid!);
+    expect(await stopDaemonAndWait(5000)).toBe(true);
+    expect(isProcessAlive(child.pid!)).toBe(false);
   });
 });

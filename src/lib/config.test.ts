@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -40,6 +40,14 @@ describe('config store', () => {
     expect(readAuth()).toEqual(sample);
     const mode = statSync(join(getConfigDir(), 'auth.json')).mode & 0o777;
     expect(mode).toBe(0o600);
+  });
+
+  it('writes atomically, leaving no temp file behind', () => {
+    saveAuth(sample);
+    saveAuth({ ...sample, clientId: 'client-2' });
+    expect(existsSync(join(getConfigDir(), 'auth.json.tmp'))).toBe(false);
+    expect(readAuth()?.clientId).toBe('client-2');
+    expect(statSync(join(getConfigDir(), 'auth.json')).mode & 0o777).toBe(0o600);
   });
 
   it('returns null for corrupt auth files', () => {

@@ -56,10 +56,26 @@ const ensureRemote = async (git: SyncGit, name: string, url: string): Promise<vo
   else await git.run(['remote', 'add', name, url]);
 };
 
+// A previous cycle may have died mid-merge/rebase (daemon crash). A leftover MERGE_HEAD or rebase
+// dir would let commitIfDirty mint a bogus half-merge and wedge every later cycle, so abort any
+// interrupted operation before touching the tree.
+const abortInterrupted = async (git: SyncGit, path: string): Promise<void> => {
+  const gitDir = join(path, '.git');
+  if (existsSync(join(gitDir, 'MERGE_HEAD'))) {
+    await git.exec(['merge', '--abort']);
+    // The abort refuses when the user edited a merge-touched file meanwhile ("entry not uptodate");
+    // complete the staged merge instead so MERGE_HEAD never leaks into commitIfDirty.
+    if (existsSync(join(gitDir, 'MERGE_HEAD'))) await git.exec(['commit', '--no-edit']);
+  }
+  if (existsSync(join(gitDir, 'rebase-merge')) || existsSync(join(gitDir, 'rebase-apply')))
+    await git.exec(['rebase', '--abort']);
+};
+
 // Reconcile a diverged history keeping BOTH sides. A rebase probes for a true conflict; on a clean
 // replay history stays linear. On conflict the local files are kept as-is and each conflicted
-// file's remote copy is written alongside as `<name>.conflict.md`, so no write is lost on either
-// side. Returns the conflict-copy paths written.
+// file's remote copy is written alongside as `<name>.conflict.md`. The `.conflict.md` copies are
+// staged into the SAME merge commit (`merge --no-commit`), so no single commit boundary ever
+// leaves the remote side merged-away yet unsurfaced. Returns the conflict-copy paths written.
 const reconcile = async (
   git: SyncGit,
   cwd: string,
@@ -81,13 +97,13 @@ const reconcile = async (
     if (show.code === 0) remoteSides.set(p, show.stdout);
   }
 
-  // Merge remote in, auto-resolving content conflicts to the local side; keeps remote's
-  // non-conflicting changes and yields a push-able (descendant-of-remote) history.
-  const merge = await git.exec(['merge', '-X', 'ours', '--no-edit', ref]);
+  // Stage the merge WITHOUT committing (auto-resolving content conflicts to the local side); an
+  // unresolvable conflict (add/add, modify/delete) falls back to keeping ours. Everything stays
+  // staged so the conflict copies land in the very same commit.
+  const merge = await git.exec(['merge', '--no-commit', '-X', 'ours', '--no-edit', ref]);
   if (merge.code !== 0) {
     await git.exec(['checkout', '--ours', '--', '.']);
     await git.run(['add', '-A']);
-    await git.run(['commit', '--no-edit']);
   }
 
   const written: string[] = [];
@@ -98,14 +114,15 @@ const reconcile = async (
     await writeFile(abs, content, 'utf8');
     written.push(name);
   }
-  if (written.length) {
-    await git.run(['add', '-A']);
-    await git.run([
-      'commit',
-      '-m',
-      `sync: preserve remote copy of ${written.length} conflicted file(s) (${now})`,
-    ]);
-  }
+  await git.run(['add', '-A']);
+  // Self-sufficient close: nothing staged and no merge to conclude = nothing to commit (a bare
+  // `commit --no-edit` would abort on the empty message and wedge the cycle); an absent MERGE_MSG
+  // (recovered state) falls back to an explicit -m.
+  const staged = await git.exec(['diff', '--cached', '--quiet']);
+  const merging = existsSync(join(cwd, '.git', 'MERGE_HEAD'));
+  if (staged.code === 0 && !merging) return written;
+  if (existsSync(join(cwd, '.git', 'MERGE_MSG'))) await git.run(['commit', '--no-edit']);
+  else await git.run(['commit', '-m', `sync: merge ${ref} (${now})`]);
   return written;
 };
 
@@ -132,6 +149,7 @@ export const runSyncCycle = async (
     if (!existsSync(target.path)) return { ...base, ok: true }; // nothing on disk yet
     if (!existsSync(join(target.path, '.git'))) await git.run(['init', '-b', 'main']);
 
+    await abortInterrupted(git, target.path);
     await writeExclude(target.path, target.ignore);
     await ensureRemote(git, target.remoteName, target.remote);
     committed = await commitIfDirty(git, `sync: ${now}`);

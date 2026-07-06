@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -36,11 +44,15 @@ export const readAuth = (): AuthState | null => {
   }
 };
 
+// Atomic 0600 write: a token file is never left half-written or briefly world-readable. Write a
+// sibling temp, chmod it 0600 BEFORE the rename, then rename over the target in one step.
 export const saveAuth = (state: AuthState): void => {
   ensureConfigDir();
   const path = authPath();
-  writeFileSync(path, JSON.stringify(state, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
-  chmodSync(path, 0o600);
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, path);
 };
 
 export const deleteAuth = (): void => {
