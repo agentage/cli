@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   expandPath,
   isAccountVault,
@@ -61,4 +62,23 @@ export const removeVault = (config: VaultsConfig, name: string): VaultsConfig =>
     else delete next.default;
   }
   return validateConfig(next);
+};
+
+// V8: when a removed vault sat directly under a discover root, append its name to that root's
+// `ignore` so the next scan does not re-add it. Returns the updated config plus the matched root
+// path (for the message), or null when the path is not directly under any discover root.
+export const appendDiscoverIgnore = (
+  config: VaultsConfig,
+  name: string,
+  vaultPath: string
+): { config: VaultsConfig; root: string } | null => {
+  const parent = resolve(expandPath(vaultPath), '..');
+  const roots = config.discover ?? [];
+  const idx = roots.findIndex((r) => resolve(expandPath(r.path)) === parent);
+  if (idx === -1) return null;
+  const root = roots[idx]!;
+  if (root.ignore?.includes(name)) return { config, root: root.path };
+  const next = [...roots];
+  next[idx] = { ...root, ignore: [...(root.ignore ?? []), name] };
+  return { config: validateConfig({ ...config, discover: next }), root: root.path };
 };

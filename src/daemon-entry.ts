@@ -12,8 +12,14 @@ import { createDaemonServer } from './daemon/server.js';
 import { loadLocalMemoryServer } from './mcp/local-server.js';
 import { loadVaultsConfig, vaultsJsonPath } from './lib/vaults.js';
 import { createCouchSyncManager } from './sync/couch/manager.js';
+import { createDiscoverWatcher } from './sync/discover/watcher.js';
 import { createSyncManager } from './sync/manager.js';
 import { VERSION } from './utils/version.js';
+
+const envInt = (name: string): number | undefined => {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v >= 0 ? v : undefined;
+};
 
 // The detached, long-lived engine host: one loopback HTTP server that owns a single in-process
 // engine and serialises every vault mutation, avoiding concurrent git index.lock collisions. It
@@ -22,6 +28,11 @@ const main = async (): Promise<void> => {
   const port = resolvePort();
   const git = createSyncManager();
   const couch = createCouchSyncManager();
+  const discover = createDiscoverWatcher({
+    log: (msg) => console.log(`[discover] ${msg}`),
+    debounceMs: envInt('AGENTAGE_DISCOVER_DEBOUNCE_MS'),
+    pollMs: envInt('AGENTAGE_DISCOVER_POLL_MS'),
+  });
 
   // A vault is on exactly one channel: an account (agentage) vault syncs over couch, else git.
   const runNow = (
@@ -35,7 +46,7 @@ const main = async (): Promise<void> => {
     getClient: createClientProvider(),
     buildMcpServer: loadLocalMemoryServer,
     sync: {
-      status: () => ({ ...git.status(), couch: couch.status() }),
+      status: () => ({ ...git.status(), couch: couch.status(), discover: discover.status() }),
       runNow,
     },
     onMutation: (verb, body) => couch.onWrite(verb, body),
@@ -46,17 +57,20 @@ const main = async (): Promise<void> => {
   writePortFile(port);
   git.reschedule();
   couch.reschedule();
+  discover.reschedule();
 
   const configPath = vaultsJsonPath();
   watchFile(configPath, { interval: 2000 }, () => {
     git.reschedule();
     couch.reschedule();
+    discover.reschedule();
   });
 
   const shutdown = (): void => {
     unwatchFile(configPath);
     git.stop();
     couch.stop();
+    discover.stop();
     server.stop().finally(() => {
       removePidFile();
       removePortFile();

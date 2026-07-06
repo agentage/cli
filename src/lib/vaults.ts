@@ -39,6 +39,7 @@ export const saveVaultsConfig = (config: VaultsConfig): string => {
   if (config.autodiscover !== undefined) out.autodiscover = config.autodiscover;
   if (config.autoInit !== undefined) out.autoInit = config.autoInit;
   if (config.default !== undefined) out.default = config.default;
+  if (config.discover !== undefined) out.discover = config.discover;
   out.vaults = config.vaults ?? {};
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, JSON.stringify(out, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });

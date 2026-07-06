@@ -79,6 +79,10 @@ const statusAction = async (): Promise<void> => {
       console.log(`  ${v.vault.padEnd(16)} ${cadence.padEnd(12)} ${state}${pending}`);
     }
   }
+  if (sync?.discover && sync.discover.roots.length > 0) {
+    console.log(`discover roots (${sync.discover.roots.length})`);
+    for (const root of sync.discover.roots) console.log(`  ${root}`);
+  }
 };
 
 export const registerDaemon = (program: Command): void => {

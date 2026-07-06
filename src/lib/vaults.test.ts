@@ -69,6 +69,16 @@ describe('vaults config store', () => {
     expect(loadVaultsConfig().config.vaults).toEqual(config.vaults);
   });
 
+  it('preserves the discover roots through a save round-trip', () => {
+    const config: VaultsConfig = {
+      version: 1,
+      discover: [{ path: '~/roots', autosync: false, ignore: ['skip'] }],
+      vaults: { work: { path: '~/w', mcp: ['local'] } },
+    };
+    saveVaultsConfig(config);
+    expect(loadVaultsConfig().config.discover).toEqual(config.discover);
+  });
+
   it('always rewrites the canonical $schema url on save', () => {
     const path = saveVaultsConfig({ $schema: 'https://evil/x.json', version: 1, vaults: {} });
     expect(JSON.parse(readFileSync(path, 'utf-8'))['$schema']).toBe(SCHEMA);
