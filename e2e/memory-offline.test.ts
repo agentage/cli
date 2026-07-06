@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { assertCliBuilt, createCliMachine } from './helpers.js';
@@ -87,6 +88,76 @@ test.describe('offline memory CRUD @p0', () => {
       const res = await m.exec(['memory', 'edit', 'd.md', '--old', 'x', '--new', 'y']);
       expect(res.code).not.toBe(0);
       expect(res.stderr + res.stdout).toContain('Multiple occurrences');
+    } finally {
+      m.cleanup();
+    }
+  });
+
+  test('a write carrying an obvious secret is refused; ordinary prose still writes', async () => {
+    const m = createCliMachine(OFFLINE);
+    try {
+      const vaultDir = join(m.configDir, 'main');
+      expect((await m.exec(['vault', 'add', 'main', '--local', vaultDir])).code).toBe(0);
+
+      // Prose that merely mentions "password" is not a false positive - it writes, giving a HEAD.
+      const clean = await m.exec([
+        'memory',
+        'write',
+        'ops/note.md',
+        '--body',
+        'Change the wifi password before the demo.',
+      ]);
+      expect(clean.code, clean.stderr).toBe(0);
+      const head = execFileSync('git', ['-C', vaultDir, 'rev-parse', 'HEAD'], {
+        encoding: 'utf-8',
+      }).trim();
+
+      // A fake-but-shape-valid AWS key is refused with the canonical message and a non-zero exit.
+      const secret = await m.exec([
+        'memory',
+        'write',
+        'sec/aws.md',
+        '--body',
+        'AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE',
+      ]);
+      expect(secret.code).not.toBe(0);
+      expect(secret.stderr + secret.stdout).toContain('Refused: this appears to contain');
+
+      // Nothing was persisted: no file, the read fails, and HEAD did not move.
+      expect(existsSync(join(vaultDir, 'sec', 'aws.md'))).toBe(false);
+      expect((await m.exec(['memory', 'read', 'sec/aws.md'])).code).not.toBe(0);
+      expect(
+        execFileSync('git', ['-C', vaultDir, 'rev-parse', 'HEAD'], { encoding: 'utf-8' }).trim()
+      ).toBe(head);
+    } finally {
+      m.cleanup();
+    }
+  });
+
+  test('read clamps an oversized doc for display but the stored file stays whole', async () => {
+    const m = createCliMachine(OFFLINE);
+    try {
+      const vaultDir = join(m.configDir, 'main');
+      expect((await m.exec(['vault', 'add', 'main', '--local', vaultDir])).code).toBe(0);
+
+      // A body over the 64 KB read budget (no digits/secret shapes so the write is accepted);
+      // passed on argv, comfortably under the OS per-arg limit.
+      const body = 'durable notes and knowledge kept here forever '.repeat(1600);
+      const originalBytes = Buffer.byteLength(body, 'utf-8');
+      expect(originalBytes).toBeGreaterThan(65536);
+      expect((await m.exec(['memory', 'write', 'big/tome.md', '--body', body])).code).toBe(0);
+
+      const read = await m.exec(['memory', 'read', 'big/tome.md']);
+      expect(read.code, read.stderr).toBe(0);
+      // The printed body is clamped to the budget plus the marker, well under the original.
+      expect(read.stdout).toContain('[Truncated for display:');
+      expect(read.stdout).toContain(`of ${originalBytes} bytes`);
+      expect(Buffer.byteLength(read.stdout, 'utf-8')).toBeLessThan(originalBytes);
+
+      // The stored file on disk is the full, unclamped original - the marker never touches it.
+      const onDisk = readFileSync(join(vaultDir, 'big', 'tome.md'), 'utf-8');
+      expect(Buffer.byteLength(onDisk, 'utf-8')).toBe(originalBytes);
+      expect(onDisk).not.toContain('[Truncated for display:');
     } finally {
       m.cleanup();
     }
