@@ -24,7 +24,7 @@ interface Watcher {
 
 export interface DiscoverWatcherDeps {
   getConfig?: () => VaultsConfig;
-  loadConfig?: () => VaultsConfig; // re-read at save time for concurrent-write safety
+  loadConfig?: () => VaultsConfig; // re-read at save time (re-load-check-save)
   saveConfig?: (config: VaultsConfig) => void;
   scan?: (config: VaultsConfig) => DiscoverCandidate[];
   provision?: (name: string) => Promise<unknown>;
@@ -43,6 +43,10 @@ export interface DiscoverWatcher {
 }
 
 const msgOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+// Floors: a 0/near-0 poll interval would busy-loop the daemon; a 0 debounce defeats coalescing.
+const POLL_FLOOR_MS = 1000;
+const DEBOUNCE_FLOOR_MS = 50;
 
 const isDir = (path: string): boolean => {
   try {
@@ -67,8 +71,8 @@ export const createDiscoverWatcher = (deps: DiscoverWatcherDeps = {}): DiscoverW
     deps.provision ?? ((name: string) => provisionAccountVault(name, defaultProvisionDeps()));
   const isDirectory = deps.isDirectory ?? isDir;
   const watch = deps.watch ?? defaultWatch;
-  const debounceMs = deps.debounceMs ?? 500;
-  const pollMs = deps.pollMs ?? 60_000;
+  const debounceMs = Math.max(DEBOUNCE_FLOOR_MS, deps.debounceMs ?? 500);
+  const pollMs = Math.max(POLL_FLOOR_MS, deps.pollMs ?? 60_000);
   const log = deps.log ?? (() => {});
 
   const watchers: Watcher[] = [];
@@ -89,8 +93,9 @@ export const createDiscoverWatcher = (deps: DiscoverWatcherDeps = {}): DiscoverW
       return [];
     }
     if (candidates.length === 0) return [];
-    // Concurrent-write safety: re-read the on-disk config right before the save and re-check each
-    // candidate against it, so a registration by another writer (or the daemon) is never clobbered.
+    // Re-load-check-save: re-read the on-disk config right before the save so a recent edit by
+    // another writer is folded in. In-process safe + atomic rename; a lockless cross-process RMW
+    // can still lose an update (follow-up: cross-process config locking).
     let fresh: VaultsConfig;
     try {
       fresh = loadConfig();

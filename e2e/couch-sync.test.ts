@@ -538,8 +538,8 @@ test.describe('couch account sync (hermetic) @couch', () => {
       AGENTAGE_SITE_FQDN: `127.0.0.1:${stub.port}`,
       AGENTAGE_NO_DAEMON: '',
       AGENTAGE_DAEMON_PORT: String(daemonPort),
-      // Short knobs keep the tier deterministic even where fs.watch is unreliable (the poll covers it).
-      AGENTAGE_DISCOVER_POLL_MS: '800',
+      // Short knobs (floored at 1000/50ms) keep the tier deterministic even where fs.watch is flaky.
+      AGENTAGE_DISCOVER_POLL_MS: '1000',
       AGENTAGE_DISCOVER_DEBOUNCE_MS: '150',
     });
     fakeAuth(m, stub.port);

@@ -68,7 +68,7 @@ describe('discover watcher', () => {
     w.stop();
   });
 
-  it('writes discovered candidates onto the freshly re-read config (concurrent-write safe)', async () => {
+  it('writes discovered candidates onto the freshly re-read config (re-load-check-save)', async () => {
     const snapshot: VaultsConfig = { version: 1, discover: [{ path: '/root' }], vaults: {} };
     // Disk gained an unrelated vault between the scan and the save (an external writer).
     const disk: VaultsConfig = {
@@ -176,6 +176,35 @@ describe('discover watcher', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(scan).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1000);
+    expect(scan).toHaveBeenCalledTimes(3);
+    w.stop();
+    vi.useRealTimers();
+  });
+
+  it('floors a 0 poll interval and a 0 debounce so neither can busy-loop', async () => {
+    vi.useFakeTimers();
+    const scan = vi.fn((): DiscoverCandidate[] => []);
+    let fire = (): void => {};
+    const w = createDiscoverWatcher({
+      getConfig: () => ({ version: 1, discover: [{ path: '/root' }], vaults: {} }),
+      scan,
+      isDirectory: () => true,
+      watch: (_dir, onChange) => {
+        fire = onChange;
+        return { close: () => {} };
+      },
+      debounceMs: 0,
+      pollMs: 0,
+    });
+    w.reschedule(); // the initial scan
+    fire();
+    await vi.advanceTimersByTimeAsync(49);
+    expect(scan).toHaveBeenCalledTimes(1); // debounce floored to 50ms, not 0
+    await vi.advanceTimersByTimeAsync(1);
+    expect(scan).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(949);
+    expect(scan).toHaveBeenCalledTimes(2); // poll floored to 1000ms, not a ~1ms busy-loop
+    await vi.advanceTimersByTimeAsync(1);
     expect(scan).toHaveBeenCalledTimes(3);
     w.stop();
     vi.useRealTimers();

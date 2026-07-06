@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -42,11 +42,11 @@ describe('config store', () => {
     expect(mode).toBe(0o600);
   });
 
+  // Per-save unique tmp names make cross-process tmp clobbering structurally impossible.
   it('writes atomically, leaving no temp file behind', () => {
-    saveAuth(sample);
-    saveAuth({ ...sample, clientId: 'client-2' });
-    expect(existsSync(join(getConfigDir(), 'auth.json.tmp'))).toBe(false);
-    expect(readAuth()?.clientId).toBe('client-2');
+    for (let i = 0; i < 25; i++) saveAuth({ ...sample, clientId: `client-${i}` });
+    expect(readdirSync(getConfigDir()).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+    expect(readAuth()?.clientId).toBe('client-24');
     expect(statSync(join(getConfigDir(), 'auth.json')).mode & 0o777).toBe(0o600);
   });
 

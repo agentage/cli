@@ -16,8 +16,11 @@ import { createDiscoverWatcher } from './sync/discover/watcher.js';
 import { createSyncManager } from './sync/manager.js';
 import { VERSION } from './utils/version.js';
 
+// Unset/empty/invalid -> undefined (the watcher's defaults apply); the watcher floors low values.
 const envInt = (name: string): number | undefined => {
-  const v = Number(process.env[name]);
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const v = Number(raw);
   return Number.isFinite(v) && v >= 0 ? v : undefined;
 };
 

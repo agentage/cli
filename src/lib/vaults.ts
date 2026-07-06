@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { validateConfig, type VaultsConfig } from '@agentage/memory-core';
@@ -41,7 +42,8 @@ export const saveVaultsConfig = (config: VaultsConfig): string => {
   if (config.default !== undefined) out.default = config.default;
   if (config.discover !== undefined) out.discover = config.discover;
   out.vaults = config.vaults ?? {};
-  const tmp = `${path}.tmp`;
+  // A per-save tmp name: two concurrent savers can never clobber each other's tmp file.
+  const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   writeFileSync(tmp, JSON.stringify(out, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
   renameSync(tmp, path);
   chmodSync(path, 0o600);
