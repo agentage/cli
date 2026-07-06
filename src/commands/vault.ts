@@ -143,7 +143,7 @@ export const registerVault = (program: Command): void => {
 
   vault
     .command('sync [name]')
-    .description('Sync git-synced vaults now (commit + push, pull-rebase)')
+    .description('Sync vaults now (git commit/push/pull, or the account channel)')
     .action((name: string | undefined) =>
       runVaultSync(name, defaultVaultSyncDeps()).catch((err: unknown) => {
         console.error(chalk.red(err instanceof Error ? err.message : String(err)));

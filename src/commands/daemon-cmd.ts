@@ -62,6 +62,23 @@ const statusAction = async (): Promise<void> => {
       console.log(`  ${v.vault.padEnd(16)} ${cadence.padEnd(12)} ${state}`);
     }
   }
+  if (sync?.couch && sync.couch.length > 0) {
+    console.log('couch sync');
+    for (const v of sync.couch) {
+      const cadence = v.intervalSeconds > 0 ? `every ${v.intervalSeconds}s` : 'manual';
+      const state = v.paused
+        ? `paused: ${v.paused}`
+        : v.running
+          ? 'running'
+          : v.lastError
+            ? `error: ${v.lastError}`
+            : v.lastSync
+              ? `ok ${v.lastSync}`
+              : 'scheduled';
+      const pending = v.pendingCount > 0 ? `  ${v.pendingCount} pending` : '';
+      console.log(`  ${v.vault.padEnd(16)} ${cadence.padEnd(12)} ${state}${pending}`);
+    }
+  }
 };
 
 export const registerDaemon = (program: Command): void => {

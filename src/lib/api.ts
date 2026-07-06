@@ -25,6 +25,20 @@ const tryRefresh = async (auth: AuthState, links: Links): Promise<boolean> => {
   }
 };
 
+// The current OAuth bearer for background (couch) sync. Reads auth.json fresh on every call - the
+// user may sign in or out between ticks - and refreshes once when the stored token is past its
+// stated expiry. Returns null when signed out so a caller pauses with zero network, never throws.
+export const currentBearer = async (
+  readAuth: () => AuthState | null,
+  links: Links
+): Promise<string | null> => {
+  const auth = readAuth();
+  if (!auth?.tokens.accessToken) return null;
+  const expired = auth.tokens.expiresAt !== undefined && auth.tokens.expiresAt <= Date.now();
+  if (expired && !(await tryRefresh(auth, links))) return null;
+  return auth.tokens.accessToken;
+};
+
 export const authedGet = async <T>(auth: AuthState, links: Links, url: string): Promise<T> => {
   const call = (): Promise<Response> =>
     fetch(url, { headers: { authorization: `Bearer ${auth.tokens.accessToken}` } });

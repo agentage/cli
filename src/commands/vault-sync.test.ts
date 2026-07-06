@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type VaultsConfig } from '@agentage/memory-core';
 import { type SyncResult } from '../sync/cycle.js';
+import { type CouchSyncResult } from '../sync/couch/manager.js';
 import { type SyncTarget } from '../sync/planner.js';
 import { runVaultSync, type VaultSyncDeps } from './vault-sync.js';
 
@@ -14,16 +15,34 @@ const result = (over: Partial<SyncResult> = {}): SyncResult => ({
   ...over,
 });
 
+const couchResult = (over: Partial<CouchSyncResult> = {}): CouchSyncResult => ({
+  vault: 'acct',
+  channel: 'couch',
+  ok: true,
+  committed: false,
+  pulled: false,
+  pendingCount: 0,
+  ...over,
+});
+
+const gitConfig = (): VaultsConfig => ({
+  version: 1,
+  vaults: { v: { path: '/tmp/v', origin: [{ remote: 'git@h:v.git', interval: 0 }] } },
+});
+
+const acctConfig = (): VaultsConfig => ({
+  version: 1,
+  vaults: { acct: { path: '/tmp/acct', origin: [{ remote: 'agentage' }] } },
+});
+
 const makeDeps = (over: Partial<VaultSyncDeps> = {}): { deps: VaultSyncDeps; logs: string[] } => {
   const logs: string[] = [];
   const deps: VaultSyncDeps = {
-    loadConfig: (): VaultsConfig => ({
-      version: 1,
-      vaults: { v: { path: '/tmp/v', origin: [{ remote: 'git@h:v.git', interval: 0 }] } },
-    }),
+    loadConfig: gitConfig,
     daemonPort: async () => null,
     runViaDaemon: async () => result(),
-    runInProcess: async () => result(),
+    runGitInProcess: async () => result(),
+    runCouchInProcess: async () => couchResult(),
     log: (m) => logs.push(m),
     ...over,
   };
@@ -31,64 +50,87 @@ const makeDeps = (over: Partial<VaultSyncDeps> = {}): { deps: VaultSyncDeps; log
 };
 
 describe('runVaultSync', () => {
-  it('reports "no git origin" for an unknown vault name', async () => {
+  it('reports "no syncable origin" for an unknown vault name', async () => {
     const { deps, logs } = makeDeps();
     await runVaultSync('missing', deps);
-    expect(logs.join()).toContain("No git origin configured for vault 'missing'");
+    expect(logs.join()).toContain("No syncable origin configured for vault 'missing'");
   });
 
-  it('hints when no git-synced vaults exist', async () => {
+  it('hints when no syncable vaults exist', async () => {
     const { deps, logs } = makeDeps({ loadConfig: () => ({ version: 1, vaults: {} }) });
     await runVaultSync(undefined, deps);
-    expect(logs.join()).toContain('No git-synced vaults');
+    expect(logs.join()).toContain('No syncable vaults');
   });
 
-  it('reports an account vault clearly and never attempts a git sync', async () => {
-    const runViaDaemon = vi.fn(async () => result());
-    const runInProcess = vi.fn(async () => result());
+  it('runs an account vault in-process over the couch channel', async () => {
+    const runCouchInProcess = vi.fn(async () => couchResult({ committed: true, pulled: true }));
+    const runGitInProcess = vi.fn(async (_t: SyncTarget) => result());
     const { deps, logs } = makeDeps({
-      loadConfig: () => ({
-        version: 1,
-        vaults: { acct: { path: '/tmp/acct', origin: [{ remote: 'agentage' }] } },
-      }),
-      daemonPort: async () => 4243,
-      runViaDaemon,
-      runInProcess,
+      loadConfig: acctConfig,
+      daemonPort: async () => null,
+      runCouchInProcess,
+      runGitInProcess,
     });
     await runVaultSync('acct', deps);
-    expect(logs.join()).toContain("Vault 'acct' is an account vault");
-    expect(runViaDaemon).not.toHaveBeenCalled();
-    expect(runInProcess).not.toHaveBeenCalled();
+    expect(runCouchInProcess).toHaveBeenCalledWith('acct');
+    expect(runGitInProcess).not.toHaveBeenCalled();
+    expect(logs.join()).toContain('acct (account): ');
+    expect(logs.join()).toContain('committed');
+    expect(logs.join()).toContain('pulled');
   });
 
-  it('runs in-process when the daemon is down', async () => {
-    const runInProcess = vi.fn(async (_t: SyncTarget) => result({ committed: true }));
-    const { deps, logs } = makeDeps({ daemonPort: async () => null, runInProcess });
+  it('renders a paused account vault clearly', async () => {
+    const { deps, logs } = makeDeps({
+      loadConfig: acctConfig,
+      daemonPort: async () => null,
+      runCouchInProcess: async () => couchResult({ paused: 'signed out' }),
+    });
+    await runVaultSync('acct', deps);
+    expect(logs.join()).toContain('paused (signed out)');
+  });
+
+  it('delegates an account vault to the daemon when one is reachable', async () => {
+    const runViaDaemon = vi.fn(async () => couchResult());
+    const runCouchInProcess = vi.fn(async () => couchResult());
+    const { deps } = makeDeps({
+      loadConfig: acctConfig,
+      daemonPort: async () => 4243,
+      runViaDaemon,
+      runCouchInProcess,
+    });
+    await runVaultSync('acct', deps);
+    expect(runViaDaemon).toHaveBeenCalledWith(4243, 'acct');
+    expect(runCouchInProcess).not.toHaveBeenCalled();
+  });
+
+  it('runs a git vault in-process when the daemon is down', async () => {
+    const runGitInProcess = vi.fn(async (_t: SyncTarget) => result({ committed: true }));
+    const { deps, logs } = makeDeps({ daemonPort: async () => null, runGitInProcess });
     await runVaultSync('v', deps);
-    expect(runInProcess).toHaveBeenCalledTimes(1);
+    expect(runGitInProcess).toHaveBeenCalledTimes(1);
     expect(logs.join()).toContain('committed');
     expect(logs.join()).toContain('pushed');
   });
 
-  it('delegates to the daemon when one is reachable', async () => {
+  it('delegates a git vault to the daemon when one is reachable', async () => {
     const runViaDaemon = vi.fn(async () => result());
-    const runInProcess = vi.fn(async (t: SyncTarget) => result({ vault: t.vault }));
-    const { deps } = makeDeps({ daemonPort: async () => 4243, runViaDaemon, runInProcess });
+    const runGitInProcess = vi.fn(async (t: SyncTarget) => result({ vault: t.vault }));
+    const { deps } = makeDeps({ daemonPort: async () => 4243, runViaDaemon, runGitInProcess });
     await runVaultSync('v', deps);
     expect(runViaDaemon).toHaveBeenCalledWith(4243, 'v');
-    expect(runInProcess).not.toHaveBeenCalled();
+    expect(runGitInProcess).not.toHaveBeenCalled();
   });
 
-  it('surfaces a failure line and lists preserved conflict copies', async () => {
+  it('surfaces a git failure line and lists preserved conflict copies', async () => {
     const { deps, logs } = makeDeps({
-      runInProcess: async () =>
+      runGitInProcess: async () =>
         result({ ok: false, pushed: false, reason: 'unreachable', error: 'nope' }),
     });
     await runVaultSync('v', deps);
     expect(logs.join()).toContain('failed (unreachable)');
 
     const { deps: d2, logs: l2 } = makeDeps({
-      runInProcess: async () => result({ conflicts: ['note.conflict.md'] }),
+      runGitInProcess: async () => result({ conflicts: ['note.conflict.md'] }),
     });
     await runVaultSync('v', d2);
     expect(l2.join()).toContain('kept remote copy: note.conflict.md');

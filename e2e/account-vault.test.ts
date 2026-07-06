@@ -95,15 +95,17 @@ test.describe('account vault (offline) @p0', () => {
     }
   });
 
-  test('vault sync on an account vault reports it clearly instead of erroring', async () => {
+  test('vault sync on an offline, signed-out account vault pauses instead of erroring', async () => {
     const m = createCliMachine(OFFLINE);
     try {
       const vaultDir = join(m.configDir, 'acct');
       expect((await m.exec(['vault', 'add', 'acct', '--path', vaultDir])).code).toBe(0);
 
+      // Not signed in: the couch cycle pauses with zero network, never a crash (exit 0).
       const sync = await m.exec(['vault', 'sync', 'acct']);
       expect(sync.code, sync.stderr).toBe(0);
-      expect(sync.stdout).toContain('account vault');
+      expect(sync.stdout).toContain('acct (account)');
+      expect(sync.stdout).toContain('paused (signed out)');
     } finally {
       m.cleanup();
     }
