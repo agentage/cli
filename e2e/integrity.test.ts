@@ -80,7 +80,7 @@ const execStdin = (configDir: string, args: string[], stdin: string): Promise<Ex
     child.stdin.end();
   });
 
-test.describe('store data integrity @p0', () => {
+test.describe('store data integrity @p0 @offline', () => {
   test.beforeAll(() => assertCliBuilt());
 
   test('10 concurrent writes serialize into 10 clean commits', async () => {

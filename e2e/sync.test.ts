@@ -58,7 +58,7 @@ const alive = (pid: number): boolean => {
   }
 };
 
-test.describe('git sync @p0', () => {
+test.describe('git sync @p0 @offline', () => {
   test.beforeAll(() => assertCliBuilt());
 
   test('the daemon auto-loop pushes a write to the bare remote within one interval', async () => {

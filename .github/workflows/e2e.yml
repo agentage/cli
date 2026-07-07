@@ -1,7 +1,10 @@
-# E2E - builds the CLI and runs ./e2e against a live deployed stack (default
-# dev). Self-contained: when E2E_AUTH_* secrets are absent, the @p0 round trip
-# signs up a throwaway account (open signup on dev). No browser binaries needed
-# (request-only tests).
+# E2E - builds the CLI and runs ./e2e against the built dist/cli.js. Two tiers:
+#  - e2e-offline: the @offline-tagged tests only. Self-contained (temp bare
+#    remotes, no live stack), so this is the fast required signal even when
+#    dev.agentage.io is down. No live-stack env or secrets.
+#  - e2e-live: the full suite against a live deployed stack (default dev).
+#    Self-contained @p0 OAuth: when E2E_AUTH_* secrets are absent it signs up a
+#    throwaway account (open signup on dev). No browser binaries needed.
 name: E2E
 
 on:
@@ -16,7 +19,38 @@ on:
         default: 'dev.agentage.io'
 
 jobs:
-  e2e:
+  e2e-offline:
+    name: 🧪 E2E offline (no live stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v7
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🏗️ Build
+        run: npm run build
+
+      - name: 🧪 Run offline e2e
+        run: npm run test:e2e -- --grep @offline
+
+      - name: 📊 Upload report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-offline-report
+          path: playwright-report/
+          retention-days: 7
+
+  e2e-live:
     name: 🧪 E2E vs ${{ inputs.target || 'dev.agentage.io' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15

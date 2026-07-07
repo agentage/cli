@@ -7,7 +7,7 @@ import { assertCliBuilt, createCliMachine } from './helpers.js';
 // registry acceptance criteria end to end. All offline except `update --check`. @p0
 const SCHEMA_URL = 'https://agentage.io/schemas/vaults.schema.json';
 
-test.describe('config + vault registry (offline) @p0', () => {
+test.describe('config + vault registry (offline) @p0 @offline', () => {
   test.beforeAll(() => assertCliBuilt());
 
   test('add --git writes a valid origin entry with the $schema link', async () => {

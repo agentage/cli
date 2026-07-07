@@ -48,7 +48,7 @@ const mcpRpc = async (port: number, method: string, params: unknown): Promise<Rp
 const callTool = (port: number, name: string, args: Record<string, unknown>): Promise<RpcResult> =>
   mcpRpc(port, 'tools/call', { name, arguments: args });
 
-test.describe('daemon /mcp exposes the frozen tools @p0', () => {
+test.describe('daemon /mcp exposes the frozen tools @p0 @offline', () => {
   test.beforeAll(() => assertCliBuilt());
 
   test('initialize + tools/list + all six tools over :port/mcp', async () => {
