@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { conflictName } from './conflict.js';
 import { createSyncGit, GitError, type GitErrorKind, type SyncGit } from './git-exec.js';
 import { type SyncTarget } from './planner.js';
+import { isSafeRemoteUrl } from './remote-url.js';
 
 export interface SyncResult {
   vault: string;
@@ -12,7 +13,7 @@ export interface SyncResult {
   committed: boolean; // a sync commit was made for a dirty working tree
   pushed: boolean;
   conflicts: string[]; // paths written as `<name>.conflict.md`
-  skipped?: 'lock' | 'busy';
+  skipped?: 'lock' | 'busy' | 'invalid-remote';
   reason?: GitErrorKind;
   error?: string;
 }
@@ -143,6 +144,8 @@ export const runSyncCycle = async (
     pushed: false,
     conflicts: [],
   };
+  // Defense in depth: the planner already drops unsafe remotes, but never add/set-url one here.
+  if (!isSafeRemoteUrl(target.remote)) return { ...base, ok: true, skipped: 'invalid-remote' };
   let committed = false;
   let conflicts: string[] = [];
   try {

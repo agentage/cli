@@ -1,4 +1,5 @@
 import { expandPath, type VaultsConfig } from '@agentage/memory-core';
+import { isSafeRemoteUrl, redactRemoteUrl } from './remote-url.js';
 
 // The unified schema stores interval as a bare non-negative integer; sync treats it as SECONDS
 // (there is no minutes marker in the schema, so seconds is the least-surprising reading and keeps
@@ -39,6 +40,13 @@ export const syncTargets = (config: VaultsConfig): SyncTarget[] => {
     entry.origin.forEach((origin, index) => {
       const remote = origin.remote.trim();
       if (!remote || remote === RESERVED_REMOTE) return;
+      // One poisoned origin must not run code or kill the whole cycle: skip it with a warning.
+      if (!isSafeRemoteUrl(remote)) {
+        console.warn(
+          `agentage: skipping unsafe remote for vault '${vault}': ${redactRemoteUrl(remote)}`
+        );
+        return;
+      }
       out.push({
         vault,
         path: expandPath(entry.path as string),

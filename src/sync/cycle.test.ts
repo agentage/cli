@@ -57,6 +57,15 @@ describe('runSyncCycle', () => {
     expect(g(bare, ['show', 'main:notes/a.md'])).toContain('hello quokka');
   });
 
+  it('skips an unsafe transport-helper remote without touching git', async () => {
+    writeFile(work, 'a.md', 'x');
+    const result = await runSyncCycle(target({ path: work, remote: 'ext::sh -c "id"' }));
+    expect(result.ok).toBe(true);
+    expect(result.skipped).toBe('invalid-remote');
+    expect(result.pushed).toBe(false);
+    expect(existsSync(join(work, '.git'))).toBe(false);
+  });
+
   it('is a no-op on the second cycle (nothing to commit)', async () => {
     writeFile(work, 'a.md', 'x');
     await runSyncCycle(target({ path: work, remote: bare }));

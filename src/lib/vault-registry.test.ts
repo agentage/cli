@@ -9,6 +9,7 @@ import {
   appendDiscoverIgnore,
   ensureVaultDir,
   formatVaultLine,
+  redactEntry,
   removeVault,
   vaultType,
 } from './vault-registry.js';
@@ -136,6 +137,30 @@ describe('formatVaultLine', () => {
     const line = formatVaultLine('acct', { path: '/tmp/acct', origin: [{ remote: 'agentage' }] });
     expect(line).toContain('account');
     expect(line).not.toContain('<- agentage');
+  });
+
+  it('redacts credentials in the echoed remote', () => {
+    const line = formatVaultLine('work', { origin: [{ remote: 'https://u:tok@h/w.git' }] });
+    expect(line).toContain('https://u:***@h/w.git');
+    expect(line).not.toContain('tok');
+  });
+});
+
+describe('redactEntry', () => {
+  it('redacts every origin remote without mutating the input', () => {
+    const entry = {
+      path: '/tmp/w',
+      origin: [{ remote: 'https://u:tok@h/w.git' }, { remote: 'git@h:me/w.git' }],
+    };
+    const out = redactEntry(entry);
+    expect(out.origin?.[0]?.remote).toBe('https://u:***@h/w.git');
+    expect(out.origin?.[1]?.remote).toBe('git@h:me/w.git');
+    expect(entry.origin[0].remote).toBe('https://u:tok@h/w.git');
+  });
+
+  it('returns origin-free entries as-is', () => {
+    const entry = { path: '/tmp/local' };
+    expect(redactEntry(entry)).toEqual(entry);
   });
 });
 

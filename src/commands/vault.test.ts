@@ -61,6 +61,22 @@ describe('vault add', () => {
     expect(h.logs.join()).toContain('(git)');
   });
 
+  it('rejects an unsafe --git transport-helper remote', async () => {
+    const h = makeDeps();
+    await expect(runVaultAdd('x', { git: 'ext::sh -c "id"' }, h.deps)).rejects.toThrow(
+      /unsafe git remote URL/
+    );
+    expect(h.get().vaults?.x).toBeUndefined();
+  });
+
+  it('redacts credentials in the echoed --git remote (stores the real URL)', async () => {
+    const h = makeDeps();
+    await runVaultAdd('work', { git: 'https://u:tok@h/w.git' }, h.deps);
+    expect(h.get().vaults?.work.origin?.[0]?.remote).toBe('https://u:tok@h/w.git');
+    expect(h.logs.join()).toContain('https://u:***@h/w.git');
+    expect(h.logs.join()).not.toContain('tok@');
+  });
+
   it('with no flag registers an account vault, writes the entry, then provisions', async () => {
     const h = makeDeps();
     await runVaultAdd('acct', {}, h.deps);
@@ -204,5 +220,16 @@ describe('vault list', () => {
     expect(out.a!.path).toBe('/tmp/a');
     expect(out.a!.type).toBe('local');
     expect(out.acct!.type).toBe('account');
+  });
+
+  it('redacts credentials in --json origin remotes', async () => {
+    const h = makeDeps();
+    await runVaultAdd('work', { git: 'https://u:tok@h/w.git' }, h.deps);
+    h.logs.length = 0;
+    runVaultList({ json: true }, h.deps);
+    expect(h.logs[0]).toContain('https://u:***@h/w.git');
+    expect(h.logs[0]).not.toContain('tok@');
+    // The on-disk value is untouched.
+    expect(h.get().vaults?.work.origin?.[0]?.remote).toBe('https://u:tok@h/w.git');
   });
 });

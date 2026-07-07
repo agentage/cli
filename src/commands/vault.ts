@@ -6,6 +6,7 @@ import {
   appendDiscoverIgnore,
   ensureVaultDir,
   formatVaultLine,
+  redactEntry,
   removeVault,
   vaultType,
 } from '../lib/vault-registry.js';
@@ -15,6 +16,7 @@ import {
   type ProvisionResult,
 } from '../lib/provision.js';
 import { loadVaultsConfig, mutateVaultsConfig, type LoadedVaults } from '../lib/vaults.js';
+import { assertSafeRemoteUrl, redactRemoteUrl } from '../sync/remote-url.js';
 import { defaultVaultSyncDeps, runVaultSync } from './vault-sync.js';
 
 export interface VaultDeps {
@@ -49,7 +51,10 @@ const buildEntry = (name: string, opts: VaultAddOptions): VaultEntry => {
     throw new Error('--path applies only to an account vault (drop --local and --git)');
   // A --git vault is a local working copy that syncs to an external git remote (path + origin);
   // the daemon commits/pushes and pulls it per its interval.
-  if (opts.git) return { path: `~/vaults/${name}`, origin: [{ remote: opts.git }], mcp: ['local'] };
+  if (opts.git) {
+    assertSafeRemoteUrl(opts.git);
+    return { path: `~/vaults/${name}`, origin: [{ remote: opts.git }], mcp: ['local'] };
+  }
   if (hasLocal) {
     const path = typeof opts.local === 'string' ? opts.local : `~/vaults/${name}`;
     return { path, mcp: ['local'] };
@@ -69,7 +74,8 @@ export const runVaultAdd = async (
   if (entry.path) deps.ensureDir(entry.path);
   const kind = vaultType(entry);
   const where = entry.path ?? entry.origin?.[0]?.remote ?? '';
-  const via = kind === 'git' && entry.origin?.length ? ` <- ${entry.origin[0]!.remote}` : '';
+  const via =
+    kind === 'git' && entry.origin?.length ? ` <- ${redactRemoteUrl(entry.origin[0]!.remote)}` : '';
   deps.log(chalk.green(`Added vault '${name}' (${kind}) -> ${where}${via}`));
   // Offline-first: the local entry is saved first; provisioning the account channel is never fatal.
   if (isAccountVault(entry)) deps.log((await deps.provision(name)).message);
@@ -105,8 +111,9 @@ export const runVaultList = (opts: { json?: boolean }, deps: VaultDeps = default
   const names = Object.keys(vaults);
   if (opts.json) {
     // Backward-compatible: still the name-keyed map, each entry annotated with its honest type.
+    // Origin remotes are redacted so a credentialed URL never leaks into machine output.
     const out = Object.fromEntries(
-      names.map((n) => [n, { ...vaults[n]!, type: vaultType(vaults[n]!) }])
+      names.map((n) => [n, { ...redactEntry(vaults[n]!), type: vaultType(vaults[n]!) }])
     );
     deps.log(JSON.stringify(out, null, 2));
     return;
