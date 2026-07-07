@@ -26,8 +26,8 @@ its agent-runtime patterns (the local memory daemon was deliberately ported from
   `spawn git` directly (memory-core's createGit is private); no new deps. `vault sync [name]`
   forces a cycle via the daemon (`/api/sync/run`) or in-process when it is down
 - `src/package-guard.test.ts` - CI guard: no agent-runtime remnants (express/ws/sqlite/
-  core/platform/supabase), runtime deps stay exactly `@agentage/memory-core + chalk +
-  commander + open`
+  core/platform/supabase), runtime deps stay exactly `@agentage/memory-core +
+  @agentage/server-memory + @modelcontextprotocol/sdk + chalk + commander + open`
 
 ## Auth model
 Fresh DCR public client per `setup` run (the redirect URI binds the ephemeral callback

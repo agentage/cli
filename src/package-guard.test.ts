@@ -52,6 +52,15 @@ describe('package guard (R6)', () => {
     expect(pkg.bin['agentage']).toBe('./dist/cli.js');
   });
 
+  it('no runtime dependency uses the "latest" specifier', () => {
+    const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
+      dependencies: Record<string, string>;
+    };
+    for (const [name, spec] of Object.entries(pkg.dependencies)) {
+      expect(spec, `${name} must pin a semver range, not "latest"`).not.toBe('latest');
+    }
+  });
+
   it('homepage is set to the canonical site URL', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as { homepage: string };
     expect(pkg.homepage).toBe('https://agentage.io');

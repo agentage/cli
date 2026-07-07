@@ -41,6 +41,11 @@ switch (bumpType) {
     break;
 }
 
+// 0.1.19 is a permanently burned npm slot (unpublished); publishing it hard-403s, so skip it.
+if (newVersion === '0.1.19') {
+  newVersion = '0.1.20';
+}
+
 pkg.version = newVersion;
 writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
 
