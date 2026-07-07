@@ -1,11 +1,15 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import chalk from 'chalk';
 import { getConfigDir } from '../lib/config.js';
 
 // The daemon's on-disk state lives beside the config so an isolated AGENTAGE_CONFIG_DIR fully
 // isolates a daemon (pid, port, token) from any other - tests never collide with a real one.
 export const DEFAULT_DAEMON_PORT = 4243;
+
+// The daemon entry exits with this code on EADDRINUSE so a spawning CLI can short-circuit fast.
+export const EADDRINUSE_EXIT_CODE = 3;
 
 const pidPath = (): string => join(getConfigDir(), 'daemon.pid');
 const portPath = (): string => join(getConfigDir(), 'daemon.port');
@@ -88,6 +92,44 @@ export const stopDaemon = (): boolean => {
   removePortFile();
   removeTokenFile();
   return alive;
+};
+
+// Lightweight, cycle-free /health probe (daemon-client imports this module) returning the reported
+// pid; null when the port holds no reachable agentage daemon.
+const probeDaemonPid = async (port: number): Promise<number | null> => {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
+      signal: AbortSignal.timeout(500),
+    });
+    if (!res.ok) return null;
+    const h = (await res.json()) as { pid?: unknown };
+    return typeof h.pid === 'number' ? h.pid : null;
+  } catch {
+    return null;
+  }
+};
+
+// stopDaemon signals a bare recorded pid, which the OS may have recycled onto an unrelated process.
+// Guard it: signal only when /health confirms the pid is our daemon, or - if no port was recorded -
+// fall back to the blind signal with a printed caveat. Refuse otherwise rather than kill a stranger.
+export const stopDaemonSafely = async (
+  probe: (port: number) => Promise<number | null> = probeDaemonPid
+): Promise<boolean> => {
+  const pid = readPid();
+  if (pid === null || !isProcessAlive(pid)) return stopDaemon();
+  const port = readNumberFile(portPath());
+  const confirmed = port !== null && (await probe(port)) === pid;
+  if (confirmed) return stopDaemon();
+  if (port === null) {
+    console.error(chalk.yellow(`No recorded port; signalling pid ${pid} without confirmation.`));
+    return stopDaemon();
+  }
+  console.error(
+    chalk.yellow(
+      `Daemon on port ${port} did not confirm pid ${pid}; not signalling. Delete the pid file to force.`
+    )
+  );
+  return false;
 };
 
 // Stop, then wait (bounded) for the old process to actually exit so a restart can rebind the

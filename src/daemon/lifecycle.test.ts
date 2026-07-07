@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import {
   DEFAULT_DAEMON_PORT,
@@ -12,6 +12,7 @@ import {
   resolvePort,
   stopDaemon,
   stopDaemonAndWait,
+  stopDaemonSafely,
   writePidFile,
   writePortFile,
 } from './lifecycle.js';
@@ -101,6 +102,54 @@ describe('stopDaemon', () => {
     removePortFile();
     removePidFile();
     expect(isDaemonRunning()).toBe(false);
+  });
+});
+
+describe('stopDaemonSafely', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const spawnLive = (): number => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore',
+    });
+    return child.pid!;
+  };
+
+  it('signals a live pid the /health probe confirms', async () => {
+    const pid = spawnLive();
+    writePidFile(pid);
+    writePortFile(5000);
+    expect(await stopDaemonSafely(async () => pid)).toBe(true);
+    expect(isDaemonRunning()).toBe(false);
+  });
+
+  it('refuses to signal when the recorded port reports a different pid (recycled)', async () => {
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const pid = spawnLive();
+    writePidFile(pid);
+    writePortFile(5000);
+    try {
+      expect(await stopDaemonSafely(async () => pid + 1)).toBe(false);
+      expect(isProcessAlive(pid)).toBe(true);
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      process.kill(pid, 'SIGKILL');
+    }
+  });
+
+  it('falls back to a blind signal with a caveat when no port was recorded', async () => {
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const pid = spawnLive();
+    writePidFile(pid);
+    expect(await stopDaemonSafely(async () => null)).toBe(true);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('defers to stopDaemon (returns false) when nothing live is recorded', async () => {
+    expect(await stopDaemonSafely(async () => 1)).toBe(false);
+    writePidFile(DEAD_PID);
+    writePortFile(5000);
+    expect(await stopDaemonSafely(async () => 1)).toBe(false);
   });
 });
 

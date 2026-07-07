@@ -1,4 +1,6 @@
+import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -127,6 +129,21 @@ describe('DaemonClient <-> server round trip', () => {
   });
 });
 
+describe('server stop() lifecycle', () => {
+  it('resolves promptly despite an idle keep-alive connection', async () => {
+    const { port, stop } = await startServer(() => mockClient());
+    const sock = connect(port, '127.0.0.1');
+    sock.on('error', () => undefined);
+    await once(sock, 'connect');
+    const outcome = await Promise.race([
+      stop().then(() => 'stopped' as const),
+      new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), 2000)),
+    ]);
+    sock.destroy();
+    expect(outcome).toBe('stopped');
+  });
+});
+
 describe('health + waitForHealth', () => {
   it('waitForHealth resolves true against a live server', async () => {
     const { port, stop } = await startServer(() => mockClient());
@@ -156,7 +173,7 @@ describe('ensureDaemon fallback logic', () => {
   const live: Health = { ok: true, version: VERSION, pid: 1, uptime: 1, served: 0 };
 
   it('uses an already-running daemon without spawning', async () => {
-    const spawn = vi.fn(async () => true);
+    const spawn = vi.fn(async () => ({ ok: true }) as const);
     const client = await ensureDaemon({ port: 40000, probe: async () => live, spawn });
     expect(client).not.toBeNull();
     expect(spawn).not.toHaveBeenCalled();
@@ -167,7 +184,7 @@ describe('ensureDaemon fallback logic', () => {
     const client = await ensureDaemon({
       port: 40000,
       probe: async () => ({ ...live, version: '0.0.0-old' }),
-      spawn: async () => true,
+      spawn: async () => ({ ok: true }),
     });
     expect(client).not.toBeNull();
     expect(warn).toHaveBeenCalled();
@@ -177,16 +194,37 @@ describe('ensureDaemon fallback logic', () => {
     const client = await ensureDaemon({
       port: 40000,
       probe: async () => null,
-      spawn: async () => true,
+      spawn: async () => ({ ok: true }),
     });
     expect(client).not.toBeNull();
   });
 
-  it('returns null when absent and the fork is blocked', async () => {
+  it('returns null when absent and the spawn is blocked', async () => {
     const client = await ensureDaemon({
       port: 40000,
       probe: async () => null,
-      spawn: async () => false,
+      spawn: async () => ({ ok: false, reason: 'blocked' }),
+    });
+    expect(client).toBeNull();
+  });
+
+  it('returns null when the spawned daemon dies on a busy port', async () => {
+    const client = await ensureDaemon({
+      port: 40000,
+      probe: async () => null,
+      spawn: async () => ({ ok: false, reason: 'port-in-use' }),
+    });
+    expect(client).toBeNull();
+  });
+
+  it('returns null when no token is readable (nothing to authenticate with)', async () => {
+    const readToken = (): string | null => null;
+    expect(await ensureDaemon({ port: 40000, probe: async () => live, readToken })).toBeNull();
+    const client = await ensureDaemon({
+      port: 40000,
+      probe: async () => null,
+      spawn: async () => ({ ok: true }),
+      readToken,
     });
     expect(client).toBeNull();
   });
