@@ -12,9 +12,9 @@
   <!-- baked-in dark background: identical on GitHub light/dark and npm -->
   <rect x="0" y="0" width="900" height="800" fill="url(#bg)"/>
 
-  <!-- title -->
-  <text x="60" y="54" font-size="27" font-weight="700" fill="#ffffff">agentage CLI - architecture</text>
-  <rect x="62" y="68" width="214" height="4" rx="2" fill="#F59E0B"/>
+  <!-- title (centered) -->
+  <text x="450" y="54" text-anchor="middle" font-size="27" font-weight="700" fill="#ffffff">agentage CLI - architecture</text>
+  <rect x="343" y="68" width="214" height="4" rx="2" fill="#F59E0B"/>
 
   <!-- AI tools -->
   <rect x="270" y="106" width="360" height="66" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
@@ -43,6 +43,14 @@
   <text x="680" y="308" text-anchor="middle" font-size="12" font-family="JetBrains Mono, Consolas, monospace" fill="#F59E0B">127.0.0.1:4243</text>
   <text x="680" y="330" text-anchor="middle" font-size="12" fill="#9aa4b2">single writer over the vault engine</text>
   <text x="680" y="349" text-anchor="middle" font-size="12" fill="#9aa4b2">serializes writes, schedules sync</text>
+  <!-- decorative node-graph motif (purple family) -->
+  <g>
+    <line x1="797" y1="284" x2="782" y2="300" stroke="#3d4660" stroke-width="1"/>
+    <line x1="797" y1="284" x2="809" y2="301" stroke="#3d4660" stroke-width="1"/>
+    <circle cx="797" cy="284" r="4.5" fill="#b48eff"/>
+    <circle cx="782" cy="300" r="3" fill="#8f6fd0" opacity="0.8"/>
+    <circle cx="809" cy="301" r="3" fill="#8f6fd0" opacity="0.65"/>
+  </g>
 
   <!-- CLI -> daemon -->
   <line x1="370" y1="304" x2="528" y2="304" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
@@ -63,6 +71,16 @@
   <text x="450" y="500" text-anchor="middle" font-size="12" fill="#8b949e">plain markdown folders on disk</text>
   <text x="450" y="522" text-anchor="middle" font-size="12.5" fill="#9aa4b2">one git repo per vault</text>
   <text x="450" y="541" text-anchor="middle" font-size="12" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">git-per-vault store (@agentage/memory-core)</text>
+  <!-- decorative node-graph motif (amber family) -->
+  <g>
+    <line x1="634" y1="530" x2="616" y2="509" stroke="#3d4660" stroke-width="1"/>
+    <line x1="634" y1="530" x2="647" y2="512" stroke="#3d4660" stroke-width="1"/>
+    <line x1="634" y1="530" x2="622" y2="541" stroke="#3d4660" stroke-width="1"/>
+    <circle cx="634" cy="530" r="6" fill="#F59E0B"/>
+    <circle cx="616" cy="509" r="4" fill="#c98a1b" opacity="0.85"/>
+    <circle cx="647" cy="512" r="3.5" fill="#c98a1b" opacity="0.7"/>
+    <circle cx="622" cy="541" r="3" fill="#c98a1b" opacity="0.6"/>
+  </g>
 
   <!-- sync arrows -->
   <line x1="370" y1="548" x2="252" y2="636" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
