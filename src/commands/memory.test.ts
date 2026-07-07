@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MemoryClient } from '../lib/memory-client.js';
 import { translateEngineMessage } from '../lib/memory-client.js';
-import { runDelete, runEdit, runList, runRead, runSearch, runWrite } from './memory.js';
+import { runDelete, runEdit, runList, runRead, runSearch, runWrite } from './memory-verbs.js';
 
 const client = (): MemoryClient => ({
   search: vi.fn(async () => ({
