@@ -57,6 +57,15 @@ const makeManager = (over: Partial<CouchSyncManagerDeps> = {}) => {
   return { mgr, couch, discovery };
 };
 
+const autoConfig: VaultsConfig = {
+  version: 1,
+  default: 'acct',
+  vaults: {
+    acct: { path: '/tmp/acct', origin: [{ remote: 'agentage', interval: 300 }] },
+    two: { path: '/tmp/two', origin: [{ remote: 'agentage', interval: 300 }] },
+  },
+};
+
 describe('resolveMutationTarget', () => {
   it('maps a bare ref to the default vault when it is an account vault', () => {
     expect(resolveMutationTarget(config, { ref: 'notes/x.md' })).toEqual({
@@ -161,6 +170,28 @@ describe('createCouchSyncManager.onWrite', () => {
     expect(couch.removeFile).not.toHaveBeenCalled();
   });
 
+  it('defers a write to the pending queue when signed in but the channel is not couch-ready', async () => {
+    const pending: string[] = [];
+    const { mgr, couch } = makeManager({
+      discovery: {
+        channelFor: vi.fn(async (): Promise<ChannelDecision> => ({
+          kind: 'paused',
+          reason: 'not provisioned',
+        })),
+        reset: vi.fn(),
+      },
+      makeStatePersistence: () => ({
+        load: async () => null,
+        save: async (s) => {
+          pending.push(...s.pending);
+        },
+      }),
+    });
+    mgr.onWrite('write', { ref: 'notes/y.md' });
+    await vi.waitFor(() => expect(pending).toContain('notes/y.md'));
+    expect(couch.pushFileLive).not.toHaveBeenCalled();
+  });
+
   it('a delete surviving a discovery failure is enqueued, never dropped', async () => {
     const deletions: string[] = [];
     const { mgr, couch } = makeManager({
@@ -263,5 +294,106 @@ describe('createCouchSyncManager.status and runNow', () => {
     expect(couch.flushPending.mock.invocationCallOrder[0]!).toBeLessThan(
       couch.syncNow.mock.invocationCallOrder[0]!
     );
+  });
+
+  it('records a token-acquisition failure as an error, never throwing', async () => {
+    const { mgr, couch } = makeManager({
+      getBearer: async () => {
+        throw new Error('token endpoint down');
+      },
+    });
+    const result = await mgr.runNow('acct');
+    expect(result).toMatchObject({ ok: false, error: 'token endpoint down' });
+    expect(couch.syncNow).not.toHaveBeenCalled();
+    expect(mgr.status()[0]!.lastError).toBe('token endpoint down');
+  });
+
+  it('pauses (no sync) when discovery reports the channel is not ready', async () => {
+    const { mgr, couch } = makeManager({
+      discovery: {
+        channelFor: vi.fn(async (): Promise<ChannelDecision> => ({
+          kind: 'paused',
+          reason: 'not provisioned',
+        })),
+        reset: vi.fn(),
+      },
+    });
+    const result = await mgr.runNow('acct');
+    expect(result).toMatchObject({ ok: true, paused: 'not provisioned' });
+    expect(couch.syncNow).not.toHaveBeenCalled();
+    expect(mgr.status()[0]!.paused).toBe('not provisioned');
+  });
+
+  it('a re-entrant cycle on an already-running target is a no-op', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const couch = {
+      pushFileLive: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
+      flushPending: vi.fn(async () => {}),
+      syncNow: vi.fn(async () => {
+        await gate;
+        return { pushed: true, pulled: true };
+      }),
+    };
+    const { mgr } = makeManager({ makeCouchSync: () => couch });
+    const first = mgr.runNow('acct');
+    const second = await mgr.runNow('acct'); // guard hit while first still holds the target
+    expect(second.pendingCount).toBe(0);
+    release();
+    await first;
+    expect(couch.syncNow).toHaveBeenCalledTimes(1); // only the first cycle ran the round
+  });
+
+  it('reuses the cached couch wire and target state across repeated cycles', async () => {
+    const couch = {
+      pushFileLive: vi.fn(async () => {}),
+      removeFile: vi.fn(async () => {}),
+      flushPending: vi.fn(async () => {}),
+      syncNow: vi.fn(async () => ({ pushed: true, pulled: true })),
+    };
+    const makeCouchSync = vi.fn(() => couch);
+    const mgr = createCouchSyncManager({
+      getConfig: () => config,
+      configDir: () => '/tmp/cfg',
+      getBearer: async () => 'tok',
+      discovery: { channelFor: vi.fn(async () => couchDecision), reset: vi.fn() },
+      makeCouchSync,
+      makeFileStore: noopStore,
+      makeStatePersistence: () => ({ load: async () => null, save: async () => {} }),
+      commitDirty: async () => ({ committed: false, skipped: false }),
+      now: () => '2026-01-01T00:00:00Z',
+    });
+    await mgr.runNow('acct');
+    await mgr.runNow('acct');
+    expect(makeCouchSync).toHaveBeenCalledTimes(1);
+    expect(couch.syncNow).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('createCouchSyncManager.reschedule and stop', () => {
+  it('registers a state per couch target and arms auto-loop timers', () => {
+    const { mgr } = makeManager({ getConfig: () => autoConfig });
+    mgr.reschedule();
+    expect(mgr.status().map((s) => s.vault)).toEqual(['acct', 'two']);
+    mgr.stop();
+  });
+
+  it('prunes the state of a vault dropped from the config on the next reschedule', () => {
+    let cfg: VaultsConfig = autoConfig;
+    const { mgr } = makeManager({ getConfig: () => cfg });
+    mgr.reschedule();
+    expect(mgr.status()).toHaveLength(2);
+    cfg = config; // only 'acct' remains a couch target
+    mgr.reschedule();
+    expect(mgr.status().map((s) => s.vault)).toEqual(['acct']);
+    mgr.stop();
+  });
+
+  it('does not arm a timer for a manual-only (interval 0) target', () => {
+    const { mgr } = makeManager();
+    mgr.reschedule();
+    expect(mgr.status().map((s) => s.vault)).toEqual(['acct']);
+    mgr.stop();
   });
 });

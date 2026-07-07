@@ -23,7 +23,7 @@ interface TreeEntry {
 const treeFiles = (entries: TreeEntry[]): string[] =>
   entries.flatMap((e) => (e.type === 'file' ? [e.path] : e.entries ? treeFiles(e.entries) : []));
 
-test.describe('offline memory CRUD @p0', () => {
+test.describe('offline memory CRUD @p0 @offline', () => {
   test.beforeAll(() => assertCliBuilt());
 
   test('write -> search -> read -> edit -> list -> delete, no network', async () => {

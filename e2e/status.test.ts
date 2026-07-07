@@ -19,7 +19,7 @@ test.beforeAll(() => {
 
 test.afterAll(() => machine.cleanup());
 
-test('version matches the package version @smoke', async () => {
+test('version matches the package version @smoke @offline', async () => {
   const result = await machine.exec(['--version']);
   expect(result.code, result.stderr).toBe(0);
   expect(result.stdout.trim()).toBe(pkg.version);
@@ -32,7 +32,7 @@ test('unauthenticated status degrades with a setup hint @smoke', async () => {
   expect(report.endpoint.reachable, `endpoint ${report.endpoint.url} unreachable`).toBe(true);
 });
 
-test('status never leaks a stack trace when signed out @smoke', async () => {
+test('status never leaks a stack trace when signed out @smoke @offline', async () => {
   const result = await machine.exec(['status']);
   expect(result.code).toBe(0);
   expect(result.stdout).toContain('not signed in - run: agentage setup');

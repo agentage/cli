@@ -11,7 +11,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [22.x]
+        node-version: [22.x, 24.x]
 
     steps:
       - name: 📥 Checkout code
@@ -31,3 +31,40 @@ jobs:
 
       - name: 📊 Test coverage
         run: npm run test:coverage
+
+  pack-smoke:
+    name: 📦 Pack smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v7
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🏗️ Build
+        run: npm run build
+
+      - name: 📦 Pack the publish tarball
+        run: |
+          mkdir -p /tmp/pack
+          npm pack --pack-destination /tmp/pack
+
+      - name: 🚀 Install the packed CLI and smoke the binary
+        run: |
+          set -euo pipefail
+          tarball=$(ls /tmp/pack/*.tgz)
+          expected=$(node -p "require('./package.json').version")
+          npm i -g "$tarball" --prefix /tmp/global
+          export PATH="/tmp/global/bin:$PATH"
+          got=$(agentage --version)
+          echo "installed CLI reports $got (expected $expected)"
+          test "$got" = "$expected"
+          agentage --help > /dev/null

@@ -20,7 +20,7 @@ interface AccountEntry {
   type?: string;
 }
 
-test.describe('account vault (offline) @p0', () => {
+test.describe('account vault (offline) @p0 @offline', () => {
   test.beforeAll(() => assertCliBuilt());
 
   test('no-flag add registers an account vault locally, then reads/writes it, with no network', async () => {

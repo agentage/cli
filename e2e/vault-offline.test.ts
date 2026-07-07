@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { assertCliBuilt, createCliMachine } from './helpers.js';
 
 // The offline registry on the unified vaults.json: add/list/remove work with no network. @p0
-test.describe('offline vault registry @p0', () => {
+test.describe('offline vault registry @p0 @offline', () => {
   test.beforeAll(() => assertCliBuilt());
 
   test('add --local -> list -> remove round-trips with no network', async () => {

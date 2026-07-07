@@ -63,7 +63,7 @@ const startStdioMcp = (configDir: string): StdioMcp => {
   };
 };
 
-test.describe('agentage mcp over stdio @p0', () => {
+test.describe('agentage mcp over stdio @p0 @offline', () => {
   test.beforeAll(() => assertCliBuilt());
 
   test('initialize + tools/list + a tool call, clean EOF shutdown', async () => {

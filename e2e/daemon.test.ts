@@ -27,7 +27,7 @@ const servedCount = (statusOut: string): number => {
   return m ? Number.parseInt(m[1], 10) : -1;
 };
 
-test.describe('daemon owns the engine @p0', () => {
+test.describe('daemon owns the engine @p0 @offline', () => {
   test.beforeAll(() => assertCliBuilt());
 
   test('start -> six verbs through the daemon -> stop', async () => {
