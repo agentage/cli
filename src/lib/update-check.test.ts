@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fetchJsonUnref } from './http.js';
 import { compareVersions, evaluateUpdate, fetchCliLatest, type CliLatest } from './update-check.js';
 
-const jsonResponse = (status: number, body: unknown): Response =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+vi.mock('./http.js', () => ({ fetchJsonUnref: vi.fn() }));
+const httpMock = vi.mocked(fetchJsonUnref);
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  httpMock.mockReset();
+  vi.unstubAllGlobals();
+});
 
 describe('compareVersions', () => {
   it('orders by major, minor, then patch', () => {
@@ -23,10 +27,7 @@ describe('compareVersions', () => {
 
 describe('fetchCliLatest', () => {
   it('reads .version from the npm registry (no server floor or notice)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse(200, { name: '@agentage/cli', version: '0.2.0' }))
-    );
+    httpMock.mockResolvedValue({ ok: true, status: 200, json: { version: '0.2.0' } });
     expect(await fetchCliLatest()).toEqual({
       version: '0.2.0',
       minSupported: '0.0.0',
@@ -34,31 +35,20 @@ describe('fetchCliLatest', () => {
     });
   });
 
-  it('hits the public npm registry with a JSON Accept header', async () => {
-    const spy = vi.fn(async (_url: string, _init?: RequestInit) =>
-      jsonResponse(200, { version: '0.2.0' })
-    );
-    vi.stubGlobal('fetch', spy);
-    await fetchCliLatest();
-    const [url, init] = spy.mock.calls[0]!;
-    expect(url).toBe('https://registry.npmjs.org/@agentage/cli/latest');
-    expect(init?.headers).toMatchObject({ Accept: 'application/json' });
+  it('hits the public npm registry through the unref-timer helper', async () => {
+    httpMock.mockResolvedValue({ ok: true, status: 200, json: { version: '0.2.0' } });
+    await fetchCliLatest(1234);
+    expect(httpMock).toHaveBeenCalledWith('https://registry.npmjs.org/@agentage/cli/latest', 1234);
   });
 
-  it('returns null on a non-2xx, a throw, or a body without a version', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse(503, {}))
-    );
+  it('returns null on a non-2xx, an unreachable host, or a body without a version', async () => {
+    httpMock.mockResolvedValue({ ok: false, status: 503, json: {} });
     expect(await fetchCliLatest()).toBeNull();
 
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('net')));
+    httpMock.mockResolvedValue(null); // unreachable
     expect(await fetchCliLatest()).toBeNull();
 
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse(200, { nope: true }))
-    );
+    httpMock.mockResolvedValue({ ok: true, status: 200, json: { nope: true } });
     expect(await fetchCliLatest()).toBeNull();
   });
 });

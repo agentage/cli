@@ -1,5 +1,6 @@
 import { AuthRequiredError, introspectToken } from './api.js';
 import { type AuthState } from './config.js';
+import { fetchJsonUnref } from './http.js';
 import { environment, links, type Env } from './origins.js';
 import { checkForUpdate, type UpdateInfo } from './update-check.js';
 import { VERSION } from '../utils/version.js';
@@ -13,13 +14,11 @@ export interface StatusReport {
   update: UpdateInfo;
 }
 
+// node:https via fetchJsonUnref, not global fetch: undici's ref'd connect timer keeps the process
+// alive ~10s after an aborted request on a packet-drop network, stalling `status` exit.
 const checkEndpoint = async (apiUrl: string): Promise<boolean> => {
-  try {
-    const res = await fetch(`${apiUrl}/health`, { signal: AbortSignal.timeout(3000) });
-    return res.ok;
-  } catch {
-    return false;
-  }
+  const res = await fetchJsonUnref(`${apiUrl}/health`, 3000);
+  return res?.ok ?? false;
 };
 
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {

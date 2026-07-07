@@ -54,7 +54,8 @@ export const startCallbackServer = (expectedState: string): Promise<CallbackServ
       finish(code);
     });
 
-    server.listen(0, () => {
+    // Bind loopback only so the one-shot sign-in callback is never LAN-reachable.
+    server.listen(0, '127.0.0.1', () => {
       const address = server.address();
       const port = typeof address === 'object' && address ? address.port : 0;
       resolveServer({

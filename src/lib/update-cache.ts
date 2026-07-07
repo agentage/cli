@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { get } from 'node:https';
 import { join } from 'node:path';
 import { ensureConfigDir, getConfigDir } from './config.js';
+import { fetchJsonUnref } from './http.js';
 import { compareVersions, INSTALL_HINT, REGISTRY_URL } from './update-check.js';
 import { VERSION } from '../utils/version.js';
 
@@ -40,38 +40,17 @@ export const updateHint = (): string | null => {
     : null;
 };
 
-// node:https instead of global fetch: undici keeps a ref'd ~10s connect timer alive even after
-// its AbortSignal fires, stalling process exit on an unreachable network. req.destroy() from an
-// unref'd timer caps the whole attempt and frees the event loop the moment it settles.
-export const fetchLatestVersion = (
+// Shares fetchJsonUnref (node:https, unref'd timer) so an offline background check never stalls
+// process exit the way an aborted global fetch does.
+export const fetchLatestVersion = async (
   timeoutMs: number,
   url: string = REGISTRY_URL
-): Promise<string | null> =>
-  new Promise((resolve) => {
-    const req = get(url, { headers: { Accept: 'application/json' } }, (res) => {
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk: string) => {
-        body += chunk;
-      });
-      res.on('end', () => {
-        if (res.statusCode !== 200) return resolve(null);
-        try {
-          const v = (JSON.parse(body) as { version?: unknown }).version;
-          resolve(typeof v === 'string' ? v : null);
-        } catch {
-          resolve(null);
-        }
-      });
-    });
-    const timer = setTimeout(() => req.destroy(), timeoutMs);
-    timer.unref();
-    req.once('error', () => resolve(null));
-    req.once('close', () => {
-      clearTimeout(timer);
-      resolve(null); // no-op when already resolved
-    });
-  });
+): Promise<string | null> => {
+  const res = await fetchJsonUnref(url, timeoutMs);
+  if (!res?.ok) return null;
+  const v = (res.json as { version?: unknown } | null)?.version;
+  return typeof v === 'string' ? v : null;
+};
 
 export interface RefreshDeps {
   now?: () => number;

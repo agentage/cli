@@ -100,12 +100,19 @@ export const refreshTokens = (
     client_id: clientId,
   });
 
-export const revokeToken = async (authUrl: string, token: string): Promise<void> => {
+// AbortSignal.timeout caps a stalled revoke on a packet-drop network; residual undici keepalive is
+// acceptable here since --disconnect exits right after and errors are swallowed anyway.
+export const revokeToken = async (
+  authUrl: string,
+  token: string,
+  timeoutMs = 3000
+): Promise<void> => {
   try {
     await fetch(`${authUrl}${REVOKE_PATH}`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ token }).toString(),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     // best-effort: local credentials are removed regardless

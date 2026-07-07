@@ -144,4 +144,18 @@ describe('revokeToken', () => {
     await expect(revokeToken(baseUrl, 'at')).resolves.toBeUndefined();
     await expect(revokeToken('http://127.0.0.1:1', 'at')).resolves.toBeUndefined();
   });
+
+  it('aborts a stalled revoke within the timeout instead of hanging', async () => {
+    const hang = createServer(() => {
+      // never responds: the AbortSignal.timeout must cap the request
+    });
+    await new Promise<void>((resolve) => hang.listen(0, '127.0.0.1', resolve));
+    const addr = hang.address();
+    const url = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
+    const started = Date.now();
+    await expect(revokeToken(url, 'at', 50)).resolves.toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(2000);
+    hang.closeAllConnections();
+    hang.close();
+  });
 });
