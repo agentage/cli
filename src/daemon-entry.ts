@@ -18,7 +18,7 @@ import { loadLocalMemoryServer } from './mcp/local-server.js';
 import { loadVaultsConfig, vaultsJsonPath } from './lib/vaults.js';
 import { createCouchSyncManager } from './sync/couch/manager.js';
 import { createDiscoverWatcher } from './sync/discover/watcher.js';
-import { createSyncManager } from './sync/manager.js';
+import { createSyncManager } from './sync/git/manager.js';
 import { VERSION } from './utils/version.js';
 
 export const isEaddrinuse = (err: unknown): boolean =>

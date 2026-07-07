@@ -4,11 +4,11 @@ import { health, syncRun, type SyncRunResult } from '../lib/daemon-client.js';
 import { daemonDisabled } from '../lib/daemon-pref.js';
 import { loadVaultsConfig } from '../lib/vaults.js';
 import { resolvePort } from '../daemon/lifecycle.js';
-import { runSyncCycle, type SyncResult } from '../sync/cycle.js';
+import { runSyncCycle, type SyncResult } from '../sync/git/cycle.js';
 import { createCouchSyncManager, type CouchSyncResult } from '../sync/couch/manager.js';
 import { couchTargets } from '../sync/couch/targets.js';
-import { syncTargets, type SyncTarget } from '../sync/planner.js';
-import { redactRemoteUrl } from '../sync/remote-url.js';
+import { syncTargets, type SyncTarget } from '../sync/git/planner.js';
+import { redactRemoteUrl } from '../sync/git/remote-url.js';
 
 export interface VaultSyncDeps {
   loadConfig: () => VaultsConfig;

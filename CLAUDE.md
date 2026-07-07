@@ -19,12 +19,20 @@ its agent-runtime patterns (the local memory daemon was deliberately ported from
   `AGENTAGE_NO_DAEMON=1`, or fork blocked)
 - `src/daemon/` + `src/daemon-entry.ts` - the local daemon (node:http, 127.0.0.1 only): one
   in-process engine serialises vault mutations; `agentage daemon start|stop|status`
-- `src/sync/` - git sync (M4): the daemon acts on per-vault `origin[]` (external remotes only),
-  debounced commit+push / pull-rebase per `interval` (SECONDS; 0 = manual-only). Conflicts keep
-  both sides (`<file>.conflict.md` = remote copy, zero lost writes); `ignore` rides on
-  `.git/info/exclude` (defaults `.obsidian/` + `data.json`, a set value REPLACES them, `[]` = all).
-  `spawn git` directly (memory-core's createGit is private); no new deps. `vault sync [name]`
-  forces a cycle via the daemon (`/api/sync/run`) or in-process when it is down
+- `src/sync/` - channel-based sync; one subfolder per channel, no shared root logic:
+  - `src/sync/git/` - git channel (M4): `manager` (scheduler + status), `cycle` (one commit+push /
+    pull-rebase round), `planner` (targets + interval math), `git-exec` (spawn git, error classify),
+    `remote-url` (allowlist + redact), `conflict` (`<file>.conflict.md` naming). The daemon acts on
+    per-vault `origin[]` (external remotes only), debounced per `interval` (SECONDS; 0 = manual-only);
+    conflicts keep both sides (zero lost writes); `ignore` rides on `.git/info/exclude` (defaults
+    `.obsidian/` + `data.json`, a set value REPLACES them, `[]` = all). `spawn git` directly
+    (memory-core's createGit is private); no new deps
+  - `src/sync/couch/` - couch channel (account vaults): `manager` (thin composition), `manager.types`
+    (shared shapes), `cycle` / `wire` / `push-on-write` (the sync-on-save + scheduling seams),
+    `mutation-target` (verb -> vault+path), `local-commit`, `discovery`, `file-store`, `state-store`,
+    `targets`
+  - `src/sync/discover/` - `watcher` (auto-discovers new vaults, provisions account vaults)
+  - `vault sync [name]` forces a git cycle via the daemon (`/api/sync/run`) or in-process when down
 - `src/package-guard.test.ts` - CI guard: no agent-runtime remnants (express/ws/sqlite/
   core/platform/supabase), runtime deps stay exactly `@agentage/memory-core +
   @agentage/server-memory + @modelcontextprotocol/sdk + chalk + commander + open`

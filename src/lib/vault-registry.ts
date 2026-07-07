@@ -7,7 +7,7 @@ import {
   type VaultEntry,
   type VaultsConfig,
 } from '@agentage/memory-core';
-import { redactRemoteUrl } from '../sync/remote-url.js';
+import { redactRemoteUrl } from '../sync/git/remote-url.js';
 import { isValidVaultName } from './vaults.schema.js';
 
 // Offline registry operations over the unified vaults.json (object map keyed by name). No
