@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { type VaultsConfig } from '@agentage/memory-core';
 import {
   autoSyncTargets,
@@ -76,6 +76,19 @@ describe('syncTargets', () => {
 
   it('skips blank remotes', () => {
     expect(syncTargets(cfg({ v: { path: '/tmp/v', origin: [{ remote: '   ' }] } }))).toEqual([]);
+  });
+
+  it('skips an unsafe transport-helper remote and warns, keeping other targets', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const targets = syncTargets(
+      cfg({
+        bad: { path: '/tmp/bad', origin: [{ remote: 'ext::sh -c "id"' }] },
+        good: { path: '/tmp/good', origin: [{ remote: 'git@h:me/g.git' }] },
+      })
+    );
+    expect(targets.map((t) => t.vault)).toEqual(['good']);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("unsafe remote for vault 'bad'"));
+    warn.mockRestore();
   });
 
   it('never picks up an account (agentage-origin) vault, even with a local path', () => {

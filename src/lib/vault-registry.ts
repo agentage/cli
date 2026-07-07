@@ -7,6 +7,7 @@ import {
   type VaultEntry,
   type VaultsConfig,
 } from '@agentage/memory-core';
+import { redactRemoteUrl } from '../sync/remote-url.js';
 import { isValidVaultName } from './vaults.schema.js';
 
 // Offline registry operations over the unified vaults.json (object map keyed by name). No
@@ -31,11 +32,22 @@ export const ensureVaultDir = (path: string): void => {
 
 export const formatVaultLine = (name: string, entry: VaultEntry): string => {
   const kind = vaultType(entry);
-  const where = entry.path ? expandPath(entry.path) : (entry.origin?.[0]?.remote ?? '');
+  const rawWhere = entry.path ? expandPath(entry.path) : (entry.origin?.[0]?.remote ?? '');
+  const where = entry.path ? rawWhere : redactRemoteUrl(rawWhere);
   // Only an external git remote is worth echoing; the account channel is implied by the type.
-  const remote = kind === 'git' && entry.origin?.length ? `  <- ${entry.origin[0]!.remote}` : '';
+  const remote =
+    kind === 'git' && entry.origin?.length
+      ? `  <- ${redactRemoteUrl(entry.origin[0]!.remote)}`
+      : '';
   return `${name.padEnd(16)} ${kind.padEnd(8)} ${where}${remote}`;
 };
+
+// A copy of `entry` with every origin remote redacted (credentials stripped) for display/JSON;
+// the on-disk value is never mutated.
+export const redactEntry = (entry: VaultEntry): VaultEntry =>
+  entry.origin?.length
+    ? { ...entry, origin: entry.origin.map((o) => ({ ...o, remote: redactRemoteUrl(o.remote) })) }
+    : entry;
 
 // Add an entry under `name`; the first vault added also becomes the `default`.
 export const addVault = (config: VaultsConfig, name: string, entry: VaultEntry): VaultsConfig => {

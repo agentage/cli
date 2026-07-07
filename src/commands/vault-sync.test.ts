@@ -50,10 +50,24 @@ const makeDeps = (over: Partial<VaultSyncDeps> = {}): { deps: VaultSyncDeps; log
 };
 
 describe('runVaultSync', () => {
-  it('reports "no syncable origin" for an unknown vault name', async () => {
-    const { deps, logs } = makeDeps();
-    await runVaultSync('missing', deps);
-    expect(logs.join()).toContain("No syncable origin configured for vault 'missing'");
+  it('errors when the named vault is not registered', async () => {
+    const { deps } = makeDeps();
+    await expect(runVaultSync('missing', deps)).rejects.toThrow("vault 'missing' not found");
+  });
+
+  it('reports "no syncable origin" for a registered vault with no external origin', async () => {
+    const { deps, logs } = makeDeps({
+      loadConfig: () => ({ version: 1, vaults: { local: { path: '/tmp/local' } } }),
+    });
+    await runVaultSync('local', deps);
+    expect(logs.join()).toContain("No syncable origin configured for vault 'local'");
+  });
+
+  it('prints an upfront count and a per-vault progress line', async () => {
+    const { deps, logs } = makeDeps({ daemonPort: async () => null });
+    await runVaultSync('v', deps);
+    expect(logs).toContain('Syncing 1 vault(s)...');
+    expect(logs).toContain('v...');
   });
 
   it('hints when no syncable vaults exist', async () => {

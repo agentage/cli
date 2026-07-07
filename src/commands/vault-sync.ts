@@ -8,6 +8,7 @@ import { runSyncCycle, type SyncResult } from '../sync/cycle.js';
 import { createCouchSyncManager, type CouchSyncResult } from '../sync/couch/manager.js';
 import { couchTargets } from '../sync/couch/targets.js';
 import { syncTargets, type SyncTarget } from '../sync/planner.js';
+import { redactRemoteUrl } from '../sync/remote-url.js';
 
 export interface VaultSyncDeps {
   loadConfig: () => VaultsConfig;
@@ -46,7 +47,7 @@ const report = (log: (msg: string) => void, r: SyncRunResult): void => {
     log(`${r.vault} (account): ${describeCouch(r)}`);
     return;
   }
-  log(`${r.vault} -> ${r.remote}: ${describeGit(r)}`);
+  log(`${r.vault} -> ${redactRemoteUrl(r.remote)}: ${describeGit(r)}`);
   for (const c of r.conflicts) log(`  kept remote copy: ${c}`);
 };
 
@@ -59,6 +60,8 @@ export const runVaultSync = async (
   deps: VaultSyncDeps
 ): Promise<void> => {
   const config = deps.loadConfig();
+  // A named vault that is not registered is an error (mirrors `vault remove`), not a silent no-op.
+  if (name && !(config.vaults ?? {})[name]) throw new Error(`vault '${name}' not found`);
   const gitTargets = syncTargets(config).filter((t) => !name || t.vault === name);
   const couchVaults = couchTargets(config)
     .filter((t) => !name || t.vault === name)
@@ -71,14 +74,24 @@ export const runVaultSync = async (
     );
     return;
   }
+  const vaults = [...new Set([...gitTargets.map((t) => t.vault), ...couchVaults])];
+  deps.log(`Syncing ${vaults.length} vault(s)...`);
   const port = await deps.daemonPort();
   if (port !== null) {
-    const vaults = [...new Set([...gitTargets.map((t) => t.vault), ...couchVaults])];
-    for (const vault of vaults) report(deps.log, await deps.runViaDaemon(port, vault));
+    for (const vault of vaults) {
+      deps.log(`${vault}...`);
+      report(deps.log, await deps.runViaDaemon(port, vault));
+    }
     return;
   }
-  for (const target of gitTargets) report(deps.log, await deps.runGitInProcess(target));
-  for (const vault of couchVaults) report(deps.log, await deps.runCouchInProcess(vault));
+  for (const target of gitTargets) {
+    deps.log(`${target.vault}...`);
+    report(deps.log, await deps.runGitInProcess(target));
+  }
+  for (const vault of couchVaults) {
+    deps.log(`${vault}...`);
+    report(deps.log, await deps.runCouchInProcess(vault));
+  }
 };
 
 const resolveDaemonPort = async (): Promise<number | null> => {
