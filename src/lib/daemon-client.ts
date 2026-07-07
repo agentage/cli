@@ -9,9 +9,9 @@ import {
   type WriteResult,
 } from '@agentage/memory-core';
 import { EADDRINUSE_EXIT_CODE, readDaemonToken, resolvePort } from '../daemon/lifecycle.js';
-import { type SyncResult } from '../sync/cycle.js';
+import { type SyncResult } from '../sync/git/cycle.js';
 import { type CouchSyncResult } from '../sync/couch/manager.js';
-import { type SyncStatus } from '../sync/manager.js';
+import { type SyncStatus } from '../sync/git/manager.js';
 import { VERSION } from '../utils/version.js';
 
 // One vault syncs on exactly one channel; /api/sync/run yields whichever result fits the vault.

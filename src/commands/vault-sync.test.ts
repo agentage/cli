@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type VaultsConfig } from '@agentage/memory-core';
-import { type SyncResult } from '../sync/cycle.js';
+import { type SyncResult } from '../sync/git/cycle.js';
 import { type CouchSyncResult } from '../sync/couch/manager.js';
-import { type SyncTarget } from '../sync/planner.js';
+import { type SyncTarget } from '../sync/git/planner.js';
 import { runVaultSync, type VaultSyncDeps } from './vault-sync.js';
 
 const result = (over: Partial<SyncResult> = {}): SyncResult => ({

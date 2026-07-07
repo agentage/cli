@@ -1,5 +1,5 @@
 import { expandPath, isAccountVault, type VaultsConfig } from '@agentage/memory-core';
-import { DEFAULT_INTERVAL_SECONDS } from '../planner.js';
+import { DEFAULT_INTERVAL_SECONDS } from '../git/planner.js';
 
 // The account (agentage) channel a couch target syncs to. Unlike a git target it has no external
 // remote URL: the daemon resolves the per-memory CouchDB + JWT endpoints from discovery at runtime.

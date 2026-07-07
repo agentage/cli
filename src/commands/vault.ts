@@ -16,7 +16,7 @@ import {
   type ProvisionResult,
 } from '../lib/provision.js';
 import { loadVaultsConfig, mutateVaultsConfig, type LoadedVaults } from '../lib/vaults.js';
-import { assertSafeRemoteUrl, redactRemoteUrl } from '../sync/remote-url.js';
+import { assertSafeRemoteUrl, redactRemoteUrl } from '../sync/git/remote-url.js';
 import { defaultVaultSyncDeps, runVaultSync } from './vault-sync.js';
 
 export interface VaultDeps {
