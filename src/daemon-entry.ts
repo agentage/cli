@@ -2,11 +2,14 @@ import { unwatchFile, watchFile } from 'node:fs';
 import { isAccountVault } from '@agentage/memory-core';
 import { createClientProvider } from './daemon/client-provider.js';
 import {
+  generateDaemonToken,
   removePidFile,
   removePortFile,
+  removeTokenFile,
   resolvePort,
   writePidFile,
   writePortFile,
+  writeTokenFile,
 } from './daemon/lifecycle.js';
 import { createDaemonServer } from './daemon/server.js';
 import { loadLocalMemoryServer } from './mcp/local-server.js';
@@ -29,6 +32,7 @@ const envInt = (name: string): number | undefined => {
 // runs both sync loops (git origins + the account/couch channel) and reschedules on config change.
 const main = async (): Promise<void> => {
   const port = resolvePort();
+  const authToken = generateDaemonToken();
   const git = createSyncManager();
   const couch = createCouchSyncManager();
   const discover = createDiscoverWatcher({
@@ -53,11 +57,13 @@ const main = async (): Promise<void> => {
       runNow,
     },
     onMutation: (verb, body) => couch.onWrite(verb, body),
+    authToken,
     version: VERSION,
   });
   await server.start(port);
   writePidFile(process.pid);
   writePortFile(port);
+  writeTokenFile(authToken);
   git.reschedule();
   couch.reschedule();
   discover.reschedule();
@@ -77,6 +83,7 @@ const main = async (): Promise<void> => {
     server.stop().finally(() => {
       removePidFile();
       removePortFile();
+      removeTokenFile();
       process.exit(0);
     });
   };
@@ -88,5 +95,6 @@ main().catch((err: unknown) => {
   console.error(err instanceof Error ? err.message : String(err));
   removePidFile();
   removePortFile();
+  removeTokenFile();
   process.exit(1);
 });

@@ -5,9 +5,11 @@ import { type SyncResult } from '../sync/cycle.js';
 import { type CouchSyncResult } from '../sync/couch/manager.js';
 import { type SyncStatus } from '../sync/manager.js';
 import { dispatchMemory, isMemoryVerb, type MemoryVerb } from './actions.js';
+import { isAllowedHost, isAllowedOrigin, loopbackHosts } from './guards.js';
 import { handleMcp } from './mcp-http.js';
 
 const LOOPBACK = '127.0.0.1';
+const AUTH_HEADER = 'x-agentage-token';
 
 export interface DaemonSyncApi {
   status: () => SyncStatus;
@@ -24,6 +26,8 @@ export interface DaemonServerOptions {
   // Fired after a successful write/edit/delete so the account channel can push-on-save. Never
   // awaited: a couch failure must not affect the memory API response.
   onMutation?: (verb: MemoryVerb, body: unknown) => void;
+  // Per-daemon secret required on X-Agentage-Token for every /api/* call except /api/health.
+  authToken: string;
   version: string;
   startedAt?: number;
 }
@@ -55,15 +59,38 @@ const send = (res: ServerResponse, status: number, body: unknown): void => {
   res.end(JSON.stringify(body));
 };
 
+const isJsonContentType = (req: IncomingMessage): boolean =>
+  (req.headers['content-type'] ?? '').split(';')[0]?.trim() === 'application/json';
+
+const header = (req: IncomingMessage, name: string): string | undefined => {
+  const v = req.headers[name];
+  return Array.isArray(v) ? v[0] : v;
+};
+
 // Loopback-only JSON HTTP: GET /api/health + POST /api/memory/<verb> (the CLI verbs) + POST /mcp
-// (the frozen 6 tools for on-machine AI clients, stateless Streamable HTTP). No auth (local socket
-// trust); the verbs dispatch to one shared MemoryClient, /mcp builds a fresh server per request.
+// (the frozen 6 tools for on-machine AI clients, stateless Streamable HTTP). Web-origin defense on
+// EVERY request (Host + Origin allow-lists + DNS-rebinding protection on /mcp); /api/* additionally
+// needs the per-daemon token, while /health and /mcp stay tokenless for probes and editor clients.
 export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
   const startedAt = opts.startedAt ?? Date.now();
   let served = 0;
+  let boundPort = 0;
+
+  // 403 unless the request looks like it came from a genuine same-machine loopback client.
+  const originGuard = (req: IncomingMessage): boolean =>
+    isAllowedHost(header(req, 'host'), boundPort) && isAllowedOrigin(header(req, 'origin'));
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = req.url ?? '/';
+    if (!originGuard(req)) return send(res, 403, { error: 'forbidden' });
+    const path = url.split('?')[0] ?? url;
+    const isApi = path.startsWith('/api/') && path !== '/api/health';
+    if (isApi && header(req, AUTH_HEADER) !== opts.authToken) {
+      return send(res, 401, { error: 'unauthorized' });
+    }
+    if (isApi && req.method === 'POST' && !isJsonContentType(req)) {
+      return send(res, 415, { error: 'unsupported media type' });
+    }
     if (req.method === 'GET' && url === '/api/health') {
       return send(res, 200, {
         ok: true,
@@ -73,9 +100,9 @@ export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
         served,
       });
     }
-    if ((url.split('?')[0] ?? url) === '/mcp') {
+    if (path === '/mcp') {
       if (!opts.buildMcpServer) return send(res, 404, { error: 'not found' });
-      return handleMcp(req, res, opts.buildMcpServer);
+      return handleMcp(req, res, opts.buildMcpServer, loopbackHosts(boundPort));
     }
     if (req.method === 'GET' && url === '/api/sync/status') {
       if (!opts.sync) return send(res, 404, { error: 'not found' });
@@ -120,6 +147,8 @@ export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
         reject(err.code === 'EADDRINUSE' ? new Error(`port ${port} already in use`) : err);
       server.once('error', onError);
       server.listen(port, host, () => {
+        const addr = server.address();
+        boundPort = typeof addr === 'object' && addr ? addr.port : port;
         server.removeListener('error', onError);
         resolve();
       });
