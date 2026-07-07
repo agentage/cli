@@ -46,12 +46,20 @@ export const currentBearer = async (
   return auth.tokens.accessToken;
 };
 
+// redirect: 'manual' so the bearer is never replayed to a redirect target; any 3xx is an error.
+const isRedirect = (res: Response): boolean =>
+  res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400);
+
 export const authedGet = async <T>(auth: AuthState, links: Links, url: string): Promise<T> => {
   const call = (): Promise<Response> =>
-    fetch(url, { headers: { authorization: `Bearer ${auth.tokens.accessToken}` } });
+    fetch(url, {
+      headers: { authorization: `Bearer ${auth.tokens.accessToken}` },
+      redirect: 'manual',
+    });
   let res = await call();
   if (res.status === 401 && (await tryRefresh(auth, links))) res = await call();
   if (res.status === 401) throw new AuthRequiredError('session expired');
+  if (isRedirect(res)) throw new Error(`GET ${url} refused redirect (${res.status})`);
   if (!res.ok) throw new Error(`GET ${url} failed (${res.status})`);
   return (await res.json()) as T;
 };
@@ -72,6 +80,7 @@ export const authedPost = async (
         'content-type': 'application/json',
       },
       body: JSON.stringify(body),
+      redirect: 'manual',
     });
   let res = await call();
   if (res.status === 401 && (await tryRefresh(auth, links))) res = await call();

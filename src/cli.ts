@@ -34,7 +34,7 @@ program.hook('postAction', (_thisCommand, actionCommand) => {
   if (name === 'status' || name === 'update') return;
   if (!actionCommand.opts()['json']) {
     const hint = updateHint();
-    if (hint) console.log(chalk.dim(hint));
+    if (hint) console.error(chalk.dim(hint)); // stderr: never corrupt piped stdout
   }
   void refreshUpdateCache();
 });

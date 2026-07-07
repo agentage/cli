@@ -2,6 +2,8 @@
 // (the canonical source of truth for a published package). Never throws: an unreachable registry
 // or any malformed payload yields 'unknown'.
 
+import { fetchJsonUnref } from './http.js';
+
 export const INSTALL_HINT = 'npm i -g @agentage/cli@latest';
 
 export const REGISTRY_URL = 'https://registry.npmjs.org/@agentage/cli/latest';
@@ -41,20 +43,14 @@ export const compareVersions = (a: string, b: string): number => {
 };
 
 export const fetchCliLatest = async (timeoutMs = 5000): Promise<CliLatest | null> => {
-  try {
-    const res = await fetch(REGISTRY_URL, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) return null;
-    const body = (await res.json().catch(() => null)) as { version?: unknown } | null;
-    const version = typeof body?.version === 'string' ? body.version : null;
-    if (!version) return null;
-    // The registry carries no support floor or notice, so neither gates an update hint.
-    return { version, minSupported: '0.0.0', message: null };
-  } catch {
-    return null;
-  }
+  // node:https via fetchJsonUnref, not global fetch: undici's ref'd connect timer stalls exit.
+  const res = await fetchJsonUnref(REGISTRY_URL, timeoutMs);
+  if (!res?.ok) return null;
+  const body = res.json as { version?: unknown } | null;
+  const version = typeof body?.version === 'string' ? body.version : null;
+  if (!version) return null;
+  // The registry carries no support floor or notice, so neither gates an update hint.
+  return { version, minSupported: '0.0.0', message: null };
 };
 
 export const evaluateUpdate = (installed: string, latest: CliLatest | null): UpdateInfo => {

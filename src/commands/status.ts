@@ -52,7 +52,7 @@ const warnDaemonMismatch = async (): Promise<void> => {
   const h = await health(resolvePort());
   if (!h) return;
   const notice = mismatchNotice(h.version);
-  if (notice) console.log(chalk.yellow(notice));
+  if (notice) console.error(chalk.yellow(notice)); // diagnostics go to stderr
 };
 
 export const runStatus = async (opts: { json?: boolean } = {}): Promise<void> => {

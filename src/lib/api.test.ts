@@ -38,6 +38,7 @@ describe('authedGet', () => {
     expect(result.ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith('https://x.example/me', {
       headers: { authorization: 'Bearer old-token' },
+      redirect: 'manual',
     });
   });
 
@@ -79,6 +80,18 @@ describe('authedGet', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(500, {})));
     await expect(authedGet(makeAuth(), target, 'https://x.example/x')).rejects.toThrow('500');
   });
+
+  it('refuses to follow a redirect and reports its status', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(302, {}));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(authedGet(makeAuth(), target, 'https://x.example/me')).rejects.toThrow(
+      'refused redirect (302)'
+    );
+    expect(fetchMock).toHaveBeenCalledWith('https://x.example/me', {
+      headers: { authorization: 'Bearer old-token' },
+      redirect: 'manual',
+    });
+  });
 });
 
 describe('authedPost', () => {
@@ -107,6 +120,7 @@ describe('authedPost', () => {
       method: 'POST',
       headers: { authorization: 'Bearer old-token', 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'acct', channel: 'couch' }),
+      redirect: 'manual',
     });
   });
 

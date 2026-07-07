@@ -63,6 +63,18 @@ describe('startCallbackServer', () => {
     }
   });
 
+  it('binds loopback so the callback is reachable on 127.0.0.1', async () => {
+    const server = await startCallbackServer('state-1');
+    try {
+      const port = new URL(server.redirectUri).port;
+      const res = await fetch(`http://127.0.0.1:${port}/callback?code=code-4&state=state-1`);
+      expect(res.status).toBe(200);
+      await expect(server.waitForCode(1000)).resolves.toBe('code-4');
+    } finally {
+      server.close();
+    }
+  });
+
   it('times out when no callback arrives', async () => {
     const server = await startCallbackServer('s');
     try {
