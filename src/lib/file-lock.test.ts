@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -111,10 +111,23 @@ describe('file lock', () => {
   });
 
   it('takes over a stale lock left by a crashed holder, never wedging', async () => {
-    writeFileSync(lockFile(), `999 ${Date.now() - 11_000}`); // 11s old = crashed holder
+    const deadPid = spawnSync(process.execPath, ['-e', '0']).pid; // spawned + reaped => pid is dead
+    writeFileSync(lockFile(), `${deadPid} ${Date.now() - 11_000}`); // 11s old + dead pid = crashed
     const result = await withFileLock(target, () => 'recovered');
     expect(result).toBe('recovered');
     expect(existsSync(lockFile())).toBe(false);
+  });
+
+  it('refuses a stale-looking lock whose holder is still alive (never steals a slow holder)', () => {
+    // A live-but-CPU-starved holder can look older than the TTL on a loaded CI runner. Stealing it
+    // would put two writers in the critical section and drop an append (issue #249). It must refuse.
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
+    try {
+      writeFileSync(lockFile(), `${holder.pid} ${1_000_000}`);
+      expect(acquireFileLock(target, 1_000_000 + 11_000)).toBe(false); // 11s old but pid is alive
+    } finally {
+      holder.kill('SIGKILL');
+    }
   });
 
   it('serializes many concurrent in-process read-modify-writes, losing none', async () => {
