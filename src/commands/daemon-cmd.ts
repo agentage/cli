@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
-import { isDaemonRunning, resolvePort, stopDaemon } from '../daemon/lifecycle.js';
+import { isDaemonRunning, resolvePort, stopDaemonSafely } from '../daemon/lifecycle.js';
 import { health, mismatchNotice, spawnDaemon, syncStatus } from '../lib/daemon-client.js';
 
 const startAction = async (): Promise<void> => {
@@ -10,8 +10,17 @@ const startAction = async (): Promise<void> => {
     console.log(chalk.gray(`Daemon already running (pid ${existing.pid}, port ${port}).`));
     return;
   }
-  if (!(await spawnDaemon(port))) {
-    console.error(chalk.red('Daemon failed to start.'));
+  const outcome = await spawnDaemon(port);
+  if (!outcome.ok) {
+    if (outcome.reason === 'port-in-use') {
+      console.error(
+        chalk.red(
+          `Port ${port} is in use by another process - set AGENTAGE_DAEMON_PORT to use a different port.`
+        )
+      );
+    } else {
+      console.error(chalk.red('Daemon failed to start.'));
+    }
     process.exitCode = 1;
     return;
   }
@@ -19,13 +28,12 @@ const startAction = async (): Promise<void> => {
   console.log(chalk.green(`Daemon started (pid ${h?.pid ?? '?'}, port ${port}).`));
 };
 
-const stopAction = (): void => {
+const stopAction = async (): Promise<void> => {
   if (!isDaemonRunning()) {
     console.log(chalk.gray('Daemon is not running.'));
     return;
   }
-  stopDaemon();
-  console.log(chalk.green('Daemon stopped.'));
+  if (await stopDaemonSafely()) console.log(chalk.green('Daemon stopped.'));
 };
 
 const statusAction = async (): Promise<void> => {
@@ -91,7 +99,10 @@ export const registerDaemon = (program: Command): void => {
     .command('start')
     .description('Start the daemon (idempotent)')
     .action(() => startAction());
-  daemon.command('stop').description('Stop the daemon').action(stopAction);
+  daemon
+    .command('stop')
+    .description('Stop the daemon')
+    .action(() => stopAction());
   daemon
     .command('status')
     .description('Show the daemon pid, uptime, and version')

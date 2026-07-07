@@ -111,7 +111,7 @@ describe('restartDaemonIfRunning', () => {
     });
     const start = vi.fn(async () => {
       order.push('start');
-      return true;
+      return { ok: true } as const;
     });
     expect(await restartDaemonIfRunning({ running: () => true, stop, start })).toBe('restarted');
     expect(order).toEqual(['stop', 'start']);
@@ -119,13 +119,13 @@ describe('restartDaemonIfRunning', () => {
 
   it('returns failed when the new daemon does not come up', async () => {
     const stop = vi.fn(async () => true);
-    const start = vi.fn(async () => false);
+    const start = vi.fn(async () => ({ ok: false, reason: 'unreachable' }) as const);
     expect(await restartDaemonIfRunning({ running: () => true, stop, start })).toBe('failed');
   });
 
   it('is a no-op when the daemon is not running', async () => {
     const stop = vi.fn(async () => true);
-    const start = vi.fn(async () => true);
+    const start = vi.fn(async () => ({ ok: true }) as const);
     expect(await restartDaemonIfRunning({ running: () => false, stop, start })).toBe('not-running');
     expect(stop).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();

@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import chalk from 'chalk';
 import { type Command } from 'commander';
 import { isDaemonRunning, resolvePort, stopDaemonAndWait } from '../daemon/lifecycle.js';
-import { spawnDaemon } from '../lib/daemon-client.js';
+import { spawnDaemon, type SpawnOutcome } from '../lib/daemon-client.js';
 import { checkForUpdate, INSTALL_HINT, type UpdateInfo } from '../lib/update-check.js';
 import { acquireUpdateLock, releaseUpdateLock } from '../lib/update-lock.js';
 import { VERSION } from '../utils/version.js';
@@ -15,7 +15,7 @@ export type RestartOutcome = 'restarted' | 'failed' | 'not-running';
 export interface RestartDeps {
   running?: () => boolean;
   stop?: () => Promise<boolean>;
-  start?: (port: number) => Promise<boolean>;
+  start?: (port: number) => Promise<SpawnOutcome>;
 }
 
 // Restart a running daemon so it picks up the freshly installed binary; a stopped daemon is left
@@ -26,7 +26,7 @@ export const restartDaemonIfRunning = async (deps: RestartDeps = {}): Promise<Re
   if (!running()) return 'not-running';
   await (deps.stop ?? stopDaemonAndWait)();
   const up = await (deps.start ?? spawnDaemon)(resolvePort());
-  return up ? 'restarted' : 'failed';
+  return up.ok ? 'restarted' : 'failed';
 };
 
 export interface UpdateDeps {

@@ -85,7 +85,7 @@ describe('daemon start', () => {
     vi.mocked(dc.health)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(health({ pid: 99 }));
-    vi.mocked(dc.spawnDaemon).mockResolvedValue(true);
+    vi.mocked(dc.spawnDaemon).mockResolvedValue({ ok: true });
     await run(['daemon', 'start']);
     expect(logs.join()).toContain('started');
     expect(logs.join()).toContain('99');
@@ -93,9 +93,18 @@ describe('daemon start', () => {
 
   it('reports a failed spawn and sets a non-zero exit code', async () => {
     vi.mocked(dc.health).mockResolvedValue(null);
-    vi.mocked(dc.spawnDaemon).mockResolvedValue(false);
+    vi.mocked(dc.spawnDaemon).mockResolvedValue({ ok: false, reason: 'unreachable' });
     await run(['daemon', 'start']);
     expect(logs.join()).toContain('failed');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('reports a port held by a foreign process and sets a non-zero exit code', async () => {
+    vi.mocked(dc.health).mockResolvedValue(null);
+    vi.mocked(dc.spawnDaemon).mockResolvedValue({ ok: false, reason: 'port-in-use' });
+    await run(['daemon', 'start']);
+    expect(logs.join()).toContain('in use by another process');
+    expect(logs.join()).toContain('AGENTAGE_DAEMON_PORT');
     expect(process.exitCode).toBe(1);
   });
 });
@@ -103,15 +112,16 @@ describe('daemon start', () => {
 describe('daemon stop', () => {
   it('stops a running daemon', async () => {
     vi.mocked(lifecycle.isDaemonRunning).mockReturnValue(true);
+    vi.mocked(lifecycle.stopDaemonSafely).mockResolvedValue(true);
     await run(['daemon', 'stop']);
-    expect(lifecycle.stopDaemon).toHaveBeenCalled();
+    expect(lifecycle.stopDaemonSafely).toHaveBeenCalled();
     expect(logs.join()).toContain('stopped');
   });
 
   it('is a no-op when nothing is running', async () => {
     vi.mocked(lifecycle.isDaemonRunning).mockReturnValue(false);
     await run(['daemon', 'stop']);
-    expect(lifecycle.stopDaemon).not.toHaveBeenCalled();
+    expect(lifecycle.stopDaemonSafely).not.toHaveBeenCalled();
     expect(logs.join()).toContain('not running');
   });
 });

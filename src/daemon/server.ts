@@ -143,8 +143,13 @@ export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
 
   const start = (port: number, host: string = LOOPBACK): Promise<void> =>
     new Promise((resolve, reject) => {
-      const onError = (err: NodeJS.ErrnoException): void =>
-        reject(err.code === 'EADDRINUSE' ? new Error(`port ${port} already in use`) : err);
+      const onError = (err: NodeJS.ErrnoException): void => {
+        if (err.code !== 'EADDRINUSE') return reject(err);
+        // Preserve the code so the entry point can exit distinctly on a busy port.
+        const busy = new Error(`port ${port} already in use`) as NodeJS.ErrnoException;
+        busy.code = 'EADDRINUSE';
+        reject(busy);
+      };
       server.once('error', onError);
       server.listen(port, host, () => {
         const addr = server.address();
@@ -154,7 +159,17 @@ export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
       });
     });
 
-  const stop = (): Promise<void> => new Promise((resolve) => server.close(() => resolve()));
+  // close() alone hangs on idle keep-alive sockets; drop idle ones now, force the rest after a grace.
+  const stop = (): Promise<void> =>
+    new Promise((resolve) => {
+      server.closeIdleConnections();
+      const grace = setTimeout(() => server.closeAllConnections(), 500);
+      grace.unref();
+      server.close(() => {
+        clearTimeout(grace);
+        resolve();
+      });
+    });
 
   return { server, start, stop };
 };

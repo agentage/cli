@@ -8,7 +8,7 @@ import {
   type SearchResult,
   type WriteResult,
 } from '@agentage/memory-core';
-import { readDaemonToken, resolvePort } from '../daemon/lifecycle.js';
+import { EADDRINUSE_EXIT_CODE, readDaemonToken, resolvePort } from '../daemon/lifecycle.js';
 import { type SyncResult } from '../sync/cycle.js';
 import { type CouchSyncResult } from '../sync/couch/manager.js';
 import { type SyncStatus } from '../sync/manager.js';
@@ -133,35 +133,49 @@ export const mismatchNotice = (daemonVersion: string): string | null =>
 
 const entryPath = (): string => fileURLToPath(new URL('../daemon-entry.js', import.meta.url));
 
+// Why the autostart failed: a busy port (foreign process) needs a distinct user message and lets
+// callers avoid paying the full health wait; the others just mean "fall back to a DirectClient".
+export type SpawnOutcome =
+  { ok: true } | { ok: false; reason: 'port-in-use' | 'unreachable' | 'blocked' };
+
 // Detached spawn (not fork: fork's IPC channel keeps the parent event loop alive past unref) so
-// the daemon outlives this CLI; ignore stdio + unref so the CLI can exit. Returns false (never
-// throws) when spawning is blocked - callers then fall back to a DirectClient.
+// the daemon outlives this CLI; ignore stdio + unref so the CLI can exit. Watches the child's exit
+// so a fast EADDRINUSE death short-circuits the health wait instead of burning the full timeout.
 export const spawnDaemon = async (
   port: number,
   opts: { timeoutMs?: number } = {}
-): Promise<boolean> => {
+): Promise<SpawnOutcome> => {
+  let child: ReturnType<typeof spawnChild>;
   try {
-    const child = spawnChild(process.execPath, [entryPath()], {
+    child = spawnChild(process.execPath, [entryPath()], {
       detached: true,
       stdio: 'ignore',
       env: { ...process.env, AGENTAGE_DAEMON_PORT: String(port) },
     });
-    child.unref();
   } catch {
-    return false;
+    return { ok: false, reason: 'blocked' };
   }
-  return waitForHealth(port, { timeoutMs: opts.timeoutMs ?? 4000 });
+  const exited = new Promise<SpawnOutcome>((resolve) => {
+    child.once('exit', (code) =>
+      resolve({ ok: false, reason: code === EADDRINUSE_EXIT_CODE ? 'port-in-use' : 'unreachable' })
+    );
+  });
+  child.unref();
+  const healthy = waitForHealth(port, { timeoutMs: opts.timeoutMs ?? 4000 }).then(
+    (ok): SpawnOutcome => (ok ? { ok: true } : { ok: false, reason: 'unreachable' })
+  );
+  return Promise.race([healthy, exited]);
 };
 
 export interface EnsureDeps {
   port?: number;
   probe?: (port: number) => Promise<Health | null>;
-  spawn?: (port: number) => Promise<boolean>;
+  spawn?: (port: number) => Promise<SpawnOutcome>;
   readToken?: () => string | null;
 }
 
 // DO3/DO4/DO9: prefer a live daemon, autostart one if absent, and return null when it is
-// unreachable, cannot be forked, or has no readable token (nothing to authenticate with) so the
+// unreachable, cannot be spawned, or has no readable token (nothing to authenticate with) so the
 // caller falls back to the in-process DirectClient.
 export const ensureDaemon = async (deps: EnsureDeps = {}): Promise<MemoryClient | null> => {
   const port = deps.port ?? resolvePort();
@@ -175,6 +189,6 @@ export const ensureDaemon = async (deps: EnsureDeps = {}): Promise<MemoryClient 
     if (notice) console.error(chalk.yellow(notice));
     return createDaemonClient(port);
   }
-  const started = await spawn(port).catch(() => false);
-  return started && readToken() ? createDaemonClient(port) : null;
+  const outcome = await spawn(port).catch((): SpawnOutcome => ({ ok: false, reason: 'blocked' }));
+  return outcome.ok && readToken() ? createDaemonClient(port) : null;
 };
