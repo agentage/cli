@@ -1,74 +1,88 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 680" width="880" height="680" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 800" width="900" height="800" font-family="Segoe UI, Ubuntu, Helvetica, Arial, sans-serif">
   <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b0f19"/>
+      <stop offset="1" stop-color="#0d1220"/>
+    </linearGradient>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
     </marker>
   </defs>
 
-  <!-- neutral background so dark text stays legible in both GitHub themes -->
-  <rect x="0" y="0" width="880" height="680" rx="10" fill="#f6f8fa"/>
+  <!-- baked-in dark background: identical on GitHub light/dark and npm -->
+  <rect x="0" y="0" width="900" height="800" fill="url(#bg)"/>
+
+  <!-- title -->
+  <text x="60" y="54" font-size="27" font-weight="700" fill="#ffffff">agentage CLI - architecture</text>
+  <rect x="62" y="68" width="214" height="4" rx="2" fill="#F59E0B"/>
 
   <!-- AI tools -->
-  <rect x="250" y="30" width="380" height="62" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
-  <text x="440" y="58" text-anchor="middle" font-size="16" font-weight="700" fill="#1f2328">AI tools</text>
-  <text x="440" y="80" text-anchor="middle" font-size="13" fill="#57606a">Claude Code / Cursor / editors</text>
+  <rect x="270" y="106" width="360" height="66" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
+  <text x="450" y="136" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#58a6ff">AI TOOLS</text>
+  <text x="450" y="157" text-anchor="middle" font-size="12.5" fill="#8b949e">Claude Code / Cursor / editors</text>
 
   <!-- MCP entry arrows -->
-  <line x1="370" y1="92" x2="212" y2="176" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="176" y="128" text-anchor="middle" font-size="12" fill="#1f2328">MCP - stdio</text>
-  <text x="176" y="144" text-anchor="middle" font-size="12" fill="#57606a">(agentage mcp)</text>
+  <line x1="392" y1="172" x2="232" y2="256" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+  <text x="188" y="206" text-anchor="middle" font-size="12" fill="#9aa4b2">MCP - stdio</text>
+  <text x="188" y="222" text-anchor="middle" font-size="11.5" fill="#8b949e">(agentage mcp)</text>
 
-  <line x1="510" y1="92" x2="668" y2="176" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="700" y="128" text-anchor="middle" font-size="12" fill="#1f2328">MCP - HTTP /mcp</text>
-  <text x="700" y="144" text-anchor="middle" font-size="12" fill="#57606a">127.0.0.1:4243</text>
+  <line x1="508" y1="172" x2="668" y2="256" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+  <text x="712" y="206" text-anchor="middle" font-size="12" fill="#9aa4b2">MCP - HTTP /mcp</text>
+  <text x="712" y="222" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, Consolas, monospace" fill="#F59E0B">127.0.0.1:4243</text>
 
   <!-- agentage CLI -->
-  <rect x="60" y="178" width="300" height="88" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
-  <text x="210" y="206" text-anchor="middle" font-size="15" font-weight="700" fill="#1f2328">agentage CLI</text>
-  <text x="210" y="230" text-anchor="middle" font-size="12.5" fill="#57606a">memory   vault   setup</text>
-  <text x="210" y="250" text-anchor="middle" font-size="12.5" fill="#57606a">status   daemon   mcp</text>
+  <rect x="70" y="258" width="300" height="100" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
+  <text x="220" y="288" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#58a6ff">AGENTAGE CLI</text>
+  <text x="220" y="308" text-anchor="middle" font-size="12" fill="#8b949e">terminal client - memory verbs</text>
+  <text x="220" y="330" text-anchor="middle" font-size="12.5" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">memory   vault   setup</text>
+  <text x="220" y="349" text-anchor="middle" font-size="12.5" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">status   daemon   mcp</text>
 
   <!-- local daemon -->
-  <rect x="520" y="178" width="300" height="88" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
-  <text x="670" y="206" text-anchor="middle" font-size="15" font-weight="700" fill="#1f2328">local daemon - 127.0.0.1:4243</text>
-  <text x="670" y="230" text-anchor="middle" font-size="12.5" fill="#57606a">single writer over the vault engine</text>
-  <text x="670" y="250" text-anchor="middle" font-size="12.5" fill="#57606a">serializes writes, schedules sync</text>
+  <rect x="530" y="258" width="300" height="100" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
+  <text x="680" y="288" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#b48eff">LOCAL DAEMON</text>
+  <text x="680" y="308" text-anchor="middle" font-size="12" font-family="JetBrains Mono, Consolas, monospace" fill="#F59E0B">127.0.0.1:4243</text>
+  <text x="680" y="330" text-anchor="middle" font-size="12" fill="#9aa4b2">single writer over the vault engine</text>
+  <text x="680" y="349" text-anchor="middle" font-size="12" fill="#9aa4b2">serializes writes, schedules sync</text>
 
   <!-- CLI -> daemon -->
-  <line x1="360" y1="222" x2="518" y2="222" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="440" y="212" text-anchor="middle" font-size="11.5" fill="#1f2328">memory verbs</text>
-  <text x="440" y="240" text-anchor="middle" font-size="11.5" fill="#57606a">--no-daemon bypasses</text>
+  <line x1="370" y1="304" x2="528" y2="304" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+  <text x="450" y="296" text-anchor="middle" font-size="11.5" fill="#F59E0B">memory verbs</text>
+  <text x="450" y="322" text-anchor="middle" font-size="11" font-family="JetBrains Mono, Consolas, monospace" fill="#8b949e">--no-daemon bypasses</text>
 
   <!-- daemon -> vaults -->
-  <line x1="600" y1="266" x2="472" y2="356" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="574" y="318" text-anchor="middle" font-size="12" fill="#57606a">vault engine</text>
+  <line x1="610" y1="358" x2="490" y2="448" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+  <text x="584" y="410" text-anchor="middle" font-size="11.5" fill="#8b949e">vault engine</text>
 
   <!-- CLI -> vaults (in-process fallback) -->
-  <line x1="200" y1="266" x2="330" y2="356" stroke="#8c959f" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
-  <text x="222" y="318" text-anchor="middle" font-size="12" fill="#8c959f">in-process</text>
+  <line x1="210" y1="358" x2="340" y2="448" stroke="#8b949e" stroke-width="1" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="232" y="410" text-anchor="middle" font-size="11.5" fill="#8b949e">in-process</text>
 
-  <!-- local vaults -->
-  <rect x="230" y="358" width="420" height="88" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
-  <text x="440" y="388" text-anchor="middle" font-size="15" font-weight="700" fill="#1f2328">local vaults - plain markdown folders on disk</text>
-  <text x="440" y="412" text-anchor="middle" font-size="12.5" fill="#57606a">one git repo per vault</text>
-  <text x="440" y="432" text-anchor="middle" font-size="12.5" fill="#57606a">git-per-vault store (@agentage/memory-core)</text>
+  <!-- local vaults (the heart) -->
+  <rect x="240" y="450" width="420" height="98" rx="13" fill="#11161f" stroke="#3a3320" stroke-width="1"/>
+  <text x="450" y="480" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#F59E0B">LOCAL VAULTS</text>
+  <text x="450" y="500" text-anchor="middle" font-size="12" fill="#8b949e">plain markdown folders on disk</text>
+  <text x="450" y="522" text-anchor="middle" font-size="12.5" fill="#9aa4b2">one git repo per vault</text>
+  <text x="450" y="541" text-anchor="middle" font-size="12" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">git-per-vault store (@agentage/memory-core)</text>
 
   <!-- sync arrows -->
-  <line x1="360" y1="446" x2="242" y2="536" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="286" y="500" text-anchor="middle" font-size="12" fill="#57606a">sync</text>
+  <line x1="370" y1="548" x2="252" y2="636" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+  <text x="296" y="598" text-anchor="middle" font-size="11.5" fill="#8b949e">sync</text>
 
-  <line x1="520" y1="446" x2="648" y2="536" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="602" y="500" text-anchor="middle" font-size="12" fill="#57606a">sync</text>
+  <line x1="530" y1="548" x2="648" y2="636" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
+  <text x="604" y="598" text-anchor="middle" font-size="11.5" fill="#8b949e">sync</text>
 
   <!-- git remotes -->
-  <rect x="92" y="538" width="300" height="86" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
-  <text x="242" y="568" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2328">git remotes (external)</text>
-  <text x="242" y="590" text-anchor="middle" font-size="12.5" fill="#57606a">commit / push / pull on an interval</text>
-  <text x="242" y="610" text-anchor="middle" font-size="12.5" fill="#57606a">you host the remote</text>
+  <rect x="102" y="638" width="300" height="96" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
+  <text x="252" y="668" text-anchor="middle" font-size="13.5" font-weight="700" letter-spacing="1.5" fill="#8ea3bd">GIT REMOTES</text>
+  <text x="252" y="688" text-anchor="middle" font-size="12" fill="#8b949e">external - you host the remote</text>
+  <text x="252" y="710" text-anchor="middle" font-size="12" fill="#9aa4b2">commit / push / pull on an interval</text>
 
   <!-- account sync -->
-  <rect x="488" y="538" width="320" height="86" rx="8" fill="#ffffff" stroke="#d0d7de" stroke-width="1.5"/>
-  <text x="648" y="568" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2328">agentage cloud - account sync</text>
-  <text x="648" y="590" text-anchor="middle" font-size="12.5" fill="#57606a">OAuth 2.1 sign-in at auth.agentage.io</text>
-  <text x="648" y="610" text-anchor="middle" font-size="12.5" fill="#57606a">optional; everything works offline</text>
+  <rect x="498" y="638" width="320" height="96" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
+  <text x="658" y="668" text-anchor="middle" font-size="13.5" font-weight="700" letter-spacing="1.5" fill="#9f8fd4">AGENTAGE CLOUD</text>
+  <text x="658" y="688" text-anchor="middle" font-size="12" fill="#8b949e">account sync - optional</text>
+  <text x="658" y="710" text-anchor="middle" font-size="12" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">OAuth 2.1 at auth.agentage.io</text>
+
+  <!-- caption -->
+  <text x="450" y="772" text-anchor="middle" font-size="12.5" fill="#8b949e">plain markdown on disk; cloud is optional - everything works offline</text>
 </svg>
