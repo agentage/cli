@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MemoryClient } from '../lib/memory-client.js';
+import { translateEngineMessage } from '../lib/memory-client.js';
 import { runDelete, runEdit, runList, runRead, runSearch, runWrite } from './memory.js';
 
 const client = (): MemoryClient => ({
@@ -109,5 +110,61 @@ describe('memory command wiring', () => {
     await runDelete('a.md', {}, c);
     expect(c.delete).toHaveBeenCalledWith('a.md', { vault: undefined });
     expect(logs.join()).toContain('git history');
+  });
+
+  it('edit with no --old/--new/--body errors instead of a silent no-op', async () => {
+    const c = client();
+    await expect(runEdit('a.md', {}, c)).rejects.toThrow(
+      'specify --old/--new for a replacement or --body to overwrite'
+    );
+    expect(c.edit).not.toHaveBeenCalled();
+  });
+
+  it('write rejects invalid --frontmatter JSON with a friendly hint', async () => {
+    const c = client();
+    await expect(runWrite('a.md', { body: 'x', frontmatter: '{bad' }, c)).rejects.toThrow(
+      /--frontmatter must be a JSON object, e\.g\. '\{"tags":\["x"\]\}'/
+    );
+    expect(c.write).not.toHaveBeenCalled();
+  });
+
+  it('write rejects non-object --frontmatter JSON (array/scalar)', async () => {
+    const c = client();
+    await expect(runWrite('a.md', { body: 'x', frontmatter: '[1,2]' }, c)).rejects.toThrow(
+      /must be a JSON object/
+    );
+    await expect(runWrite('a.md', { body: 'x', frontmatter: '42' }, c)).rejects.toThrow(
+      /must be a JSON object/
+    );
+    expect(c.write).not.toHaveBeenCalled();
+  });
+
+  it('write with no --body on a TTY errors instead of blocking on stdin', async () => {
+    const c = client();
+    const original = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    try {
+      await expect(runWrite('a.md', {}, c)).rejects.toThrow(
+        'provide --body, or pipe content on stdin'
+      );
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { value: original, configurable: true });
+    }
+    expect(c.write).not.toHaveBeenCalled();
+  });
+});
+
+describe('engine error translation', () => {
+  it('rewrites the memory__list MCP vocabulary to a CLI command', () => {
+    const engine =
+      'Unknown vault "@nosuchvault". Use memory__list with no folder to see available vaults.';
+    const out = translateEngineMessage(engine);
+    expect(out).not.toContain('memory__list');
+    expect(out).toContain('Run `agentage vault list` to see available vaults.');
+    expect(out).toContain('Unknown vault "@nosuchvault".');
+  });
+
+  it('passes through messages with no known engine pattern unchanged', () => {
+    expect(translateEngineMessage('not found: a.md')).toBe('not found: a.md');
   });
 });

@@ -112,7 +112,7 @@ export const runVaultList = (opts: { json?: boolean }, deps: VaultDeps = default
     return;
   }
   if (names.length === 0) {
-    deps.log('No vaults registered. Add one with `agentage vault add <name>`.');
+    deps.log('No vaults registered. Add one with `agentage vault add <name> --local`.');
     return;
   }
   for (const name of names) {

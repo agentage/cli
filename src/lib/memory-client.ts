@@ -19,6 +19,21 @@ export interface DeleteResult {
   deleted: boolean;
 }
 
+// Engine (memory-core) messages leak MCP tool vocabulary (`memory__list`, ...) unfit for a terminal.
+// Rewrite the known patterns to CLI vocabulary at this seam; do not fork the engine.
+const ENGINE_MESSAGE_MAP: ReadonlyArray<readonly [RegExp, string]> = [
+  [
+    /Use memory__list with no folder to see available vaults\.?/g,
+    'Run `agentage vault list` to see available vaults.',
+  ],
+];
+
+export const translateEngineMessage = (message: string): string =>
+  ENGINE_MESSAGE_MAP.reduce(
+    (m, [pattern, replacement]) => m.replace(pattern, replacement),
+    message
+  );
+
 export interface VerbOptions {
   vault?: string;
 }
