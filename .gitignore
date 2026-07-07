@@ -1,6 +1,10 @@
 node_modules/
 dist/
 coverage/
+test-results/
+playwright-report/
+.proofs/
+changelog-content.md
 *.log
 *.tgz
 .DS_Store
