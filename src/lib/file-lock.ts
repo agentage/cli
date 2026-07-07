@@ -2,25 +2,54 @@ import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 // A cross-process advisory lock keyed to a target file (`<target>.lock`). Config read-modify-writes
-// are sub-millisecond, so a lock older than this is a crashed holder to be taken over.
+// are sub-millisecond, so a lock past this age whose holder is gone is a crashed holder to take over.
 const LOCK_TTL_MS = 10_000;
 // A caller blocks up to this long for a contended lock. Past the TTL so a crashed holder is taken
 // over rather than wedging the caller; a throw only happens if the lock is genuinely stuck.
 const MAX_WAIT_MS = 15_000;
+// Past this age a holder is taken over even if its pid still resolves - the only explanation left is
+// pid reuse after a crash. Far beyond any real critical section or plausible scheduler pause, so a
+// live-but-CPU-starved holder is never mistaken for crashed below it.
+const STALE_HARD_MS = 60_000;
 const STEP_MS = 25;
 
 const lockPath = (target: string): string => `${target}.lock`;
 
-// The lock file holds "<pid> <timestamp>"; the trailing token is the acquisition time used for
-// staleness. pid is there for debuggability only.
-const heldAt = (path: string): number | null => {
+// The lock file holds "<pid> <timestamp>": pid gates crash-takeover, the trailing token is the
+// acquisition time used for staleness. A legacy single-token file parses as pid 0 (unknown holder).
+const holderOf = (path: string): { pid: number; at: number } | null => {
   try {
     const parts = readFileSync(path, 'utf-8').trim().split(/\s+/);
-    const n = Number.parseInt(parts[parts.length - 1] ?? '', 10);
-    return Number.isNaN(n) ? null : n;
+    const at = Number.parseInt(parts[parts.length - 1] ?? '', 10);
+    if (Number.isNaN(at)) return null;
+    const pid = parts.length >= 2 ? Number.parseInt(parts[0] ?? '', 10) : 0;
+    return { pid: Number.isNaN(pid) ? 0 : pid, at };
   } catch {
     return null;
   }
+};
+
+// Same-host liveness probe. ESRCH = the holder is gone (crashed); EPERM = alive but owned by another
+// user. pid 0/unknown counts as gone so a legacy or malformed lock still ages out on the TTL.
+const holderAlive = (pid: number): boolean => {
+  if (pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+};
+
+// A holder is safe to take over only once it is past the TTL AND provably gone: a dead pid, our own
+// leftover pid (we cannot be inside our own synchronous section while here), or so old that pid reuse
+// is the only explanation. A live holder merely starved of CPU is NEVER stolen - stealing it would
+// put two writers in the critical section and silently drop an append (issue #249).
+const isCrashed = (holder: { pid: number; at: number }, now: number): boolean => {
+  const age = now - holder.at;
+  if (age < LOCK_TTL_MS) return false;
+  if (age >= STALE_HARD_MS) return true;
+  return holder.pid === process.pid || !holderAlive(holder.pid);
 };
 
 const unlinkQuiet = (path: string): void => {
@@ -38,16 +67,16 @@ const unlinkQuiet = (path: string): void => {
 const takeOverStale = (target: string, now: number): boolean => {
   const path = lockPath(target);
   const guard = `${path}.takeover`;
-  const guardHeld = heldAt(guard);
-  if (guardHeld !== null && now - guardHeld >= LOCK_TTL_MS) unlinkQuiet(guard);
+  const guardHeld = holderOf(guard);
+  if (guardHeld !== null && isCrashed(guardHeld, now)) unlinkQuiet(guard);
   try {
     writeFileSync(guard, `${process.pid} ${now}`, { flag: 'wx' });
   } catch {
     return false; // another taker is mid-takeover; let it win
   }
   try {
-    const held = heldAt(path);
-    if (held !== null && now - held < LOCK_TTL_MS) return false; // became fresh meanwhile
+    const holder = holderOf(path);
+    if (holder !== null && !isCrashed(holder, now)) return false; // fresh or a live-but-slow holder
     unlinkQuiet(path);
     return true;
   } finally {
@@ -56,8 +85,8 @@ const takeOverStale = (target: string, now: number): boolean => {
 };
 
 // One-shot acquire: the O_EXCL ('wx') create IS the mutex - concurrent callers cannot both win it,
-// unlike a check-then-write. A fresh holder refuses; a stale one (crashed holder) is cleared under
-// the takeover guard and re-raced once. `now` is injectable for tests.
+// unlike a check-then-write. A fresh or live holder refuses; a crashed one (dead holder past the
+// TTL) is cleared under the takeover guard and re-raced once. `now` is injectable for tests.
 export const acquireFileLock = (target: string, now: number = Date.now()): boolean => {
   mkdirSync(dirname(target), { recursive: true });
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -76,8 +105,8 @@ export const acquireFileLock = (target: string, now: number = Date.now()): boole
             : `could not write lock file ${path}${code ? ` (${code})` : ''}`
         );
       }
-      const held = heldAt(lockPath(target));
-      if (held !== null && now - held < LOCK_TTL_MS) return false;
+      const holder = holderOf(lockPath(target));
+      if (holder !== null && !isCrashed(holder, now)) return false;
       if (!takeOverStale(target, now)) return false;
     }
   }
