@@ -67,19 +67,19 @@
 
   <!-- local vaults (the heart) -->
   <rect x="240" y="450" width="420" height="98" rx="13" fill="#11161f" stroke="#3a3320" stroke-width="1"/>
-  <text x="450" y="480" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#F59E0B">LOCAL VAULTS</text>
-  <text x="450" y="500" text-anchor="middle" font-size="12" fill="#8b949e">plain markdown folders on disk</text>
-  <text x="450" y="522" text-anchor="middle" font-size="12.5" fill="#9aa4b2">one git repo per vault</text>
-  <text x="450" y="541" text-anchor="middle" font-size="12" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">git-per-vault store (@agentage/memory-core)</text>
+  <text x="450" y="474" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#F59E0B">LOCAL VAULTS</text>
+  <text x="450" y="494" text-anchor="middle" font-size="12" fill="#8b949e">plain markdown folders on disk</text>
+  <text x="450" y="516" text-anchor="middle" font-size="12.5" fill="#9aa4b2">one git repo per vault</text>
+  <text x="450" y="535" text-anchor="middle" font-size="12" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">git-per-vault store (@agentage/memory-core)</text>
   <!-- decorative node-graph motif (amber family) -->
   <g>
-    <line x1="634" y1="530" x2="616" y2="509" stroke="#3d4660" stroke-width="1"/>
-    <line x1="634" y1="530" x2="647" y2="512" stroke="#3d4660" stroke-width="1"/>
-    <line x1="634" y1="530" x2="622" y2="541" stroke="#3d4660" stroke-width="1"/>
-    <circle cx="634" cy="530" r="6" fill="#F59E0B"/>
-    <circle cx="616" cy="509" r="4" fill="#c98a1b" opacity="0.85"/>
-    <circle cx="647" cy="512" r="3.5" fill="#c98a1b" opacity="0.7"/>
-    <circle cx="622" cy="541" r="3" fill="#c98a1b" opacity="0.6"/>
+    <line x1="634" y1="525" x2="616" y2="504" stroke="#3d4660" stroke-width="1"/>
+    <line x1="634" y1="525" x2="647" y2="507" stroke="#3d4660" stroke-width="1"/>
+    <line x1="634" y1="525" x2="622" y2="536" stroke="#3d4660" stroke-width="1"/>
+    <circle cx="634" cy="525" r="6" fill="#F59E0B"/>
+    <circle cx="616" cy="504" r="4" fill="#c98a1b" opacity="0.85"/>
+    <circle cx="647" cy="507" r="3.5" fill="#c98a1b" opacity="0.7"/>
+    <circle cx="622" cy="536" r="3" fill="#c98a1b" opacity="0.6"/>
   </g>
 
   <!-- sync arrows -->
