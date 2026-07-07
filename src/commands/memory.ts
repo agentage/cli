@@ -3,7 +3,11 @@ import { type Command } from 'commander';
 import { type TreeEntry } from '@agentage/memory-core';
 import { ensureDaemon } from '../lib/daemon-client.js';
 import { daemonDisabled } from '../lib/daemon-pref.js';
-import { createDirectClient, type MemoryClient } from '../lib/memory-client.js';
+import {
+  createDirectClient,
+  translateEngineMessage,
+  type MemoryClient,
+} from '../lib/memory-client.js';
 import { loadVaultsConfig } from '../lib/vaults.js';
 
 // Default engine path (DO3/DO4): the daemon - single writer, autostarted - when reachable; the
@@ -19,6 +23,21 @@ const readStdin = async (): Promise<string> => {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
   return Buffer.concat(chunks).toString('utf-8');
+};
+
+// --frontmatter must be a JSON object; a raw parser error or a non-object value is unfriendly.
+const parseFrontmatter = (raw?: string): Record<string, unknown> | undefined => {
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`--frontmatter must be a JSON object, e.g. '{"tags":["x"]}': ${detail}`);
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
+    throw new Error(`--frontmatter must be a JSON object, e.g. '{"tags":["x"]}'`);
+  return parsed as Record<string, unknown>;
 };
 
 const emit = (json: boolean, data: unknown, human: () => void): void => {
@@ -67,10 +86,11 @@ export const runWrite = async (
   client?: MemoryClient
 ): Promise<void> => {
   const c = client ?? (await resolveClient());
-  const body = opts.body !== undefined && opts.body !== '-' ? opts.body : await readStdin();
-  const frontmatter = opts.frontmatter
-    ? (JSON.parse(opts.frontmatter) as Record<string, unknown>)
-    : undefined;
+  const inlineBody = opts.body !== undefined && opts.body !== '-';
+  if (!inlineBody && process.stdin.isTTY)
+    throw new Error('provide --body, or pipe content on stdin');
+  const body = inlineBody ? opts.body! : await readStdin();
+  const frontmatter = parseFrontmatter(opts.frontmatter);
   const out = await c.write(ref, body, { vault: opts.vault, frontmatter });
   emit(opts.json ?? false, out, () => console.log(chalk.green(`Wrote ${out.path}`)));
 };
@@ -81,6 +101,8 @@ export const runEdit = async (
   client?: MemoryClient
 ): Promise<void> => {
   const c = client ?? (await resolveClient());
+  if (opts.old === undefined && opts.body === undefined)
+    throw new Error('specify --old/--new for a replacement or --body to overwrite');
   const op =
     opts.old !== undefined
       ? { mode: 'str_replace' as const, old_str: opts.old, new_str: opts.new ?? '' }
@@ -117,7 +139,8 @@ export const runDelete = async (
 
 const guard = (fn: () => Promise<void>): Promise<void> =>
   fn().catch((err: unknown) => {
-    console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+    const message = translateEngineMessage(err instanceof Error ? err.message : String(err));
+    console.error(chalk.red(message));
     process.exitCode = 1;
   });
 

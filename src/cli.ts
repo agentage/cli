@@ -24,9 +24,14 @@ const program = new Command();
 
 program
   .name('agentage')
-  .description('The agentage CLI')
+  .description('The offline-first terminal client for agentage Memory')
   .version(VERSION)
   .option('--no-daemon', 'run memory verbs in-process instead of via the daemon');
+
+program.addHelpText(
+  'after',
+  '\nNew here? Run: agentage vault add <name> --local, or agentage setup to connect an account.'
+);
 
 program.hook('preAction', () => {
   if (program.opts().daemon === false) disableDaemon();

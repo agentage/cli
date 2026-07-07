@@ -1,5 +1,13 @@
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -41,6 +49,41 @@ describe('file lock', () => {
     expect(acquireFileLock(target, now + 11_000)).toBe(true); // 11s later, stale
     releaseFileLock(target);
   });
+
+  // chmod-based unwritability does not apply to root, so skip these there.
+  const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
+  it.skipIf(asRoot)('fails fast on a permission error instead of treating it as contention', () => {
+    // An unwritable lock dir: writeFileSync({flag:'wx'}) throws EACCES/EPERM, which never clears.
+    const roDir = join(dir, 'readonly');
+    mkdirSync(roDir);
+    const roTarget = join(roDir, 'data.json');
+    chmodSync(roDir, 0o500);
+    try {
+      expect(() => acquireFileLock(roTarget)).toThrow(/permission denied/);
+    } finally {
+      chmodSync(roDir, 0o700);
+    }
+  });
+
+  it.skipIf(asRoot)(
+    'withFileLock surfaces a permission error immediately, never spinning MAX_WAIT_MS',
+    async () => {
+      const roDir = join(dir, 'readonly2');
+      mkdirSync(roDir);
+      const roTarget = join(roDir, 'data.json');
+      chmodSync(roDir, 0o500);
+      const started = Date.now();
+      try {
+        await expect(withFileLock(roTarget, () => 'unreachable')).rejects.toThrow(
+          /permission denied/
+        );
+        expect(Date.now() - started).toBeLessThan(2_000);
+      } finally {
+        chmodSync(roDir, 0o700);
+      }
+    }
+  );
 
   it('releases idempotently', () => {
     acquireFileLock(target);

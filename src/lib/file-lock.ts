@@ -64,7 +64,18 @@ export const acquireFileLock = (target: string, now: number = Date.now()): boole
     try {
       writeFileSync(lockPath(target), `${process.pid} ${now}`, { flag: 'wx' });
       return true;
-    } catch {
+    } catch (err) {
+      // Only EEXIST means contention. A permission/read-only error never clears, so failing fast
+      // beats burning the full MAX_WAIT_MS before reporting a generic "could not acquire lock".
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST') {
+        const path = lockPath(target);
+        throw new Error(
+          code === 'EACCES' || code === 'EPERM' || code === 'EROFS'
+            ? `permission denied: ${path}`
+            : `could not write lock file ${path}${code ? ` (${code})` : ''}`
+        );
+      }
       const held = heldAt(lockPath(target));
       if (held !== null && now - held < LOCK_TTL_MS) return false;
       if (!takeOverStale(target, now)) return false;
