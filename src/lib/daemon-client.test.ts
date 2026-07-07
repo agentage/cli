@@ -1,7 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createDaemonServer } from '../daemon/server.js';
+import { writeTokenFile } from '../daemon/lifecycle.js';
 import { VERSION } from '../utils/version.js';
 import { type MemoryClient } from './memory-client.js';
+
+const TOKEN = 'test-daemon-token';
 import {
   createDaemonClient,
   ensureDaemon,
@@ -33,12 +39,31 @@ const startServer = async (
   getClient: () => MemoryClient,
   version = '9.9.9'
 ): Promise<{ port: number; stop: () => Promise<void> }> => {
-  const srv = createDaemonServer({ getClient, version, startedAt: Date.now() - 3000 });
+  const srv = createDaemonServer({
+    getClient,
+    authToken: TOKEN,
+    version,
+    startedAt: Date.now() - 3000,
+  });
   await srv.start(0);
   const addr = srv.server.address();
   const port = typeof addr === 'object' && addr ? addr.port : 0;
   return { port, stop: () => srv.stop() };
 };
+
+// A shared config dir holds the token file the DaemonClient reads to authenticate its calls.
+let configDir: string;
+const savedConfigDir = process.env['AGENTAGE_CONFIG_DIR'];
+beforeAll(() => {
+  configDir = mkdtempSync(join(tmpdir(), 'cli-daemon-client-'));
+  process.env['AGENTAGE_CONFIG_DIR'] = configDir;
+  writeTokenFile(TOKEN);
+});
+afterAll(() => {
+  rmSync(configDir, { recursive: true, force: true });
+  if (savedConfigDir === undefined) delete process.env['AGENTAGE_CONFIG_DIR'];
+  else process.env['AGENTAGE_CONFIG_DIR'] = savedConfigDir;
+});
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -82,15 +107,17 @@ describe('DaemonClient <-> server round trip', () => {
   it('404s an unknown verb and unknown route, 400s a bad JSON body', async () => {
     const { port, stop } = await startServer(() => mockClient());
     try {
+      const auth = { 'Content-Type': 'application/json', 'X-Agentage-Token': TOKEN };
       const bogus = await fetch(`http://127.0.0.1:${port}/api/memory/bogus`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: auth,
         body: '{}',
       });
       expect(bogus.status).toBe(404);
       expect((await fetch(`http://127.0.0.1:${port}/nope`)).status).toBe(404);
       const bad = await fetch(`http://127.0.0.1:${port}/api/memory/read`, {
         method: 'POST',
+        headers: auth,
         body: '{oops',
       });
       expect(bad.status).toBe(400);

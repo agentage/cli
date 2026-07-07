@@ -1,23 +1,41 @@
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getConfigDir } from '../lib/config.js';
 
 // The daemon's on-disk state lives beside the config so an isolated AGENTAGE_CONFIG_DIR fully
-// isolates a daemon (pid, port) from any other - tests never collide with a real one.
+// isolates a daemon (pid, port, token) from any other - tests never collide with a real one.
 export const DEFAULT_DAEMON_PORT = 4243;
 
 const pidPath = (): string => join(getConfigDir(), 'daemon.pid');
 const portPath = (): string => join(getConfigDir(), 'daemon.port');
+const tokenPath = (): string => join(getConfigDir(), 'daemon.token');
 
 export const writePidFile = (pid: number): void => writeFileSync(pidPath(), String(pid), 'utf-8');
 export const writePortFile = (port: number): void =>
   writeFileSync(portPath(), String(port), 'utf-8');
+
+// A 256-bit per-daemon secret gating /api/*; only a same-machine client that can read the 0600
+// file (so, the same user) can call it, closing the loopback socket to any other local process.
+export const generateDaemonToken = (): string => randomBytes(32).toString('hex');
+
+export const writeTokenFile = (token: string): void =>
+  writeFileSync(tokenPath(), token, { encoding: 'utf-8', mode: 0o600 });
+
+export const readDaemonToken = (): string | null => {
+  if (!existsSync(tokenPath())) return null;
+  const token = readFileSync(tokenPath(), 'utf-8').trim();
+  return token.length > 0 ? token : null;
+};
 
 export const removePidFile = (): void => {
   if (existsSync(pidPath())) unlinkSync(pidPath());
 };
 export const removePortFile = (): void => {
   if (existsSync(portPath())) unlinkSync(portPath());
+};
+export const removeTokenFile = (): void => {
+  if (existsSync(tokenPath())) unlinkSync(tokenPath());
 };
 
 const readNumberFile = (path: string): number | null => {
@@ -53,6 +71,7 @@ export const isDaemonRunning = (): boolean => {
   if (!isProcessAlive(pid)) {
     removePidFile();
     removePortFile();
+    removeTokenFile();
     return false;
   }
   return true;
@@ -67,6 +86,7 @@ export const stopDaemon = (): boolean => {
   if (alive) process.kill(pid, 'SIGTERM');
   removePidFile();
   removePortFile();
+  removeTokenFile();
   return alive;
 };
 

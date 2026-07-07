@@ -17,6 +17,7 @@ const start = async (): Promise<{ port: number; srv: DaemonServer }> => {
       throw new Error('memory verbs not used in this test');
     },
     buildMcpServer: async () => createLocalMemoryServer(await createRegistry(config)),
+    authToken: 'test-token',
     version: '9.9.9',
   });
   await srv.start(0);
@@ -89,6 +90,7 @@ describe('daemon POST /mcp (stateless Streamable HTTP)', () => {
       getClient: () => {
         throw new Error('unused');
       },
+      authToken: 'test-token',
       version: '9.9.9',
     });
     await srv.start(0);

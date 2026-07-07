@@ -587,10 +587,14 @@ test.describe('couch account sync (hermetic) @couch', () => {
       // The watcher provisioned the discovered vault's cloud channel.
       await waitFor(async () => stub.provisioned().includes('teamnotes'));
 
-      // /api/sync/status lists both the discover root and the new couch target.
+      // /api/sync/status lists both the discover root and the new couch target. /api/* now needs
+      // the daemon's per-boot token (0600 in the config dir).
+      const daemonToken = readFileSync(join(m.configDir, 'daemon.token'), 'utf-8').trim();
       await waitFor(async () => {
         const s = (await (
-          await fetch(`http://127.0.0.1:${daemonPort}/api/sync/status`)
+          await fetch(`http://127.0.0.1:${daemonPort}/api/sync/status`, {
+            headers: { 'X-Agentage-Token': daemonToken },
+          })
         ).json()) as { couch?: { vault: string }[]; discover?: { roots: string[] } };
         return (
           (s.discover?.roots ?? []).includes(rootDir) &&

@@ -8,7 +8,7 @@ import {
   type SearchResult,
   type WriteResult,
 } from '@agentage/memory-core';
-import { resolvePort } from '../daemon/lifecycle.js';
+import { readDaemonToken, resolvePort } from '../daemon/lifecycle.js';
 import { type SyncResult } from '../sync/cycle.js';
 import { type CouchSyncResult } from '../sync/couch/manager.js';
 import { type SyncStatus } from '../sync/manager.js';
@@ -34,10 +34,17 @@ export interface Health {
 
 const base = (port: number): string => `http://127.0.0.1:${port}`;
 
+// The 0600 token file is the daemon's auth: read it fresh per call so a restart's new token is
+// picked up; absent means we cannot authenticate, so /api/* will 401 and callers fall back.
+const apiHeaders = (): Record<string, string> => {
+  const token = readDaemonToken();
+  return { 'Content-Type': 'application/json', ...(token ? { 'X-Agentage-Token': token } : {}) };
+};
+
 const post = async <T>(port: number, verb: string, body: unknown): Promise<T> => {
   const res = await fetch(`${base(port)}/api/memory/${verb}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: apiHeaders(),
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -63,6 +70,7 @@ export const health = async (port: number, timeoutMs = 1000): Promise<Health | n
 export const syncStatus = async (port: number, timeoutMs = 1000): Promise<SyncStatus | null> => {
   try {
     const res = await fetch(`${base(port)}/api/sync/status`, {
+      headers: apiHeaders(),
       signal: AbortSignal.timeout(timeoutMs),
     });
     return res.ok ? ((await res.json()) as SyncStatus) : null;
@@ -76,7 +84,7 @@ export const syncStatus = async (port: number, timeoutMs = 1000): Promise<SyncSt
 export const syncRun = async (port: number, vault: string): Promise<SyncRunResult> => {
   const res = await fetch(`${base(port)}/api/sync/run`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: apiHeaders(),
     body: JSON.stringify({ vault }),
   });
   if (!res.ok) {
@@ -149,20 +157,24 @@ export interface EnsureDeps {
   port?: number;
   probe?: (port: number) => Promise<Health | null>;
   spawn?: (port: number) => Promise<boolean>;
+  readToken?: () => string | null;
 }
 
 // DO3/DO4/DO9: prefer a live daemon, autostart one if absent, and return null when it is
-// unreachable or cannot be forked so the caller falls back to the in-process DirectClient.
+// unreachable, cannot be forked, or has no readable token (nothing to authenticate with) so the
+// caller falls back to the in-process DirectClient.
 export const ensureDaemon = async (deps: EnsureDeps = {}): Promise<MemoryClient | null> => {
   const port = deps.port ?? resolvePort();
   const probe = deps.probe ?? health;
   const spawn = deps.spawn ?? spawnDaemon;
+  const readToken = deps.readToken ?? readDaemonToken;
   const existing = await probe(port);
   if (existing) {
+    if (!readToken()) return null;
     const notice = mismatchNotice(existing.version);
     if (notice) console.error(chalk.yellow(notice));
     return createDaemonClient(port);
   }
   const started = await spawn(port).catch(() => false);
-  return started ? createDaemonClient(port) : null;
+  return started && readToken() ? createDaemonClient(port) : null;
 };
