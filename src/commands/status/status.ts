@@ -16,21 +16,12 @@ const row = (label: string, value: string): void => {
   console.log(`${label.padEnd(10)} ${value}`);
 };
 
-// Never print a past timestamp next to the signed-in checkmark: introspection proved the session
-// is active server-side, so a stale/past access-token expiry we could not refresh becomes a plain
-// "signed in (session active)" rather than a contradictory past "valid until".
-const expiryInFuture = (iso?: string): boolean => {
-  if (!iso) return false;
-  const t = Date.parse(iso);
-  return !Number.isNaN(t) && t > Date.now();
-};
-
+// The signed-in line never shows an absolute expiry: it is the short-lived, auto-refreshed
+// access-token expiry, which misreads as "yesterday" near midnight in positive-UTC zones.
+// Introspection already proved the session is active server-side.
 const authLine = (auth: StatusReport['auth']): string => {
   if (!auth.signedIn) return `${mark(false)} ${auth.note ?? 'not signed in'}`;
-  const until = expiryInFuture(auth.tokenExpiresAt)
-    ? ` (token valid until ${auth.tokenExpiresAt})`
-    : ' (session active)';
-  return `${mark(true)} signed in${until}`;
+  return `${mark(true)} signed in (session active)`;
 };
 
 const updateLine = (update: UpdateInfo): string => {
