@@ -28,6 +28,7 @@ const makeDeps = () => {
     startServer: vi.fn().mockResolvedValue(server),
     openBrowser: vi.fn().mockResolvedValue(undefined),
     printStatus: vi.fn().mockResolvedValue(undefined),
+    ensureDaemon: vi.fn().mockResolvedValue({}),
   };
   return { deps, server, close };
 };
@@ -45,6 +46,7 @@ describe('runSetup', () => {
   afterEach(() => {
     delete process.env['AGENTAGE_CONFIG_DIR'];
     delete process.env['AGENTAGE_SITE_FQDN'];
+    delete process.env['AGENTAGE_NO_DAEMON'];
     rmSync(dir, { recursive: true, force: true });
     vi.restoreAllMocks();
   });
@@ -64,6 +66,27 @@ describe('runSetup', () => {
     expect(auth?.siteFqdn).toBe('dev.agentage.io');
     expect(close).toHaveBeenCalled();
     expect(deps.printStatus).toHaveBeenCalled();
+  });
+
+  it('starts the daemon once on the successful sign-in path', async () => {
+    const { deps } = makeDeps();
+    await runSetup({}, deps);
+    expect(deps.ensureDaemon).toHaveBeenCalledOnce();
+  });
+
+  it('does not start the daemon on --disconnect', async () => {
+    saveAuth(existingAuth);
+    const { deps } = makeDeps();
+    await runSetup({ disconnect: true }, deps);
+    expect(deps.ensureDaemon).not.toHaveBeenCalled();
+  });
+
+  it('does not start the daemon when AGENTAGE_NO_DAEMON is set', async () => {
+    process.env['AGENTAGE_NO_DAEMON'] = '1';
+    const { deps } = makeDeps();
+    await runSetup({}, deps);
+    expect(deps.ensureDaemon).not.toHaveBeenCalled();
+    expect(readAuth()?.tokens.accessToken).toBe('at-1');
   });
 
   it('passes the authorize url with the registered client to the browser', async () => {
