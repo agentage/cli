@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type AuthState } from '../fs/config.js';
 import { fetchJsonUnref } from '../net/http.js';
@@ -9,7 +12,7 @@ const httpMock = vi.mocked(fetchJsonUnref);
 const auth: AuthState = {
   siteFqdn: 'dev.agentage.io',
   clientId: 'c1',
-  tokens: { accessToken: 'at' },
+  tokens: { accessToken: 'at', refreshToken: 'rt' },
 };
 
 const jsonResponse = (status: number, body: unknown): Response =>
@@ -27,9 +30,17 @@ const stubHttp = (health: 'reachable' | 'unreachable'): void => {
   });
 };
 
-beforeEach(() => stubHttp('reachable'));
+let dir: string;
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'agentage-status-'));
+  process.env['AGENTAGE_CONFIG_DIR'] = dir;
+  stubHttp('reachable');
+});
 
 afterEach(() => {
+  delete process.env['AGENTAGE_CONFIG_DIR'];
+  rmSync(dir, { recursive: true, force: true });
   httpMock.mockReset();
   vi.unstubAllGlobals();
 });
@@ -61,21 +72,47 @@ describe('gatherStatus', () => {
     expect(report.auth).toEqual({ signedIn: true, tokenExpiresAt: '2026-06-12T20:00:00Z' });
   });
 
-  it('treats a 200 + null session as signed-out instead of crashing', async () => {
+  it('refreshes on a 200 + null session and reports signed-in', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => jsonResponse(200, null))
+      vi.fn((url: string, init?: RequestInit) => {
+        if (String(url).includes('/token'))
+          return Promise.resolve(jsonResponse(200, { access_token: 'new', expires_in: 60 }));
+        const bearer = (init?.headers as Record<string, string> | undefined)?.['authorization'];
+        return Promise.resolve(
+          bearer === 'Bearer new'
+            ? jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: 'x' })
+            : jsonResponse(200, null)
+        );
+      })
+    );
+    const report = await gatherStatus(auth, 'dev.agentage.io');
+    expect(report.auth.signedIn).toBe(true);
+    expect(report.auth.note).toBeUndefined();
+  });
+
+  it('reports session expired when the 200 + null refresh fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        Promise.resolve(
+          String(url).includes('/token') ? jsonResponse(400, {}) : jsonResponse(200, null)
+        )
+      )
     );
     const report = await gatherStatus(auth, 'dev.agentage.io');
     expect(report.auth.signedIn).toBe(false);
-    expect(report.auth.note).toContain('agentage setup');
-    expect(report.auth.note).not.toContain('Cannot read properties');
+    expect(report.auth.note).toBe('session expired - run: agentage setup');
   });
 
   it('downgrades to signed-out with a hint when the token is rejected', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => jsonResponse(401, {}))
+      vi.fn((url: string) =>
+        Promise.resolve(
+          String(url).includes('/token') ? jsonResponse(400, {}) : jsonResponse(401, {})
+        )
+      )
     );
     const report = await gatherStatus(auth, 'dev.agentage.io');
     expect(report.auth.signedIn).toBe(false);
@@ -90,5 +127,97 @@ describe('gatherStatus', () => {
     const report = await gatherStatus(auth, 'dev.agentage.io');
     expect(report.auth.signedIn).toBe(false);
     expect(report.auth.note).toContain('could not verify session');
+  });
+
+  it('reports the daemon as stopped when no pidfile is present', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(200, null))
+    );
+    const report = await gatherStatus(null, 'dev.agentage.io');
+    expect(report.daemon).toEqual({ running: false, port: 4243 });
+  });
+});
+
+// Simulate a running daemon: our own live pid + port on disk, plus a fetch stub answering the
+// daemon's /api/health and /api/sync/status. Exercises probeDaemon + summarizeSync end to end.
+describe('gatherStatus daemon probe', () => {
+  const port = 4271;
+
+  const bootPidFiles = (): void => {
+    writeFileSync(join(dir, 'daemon.pid'), String(process.pid), 'utf-8');
+    writeFileSync(join(dir, 'daemon.port'), String(port), 'utf-8');
+  };
+
+  const stubDaemon = (health: unknown, sync: unknown): void => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (String(url).includes('/api/health')) return Promise.resolve(jsonResponse(200, health));
+        if (String(url).includes('/api/sync/status'))
+          return Promise.resolve(jsonResponse(200, sync));
+        return Promise.resolve(jsonResponse(200, null));
+      })
+    );
+    process.env['AGENTAGE_DAEMON_PORT'] = String(port);
+  };
+
+  afterEach(() => delete process.env['AGENTAGE_DAEMON_PORT']);
+
+  it('reports pid, uptime, mcp on, and an ok sync summary', async () => {
+    bootPidFiles();
+    stubDaemon(
+      { ok: true, version: '9.9.9', pid: process.pid, uptime: 42, served: 0, mcp: true },
+      { vaults: [{ vault: 'a', running: false, lastRun: '2026-07-08T10:00:00Z' }] }
+    );
+    const report = await gatherStatus(null, 'dev.agentage.io');
+    expect(report.daemon?.running).toBe(true);
+    expect(report.daemon?.uptimeSeconds).toBe(42);
+    expect(report.daemon?.mcp).toBe(true);
+    expect(report.daemon?.daemonVersion).toBe('9.9.9');
+    expect(report.daemon?.sync).toEqual({
+      vaults: 1,
+      state: 'ok',
+      lastRun: '2026-07-08T10:00:00Z',
+      lastError: undefined,
+    });
+  });
+
+  it('marks mcp off and folds an error across git + couch vaults', async () => {
+    bootPidFiles();
+    stubDaemon(
+      { ok: true, version: '9.9.9', pid: process.pid, uptime: 5, served: 0, mcp: false },
+      {
+        vaults: [{ vault: 'a', running: true, lastRun: '2026-07-08T09:00:00Z' }],
+        couch: [{ vault: 'b', running: false, lastError: 'push rejected', pendingCount: 0 }],
+      }
+    );
+    const report = await gatherStatus(null, 'dev.agentage.io');
+    expect(report.daemon?.mcp).toBe(false);
+    expect(report.daemon?.sync?.vaults).toBe(2);
+    expect(report.daemon?.sync?.state).toBe('error');
+    expect(report.daemon?.sync?.lastError).toBe('push rejected');
+  });
+
+  it('omits the sync summary when the daemon serves no vaults', async () => {
+    bootPidFiles();
+    stubDaemon(
+      { ok: true, version: '9.9.9', pid: process.pid, uptime: 5, served: 0, mcp: true },
+      { vaults: [] }
+    );
+    const report = await gatherStatus(null, 'dev.agentage.io');
+    expect(report.daemon?.running).toBe(true);
+    expect(report.daemon?.sync).toBeUndefined();
+  });
+
+  it('reports stopped when the pidfile is present but /health is unreachable', async () => {
+    bootPidFiles();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('ECONNREFUSED')))
+    );
+    process.env['AGENTAGE_DAEMON_PORT'] = String(port);
+    const report = await gatherStatus(null, 'dev.agentage.io');
+    expect(report.daemon?.running).toBe(false);
   });
 });

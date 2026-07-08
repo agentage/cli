@@ -62,4 +62,81 @@ describe('printStatus', () => {
     expect(out).toContain('unsupported');
     expect(out).toContain('npm i -g @agentage/cli@latest');
   });
+
+  it('shows a stopped daemon row with the start hint and no mcp/sync lines', () => {
+    const out = captureLines({ ...baseReport, daemon: { running: false, port: 4243 } });
+    expect(out).toContain('daemon');
+    expect(out).toContain('stopped - run: agentage daemon start');
+    expect(out).not.toContain('mcp');
+    expect(out).not.toContain('sync');
+  });
+
+  it('shows pid/port/uptime and the mcp endpoint when running with mcp on', () => {
+    const out = captureLines({
+      ...baseReport,
+      daemon: { running: true, pid: 321, port: 4243, uptimeSeconds: 3720, mcp: true },
+    });
+    expect(out).toContain('running (pid 321, port 4243, up 1h 2m)');
+    expect(out).toContain('serving at http://127.0.0.1:4243/mcp');
+  });
+
+  it('marks mcp off when the daemon serves no /mcp endpoint', () => {
+    const out = captureLines({
+      ...baseReport,
+      daemon: { running: true, pid: 1, port: 4243, uptimeSeconds: 5, mcp: false },
+    });
+    expect(out).toContain('mcp');
+    expect(out).toMatch(/mcp\s+\S+ off/);
+  });
+
+  it('renders a sync ok row with the vault count and last-run', () => {
+    const out = captureLines({
+      ...baseReport,
+      daemon: {
+        running: true,
+        port: 4243,
+        mcp: true,
+        sync: { vaults: 3, state: 'ok', lastRun: '2026-07-08T10:00:00Z' },
+      },
+    });
+    expect(out).toContain('3 vaults');
+    expect(out).toContain('last ok 2026-07-08T10:00:00Z');
+  });
+
+  it('renders a sync error row with a short last error', () => {
+    const out = captureLines({
+      ...baseReport,
+      daemon: {
+        running: true,
+        port: 4243,
+        mcp: true,
+        sync: { vaults: 1, state: 'error', lastError: 'push rejected\nmore detail here' },
+      },
+    });
+    expect(out).toMatch(/sync\s+\S+ error \(push rejected\)/);
+  });
+
+  it('renders a syncing row while a cycle is in flight', () => {
+    const out = captureLines({
+      ...baseReport,
+      daemon: { running: true, port: 4243, mcp: true, sync: { vaults: 2, state: 'syncing' } },
+    });
+    expect(out).toContain('syncing');
+  });
+
+  it('appends a version-mismatch note to the running daemon row', () => {
+    const out = captureLines({
+      ...baseReport,
+      version: '0.25.0',
+      daemon: {
+        running: true,
+        pid: 9,
+        port: 4243,
+        uptimeSeconds: 1,
+        mcp: true,
+        daemonVersion: '0.24.0',
+      },
+    });
+    expect(out).toContain('version 0.24.0 != cli 0.25.0');
+  });
 });
