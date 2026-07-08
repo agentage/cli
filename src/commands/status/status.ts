@@ -8,6 +8,7 @@ import {
   type DaemonStatus,
   type StatusReport,
 } from '../../lib/status/status-info.js';
+import { vaultLines } from '../../lib/status/vaults-format.js';
 import { INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
 
 const mark = (good: boolean): string => (good ? chalk.green('✓') : chalk.red('✗'));
@@ -50,29 +51,20 @@ const daemonLine = (d: DaemonStatus, cliVersion: string): string => {
 const mcpLine = (d: DaemonStatus): string =>
   d.mcp ? `${mark(true)} serving at http://127.0.0.1:${d.port}/mcp` : `${mark(false)} off`;
 
-const syncLine = (sync: NonNullable<DaemonStatus['sync']>): string => {
-  if (sync.state === 'syncing') return `${chalk.yellow('⋯')} syncing`;
-  if (sync.state === 'error') {
-    const short = (sync.lastError ?? 'sync failed').split('\n')[0]?.slice(0, 60);
-    return `${mark(false)} error (${short})`;
-  }
-  const at = sync.lastRun ? ` (last ok ${sync.lastRun})` : '';
-  return `${mark(true)} ${sync.vaults} vaults${at}`;
-};
-
-// Daemon rows honor version-mismatch inline (appended to the daemon row), mcp only when running,
-// and omit the sync row when the daemon is down or serves no vaults.
+// Daemon rows honor version-mismatch inline (appended to the daemon row) and print mcp only when
+// running; the per-vault sync breakdown now lives in its own `vaults` block (printStatus).
 const printDaemon = (d: DaemonStatus, cliVersion: string): void => {
   row('daemon', daemonLine(d, cliVersion));
   if (!d.running) return;
   row('mcp', mcpLine(d));
-  if (d.sync) row('sync', syncLine(d.sync));
 };
 
 export const printStatus = (report: StatusReport): void => {
   row('version', report.version);
   row('update', updateLine(report.update));
-  row('target', `${report.fqdn} (${report.env})`);
+  const t = report.target;
+  const targetSuffix = t.reachable ? '' : ' - unreachable';
+  row('target', `${mark(t.reachable)} ${t.fqdn} (${t.env})${targetSuffix}`);
   row('auth', authLine(report.auth));
   row(
     'endpoint',
@@ -80,6 +72,7 @@ export const printStatus = (report: StatusReport): void => {
       (report.endpoint.reachable ? 'reachable' : 'unreachable')
   );
   if (report.daemon) printDaemon(report.daemon, report.version);
+  for (const line of vaultLines(report.vaults)) console.log(line);
   if (report.update.message) console.log(chalk.yellow(`\n${report.update.message}`));
 };
 

@@ -7,6 +7,7 @@ import { checkForUpdate, type UpdateInfo } from '../update/update-check.js';
 import { VERSION } from '../../utils/version.js';
 import { isDaemonRunning, resolvePort } from '../../daemon/lifecycle.js';
 import { type SyncStatus } from '../../sync/git/manager.js';
+import { buildVaultStatuses, type VaultStatus } from './vaults-status.js';
 
 export interface DaemonSyncSummary {
   vaults: number;
@@ -30,10 +31,12 @@ export interface StatusReport {
   version: string;
   fqdn: string;
   env: Env;
+  target: { fqdn: string; env: Env; reachable: boolean };
   auth: { signedIn: boolean; tokenExpiresAt?: string; note?: string };
   endpoint: { url: string; reachable: boolean };
   update: UpdateInfo;
   daemon?: DaemonStatus;
+  vaults: VaultStatus[];
 }
 
 // node:https via fetchJsonUnref, not global fetch: undici's ref'd connect timer keeps the process
@@ -41,6 +44,13 @@ export interface StatusReport {
 const checkEndpoint = async (apiUrl: string): Promise<boolean> => {
   const res = await fetchJsonUnref(`${apiUrl}/health`, 3000);
   return res?.ok ?? false;
+};
+
+// Host reachability, not app health: the site root answers any HTTP status (200/3xx/4xx) when the
+// host is up, so any non-null response counts as reachable; only a refused/timed-out connect fails.
+const checkSite = async (siteUrl: string): Promise<boolean> => {
+  const res = await fetchJsonUnref(siteUrl, 3000);
+  return res !== null;
 };
 
 // Fold the git + couch per-vault states into one summary: any error wins, then any in-flight
@@ -65,13 +75,19 @@ const summarizeSync = (sync: SyncStatus): DaemonSyncSummary => {
 // health with no live pidfile is stopped. Probe health regardless of the pidfile so a legacy
 // daemon that never wrote this config dir's pidfile is not misreported as stopped. A stopped
 // daemon still costs only one 1s-timeout /health that fast-fails on connection refused.
-const probeDaemon = async (): Promise<DaemonStatus> => {
+interface DaemonProbe {
+  status: DaemonStatus;
+  // The raw per-vault sync report, kept so the caller can build the full vaults breakdown.
+  sync: SyncStatus | null;
+}
+
+const probeDaemon = async (): Promise<DaemonProbe> => {
   const port = resolvePort();
   const h = await health(port);
-  if (!h) return { running: isDaemonRunning(), port };
+  if (!h) return { status: { running: isDaemonRunning(), port }, sync: null };
   const sync = await syncStatus(port);
   const summary = sync ? summarizeSync(sync) : undefined;
-  return {
+  const status: DaemonStatus = {
     running: true,
     pid: h.pid,
     port,
@@ -81,25 +97,30 @@ const probeDaemon = async (): Promise<DaemonStatus> => {
     daemonVersion: h.version,
     sync: summary && summary.vaults > 0 ? summary : undefined,
   };
+  return { status, sync };
 };
 
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {
   const target = links(fqdn);
   // Endpoint reachability and the (npm-registry) update check are independent - run them
   // together so `status` stays snappy.
-  const [reachable, update, daemon] = await Promise.all([
+  const env = environment(fqdn);
+  const [reachable, siteReachable, update, probe] = await Promise.all([
     checkEndpoint(target.api),
+    checkSite(target.site),
     checkForUpdate(VERSION),
     probeDaemon(),
   ]);
   const report: StatusReport = {
     version: VERSION,
     fqdn,
-    env: environment(fqdn),
+    env,
+    target: { fqdn, env, reachable: siteReachable },
     auth: { signedIn: false, note: 'not signed in - run: agentage setup' },
     endpoint: { url: target.api, reachable },
     update,
-    daemon,
+    daemon: probe.status,
+    vaults: buildVaultStatuses(probe.sync, probe.status.running),
   };
   if (!auth) return report;
   try {

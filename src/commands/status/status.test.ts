@@ -9,9 +9,11 @@ const baseReport: StatusReport = {
   version: '0.25.0',
   fqdn: 'agentage.io',
   env: 'production',
+  target: { fqdn: 'agentage.io', env: 'production', reachable: true },
   auth: { signedIn: true, tokenExpiresAt: futureExpiry },
   endpoint: { url: 'https://agentage.io/api', reachable: true },
   update: { status: { kind: 'current' }, message: null },
+  vaults: [],
 };
 
 const captureLines = (report: StatusReport): string => {
@@ -31,6 +33,20 @@ describe('printStatus', () => {
     expect(out).toContain('agentage.io (production)');
     expect(out).toContain('signed in (session active)');
     expect(out).toContain('reachable');
+  });
+
+  it('marks the target line reachable with a check when the site is up', () => {
+    const out = captureLines(baseReport);
+    expect(out).toMatch(/target\s+\S+ agentage\.io \(production\)/);
+    expect(out).not.toContain('agentage.io (production) - unreachable');
+  });
+
+  it('marks the target line unreachable with a cross when the site is down', () => {
+    const out = captureLines({
+      ...baseReport,
+      target: { fqdn: 'agentage.io', env: 'production', reachable: false },
+    });
+    expect(out).toContain('agentage.io (production) - unreachable');
   });
 
   it('shows session active for a future-expiry session, never the timestamp', () => {
@@ -112,39 +128,62 @@ describe('printStatus', () => {
     expect(out).toMatch(/mcp\s+\S+ off/);
   });
 
-  it('renders a sync ok row with the vault count and last-run', () => {
+  it('renders a per-vault block with name, channel, and status', () => {
     const out = captureLines({
       ...baseReport,
-      daemon: {
-        running: true,
-        port: 4243,
-        mcp: true,
-        sync: { vaults: 3, state: 'ok', lastRun: '2026-07-08T10:00:00Z' },
-      },
+      daemon: { running: true, port: 4243, mcp: true },
+      vaults: [
+        { name: 'notes', channel: 'cloud', status: 'ok', lastRun: '2026-07-08T18:40:00Z' },
+        { name: 'work', channel: 'git', status: 'error', lastError: 'auth failed\ndetail' },
+      ],
     });
-    expect(out).toContain('3 vaults');
-    expect(out).toContain('last ok 2026-07-08T10:00:00Z');
+    expect(out).toMatch(/vaults\s+2 connected/);
+    expect(out).toMatch(/notes\s+cloud\s+\S+ last ok/);
+    expect(out).toMatch(/work\s+git\s+\S+ error \(auth failed\)/);
   });
 
-  it('renders a sync error row with a short last error', () => {
+  it('renders a syncing vault while a cycle is in flight', () => {
     const out = captureLines({
       ...baseReport,
-      daemon: {
-        running: true,
-        port: 4243,
-        mcp: true,
-        sync: { vaults: 1, state: 'error', lastError: 'push rejected\nmore detail here' },
-      },
+      daemon: { running: true, port: 4243, mcp: true },
+      vaults: [{ name: 'work', channel: 'git', status: 'syncing' }],
     });
-    expect(out).toMatch(/sync\s+\S+ error \(push rejected\)/);
+    expect(out).toMatch(/work\s+git\s+\S+ syncing/);
   });
 
-  it('renders a syncing row while a cycle is in flight', () => {
+  it('marks a local-only vault as idle, not connected, with a singular count', () => {
     const out = captureLines({
       ...baseReport,
-      daemon: { running: true, port: 4243, mcp: true, sync: { vaults: 2, state: 'syncing' } },
+      vaults: [{ name: 'scratch', channel: 'local', status: 'idle' }],
     });
-    expect(out).toContain('syncing');
+    expect(out).toMatch(/vaults\s+1 vault\b/);
+    expect(out).not.toContain('1 vaults');
+    expect(out).toMatch(/scratch\s+local\s+.*local only/);
+  });
+
+  it('pluralizes the count for multiple local-only vaults', () => {
+    const out = captureLines({
+      ...baseReport,
+      vaults: [
+        { name: 'a', channel: 'local', status: 'idle' },
+        { name: 'b', channel: 'local', status: 'idle' },
+      ],
+    });
+    expect(out).toMatch(/vaults\s+2 vaults\b/);
+  });
+
+  it('lists configured vaults as unknown when the daemon is stopped', () => {
+    const out = captureLines({
+      ...baseReport,
+      daemon: { running: false, port: 4243 },
+      vaults: [{ name: 'notes', channel: 'cloud', status: 'unknown' }],
+    });
+    expect(out).toMatch(/notes\s+cloud\s+.*unknown \(daemon stopped\)/);
+  });
+
+  it('prints an actionable hint when there are zero vaults', () => {
+    const out = captureLines({ ...baseReport, vaults: [] });
+    expect(out).toMatch(/vaults\s+none - run: agentage vault add/);
   });
 
   it('renders a legacy daemon row (no pid/uptime) as running with a version note', () => {
