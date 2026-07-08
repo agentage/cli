@@ -8,13 +8,17 @@ its agent-runtime patterns (the local memory daemon was deliberately ported from
 
 ## Layout
 - `src/cli.ts` - commander entry (excluded from coverage; keep logic out of it)
-- `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability
-- `src/lib/` - origins (one FQDN -> service URLs), config (`~/.agentage`, 0600 auth.json),
-  oauth (DCR + PKCE), callback-server (one-shot localhost), api (bearer + refresh-once),
-  status-info
-- `src/lib/memory-client.ts` - the memory-verb seam; DirectClient wraps `@agentage/memory-core`
+- `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability.
+  Grouped by domain: `auth/` (setup), `status/`, `vault/` (vault, vault-sync), `memory/` (memory,
+  memory-verbs), `daemon/` (daemon-cmd), `mcp/`, `update/`
+- `src/lib/` - shared library, grouped by domain: `net/` (origins one FQDN -> service URLs, http),
+  `fs/` (config `~/.agentage` 0600 auth.json, file-lock), `auth/` (oauth DCR + PKCE, callback-server
+  one-shot localhost, api bearer + refresh-once, provision), `vault/` (vaults, vaults.schema,
+  vault-registry), `daemon/` (daemon-client, daemon-pref), `memory/` (memory-client),
+  `status/` (status-info), `update/` (update-check, update-cache, update-lock)
+- `src/lib/memory/memory-client.ts` - the memory-verb seam; DirectClient wraps `@agentage/memory-core`
   (the one local engine: git-per-vault backends + federation router). No FTS5/SQLite.
-- `src/lib/daemon-client.ts` - DaemonClient (MemoryClient over loopback HTTP) + `ensureDaemon`
+- `src/lib/daemon/daemon-client.ts` - DaemonClient (MemoryClient over loopback HTTP) + `ensureDaemon`
   autostart; verbs default to the daemon, DirectClient fallback (`--no-daemon`,
   `AGENTAGE_NO_DAEMON=1`, or fork blocked)
 - `src/daemon/` + `src/daemon-entry.ts` - the local daemon (node:http, 127.0.0.1 only): one

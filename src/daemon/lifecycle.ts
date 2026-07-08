@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import chalk from 'chalk';
-import { getConfigDir } from '../lib/config.js';
+import { getConfigDir } from '../lib/fs/config.js';
 
 // The daemon's on-disk state lives beside the config so an isolated AGENTAGE_CONFIG_DIR fully
 // isolates a daemon (pid, port, token) from any other - tests never collide with a real one.

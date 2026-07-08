@@ -1,5 +1,5 @@
 import { type VaultsConfig } from '@agentage/memory-core';
-import { loadVaultsConfig } from '../../lib/vaults.js';
+import { loadVaultsConfig } from '../../lib/vault/vaults.js';
 import { type CouchTargetStatus } from '../couch/manager.js';
 import { type DiscoverStatus } from '../discover/watcher.js';
 import { runSyncCycle, type SyncResult } from './cycle.js';

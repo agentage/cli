@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type FetchJson } from '@agentage/memory-core';
-import { type ProvisionResult, type ProvisionStatus } from '../../lib/provision.js';
+import { type ProvisionResult, type ProvisionStatus } from '../../lib/auth/provision.js';
 import { createDiscovery } from './discovery.js';
 
 // A well-known payload advertising the couch channel for the given vault names.

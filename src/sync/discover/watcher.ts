@@ -5,9 +5,9 @@ import {
   type DiscoverCandidate,
   type VaultsConfig,
 } from '@agentage/memory-core';
-import { defaultProvisionDeps, provisionAccountVault } from '../../lib/provision.js';
-import { addVault } from '../../lib/vault-registry.js';
-import { loadVaultsConfig, mutateVaultsConfig } from '../../lib/vaults.js';
+import { defaultProvisionDeps, provisionAccountVault } from '../../lib/auth/provision.js';
+import { addVault } from '../../lib/vault/vault-registry.js';
+import { loadVaultsConfig, mutateVaultsConfig } from '../../lib/vault/vaults.js';
 
 // The daemon-side live-autodiscovery loop (M5): fs.watch each `discover` root plus a slow polling
 // fallback for watch-unreliable filesystems, register any new subfolder as an account vault, and
