@@ -18,15 +18,17 @@ const auth: AuthState = {
 const jsonResponse = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-// health + the npm-registry update check go through fetchJsonUnref (node:https); introspection
-// (get-session) still uses global fetch via authedGet.
+// health, the site-root reachability probe, and the npm-registry update check all go through
+// fetchJsonUnref (node:https); introspection (get-session) still uses global fetch via authedGet.
+// The site probe hits the bare origin (no /health, no /latest) and counts any non-null response.
 const stubHttp = (health: 'reachable' | 'unreachable'): void => {
   httpMock.mockImplementation((url: string) => {
     if (url.endsWith('/latest'))
       return Promise.resolve({ ok: true, status: 200, json: { version: '0.0.0' } });
     if (url.endsWith('/health'))
       return Promise.resolve(health === 'reachable' ? { ok: true, status: 200, json: {} } : null);
-    return Promise.resolve(null);
+    // Site root: a 4xx still proves the host is up, so mirror it as a non-null response.
+    return Promise.resolve(health === 'reachable' ? { ok: false, status: 404, json: null } : null);
   });
 };
 
@@ -52,13 +54,28 @@ describe('gatherStatus', () => {
     expect(report.auth.signedIn).toBe(false);
     expect(report.auth.note).toContain('agentage setup');
     expect(report.endpoint.reachable).toBe(true);
+    expect(report.target).toEqual({ fqdn: 'dev.agentage.io', env: 'development', reachable: true });
     expect(report.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  it('marks the endpoint unreachable on network failure', async () => {
+  it('marks the endpoint and target unreachable on network failure', async () => {
     stubHttp('unreachable');
     const report = await gatherStatus(null, 'agentage.io');
     expect(report.endpoint.reachable).toBe(false);
+    expect(report.target.reachable).toBe(false);
+  });
+
+  it('treats a non-2xx site response as a reachable target', async () => {
+    // A 4xx from the site root still proves the host is up: reachability, not app health.
+    httpMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/health') || url.endsWith('/latest')
+          ? { ok: true, status: 200, json: {} }
+          : { ok: false, status: 403, json: null }
+      )
+    );
+    const report = await gatherStatus(null, 'agentage.io');
+    expect(report.target.reachable).toBe(true);
   });
 
   it('reports signed-in with token expiry when introspection succeeds', async () => {
