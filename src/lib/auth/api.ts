@@ -1,35 +1,47 @@
 import { mutateAuth, type AuthState, type StoredTokens } from '../fs/config.js';
-import { refreshTokens } from './oauth.js';
+import { refreshTokens, TokenRequestError } from './oauth.js';
 import { type Links } from '../net/origins.js';
 import { requestHeaders } from '../net/user-agent.js';
+import { AuthRequiredError, isTerminalRefresh, TransientAuthError } from './auth-errors.js';
+
+export { AuthRequiredError, TransientAuthError } from './auth-errors.js';
 
 // Every authed call is CLI-originated; identify the caller alongside the bearer.
 const cliHeaders = (): Record<string, string> => requestHeaders({ component: 'cli' });
 
-export class AuthRequiredError extends Error {
-  constructor(message = 'not signed in') {
-    super(message);
-    this.name = 'AuthRequiredError';
-  }
-}
-
-const tryRefresh = async (auth: AuthState, links: Links): Promise<boolean> => {
-  if (!auth.tokens.refreshToken) return false;
+// Refresh the stored token in place. On success mutates auth + persists and returns. On failure it
+// throws: AuthRequiredError when the grant is dead (401/invalid_grant/invalid_client), else
+// TransientAuthError (429/5xx/network/timeout) - a blip that must not be read as a dead session.
+export const refreshOrThrow = async (auth: AuthState, links: Links): Promise<void> => {
+  if (!auth.tokens.refreshToken) throw new AuthRequiredError('no refresh token');
+  let fresh;
   try {
-    const fresh = await refreshTokens(links.auth, auth.clientId, auth.tokens.refreshToken);
-    const tokens: StoredTokens = {
-      accessToken: fresh.access_token,
-      refreshToken: fresh.refresh_token ?? auth.tokens.refreshToken,
-      expiresAt: fresh.expires_in ? Date.now() + fresh.expires_in * 1000 : undefined,
-    };
-    auth.tokens = tokens; // the caller retries its request with this in-memory copy
-    // Persist under the lock, folding the new tokens onto the freshly-read state so a concurrent
-    // writer's other fields (clientId, siteFqdn) are not clobbered by a stale in-memory copy.
-    await mutateAuth((current) => {
-      const base = current ?? auth;
-      base.tokens = tokens;
-      return base;
-    });
+    fresh = await refreshTokens(links.auth, auth.clientId, auth.tokens.refreshToken);
+  } catch (err) {
+    if (err instanceof TokenRequestError && isTerminalRefresh(err.status, err.oauthError))
+      throw new AuthRequiredError('session expired');
+    throw new TransientAuthError('refresh temporarily failed');
+  }
+  const tokens: StoredTokens = {
+    accessToken: fresh.access_token,
+    refreshToken: fresh.refresh_token ?? auth.tokens.refreshToken,
+    expiresAt: fresh.expires_in ? Date.now() + fresh.expires_in * 1000 : undefined,
+  };
+  auth.tokens = tokens; // the caller retries its request with this in-memory copy
+  // Persist under the lock, folding the new tokens onto the freshly-read state so a concurrent
+  // writer's other fields (clientId, siteFqdn) are not clobbered by a stale in-memory copy.
+  await mutateAuth((current) => {
+    const base = current ?? auth;
+    base.tokens = tokens;
+    return base;
+  });
+};
+
+// Boolean shim for the request paths that just want "refresh once, then retry": any failure
+// (terminal or transient) collapses to false so they fall through to their own status handling.
+const tryRefresh = async (auth: AuthState, links: Links): Promise<boolean> => {
+  try {
+    await refreshOrThrow(auth, links);
     return true;
   } catch {
     return false;
@@ -92,38 +104,5 @@ export const authedPost = async (
   return res;
 };
 
-interface IntrospectionResponse {
-  userId?: string;
-  accessTokenExpiresAt?: string;
-}
-
-export interface TokenSession {
-  userId?: string;
-  expiresAt?: string;
-}
-
-const isPast = (iso?: string): boolean => {
-  if (!iso) return false;
-  const t = Date.parse(iso);
-  return !Number.isNaN(t) && t <= Date.now();
-};
-
-// The OAuth introspection endpoint: the only live surface that validates the
-// CLI's bearer token today (backend REST accepts session cookies only).
-// get-session answers 200 + null (not 401) for an expired/inactive session, so authedGet's
-// on-401 refresh never fires here. Mirror currentBearer: refresh proactively when the stored
-// token is past expiry, reactively once when a 200 + null slips through, and once more when the
-// returned session reports an already-past expiry - always re-introspect so the returned expiry
-// reflects the post-refresh token and a checkmark never sits next to a stale timestamp.
-export const introspectToken = async (auth: AuthState, links: Links): Promise<TokenSession> => {
-  const url = `${links.auth}/api/auth/mcp/get-session`;
-  const get = (): Promise<IntrospectionResponse | null> =>
-    authedGet<IntrospectionResponse | null>(auth, links, url);
-  const expired = auth.tokens.expiresAt !== undefined && auth.tokens.expiresAt <= Date.now();
-  if (expired && !(await tryRefresh(auth, links))) throw new AuthRequiredError('session expired');
-  let body = await get();
-  const stale = !body || isPast(body.accessTokenExpiresAt);
-  if (stale && (await tryRefresh(auth, links))) body = await get();
-  if (!body) throw new AuthRequiredError('no active session');
-  return { userId: body.userId, expiresAt: body.accessTokenExpiresAt };
-};
+// Re-export the introspection surface so existing callers keep importing from './api.js'.
+export { introspectToken, type TokenSession } from './introspect.js';

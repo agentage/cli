@@ -2,7 +2,14 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { authedGet, authedPost, AuthRequiredError, currentBearer, introspectToken } from './api.js';
+import {
+  authedGet,
+  authedPost,
+  AuthRequiredError,
+  currentBearer,
+  introspectToken,
+  TransientAuthError,
+} from './api.js';
 import { readAuth, type AuthState } from '../fs/config.js';
 import { links } from '../net/origins.js';
 import { VERSION } from '../../utils/version.js';
@@ -288,14 +295,47 @@ describe('introspectToken', () => {
     expect(readAuth()?.tokens.accessToken).toBe('new-token');
   });
 
-  it('throws AuthRequiredError when a 200 + null survives a failed refresh', async () => {
+  it('throws AuthRequiredError when a 200 + null survives a terminal refresh (invalid_grant)', async () => {
     const fetchMock = vi.fn((url: string) =>
       Promise.resolve(
-        String(url).includes('/token') ? jsonResponse(400, {}) : jsonResponse(200, null)
+        String(url).includes('/token')
+          ? jsonResponse(400, { error: 'invalid_grant' })
+          : jsonResponse(200, null)
       )
     );
     vi.stubGlobal('fetch', fetchMock);
     await expect(introspectToken(makeAuth(), target)).rejects.toThrow(AuthRequiredError);
+  });
+
+  it('throws TransientAuthError (not AuthRequired) when a 200 + null refresh blips 429', async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        String(url).includes('/token') ? jsonResponse(429, {}) : jsonResponse(200, null)
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(introspectToken(makeAuth(), target)).rejects.toThrow(TransientAuthError);
+  });
+
+  it('reports the unexpired stored token as signed-in when get-session blips 5xx', async () => {
+    const expiresAt = Date.now() + 3_600_000;
+    const fetchMock = vi.fn(async () => jsonResponse(500, {}));
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = makeAuth({ expiresAt });
+    const session = await introspectToken(auth, target);
+    // Held an unexpired token: treat the 5xx as a blip, report the stored expiry, never throw.
+    expect(session.expiresAt).toBe(new Date(expiresAt).toISOString());
+  });
+
+  it('throws TransientAuthError when an expired token cannot refresh (5xx)', async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        String(url).includes('/token') ? jsonResponse(503, {}) : jsonResponse(200, {})
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = makeAuth({ expiresAt: Date.now() - 1000 });
+    await expect(introspectToken(auth, target)).rejects.toThrow(TransientAuthError);
   });
 
   it('refreshes and re-introspects when the session reports an already-past expiry', async () => {

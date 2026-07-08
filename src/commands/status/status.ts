@@ -22,6 +22,8 @@ const row = (label: string, value: string): void => {
 // Introspection already proved the session is active server-side.
 const authLine = (auth: StatusReport['auth']): string => {
   if (!auth.signedIn) return `${mark(false)} ${auth.note ?? 'not signed in'}`;
+  // Transient: we hold a valid-looking token but could not re-verify - a non-terminal `~`, never ✗.
+  if (auth.transient) return `${chalk.yellow('~')} ${auth.note ?? 'signed in'}`;
   return `${mark(true)} signed in (session active)`;
 };
 
