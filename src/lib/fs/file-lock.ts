@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 // A cross-process advisory lock keyed to a target file (`<target>.lock`). Config read-modify-writes
@@ -60,6 +61,20 @@ const unlinkQuiet = (path: string): void => {
   }
 };
 
+// Atomic exclusive create: writeFileSync('wx') is create-then-write, so a concurrent holderOf can
+// read the freshly created but still-empty lock and mistake a live holder for absent (issue #231
+// lost-update). Instead write the full "<pid> <at>" to a unique temp, then linkSync it into place:
+// link is atomic and fails EEXIST if held, so the content is always complete when the lock appears.
+const createLockExclusive = (path: string, content: string): void => {
+  const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.new`;
+  writeFileSync(tmp, content);
+  try {
+    linkSync(tmp, path);
+  } finally {
+    unlinkQuiet(tmp);
+  }
+};
+
 // Serialize stale-lock takeover behind its own exclusive create so no taker can delete a lock that
 // turned FRESH mid-takeover (the ABA race: a reader sees the stale timestamp, a winner re-creates
 // the lock, the reader deletes the winner's file). Same O_EXCL-guard design proven in
@@ -70,13 +85,16 @@ const takeOverStale = (target: string, now: number): boolean => {
   const guardHeld = holderOf(guard);
   if (guardHeld !== null && isCrashed(guardHeld, now)) unlinkQuiet(guard);
   try {
-    writeFileSync(guard, `${process.pid} ${now}`, { flag: 'wx' });
+    createLockExclusive(guard, `${process.pid} ${now}`);
   } catch {
     return false; // another taker is mid-takeover; let it win
   }
   try {
     const holder = holderOf(path);
-    if (holder !== null && !isCrashed(holder, now)) return false; // fresh or a live-but-slow holder
+    // A null holder means the lock file exists but its content did not read cleanly. Never treat that
+    // as absent: clearing it here would steal a live holder still writing its bytes. Only a holder we
+    // can positively prove crashed is taken over.
+    if (holder === null || !isCrashed(holder, now)) return false;
     unlinkQuiet(path);
     return true;
   } finally {
@@ -84,14 +102,15 @@ const takeOverStale = (target: string, now: number): boolean => {
   }
 };
 
-// One-shot acquire: the O_EXCL ('wx') create IS the mutex - concurrent callers cannot both win it,
-// unlike a check-then-write. A fresh or live holder refuses; a crashed one (dead holder past the
-// TTL) is cleared under the takeover guard and re-raced once. `now` is injectable for tests.
+// One-shot acquire: the atomic link IS the mutex - concurrent callers cannot both win it, and the
+// linked content is always complete so no reader sees an empty lock. A fresh or live holder refuses;
+// a crashed one (dead holder past the TTL) is cleared under the takeover guard and re-raced once.
+// `now` is injectable for tests.
 export const acquireFileLock = (target: string, now: number = Date.now()): boolean => {
   mkdirSync(dirname(target), { recursive: true });
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      writeFileSync(lockPath(target), `${process.pid} ${now}`, { flag: 'wx' });
+      createLockExclusive(lockPath(target), `${process.pid} ${now}`);
       return true;
     } catch (err) {
       // Only EEXIST means contention. A permission/read-only error never clears, so failing fast
@@ -106,7 +125,9 @@ export const acquireFileLock = (target: string, now: number = Date.now()): boole
         );
       }
       const holder = holderOf(lockPath(target));
-      if (holder !== null && !isCrashed(holder, now)) return false;
+      // Refuse unless the holder is positively crashed. A null holder (unreadable content) is NOT
+      // proof of a crash: attempting takeover on it once stole a live holder's lock (issue #231).
+      if (holder === null || !isCrashed(holder, now)) return false;
       if (!takeOverStale(target, now)) return false;
     }
   }
