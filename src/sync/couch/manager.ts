@@ -2,6 +2,7 @@ import { CouchSync, type FetchLike, type FetchJson } from '@agentage/memory-core
 import { currentBearer } from '../../lib/auth/api.js';
 import { getConfigDir, readAuth } from '../../lib/fs/config.js';
 import { links, siteFqdn } from '../../lib/net/origins.js';
+import { requestHeaders } from '../../lib/net/user-agent.js';
 import { defaultProvisionDeps, provisionAccountVault } from '../../lib/auth/provision.js';
 import { loadVaultsConfig } from '../../lib/vault/vaults.js';
 import { intervalMs } from '../git/planner.js';
@@ -31,10 +32,19 @@ export {
 } from './manager.types.js';
 export { resolveMutationTarget } from './mutation-target.js';
 
-const defaultFetch: FetchLike = (url, init) => globalThis.fetch(url, init as RequestInit);
+// Couch sync runs inside the daemon; identify the caller as the daemon on every outbound request.
+const daemonHeaders = (): Record<string, string> => requestHeaders({ component: 'daemon' });
+
+const defaultFetch: FetchLike = (url, init) => {
+  const base = init as RequestInit | undefined;
+  const merged: RequestInit = { ...base, headers: { ...daemonHeaders(), ...base?.headers } };
+  return globalThis.fetch(url, merged);
+};
 
 const defaultFetchJson: FetchJson = async (url, token) => {
-  const res = await globalThis.fetch(url, { headers: { authorization: `Bearer ${token}` } });
+  const res = await globalThis.fetch(url, {
+    headers: { authorization: `Bearer ${token}`, ...daemonHeaders() },
+  });
   const json = await res.json().catch(() => null);
   return { status: res.status, json };
 };

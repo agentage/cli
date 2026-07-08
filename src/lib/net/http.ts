@@ -10,9 +10,13 @@ export interface UnrefResponse {
 // its AbortSignal fires, stalling process exit on an unreachable network. req.destroy() from an
 // unref'd timer caps the whole attempt and frees the event loop the moment it settles. Never
 // throws: an unreachable host or malformed body resolves null (unreachable) or json:null.
-export const fetchJsonUnref = (url: string, timeoutMs: number): Promise<UnrefResponse | null> =>
+export const fetchJsonUnref = (
+  url: string,
+  timeoutMs: number,
+  headers: Record<string, string> = {}
+): Promise<UnrefResponse | null> =>
   new Promise((resolve) => {
-    const req = get(url, { headers: { Accept: 'application/json' } }, (res) => {
+    const req = get(url, { headers: { Accept: 'application/json', ...headers } }, (res) => {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', (chunk: string) => {
