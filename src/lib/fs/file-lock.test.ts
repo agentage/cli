@@ -130,6 +130,28 @@ describe('file lock', () => {
     }
   });
 
+  it('never steals a lock whose content reads empty (mid-create window, issue #231)', () => {
+    // The exact state a concurrent holderOf saw before the fix: the lock inode exists but its
+    // "<pid> <at>" bytes are not there yet (create-then-write was non-atomic). Reading it yields
+    // no parseable holder. Treating that as "absent/crashed" once let a fresh acquirer unlink a
+    // live holder's lock and enter the critical section twice, silently dropping a write.
+    writeFileSync(lockFile(), ''); // holderOf(...) === null, but the lock IS held
+    expect(acquireFileLock(target, 1_000_000 + 11_000)).toBe(false); // past TTL, still must refuse
+    expect(existsSync(lockFile())).toBe(true); // the live holder's lock was not stolen
+  });
+
+  it('lock content is always complete the instant the file appears (atomic create)', () => {
+    // Poll the lock across many acquire/release cycles: a reader must never observe an empty or
+    // half-written lock file. With the atomic link create the content is present before the inode is.
+    for (let i = 0; i < 5_000; i++) {
+      expect(acquireFileLock(target)).toBe(true);
+      const parts = readFileSync(lockFile(), 'utf-8').trim().split(/\s+/);
+      expect(parts).toHaveLength(2); // "<pid> <at>", never empty
+      expect(Number.isNaN(Number.parseInt(parts[1]!, 10))).toBe(false);
+      releaseFileLock(target);
+    }
+  });
+
   it('serializes many concurrent in-process read-modify-writes, losing none', async () => {
     writeFileSync(target, JSON.stringify([]));
     await Promise.all(
