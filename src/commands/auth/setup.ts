@@ -1,6 +1,8 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
 import { startCallbackServer } from '../../lib/auth/callback-server.js';
+import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
+import { daemonDisabled } from '../../lib/daemon/daemon-pref.js';
 import {
   deleteAuth,
   ensureConfigDir,
@@ -34,6 +36,7 @@ export interface SetupDeps {
   startServer: typeof startCallbackServer;
   openBrowser: (url: string) => Promise<void>;
   printStatus: () => Promise<void>;
+  ensureDaemon: typeof ensureDaemon;
 }
 
 const defaultDeps: SetupDeps = {
@@ -46,6 +49,7 @@ const defaultDeps: SetupDeps = {
     await open(url);
   },
   printStatus: () => runStatus({}),
+  ensureDaemon,
 };
 
 const toAuthState = (fqdn: string, clientId: string, tokens: TokenResponse): AuthState => ({
@@ -57,6 +61,19 @@ const toAuthState = (fqdn: string, clientId: string, tokens: TokenResponse): Aut
     expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
   },
 });
+
+// After sign-in, bring the daemon up so account sync starts immediately; ensureDaemon reuses a
+// live daemon and starts a stopped one (idempotent). Honor the --no-daemon / AGENTAGE_NO_DAEMON
+// disable switches.
+const startDaemon = async (deps: SetupDeps): Promise<void> => {
+  if (daemonDisabled()) {
+    console.log('Daemon disabled - account sync will run in-process on demand.');
+    return;
+  }
+  const client = await deps.ensureDaemon();
+  const fail = 'Could not start the daemon - run: agentage daemon start';
+  console.log(client ? 'Daemon running.' : fail);
+};
 
 const disconnect = async (deps: SetupDeps): Promise<void> => {
   const auth = readAuth();
@@ -115,6 +132,7 @@ export const runSetup = async (
     });
     await mutateAuth(() => toAuthState(fqdn, clientId, tokens));
     console.log(chalk.green('\nSigned in.\n'));
+    await startDaemon(deps);
     await deps.printStatus();
   } finally {
     server.close();
