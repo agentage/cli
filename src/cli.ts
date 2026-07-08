@@ -3,7 +3,6 @@
 import chalk from 'chalk';
 import { Command } from 'commander';
 import { registerDaemon } from './commands/daemon/daemon-cmd.js';
-import { registerMcp } from './commands/mcp/mcp.js';
 import { registerMemory } from './commands/memory/memory.js';
 import { registerSetup } from './commands/auth/setup.js';
 import { registerStatus } from './commands/status/status.js';
@@ -56,7 +55,6 @@ registerStatus(program);
 registerVault(program);
 registerMemory(program);
 registerDaemon(program);
-registerMcp(program);
 registerUpdate(program);
 
 program.parseAsync().catch((err: unknown) => {

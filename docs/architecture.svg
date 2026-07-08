@@ -21,21 +21,17 @@
   <text x="450" y="136" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#58a6ff">AI TOOLS</text>
   <text x="450" y="157" text-anchor="middle" font-size="12.5" fill="#8b949e">Claude Code / Cursor / editors</text>
 
-  <!-- MCP entry arrows -->
-  <line x1="392" y1="172" x2="232" y2="256" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
-  <text x="188" y="206" text-anchor="middle" font-size="12" fill="#9aa4b2">MCP - stdio</text>
-  <text x="188" y="222" text-anchor="middle" font-size="11.5" fill="#8b949e">(agentage mcp)</text>
-
+  <!-- MCP entry arrow: AI tools reach memory over the daemon's HTTP /mcp endpoint -->
   <line x1="508" y1="172" x2="668" y2="256" stroke="#8b949e" stroke-width="1" marker-end="url(#arrow)"/>
   <text x="712" y="206" text-anchor="middle" font-size="12" fill="#9aa4b2">MCP - HTTP /mcp</text>
-  <text x="712" y="222" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, Consolas, monospace" fill="#F59E0B">127.0.0.1:4243</text>
+  <text x="712" y="222" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, Consolas, monospace" fill="#F59E0B">127.0.0.1:4243/mcp</text>
 
   <!-- agentage CLI -->
   <rect x="70" y="258" width="300" height="100" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
   <text x="220" y="288" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#58a6ff">AGENTAGE CLI</text>
   <text x="220" y="308" text-anchor="middle" font-size="12" fill="#8b949e">terminal client - memory verbs</text>
   <text x="220" y="330" text-anchor="middle" font-size="12.5" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">memory   vault   setup</text>
-  <text x="220" y="349" text-anchor="middle" font-size="12.5" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">status   daemon   mcp</text>
+  <text x="220" y="349" text-anchor="middle" font-size="12.5" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">status   daemon   update</text>
 
   <!-- local daemon -->
   <rect x="530" y="258" width="300" height="100" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>

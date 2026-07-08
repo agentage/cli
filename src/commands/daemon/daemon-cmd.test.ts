@@ -13,6 +13,7 @@ const health = (over: Partial<dc.Health> = {}): dc.Health => ({
   pid: 4242,
   uptime: 12,
   served: 7,
+  mcp: true,
   ...over,
 });
 
@@ -57,6 +58,18 @@ describe('daemon status', () => {
     expect(out).toContain('1.2.3');
   });
 
+  it('reports mcp on by default and off when the daemon has it gated', async () => {
+    vi.mocked(lifecycle.isDaemonRunning).mockReturnValue(true);
+    vi.mocked(dc.health).mockResolvedValue(health());
+    await run(['daemon', 'status']);
+    expect(logs.join('\n')).toContain('mcp      on');
+
+    logs = [];
+    vi.mocked(dc.health).mockResolvedValue(health({ mcp: false }));
+    await run(['daemon', 'status']);
+    expect(logs.join('\n')).toContain('mcp      off');
+  });
+
   it('appends a restart hint on a version mismatch', async () => {
     vi.mocked(lifecycle.isDaemonRunning).mockReturnValue(true);
     vi.mocked(dc.health).mockResolvedValue(health());
@@ -89,6 +102,18 @@ describe('daemon start', () => {
     await run(['daemon', 'start']);
     expect(logs.join()).toContain('started');
     expect(logs.join()).toContain('99');
+    expect(logs.join()).toContain('mcp on');
+    expect(vi.mocked(dc.spawnDaemon).mock.calls[0]?.[1]).toEqual({ noMcp: false });
+  });
+
+  it('--no-mcp gates the endpoint on the spawned daemon', async () => {
+    vi.mocked(dc.health)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(health({ pid: 99 }));
+    vi.mocked(dc.spawnDaemon).mockResolvedValue({ ok: true });
+    await run(['daemon', 'start', '--no-mcp']);
+    expect(logs.join()).toContain('mcp off');
+    expect(vi.mocked(dc.spawnDaemon).mock.calls[0]?.[1]).toEqual({ noMcp: true });
   });
 
   it('reports a failed spawn and sets a non-zero exit code', async () => {

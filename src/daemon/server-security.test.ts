@@ -185,6 +185,34 @@ describe('daemon HTTP web-origin defense', () => {
     expect(JSON.parse(res.body).path).toBe('a.md');
   });
 
+  it('reports mcp on in /api/health when buildMcpServer is set, off when omitted', async () => {
+    const on = await start();
+    running = on.srv;
+    const onRes = await raw(on.port, { path: '/api/health' });
+    expect(JSON.parse(onRes.body).mcp).toBe(true);
+    await on.srv.stop();
+
+    const off = await start({ buildMcpServer: undefined });
+    running = off.srv;
+    const offRes = await raw(off.port, { path: '/api/health' });
+    expect(JSON.parse(offRes.body).mcp).toBe(false);
+  });
+
+  it('404s /mcp when the endpoint is gated off (--no-mcp)', async () => {
+    const { port, srv } = await start({ buildMcpServer: undefined });
+    running = srv;
+    const res = await raw(port, {
+      method: 'POST',
+      path: '/mcp',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+    });
+    expect(res.status).toBe(404);
+  });
+
   it('leaves /mcp tokenless but Host-validated', async () => {
     const { port, srv } = await start();
     running = srv;

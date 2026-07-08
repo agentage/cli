@@ -45,9 +45,9 @@ agentage status                          # version, target, sign-in state, endpo
 
 ![Architecture](https://github.com/agentage/cli/raw/master/docs/architecture.svg)
 
-AI clients read and write your memory over MCP: stdio (`agentage mcp`) for a client
-you spawn, or the local daemon's HTTP `/mcp` on `127.0.0.1:4243`. The CLI's memory
-verbs go through the same daemon, which is the single writer over the vault engine
+AI clients read and write your memory over MCP through the local daemon's HTTP `/mcp`
+endpoint on `127.0.0.1:4243`. The CLI's memory verbs go through the same daemon, which
+is the single writer over the vault engine
 ([`@agentage/memory-core`](https://www.npmjs.com/package/@agentage/memory-core)) and
 schedules background sync. Vaults are plain markdown folders on disk, one git repo
 per vault. From there they sync out to git remotes you host and, when you sign in, to
@@ -115,15 +115,15 @@ No passwords touch the terminal; tokens are stored in `~/.agentage/auth.json`
 ### daemon
 
 ```bash
-agentage daemon status              # pid, uptime, version
+agentage daemon status              # pid, uptime, mcp state, version
 agentage daemon start               # start it explicitly (idempotent)
+agentage daemon start --no-mcp      # start without serving the local /mcp endpoint
 agentage daemon stop                # stop it
 ```
 
-### mcp and update
+### update
 
 ```bash
-agentage mcp                        # serve local vaults to on-machine AI over stdio
 agentage update                     # install the latest published version
 agentage update --check             # report whether an update is available, don't install
 ```
@@ -152,26 +152,30 @@ Any AI client on this machine can read and write your memory through the same fr
 six tools the cloud endpoint exposes: `memory__search`, `memory__read`,
 `memory__write`, `memory__edit`, `memory__list`, and `memory__delete`.
 
-**stdio.** `agentage mcp` serves your local vaults over stdio. Point a client at it
-by spawning the command:
+The daemon serves them over Streamable HTTP at `http://127.0.0.1:4243/mcp`. Point a
+client at it with `claude mcp add`:
+
+```bash
+claude mcp add --transport http agentage http://127.0.0.1:4243/mcp
+```
+
+or drop the URL into your client's `.mcp.json` (for example `~/.cursor/mcp.json`):
 
 ```json
 {
   "mcpServers": {
-    "agentage-memory": {
-      "command": "agentage",
-      "args": ["mcp"]
+    "agentage": {
+      "url": "http://127.0.0.1:4243/mcp"
     }
   }
 }
 ```
 
-Drop that into your client's MCP config (for example `~/.cursor/mcp.json`, or via
-`claude mcp add`) and the assistant reads and writes the same markdown you do.
+The daemon must be running: it autostarts on the first memory verb, or start it with
+`agentage daemon start`. To disable the endpoint (it then 404s), start the daemon with
+`agentage daemon start --no-mcp` or set `AGENTAGE_DAEMON_NO_MCP=1`.
 
-**HTTP.** Clients that speak Streamable HTTP can use the daemon's endpoint at
-`http://127.0.0.1:4243/mcp`. The cloud MCP endpoint, for AI outside this machine, is
-`memory.agentage.io/mcp`.
+The cloud MCP endpoint, for AI outside this machine, is `memory.agentage.io/mcp`.
 
 ## The daemon
 
@@ -191,6 +195,7 @@ To skip the daemon and run verbs in-process, pass `--no-daemon` or set
 | ---------------------- | ------------------------------------------------------------------- | ------------- |
 | `AGENTAGE_CONFIG_DIR`  | Config + credentials dir (`auth.json`, `vaults.json`, daemon state) | `~/.agentage` |
 | `AGENTAGE_DAEMON_PORT` | Local daemon port                                                   | `4243`        |
+| `AGENTAGE_DAEMON_NO_MCP` | Set to `1` to start the daemon without the `/mcp` endpoint         | unset         |
 | `AGENTAGE_NO_DAEMON`   | Set to `1` to run memory verbs in-process                           | unset         |
 | `AGENTAGE_SITE_FQDN`   | Cloud target host                                                   | `agentage.io` |
 
