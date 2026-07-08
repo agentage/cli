@@ -124,6 +124,17 @@ describe('printStatus', () => {
     expect(out).toContain('syncing');
   });
 
+  it('renders a legacy daemon row (no pid/uptime) as running with a version note', () => {
+    const out = captureLines({
+      ...baseReport,
+      version: '0.25.0',
+      daemon: { running: true, port: 4243, mcp: true, daemonVersion: '0.0.3' },
+    });
+    expect(out).toMatch(/daemon\s+\S+ running \(pid \?, port 4243\)/);
+    expect(out).toContain('version 0.0.3 != cli 0.25.0');
+    expect(out).toContain('serving at http://127.0.0.1:4243/mcp');
+  });
+
   it('appends a version-mismatch note to the running daemon row', () => {
     const out = captureLines({
       ...baseReport,

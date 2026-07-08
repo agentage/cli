@@ -199,6 +199,18 @@ describe('gatherStatus daemon probe', () => {
     expect(report.daemon?.sync?.lastError).toBe('push rejected');
   });
 
+  it('classifies a legacy 0.0.3 daemon (health lacks mcp/pid/uptime) as running', async () => {
+    // No pidfile written: a legacy daemon that never wrote this config dir's pidfile.
+    stubDaemon({ ok: true, version: '0.0.3' }, { vaults: [] });
+    const report = await gatherStatus(null, 'dev.agentage.io');
+    expect(report.daemon?.running).toBe(true);
+    expect(report.daemon?.daemonVersion).toBe('0.0.3');
+    expect(report.daemon?.pid).toBeUndefined();
+    expect(report.daemon?.uptimeSeconds).toBeUndefined();
+    // Absent mcp on a legacy daemon reads as serving (on), not off.
+    expect(report.daemon?.mcp).toBe(true);
+  });
+
   it('omits the sync summary when the daemon serves no vaults', async () => {
     bootPidFiles();
     stubDaemon(
@@ -210,8 +222,18 @@ describe('gatherStatus daemon probe', () => {
     expect(report.daemon?.sync).toBeUndefined();
   });
 
-  it('reports stopped when the pidfile is present but /health is unreachable', async () => {
+  it('still reports running from a live pidfile when /health is briefly unreachable', async () => {
     bootPidFiles();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('ECONNREFUSED')))
+    );
+    process.env['AGENTAGE_DAEMON_PORT'] = String(port);
+    const report = await gatherStatus(null, 'dev.agentage.io');
+    expect(report.daemon?.running).toBe(true);
+  });
+
+  it('reports stopped when no pidfile and /health is refused', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => Promise.reject(new Error('ECONNREFUSED')))

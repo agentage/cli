@@ -276,6 +276,27 @@ describe('introspectToken', () => {
     await expect(introspectToken(makeAuth(), target)).rejects.toThrow(AuthRequiredError);
   });
 
+  it('refreshes and re-introspects when the session reports an already-past expiry', async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (String(url).includes('/token'))
+        return Promise.resolve(jsonResponse(200, { access_token: 'refreshed', expires_in: 3600 }));
+      const bearer = (init?.headers as Record<string, string> | undefined)?.['authorization'];
+      return Promise.resolve(
+        bearer === 'Bearer refreshed'
+          ? jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: future })
+          : jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: past })
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = makeAuth();
+    const session = await introspectToken(auth, target);
+    // The displayed expiry must be the post-refresh future value, never the stale past one.
+    expect(session.expiresAt).toBe(future);
+    expect(Date.parse(session.expiresAt as string)).toBeGreaterThan(Date.now());
+  });
+
   it('refreshes proactively when the stored token is already past expiry', async () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (String(url).includes('/token'))

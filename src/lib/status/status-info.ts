@@ -46,8 +46,8 @@ const checkEndpoint = async (apiUrl: string): Promise<boolean> => {
 // Fold the git + couch per-vault states into one summary: any error wins, then any in-flight
 // run, else ok. lastRun is the freshest reported; lastError the first seen.
 const summarizeSync = (sync: SyncStatus): DaemonSyncSummary => {
-  const git = sync.vaults;
-  const couch = sync.couch ?? [];
+  const git = Array.isArray(sync.vaults) ? sync.vaults : [];
+  const couch = Array.isArray(sync.couch) ? sync.couch : [];
   const vaults = git.length + couch.length;
   const error =
     git.find((v) => v.lastError)?.lastError ?? couch.find((v) => v.lastError)?.lastError;
@@ -60,13 +60,15 @@ const summarizeSync = (sync: SyncStatus): DaemonSyncSummary => {
   return { vaults, state, lastRun, lastError: error };
 };
 
-// Probe the local daemon only when its pidfile says it is running, so a stopped daemon costs no
-// network and never hangs `status`. All fields ride the existing /health + /sync wire.
+// One detection routine shared with `daemon start`: a health 200 (any shape, even a legacy 0.0.3
+// daemon lacking mcp/pid/uptime) OR a live pidfile means running; only a refused/no-response
+// health with no live pidfile is stopped. Probe health regardless of the pidfile so a legacy
+// daemon that never wrote this config dir's pidfile is not misreported as stopped. A stopped
+// daemon still costs only one 1s-timeout /health that fast-fails on connection refused.
 const probeDaemon = async (): Promise<DaemonStatus> => {
   const port = resolvePort();
-  if (!isDaemonRunning()) return { running: false, port };
   const h = await health(port);
-  if (!h) return { running: false, port };
+  if (!h) return { running: isDaemonRunning(), port };
   const sync = await syncStatus(port);
   const summary = sync ? summarizeSync(sync) : undefined;
   return {
@@ -74,6 +76,7 @@ const probeDaemon = async (): Promise<DaemonStatus> => {
     pid: h.pid,
     port,
     uptimeSeconds: h.uptime,
+    // Absent on a legacy daemon that predates the /mcp gate; treat undefined as serving (on).
     mcp: h.mcp !== false,
     daemonVersion: h.version,
     sync: summary && summary.vaults > 0 ? summary : undefined,
