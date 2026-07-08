@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { saveVaultsConfig, vaultsJsonPath } from '../lib/vaults.js';
+import { saveVaultsConfig, vaultsJsonPath } from '../lib/vault/vaults.js';
 import { createClientProvider } from './client-provider.js';
 
 let dir: string;

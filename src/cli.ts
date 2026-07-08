@@ -2,15 +2,15 @@
 
 import chalk from 'chalk';
 import { Command } from 'commander';
-import { registerDaemon } from './commands/daemon-cmd.js';
-import { registerMcp } from './commands/mcp.js';
-import { registerMemory } from './commands/memory.js';
-import { registerSetup } from './commands/setup.js';
-import { registerStatus } from './commands/status.js';
-import { registerUpdate } from './commands/update.js';
-import { registerVault } from './commands/vault.js';
-import { disableDaemon } from './lib/daemon-pref.js';
-import { refreshUpdateCache, updateHint } from './lib/update-cache.js';
+import { registerDaemon } from './commands/daemon/daemon-cmd.js';
+import { registerMcp } from './commands/mcp/mcp.js';
+import { registerMemory } from './commands/memory/memory.js';
+import { registerSetup } from './commands/auth/setup.js';
+import { registerStatus } from './commands/status/status.js';
+import { registerUpdate } from './commands/update/update.js';
+import { registerVault } from './commands/vault/vault.js';
+import { disableDaemon } from './lib/daemon/daemon-pref.js';
+import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
 
 // Dependency-free guard so the message survives even if deps fail to parse on old Node.

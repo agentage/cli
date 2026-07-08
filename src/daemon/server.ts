@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { type MemoryClient } from '../lib/memory-client.js';
+import { type MemoryClient } from '../lib/memory/memory-client.js';
 import { type SyncResult } from '../sync/git/cycle.js';
 import { type CouchSyncResult } from '../sync/couch/manager.js';
 import { type SyncStatus } from '../sync/git/manager.js';

@@ -1,5 +1,5 @@
 import { channelForVault, HostResolver, type FetchJson } from '@agentage/memory-core';
-import { type ProvisionResult } from '../../lib/provision.js';
+import { type ProvisionResult } from '../../lib/auth/provision.js';
 
 // Resolves which channel each account vault syncs on, from GET /.well-known/agentage-sync
 // (cached for the payload ttl in memory only). A vault absent from couch_vaults is provisioned

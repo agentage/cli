@@ -4,7 +4,7 @@ import {
   type MemoryClient,
   type SearchOptions,
   type VerbOptions,
-} from '../lib/memory-client.js';
+} from '../lib/memory/memory-client.js';
 
 export const MEMORY_VERBS = ['search', 'read', 'write', 'edit', 'list', 'delete'] as const;
 export type MemoryVerb = (typeof MEMORY_VERBS)[number];

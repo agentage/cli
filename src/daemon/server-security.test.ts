@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLocalMemoryServer } from '../mcp/local-server.js';
 import { isAllowedHost, isAllowedOrigin } from './guards.js';
 import { createDaemonServer, type DaemonServer, type DaemonServerOptions } from './server.js';
-import { type MemoryClient } from '../lib/memory-client.js';
+import { type MemoryClient } from '../lib/memory/memory-client.js';
 
 const TOKEN = 'server-security-token';
 

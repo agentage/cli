@@ -1,9 +1,9 @@
 import { CouchSync, type FetchLike, type FetchJson } from '@agentage/memory-core';
-import { currentBearer } from '../../lib/api.js';
-import { getConfigDir, readAuth } from '../../lib/config.js';
-import { links, siteFqdn } from '../../lib/origins.js';
-import { defaultProvisionDeps, provisionAccountVault } from '../../lib/provision.js';
-import { loadVaultsConfig } from '../../lib/vaults.js';
+import { currentBearer } from '../../lib/auth/api.js';
+import { getConfigDir, readAuth } from '../../lib/fs/config.js';
+import { links, siteFqdn } from '../../lib/net/origins.js';
+import { defaultProvisionDeps, provisionAccountVault } from '../../lib/auth/provision.js';
+import { loadVaultsConfig } from '../../lib/vault/vaults.js';
 import { intervalMs } from '../git/planner.js';
 import { runCouchCycle } from './cycle.js';
 import { createDiscovery } from './discovery.js';

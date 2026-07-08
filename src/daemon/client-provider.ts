@@ -1,6 +1,6 @@
 import { existsSync, statSync } from 'node:fs';
-import { createDirectClient, type MemoryClient } from '../lib/memory-client.js';
-import { loadVaultsConfig, vaultsJsonPath } from '../lib/vaults.js';
+import { createDirectClient, type MemoryClient } from '../lib/memory/memory-client.js';
+import { loadVaultsConfig, vaultsJsonPath } from '../lib/vault/vaults.js';
 
 // One in-process engine per daemon, rebuilt only when vaults.json changes on disk, so a
 // `vault add` between requests is picked up without a daemon restart.

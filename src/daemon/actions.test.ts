@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { type MemoryClient } from '../lib/memory-client.js';
+import { type MemoryClient } from '../lib/memory/memory-client.js';
 import { dispatchMemory, isMemoryVerb, MEMORY_VERBS } from './actions.js';
 
 const client = (): MemoryClient => ({

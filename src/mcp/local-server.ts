@@ -1,7 +1,7 @@
 import { createRegistry, type VaultHandle, type VaultRegistry } from '@agentage/memory-core';
 import { createMemoryServer } from '@agentage/server-memory';
 import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { loadVaultsConfig } from '../lib/vaults.js';
+import { loadVaultsConfig } from '../lib/vault/vaults.js';
 import { VERSION } from '../utils/version.js';
 
 // Restrict a registry to its offline (git working-copy) vaults, so the local MCP surface exposes
