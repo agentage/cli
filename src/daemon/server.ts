@@ -98,6 +98,7 @@ export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
         pid: process.pid,
         uptime: Math.floor((Date.now() - startedAt) / 1000),
         served,
+        mcp: !!opts.buildMcpServer,
       });
     }
     if (path === '/mcp') {

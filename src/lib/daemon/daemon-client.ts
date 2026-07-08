@@ -30,6 +30,8 @@ export interface Health {
   pid: number;
   uptime: number;
   served: number;
+  // Absent on an older daemon that predates the /mcp gate; treat undefined as "on".
+  mcp?: boolean;
 }
 
 const base = (port: number): string => `http://127.0.0.1:${port}`;
@@ -143,14 +145,18 @@ export type SpawnOutcome =
 // so a fast EADDRINUSE death short-circuits the health wait instead of burning the full timeout.
 export const spawnDaemon = async (
   port: number,
-  opts: { timeoutMs?: number } = {}
+  opts: { timeoutMs?: number; noMcp?: boolean } = {}
 ): Promise<SpawnOutcome> => {
   let child: ReturnType<typeof spawnChild>;
   try {
     child = spawnChild(process.execPath, [entryPath()], {
       detached: true,
       stdio: 'ignore',
-      env: { ...process.env, AGENTAGE_DAEMON_PORT: String(port) },
+      env: {
+        ...process.env,
+        AGENTAGE_DAEMON_PORT: String(port),
+        ...(opts.noMcp ? { AGENTAGE_DAEMON_NO_MCP: '1' } : {}),
+      },
     });
   } catch {
     return { ok: false, reason: 'blocked' };

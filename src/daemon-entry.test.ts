@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createStateCleanup, isEaddrinuse, safeReschedule } from './daemon-entry.js';
+import { createStateCleanup, isEaddrinuse, mcpEnabled, safeReschedule } from './daemon-entry.js';
+
+describe('mcpEnabled', () => {
+  it('serves MCP by default and only AGENTAGE_DAEMON_NO_MCP=1 turns it off', () => {
+    expect(mcpEnabled({})).toBe(true);
+    expect(mcpEnabled({ AGENTAGE_DAEMON_NO_MCP: '0' })).toBe(true);
+    expect(mcpEnabled({ AGENTAGE_DAEMON_NO_MCP: '' })).toBe(true);
+    expect(mcpEnabled({ AGENTAGE_DAEMON_NO_MCP: '1' })).toBe(false);
+  });
+});
 
 describe('isEaddrinuse', () => {
   it('is true only for an error carrying the EADDRINUSE code', () => {

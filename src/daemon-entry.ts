@@ -52,6 +52,11 @@ export const safeReschedule = (steps: Array<() => void>, onError: (msg: string) 
   }
 };
 
+// MCP is served at /mcp by default; AGENTAGE_DAEMON_NO_MCP=1 leaves buildMcpServer unset so the
+// endpoint 404s (the `daemon start --no-mcp` flag sets this on the spawned process).
+export const mcpEnabled = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  env['AGENTAGE_DAEMON_NO_MCP'] !== '1';
+
 // Unset/empty/invalid -> undefined (the watcher's defaults apply); the watcher floors low values.
 const envInt = (name: string): number | undefined => {
   const raw = process.env[name];
@@ -90,7 +95,7 @@ const main = async (): Promise<void> => {
 
   const server = createDaemonServer({
     getClient: createClientProvider(),
-    buildMcpServer: loadLocalMemoryServer,
+    buildMcpServer: mcpEnabled() ? loadLocalMemoryServer : undefined,
     sync: {
       status: () => ({ ...git.status(), couch: couch.status(), discover: discover.status() }),
       runNow,

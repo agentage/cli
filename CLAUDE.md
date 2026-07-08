@@ -2,7 +2,9 @@
 
 The agentage CLI. Versioning RESTARTED at 0.0.x (old npm versions were
 unpublished; earliest burned slot is 0.1.19 - stay below it until the line naturally
-passes). Commands: `setup` (OAuth sign-in), `status`, `vault` (incl. `vault sync`), `memory`, `daemon`. The old
+passes). Commands: `setup` (OAuth sign-in), `status`, `vault` (incl. `vault sync`), `memory`, `daemon`, `update`.
+MCP is served by the daemon at `/mcp` (Streamable HTTP), not a standalone command; gate it off with
+`daemon start --no-mcp` / `AGENTAGE_DAEMON_NO_MCP=1`. The old
 agent-runtime CLI (run/agents/machines/...) lives in git history only - do not resurrect
 its agent-runtime patterns (the local memory daemon was deliberately ported from it).
 
@@ -10,7 +12,7 @@ its agent-runtime patterns (the local memory daemon was deliberately ported from
 - `src/cli.ts` - commander entry (excluded from coverage; keep logic out of it)
 - `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability.
   Grouped by domain: `auth/` (setup), `status/`, `vault/` (vault, vault-sync), `memory/` (memory,
-  memory-verbs), `daemon/` (daemon-cmd), `mcp/`, `update/`
+  memory-verbs), `daemon/` (daemon-cmd), `update/`
 - `src/lib/` - shared library, grouped by domain: `net/` (origins one FQDN -> service URLs, http),
   `fs/` (config `~/.agentage` 0600 auth.json, file-lock), `auth/` (oauth DCR + PKCE, callback-server
   one-shot localhost, api bearer + refresh-once, provision), `vault/` (vaults, vaults.schema,

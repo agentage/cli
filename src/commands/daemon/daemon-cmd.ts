@@ -3,14 +3,15 @@ import { type Command } from 'commander';
 import { isDaemonRunning, resolvePort, stopDaemonSafely } from '../../daemon/lifecycle.js';
 import { health, mismatchNotice, spawnDaemon, syncStatus } from '../../lib/daemon/daemon-client.js';
 
-const startAction = async (): Promise<void> => {
+const startAction = async (opts: { mcp?: boolean } = {}): Promise<void> => {
   const port = resolvePort();
   const existing = await health(port);
   if (existing) {
     console.log(chalk.gray(`Daemon already running (pid ${existing.pid}, port ${port}).`));
     return;
   }
-  const outcome = await spawnDaemon(port);
+  const noMcp = opts.mcp === false;
+  const outcome = await spawnDaemon(port, { noMcp });
   if (!outcome.ok) {
     if (outcome.reason === 'port-in-use') {
       console.error(
@@ -25,7 +26,8 @@ const startAction = async (): Promise<void> => {
     return;
   }
   const h = await health(port);
-  console.log(chalk.green(`Daemon started (pid ${h?.pid ?? '?'}, port ${port}).`));
+  const mcp = noMcp ? 'off' : 'on';
+  console.log(chalk.green(`Daemon started (pid ${h?.pid ?? '?'}, port ${port}, mcp ${mcp}).`));
 };
 
 const stopAction = async (): Promise<void> => {
@@ -51,6 +53,7 @@ const statusAction = async (): Promise<void> => {
   console.log(`port     ${port}`);
   console.log(`uptime   ${h.uptime}s`);
   console.log(`served   ${h.served}`);
+  console.log(`mcp      ${h.mcp === false ? 'off' : 'on'}`);
   console.log(`version  ${h.version}`);
   const notice = mismatchNotice(h.version);
   if (notice) console.log(chalk.yellow(notice));
@@ -98,7 +101,8 @@ export const registerDaemon = (program: Command): void => {
   daemon
     .command('start')
     .description('Start the daemon (idempotent)')
-    .action(() => startAction());
+    .option('--no-mcp', 'do not serve the local MCP endpoint at /mcp')
+    .action((opts: { mcp?: boolean }) => startAction(opts));
   daemon
     .command('stop')
     .description('Stop the daemon')
