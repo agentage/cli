@@ -97,15 +97,28 @@ export interface TokenSession {
   expiresAt?: string;
 }
 
+const isPast = (iso?: string): boolean => {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  return !Number.isNaN(t) && t <= Date.now();
+};
+
 // The OAuth introspection endpoint: the only live surface that validates the
 // CLI's bearer token today (backend REST accepts session cookies only).
+// get-session answers 200 + null (not 401) for an expired/inactive session, so authedGet's
+// on-401 refresh never fires here. Mirror currentBearer: refresh proactively when the stored
+// token is past expiry, reactively once when a 200 + null slips through, and once more when the
+// returned session reports an already-past expiry - always re-introspect so the returned expiry
+// reflects the post-refresh token and a checkmark never sits next to a stale timestamp.
 export const introspectToken = async (auth: AuthState, links: Links): Promise<TokenSession> => {
-  const body = await authedGet<IntrospectionResponse | null>(
-    auth,
-    links,
-    `${links.auth}/api/auth/mcp/get-session`
-  );
-  // get-session returns 200 + null when the bearer maps to no active session.
+  const url = `${links.auth}/api/auth/mcp/get-session`;
+  const get = (): Promise<IntrospectionResponse | null> =>
+    authedGet<IntrospectionResponse | null>(auth, links, url);
+  const expired = auth.tokens.expiresAt !== undefined && auth.tokens.expiresAt <= Date.now();
+  if (expired && !(await tryRefresh(auth, links))) throw new AuthRequiredError('session expired');
+  let body = await get();
+  const stale = !body || isPast(body.accessTokenExpiresAt);
+  if (stale && (await tryRefresh(auth, links))) body = await get();
   if (!body) throw new AuthRequiredError('no active session');
   return { userId: body.userId, expiresAt: body.accessTokenExpiresAt };
 };

@@ -1,10 +1,13 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
-import { isDaemonRunning, resolvePort } from '../../daemon/lifecycle.js';
 import { readAuth } from '../../lib/fs/config.js';
-import { health, mismatchNotice } from '../../lib/daemon/daemon-client.js';
 import { siteFqdn } from '../../lib/net/origins.js';
-import { gatherStatus, type StatusReport } from '../../lib/status/status-info.js';
+import { formatUptime } from '../../lib/status/format.js';
+import {
+  gatherStatus,
+  type DaemonStatus,
+  type StatusReport,
+} from '../../lib/status/status-info.js';
 import { INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
 
 const mark = (good: boolean): string => (good ? chalk.green('✓') : chalk.red('✗'));
@@ -13,9 +16,20 @@ const row = (label: string, value: string): void => {
   console.log(`${label.padEnd(10)} ${value}`);
 };
 
+// Never print a past timestamp next to the signed-in checkmark: introspection proved the session
+// is active server-side, so a stale/past access-token expiry we could not refresh becomes a plain
+// "signed in (session active)" rather than a contradictory past "valid until".
+const expiryInFuture = (iso?: string): boolean => {
+  if (!iso) return false;
+  const t = Date.parse(iso);
+  return !Number.isNaN(t) && t > Date.now();
+};
+
 const authLine = (auth: StatusReport['auth']): string => {
   if (!auth.signedIn) return `${mark(false)} ${auth.note ?? 'not signed in'}`;
-  const until = auth.tokenExpiresAt ? ` (token valid until ${auth.tokenExpiresAt})` : '';
+  const until = expiryInFuture(auth.tokenExpiresAt)
+    ? ` (token valid until ${auth.tokenExpiresAt})`
+    : ' (session active)';
   return `${mark(true)} signed in${until}`;
 };
 
@@ -32,6 +46,38 @@ const updateLine = (update: UpdateInfo): string => {
   }
 };
 
+const daemonLine = (d: DaemonStatus, cliVersion: string): string => {
+  if (!d.running) return `${mark(false)} stopped - run: agentage daemon start`;
+  const up = d.uptimeSeconds !== undefined ? `, up ${formatUptime(d.uptimeSeconds)}` : '';
+  const stale =
+    d.daemonVersion && d.daemonVersion !== cliVersion
+      ? chalk.yellow(` (version ${d.daemonVersion} != cli ${cliVersion})`)
+      : '';
+  return `${mark(true)} running (pid ${d.pid ?? '?'}, port ${d.port}${up})${stale}`;
+};
+
+const mcpLine = (d: DaemonStatus): string =>
+  d.mcp ? `${mark(true)} serving at http://127.0.0.1:${d.port}/mcp` : `${mark(false)} off`;
+
+const syncLine = (sync: NonNullable<DaemonStatus['sync']>): string => {
+  if (sync.state === 'syncing') return `${chalk.yellow('⋯')} syncing`;
+  if (sync.state === 'error') {
+    const short = (sync.lastError ?? 'sync failed').split('\n')[0]?.slice(0, 60);
+    return `${mark(false)} error (${short})`;
+  }
+  const at = sync.lastRun ? ` (last ok ${sync.lastRun})` : '';
+  return `${mark(true)} ${sync.vaults} vaults${at}`;
+};
+
+// Daemon rows honor version-mismatch inline (appended to the daemon row), mcp only when running,
+// and omit the sync row when the daemon is down or serves no vaults.
+const printDaemon = (d: DaemonStatus, cliVersion: string): void => {
+  row('daemon', daemonLine(d, cliVersion));
+  if (!d.running) return;
+  row('mcp', mcpLine(d));
+  if (d.sync) row('sync', syncLine(d.sync));
+};
+
 export const printStatus = (report: StatusReport): void => {
   row('version', report.version);
   row('update', updateLine(report.update));
@@ -42,17 +88,8 @@ export const printStatus = (report: StatusReport): void => {
     `${mark(report.endpoint.reachable)} ${report.endpoint.url} ` +
       (report.endpoint.reachable ? 'reachable' : 'unreachable')
   );
+  if (report.daemon) printDaemon(report.daemon, report.version);
   if (report.update.message) console.log(chalk.yellow(`\n${report.update.message}`));
-};
-
-// Warn only about a daemon this config dir owns (a live pidfile) so `status` never probes an
-// unrelated daemon; the hint tells the user to restart it after a CLI upgrade.
-const warnDaemonMismatch = async (): Promise<void> => {
-  if (!isDaemonRunning()) return;
-  const h = await health(resolvePort());
-  if (!h) return;
-  const notice = mismatchNotice(h.version);
-  if (notice) console.error(chalk.yellow(notice)); // diagnostics go to stderr
 };
 
 export const runStatus = async (opts: { json?: boolean } = {}): Promise<void> => {
@@ -62,7 +99,6 @@ export const runStatus = async (opts: { json?: boolean } = {}): Promise<void> =>
     return;
   }
   printStatus(report);
-  await warnDaemonMismatch();
 };
 
 export const registerStatus = (program: Command): void => {

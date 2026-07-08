@@ -41,10 +41,18 @@ afterEach(() => {
 });
 
 describe('daemon status', () => {
-  it('reports not running when no pidfile is live', async () => {
+  it('reports not running when no pidfile is live and health is silent', async () => {
     vi.mocked(lifecycle.isDaemonRunning).mockReturnValue(false);
+    vi.mocked(dc.health).mockResolvedValue(null);
     await run(['daemon', 'status']);
     expect(logs.join()).toContain('not running');
+  });
+
+  it('prints a legacy daemon (health answers, no pidfile) as running', async () => {
+    vi.mocked(lifecycle.isDaemonRunning).mockReturnValue(false);
+    vi.mocked(dc.health).mockResolvedValue(health({ pid: 77366 }));
+    await run(['daemon', 'status']);
+    expect(logs.join('\n')).toContain('77366');
   });
 
   it('prints pid, port, uptime, served, and version', async () => {
@@ -143,10 +151,30 @@ describe('daemon stop', () => {
     expect(logs.join()).toContain('stopped');
   });
 
-  it('is a no-op when nothing is running', async () => {
+  it('is a no-op when nothing is running (no pidfile, no health)', async () => {
     vi.mocked(lifecycle.isDaemonRunning).mockReturnValue(false);
+    vi.mocked(dc.health).mockResolvedValue(null);
     await run(['daemon', 'stop']);
     expect(lifecycle.stopDaemonSafely).not.toHaveBeenCalled();
     expect(logs.join()).toContain('not running');
+  });
+
+  it('signals a legacy daemon (health answers, no pidfile) by its reported pid', async () => {
+    vi.mocked(lifecycle.isDaemonRunning).mockReturnValue(false);
+    vi.mocked(dc.health).mockResolvedValue(health({ pid: 77366 }));
+    vi.mocked(lifecycle.signalPid).mockReturnValue(true);
+    await run(['daemon', 'stop']);
+    expect(lifecycle.signalPid).toHaveBeenCalledWith(77366);
+    expect(logs.join()).toContain('stopped (pid 77366)');
+  });
+
+  it('reports the truth when a live daemon has no pidfile and cannot be signalled', async () => {
+    vi.mocked(lifecycle.isDaemonRunning).mockReturnValue(false);
+    vi.mocked(dc.health).mockResolvedValue(health({ pid: 77366 }));
+    vi.mocked(lifecycle.signalPid).mockReturnValue(false);
+    await run(['daemon', 'stop']);
+    expect(logs.join()).toContain('is running');
+    expect(logs.join()).toContain('kill 77366');
+    expect(process.exitCode).toBe(1);
   });
 });

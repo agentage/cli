@@ -220,7 +220,18 @@ describe('currentBearer', () => {
 });
 
 describe('introspectToken', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agentage-api-'));
+    process.env['AGENTAGE_CONFIG_DIR'] = dir;
+  });
+
+  afterEach(() => {
+    delete process.env['AGENTAGE_CONFIG_DIR'];
+    rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+  });
 
   it('calls the introspection endpoint and maps the session', async () => {
     const fetchMock = vi
@@ -234,5 +245,72 @@ describe('introspectToken', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
       'https://auth.dev.agentage.io/api/auth/mcp/get-session'
     );
+  });
+
+  it('refreshes once on a 200 + null session, then re-introspects as signed in', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (String(url).includes('/token'))
+        return Promise.resolve(jsonResponse(200, { access_token: 'new-token', expires_in: 60 }));
+      const bearer = (init?.headers as Record<string, string> | undefined)?.['authorization'];
+      return Promise.resolve(
+        bearer === 'Bearer new-token'
+          ? jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: 'x' })
+          : jsonResponse(200, null)
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = makeAuth();
+    const session = await introspectToken(auth, target);
+    expect(session.userId).toBe('u1');
+    expect(auth.tokens.accessToken).toBe('new-token');
+    expect(readAuth()?.tokens.accessToken).toBe('new-token');
+  });
+
+  it('throws AuthRequiredError when a 200 + null survives a failed refresh', async () => {
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        String(url).includes('/token') ? jsonResponse(400, {}) : jsonResponse(200, null)
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(introspectToken(makeAuth(), target)).rejects.toThrow(AuthRequiredError);
+  });
+
+  it('refreshes and re-introspects when the session reports an already-past expiry', async () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (String(url).includes('/token'))
+        return Promise.resolve(jsonResponse(200, { access_token: 'refreshed', expires_in: 3600 }));
+      const bearer = (init?.headers as Record<string, string> | undefined)?.['authorization'];
+      return Promise.resolve(
+        bearer === 'Bearer refreshed'
+          ? jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: future })
+          : jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: past })
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = makeAuth();
+    const session = await introspectToken(auth, target);
+    // The displayed expiry must be the post-refresh future value, never the stale past one.
+    expect(session.expiresAt).toBe(future);
+    expect(Date.parse(session.expiresAt as string)).toBeGreaterThan(Date.now());
+  });
+
+  it('refreshes proactively when the stored token is already past expiry', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (String(url).includes('/token'))
+        return Promise.resolve(jsonResponse(200, { access_token: 'fresh', expires_in: 60 }));
+      const bearer = (init?.headers as Record<string, string> | undefined)?.['authorization'];
+      return Promise.resolve(
+        bearer === 'Bearer fresh' ? jsonResponse(200, { userId: 'u2' }) : jsonResponse(200, null)
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const auth = makeAuth({ expiresAt: Date.now() - 1000 });
+    const session = await introspectToken(auth, target);
+    expect(session.userId).toBe('u2');
+    const tokenCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/token'));
+    expect(tokenCalls).toHaveLength(1);
   });
 });
