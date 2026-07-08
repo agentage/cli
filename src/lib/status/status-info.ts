@@ -2,6 +2,7 @@ import { AuthRequiredError, introspectToken } from '../auth/api.js';
 import { type AuthState } from '../fs/config.js';
 import { health, syncStatus } from '../daemon/daemon-client.js';
 import { fetchJsonUnref } from '../net/http.js';
+import { requestHeaders } from '../net/user-agent.js';
 import { environment, links, type Env } from '../net/origins.js';
 import { checkForUpdate, type UpdateInfo } from '../update/update-check.js';
 import { VERSION } from '../../utils/version.js';
@@ -41,15 +42,15 @@ export interface StatusReport {
 
 // node:https via fetchJsonUnref, not global fetch: undici's ref'd connect timer keeps the process
 // alive ~10s after an aborted request on a packet-drop network, stalling `status` exit.
-const checkEndpoint = async (apiUrl: string): Promise<boolean> => {
-  const res = await fetchJsonUnref(`${apiUrl}/health`, 3000);
+const checkEndpoint = async (apiUrl: string, headers: Record<string, string>): Promise<boolean> => {
+  const res = await fetchJsonUnref(`${apiUrl}/health`, 3000, headers);
   return res?.ok ?? false;
 };
 
 // Host reachability, not app health: the site root answers any HTTP status (200/3xx/4xx) when the
 // host is up, so any non-null response counts as reachable; only a refused/timed-out connect fails.
-const checkSite = async (siteUrl: string): Promise<boolean> => {
-  const res = await fetchJsonUnref(siteUrl, 3000);
+const checkSite = async (siteUrl: string, headers: Record<string, string>): Promise<boolean> => {
+  const res = await fetchJsonUnref(siteUrl, 3000, headers);
   return res !== null;
 };
 
@@ -102,14 +103,16 @@ const probeDaemon = async (): Promise<DaemonProbe> => {
 
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {
   const target = links(fqdn);
+  const env = environment(fqdn);
+  // Probe the local daemon first (fast, 1s-capped /health) so its version can ride the probe headers.
+  const probe = await probeDaemon();
+  const headers = requestHeaders({ component: 'cli', daemonVersion: probe.status.daemonVersion });
   // Endpoint reachability and the (npm-registry) update check are independent - run them
   // together so `status` stays snappy.
-  const env = environment(fqdn);
-  const [reachable, siteReachable, update, probe] = await Promise.all([
-    checkEndpoint(target.api),
-    checkSite(target.site),
+  const [reachable, siteReachable, update] = await Promise.all([
+    checkEndpoint(target.api, headers),
+    checkSite(target.site, headers),
     checkForUpdate(VERSION),
-    probeDaemon(),
   ]);
   const report: StatusReport = {
     version: VERSION,

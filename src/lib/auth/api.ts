@@ -1,6 +1,10 @@
 import { mutateAuth, type AuthState, type StoredTokens } from '../fs/config.js';
 import { refreshTokens } from './oauth.js';
 import { type Links } from '../net/origins.js';
+import { requestHeaders } from '../net/user-agent.js';
+
+// Every authed call is CLI-originated; identify the caller alongside the bearer.
+const cliHeaders = (): Record<string, string> => requestHeaders({ component: 'cli' });
 
 export class AuthRequiredError extends Error {
   constructor(message = 'not signed in') {
@@ -53,7 +57,7 @@ const isRedirect = (res: Response): boolean =>
 export const authedGet = async <T>(auth: AuthState, links: Links, url: string): Promise<T> => {
   const call = (): Promise<Response> =>
     fetch(url, {
-      headers: { authorization: `Bearer ${auth.tokens.accessToken}` },
+      headers: { authorization: `Bearer ${auth.tokens.accessToken}`, ...cliHeaders() },
       redirect: 'manual',
     });
   let res = await call();
@@ -78,6 +82,7 @@ export const authedPost = async (
       headers: {
         authorization: `Bearer ${auth.tokens.accessToken}`,
         'content-type': 'application/json',
+        ...cliHeaders(),
       },
       body: JSON.stringify(body),
       redirect: 'manual',

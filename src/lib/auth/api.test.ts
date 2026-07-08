@@ -5,8 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { authedGet, authedPost, AuthRequiredError, currentBearer, introspectToken } from './api.js';
 import { readAuth, type AuthState } from '../fs/config.js';
 import { links } from '../net/origins.js';
+import { VERSION } from '../../utils/version.js';
 
 const target = links('dev.agentage.io');
+
+// The CLI version headers requestHeaders() adds to every authed request.
+const versionHeaders = {
+  'User-Agent': `agentage-cli/${VERSION}`,
+  'X-Agentage-CLI-Version': VERSION,
+  'X-Agentage-Daemon-Version': 'none',
+};
 
 const makeAuth = (overrides: Partial<AuthState['tokens']> = {}): AuthState => ({
   siteFqdn: 'dev.agentage.io',
@@ -37,9 +45,19 @@ describe('authedGet', () => {
     const result = await authedGet<{ ok: boolean }>(makeAuth(), target, 'https://x.example/me');
     expect(result.ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith('https://x.example/me', {
-      headers: { authorization: 'Bearer old-token' },
+      headers: { authorization: 'Bearer old-token', ...versionHeaders },
       redirect: 'manual',
     });
+  });
+
+  it('sends the CLI version identification headers alongside the bearer', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+    await authedGet(makeAuth(), target, 'https://x.example/me');
+    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
+    expect(headers['User-Agent']).toBe(`agentage-cli/${VERSION}`);
+    expect(headers['X-Agentage-CLI-Version']).toBe(VERSION);
+    expect(headers['X-Agentage-Daemon-Version']).toBe('none');
   });
 
   it('refreshes once on 401, persists the new tokens, and retries', async () => {
@@ -88,7 +106,7 @@ describe('authedGet', () => {
       'refused redirect (302)'
     );
     expect(fetchMock).toHaveBeenCalledWith('https://x.example/me', {
-      headers: { authorization: 'Bearer old-token' },
+      headers: { authorization: 'Bearer old-token', ...versionHeaders },
       redirect: 'manual',
     });
   });
@@ -118,7 +136,11 @@ describe('authedPost', () => {
     expect(res.status).toBe(201);
     expect(fetchMock).toHaveBeenCalledWith('https://x.example/api/memories', {
       method: 'POST',
-      headers: { authorization: 'Bearer old-token', 'content-type': 'application/json' },
+      headers: {
+        authorization: 'Bearer old-token',
+        'content-type': 'application/json',
+        ...versionHeaders,
+      },
       body: JSON.stringify({ name: 'acct', channel: 'couch' }),
       redirect: 'manual',
     });

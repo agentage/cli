@@ -1,4 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { requestHeaders } from '../net/user-agent.js';
+
+// OAuth register/token/revoke are all CLI-originated; identify the caller on each.
+const cliHeaders = (): Record<string, string> => requestHeaders({ component: 'cli' });
 
 export interface PkcePair {
   verifier: string;
@@ -31,7 +35,7 @@ export const randomState = (): string => randomBytes(16).toString('base64url');
 export const registerClient = async (authUrl: string, redirectUri: string): Promise<string> => {
   const res = await fetch(`${authUrl}${REGISTER_PATH}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...cliHeaders() },
     body: JSON.stringify({
       client_name: 'agentage CLI',
       redirect_uris: [redirectUri],
@@ -70,7 +74,7 @@ export const buildAuthorizeUrl = (
 const postForm = async (url: string, form: Record<string, string>): Promise<TokenResponse> => {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { 'content-type': 'application/x-www-form-urlencoded', ...cliHeaders() },
     body: new URLSearchParams(form).toString(),
   });
   if (!res.ok) throw new Error(`token request failed (${res.status})`);
@@ -110,7 +114,7 @@ export const revokeToken = async (
   try {
     await fetch(`${authUrl}${REVOKE_PATH}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      headers: { 'content-type': 'application/x-www-form-urlencoded', ...cliHeaders() },
       body: new URLSearchParams({ token }).toString(),
       signal: AbortSignal.timeout(timeoutMs),
     });
