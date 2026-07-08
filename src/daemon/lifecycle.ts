@@ -69,6 +69,18 @@ export const isProcessAlive = (pid: number): boolean => {
   }
 };
 
+// SIGTERM a known-live pid (a legacy daemon we learned about via /health, not our pidfile).
+// Returns whether the signal was delivered; false when the pid is already gone or unsignalable.
+export const signalPid = (pid: number): boolean => {
+  if (!isProcessAlive(pid)) return false;
+  try {
+    process.kill(pid, 'SIGTERM');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const isDaemonRunning = (): boolean => {
   const pid = readPid();
   if (pid === null) return false;

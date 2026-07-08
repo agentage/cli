@@ -1,6 +1,11 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
-import { isDaemonRunning, resolvePort, stopDaemonSafely } from '../../daemon/lifecycle.js';
+import {
+  isDaemonRunning,
+  resolvePort,
+  signalPid,
+  stopDaemonSafely,
+} from '../../daemon/lifecycle.js';
 import { health, mismatchNotice, spawnDaemon, syncStatus } from '../../lib/daemon/daemon-client.js';
 
 const startAction = async (opts: { mcp?: boolean } = {}): Promise<void> => {
@@ -30,29 +35,49 @@ const startAction = async (opts: { mcp?: boolean } = {}): Promise<void> => {
   console.log(chalk.green(`Daemon started (pid ${h?.pid ?? '?'}, port ${port}, mcp ${mcp}).`));
 };
 
+// Detect the daemon the same way `start` does (tokenless /health), so a legacy daemon that never
+// wrote this config dir's pidfile is not misreported as "not running". With a pidfile we own, use
+// the safe pid-confirming stop; otherwise fall back to signalling the pid /health reports, or - if
+// none is available - report the truth rather than a false "not running".
 const stopAction = async (): Promise<void> => {
-  if (!isDaemonRunning()) {
-    console.log(chalk.gray('Daemon is not running.'));
-    return;
-  }
-  if (await stopDaemonSafely()) console.log(chalk.green('Daemon stopped.'));
-};
-
-const statusAction = async (): Promise<void> => {
-  if (!isDaemonRunning()) {
-    console.log(chalk.gray('Daemon is not running.'));
+  if (isDaemonRunning()) {
+    if (await stopDaemonSafely()) console.log(chalk.green('Daemon stopped.'));
     return;
   }
   const port = resolvePort();
   const h = await health(port);
   if (!h) {
-    console.log(chalk.yellow(`Daemon pid file present but unreachable on port ${port}.`));
+    console.log(chalk.gray('Daemon is not running.'));
     return;
   }
-  console.log(`pid      ${h.pid}`);
+  if (typeof h.pid === 'number' && signalPid(h.pid)) {
+    console.log(chalk.green(`Daemon stopped (pid ${h.pid}).`));
+    return;
+  }
+  const who = typeof h.pid === 'number' ? `pid ${h.pid}` : `port ${port}`;
+  console.error(
+    chalk.yellow(
+      `Daemon is running (${who}) but has no pidfile to stop it safely; stop it with: kill ${h.pid ?? '<pid>'}`
+    )
+  );
+  process.exitCode = 1;
+};
+
+const statusAction = async (): Promise<void> => {
+  const port = resolvePort();
+  const h = await health(port);
+  if (!h) {
+    console.log(
+      isDaemonRunning()
+        ? chalk.yellow(`Daemon pid file present but unreachable on port ${port}.`)
+        : chalk.gray('Daemon is not running.')
+    );
+    return;
+  }
+  console.log(`pid      ${h.pid ?? '?'}`);
   console.log(`port     ${port}`);
-  console.log(`uptime   ${h.uptime}s`);
-  console.log(`served   ${h.served}`);
+  if (typeof h.uptime === 'number') console.log(`uptime   ${h.uptime}s`);
+  if (typeof h.served === 'number') console.log(`served   ${h.served}`);
   console.log(`mcp      ${h.mcp === false ? 'off' : 'on'}`);
   console.log(`version  ${h.version}`);
   const notice = mismatchNotice(h.version);

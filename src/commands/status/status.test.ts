@@ -2,11 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { type StatusReport } from '../../lib/status/status-info.js';
 import { printStatus } from './status.js';
 
+// A future expiry so the truthful-display guard (past expiry -> "session active") does not rot.
+const futureExpiry = new Date(Date.now() + 3_600_000).toISOString();
+
 const baseReport: StatusReport = {
   version: '0.25.0',
   fqdn: 'agentage.io',
   env: 'production',
-  auth: { signedIn: true, tokenExpiresAt: '2026-06-12T20:00:00Z' },
+  auth: { signedIn: true, tokenExpiresAt: futureExpiry },
   endpoint: { url: 'https://agentage.io/api', reachable: true },
   update: { status: { kind: 'current' }, message: null },
 };
@@ -27,8 +30,27 @@ describe('printStatus', () => {
     expect(out).toContain('0.25.0');
     expect(out).toContain('agentage.io (production)');
     expect(out).toContain('signed in');
-    expect(out).toContain('2026-06-12T20:00:00Z');
+    expect(out).toContain(futureExpiry);
     expect(out).toContain('reachable');
+  });
+
+  it('shows a future token expiry verbatim next to the checkmark', () => {
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    const out = captureLines({ ...baseReport, auth: { signedIn: true, tokenExpiresAt: future } });
+    expect(out).toContain(`token valid until ${future}`);
+  });
+
+  it('never prints a past token expiry next to the signed-in checkmark', () => {
+    const past = new Date(Date.now() - 60_000).toISOString();
+    const out = captureLines({ ...baseReport, auth: { signedIn: true, tokenExpiresAt: past } });
+    expect(out).not.toContain(past);
+    expect(out).not.toContain('token valid until');
+    expect(out).toContain('signed in (session active)');
+  });
+
+  it('shows session active when signed in without any expiry', () => {
+    const out = captureLines({ ...baseReport, auth: { signedIn: true } });
+    expect(out).toContain('signed in (session active)');
   });
 
   it('prints the setup hint when signed out', () => {
