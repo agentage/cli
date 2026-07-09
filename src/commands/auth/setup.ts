@@ -11,6 +11,7 @@ import {
   type AuthState,
 } from '../../lib/fs/config.js';
 import { AuthRequiredError, introspectToken } from '../../lib/auth/api.js';
+import { detectEnvMismatch } from '../../lib/auth/env-match.js';
 import {
   buildAuthorizeUrl,
   exchangeCode,
@@ -90,8 +91,17 @@ const disconnect = async (deps: SetupDeps): Promise<void> => {
 };
 
 // Validate the stored session instead of trusting mere token presence. Returns true to short-circuit
-// (valid or a transient blip - creds intact), false to proceed into a fresh sign-in (truly expired).
+// (valid or a transient blip - creds intact), false to proceed into a fresh sign-in (truly expired or
+// the credential belongs to a different target than the current run).
 const alreadySignedIn = async (auth: AuthState, deps: SetupDeps): Promise<boolean> => {
+  const mismatch = detectEnvMismatch(auth, siteFqdn());
+  if (mismatch) {
+    console.log(
+      `Signed in to ${mismatch.credentialFqdn} (${mismatch.credentialEnv}), but this run targets ` +
+        `${mismatch.targetFqdn} (${mismatch.targetEnv}) - signing you into ${mismatch.targetEnv}.\n`
+    );
+    return false; // proceed to a fresh sign-in against the current target
+  }
   try {
     await deps.introspect(auth, links(auth.siteFqdn));
     console.log(

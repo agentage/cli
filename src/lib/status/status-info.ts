@@ -1,4 +1,5 @@
 import { AuthRequiredError, introspectToken } from '../auth/api.js';
+import { detectEnvMismatch, type AuthEnvMismatch } from '../auth/env-match.js';
 import { type AuthState } from '../fs/config.js';
 import { health, syncStatus } from '../daemon/daemon-client.js';
 import { fetchJsonUnref } from '../net/http.js';
@@ -33,7 +34,15 @@ export interface StatusReport {
   fqdn: string;
   env: Env;
   target: { fqdn: string; env: Env; reachable: boolean };
-  auth: { signedIn: boolean; tokenExpiresAt?: string; note?: string; transient?: boolean };
+  auth: {
+    signedIn: boolean;
+    tokenExpiresAt?: string;
+    note?: string;
+    transient?: boolean;
+    // Set when the stored credential's env differs from the current target: signedIn is false and the
+    // printer renders a neutral "signed in to X - CLI targets Y" line, never "session expired".
+    mismatch?: AuthEnvMismatch;
+  };
   endpoint: { url: string; reachable: boolean };
   update: UpdateInfo;
   daemon?: DaemonStatus;
@@ -108,6 +117,16 @@ const classifyAuthError = (err: unknown): StatusReport['auth'] =>
     ? { signedIn: false, note: 'session expired - run: agentage setup' }
     : { signedIn: true, transient: true, note: 'signed in (could not re-verify - temporary)' };
 
+// A credential issued for one environment, checked against another, is not expired - it belongs
+// elsewhere. Name both sides and hint the two fixes, without introspecting cross-environment.
+const mismatchAuth = (m: AuthEnvMismatch): StatusReport['auth'] => ({
+  signedIn: false,
+  mismatch: m,
+  note:
+    `signed in to ${m.credentialFqdn} - CLI targets ${m.targetFqdn} (${m.targetEnv}); ` +
+    `run: agentage setup to sign into ${m.targetEnv}, or set AGENTAGE_SITE_FQDN=${m.credentialFqdn}`,
+});
+
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {
   const target = links(fqdn);
   const env = environment(fqdn);
@@ -133,6 +152,11 @@ export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promis
     vaults: buildVaultStatuses(probe.sync, probe.status.running),
   };
   if (!auth) return report;
+  const mismatch = detectEnvMismatch(auth, fqdn);
+  if (mismatch) {
+    report.auth = mismatchAuth(mismatch);
+    return report;
+  }
   try {
     const session = await introspectToken(auth, target);
     report.auth = { signedIn: true, tokenExpiresAt: session.expiresAt };
