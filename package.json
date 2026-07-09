@@ -1,6 +1,6 @@
 {
   "name": "@agentage/cli",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "The agentage CLI - connect this machine to agentage from the terminal",
   "type": "module",
   "main": "./dist/index.js",
