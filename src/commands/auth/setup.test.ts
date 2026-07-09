@@ -116,6 +116,28 @@ describe('runSetup', () => {
     expect(readAuth()?.tokens.accessToken).toBe('old-at'); // creds untouched
   });
 
+  it('signs into the current target when the stored credential is for a different env', async () => {
+    // Credential is for dev; this run targets production - do not introspect cross-env, sign in fresh.
+    saveAuth(existingAuth);
+    process.env['AGENTAGE_SITE_FQDN'] = 'agentage.io';
+    const { deps } = makeDeps();
+    await runSetup({}, deps);
+    expect(deps.introspect).not.toHaveBeenCalled();
+    expect(deps.register).toHaveBeenCalled();
+    expect(readAuth()?.siteFqdn).toBe('agentage.io');
+    expect(readAuth()?.clientId).toBe('client-1');
+  });
+
+  it('signs into dev when a production credential meets a dev target', async () => {
+    saveAuth({ ...existingAuth, siteFqdn: 'agentage.io' });
+    process.env['AGENTAGE_SITE_FQDN'] = 'dev.agentage.io';
+    const { deps } = makeDeps();
+    await runSetup({}, deps);
+    expect(deps.introspect).not.toHaveBeenCalled();
+    expect(deps.register).toHaveBeenCalled();
+    expect(readAuth()?.siteFqdn).toBe('dev.agentage.io');
+  });
+
   it('auto-enters sign-in when the stored session is terminally expired', async () => {
     saveAuth(existingAuth);
     const { deps } = makeDeps();

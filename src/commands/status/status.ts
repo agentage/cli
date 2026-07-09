@@ -21,6 +21,9 @@ const row = (label: string, value: string): void => {
 // access-token expiry, which misreads as "yesterday" near midnight in positive-UTC zones.
 // Introspection already proved the session is active server-side.
 const authLine = (auth: StatusReport['auth']): string => {
+  // Env mismatch: the credential is valid but for another target - neutral `!`, not the expired ✗.
+  if (auth.mismatch)
+    return `${chalk.yellow('!')} ${auth.note ?? 'signed in to another environment'}`;
   if (!auth.signedIn) return `${mark(false)} ${auth.note ?? 'not signed in'}`;
   // Transient: we hold a valid-looking token but could not re-verify - a non-terminal `~`, never ✗.
   if (auth.transient) return `${chalk.yellow('~')} ${auth.note ?? 'signed in'}`;

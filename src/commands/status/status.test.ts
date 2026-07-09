@@ -70,6 +70,27 @@ describe('printStatus', () => {
     expect(out).toContain('signed in (session active)');
   });
 
+  it('renders a neutral env-mismatch line naming both sides, never expired', () => {
+    const out = captureLines({
+      ...baseReport,
+      auth: {
+        signedIn: false,
+        mismatch: {
+          credentialFqdn: 'dev.agentage.io',
+          credentialEnv: 'development',
+          targetFqdn: 'agentage.io',
+          targetEnv: 'production',
+        },
+        note: 'signed in to dev.agentage.io - CLI targets agentage.io (production)',
+      },
+    });
+    expect(out).toContain('signed in to dev.agentage.io');
+    expect(out).toContain('CLI targets agentage.io (production)');
+    expect(out).not.toContain('session expired');
+    expect(out).not.toContain('✗');
+    expect(out).toContain('!');
+  });
+
   it('prints the setup hint when signed out', () => {
     const out = captureLines({
       ...baseReport,

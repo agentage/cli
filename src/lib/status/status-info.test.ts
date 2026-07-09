@@ -173,6 +173,30 @@ describe('gatherStatus', () => {
     expect(report.auth.note).not.toContain('expired');
   });
 
+  it('reports an env mismatch (dev credential, prod target) instead of session expired', async () => {
+    // No fetch stub for get-session: a mismatch must never introspect cross-environment.
+    const report = await gatherStatus(auth, 'agentage.io');
+    expect(report.auth.signedIn).toBe(false);
+    expect(report.auth.mismatch).toEqual({
+      credentialFqdn: 'dev.agentage.io',
+      credentialEnv: 'development',
+      targetFqdn: 'agentage.io',
+      targetEnv: 'production',
+    });
+    expect(report.auth.note).toContain('dev.agentage.io');
+    expect(report.auth.note).toContain('agentage.io');
+    expect(report.auth.note).not.toContain('session expired');
+  });
+
+  it('reports an env mismatch in the reverse direction (prod credential, dev target)', async () => {
+    const prodAuth = { ...auth, siteFqdn: 'agentage.io' };
+    const report = await gatherStatus(prodAuth, 'dev.agentage.io');
+    expect(report.auth.signedIn).toBe(false);
+    expect(report.auth.mismatch?.credentialEnv).toBe('production');
+    expect(report.auth.mismatch?.targetEnv).toBe('development');
+    expect(report.auth.note).not.toContain('session expired');
+  });
+
   it('reports the daemon as stopped when no pidfile is present', async () => {
     vi.stubGlobal(
       'fetch',
