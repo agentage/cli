@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type CallbackServer } from '../../lib/auth/callback-server.js';
+import { AuthRequiredError, TransientAuthError } from '../../lib/auth/api.js';
 import { readAuth, saveAuth, type AuthState } from '../../lib/fs/config.js';
 import { runSetup, type SetupDeps } from './setup.js';
 
@@ -29,6 +30,7 @@ const makeDeps = () => {
     openBrowser: vi.fn().mockResolvedValue(undefined),
     printStatus: vi.fn().mockResolvedValue(undefined),
     ensureDaemon: vi.fn().mockResolvedValue({}),
+    introspect: vi.fn().mockResolvedValue({ userId: 'u1' }),
   };
   return { deps, server, close };
 };
@@ -104,12 +106,38 @@ describe('runSetup', () => {
     expect(readAuth()?.tokens.accessToken).toBe('at-1');
   });
 
-  it('short-circuits when already signed in', async () => {
+  it('short-circuits when already signed in and the session validates', async () => {
     saveAuth(existingAuth);
     const { deps } = makeDeps();
     await runSetup({}, deps);
+    expect(deps.introspect).toHaveBeenCalledOnce();
     expect(deps.register).not.toHaveBeenCalled();
     expect(deps.printStatus).toHaveBeenCalled();
+    expect(readAuth()?.tokens.accessToken).toBe('old-at'); // creds untouched
+  });
+
+  it('auto-enters sign-in when the stored session is terminally expired', async () => {
+    saveAuth(existingAuth);
+    const { deps } = makeDeps();
+    (deps.introspect as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new AuthRequiredError('session expired')
+    );
+    await runSetup({}, deps);
+    // No --reauth flag needed: a dead session falls straight through to a fresh sign-in.
+    expect(deps.register).toHaveBeenCalled();
+    expect(readAuth()?.clientId).toBe('client-1');
+  });
+
+  it('does not force reauth or wipe creds on a transient verify failure', async () => {
+    saveAuth(existingAuth);
+    const { deps } = makeDeps();
+    (deps.introspect as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new TransientAuthError('temporarily failed')
+    );
+    await runSetup({}, deps);
+    expect(deps.register).not.toHaveBeenCalled();
+    expect(deps.printStatus).toHaveBeenCalled();
+    expect(readAuth()?.tokens.accessToken).toBe('old-at'); // creds intact
   });
 
   it('re-authenticates with --reauth despite existing auth', async () => {

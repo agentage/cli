@@ -10,6 +10,7 @@ import {
   readAuth,
   type AuthState,
 } from '../../lib/fs/config.js';
+import { AuthRequiredError, introspectToken } from '../../lib/auth/api.js';
 import {
   buildAuthorizeUrl,
   exchangeCode,
@@ -37,6 +38,7 @@ export interface SetupDeps {
   openBrowser: (url: string) => Promise<void>;
   printStatus: () => Promise<void>;
   ensureDaemon: typeof ensureDaemon;
+  introspect: typeof introspectToken;
 }
 
 const defaultDeps: SetupDeps = {
@@ -50,6 +52,7 @@ const defaultDeps: SetupDeps = {
   },
   printStatus: () => runStatus({}),
   ensureDaemon,
+  introspect: introspectToken,
 };
 
 const toAuthState = (fqdn: string, clientId: string, tokens: TokenResponse): AuthState => ({
@@ -86,6 +89,28 @@ const disconnect = async (deps: SetupDeps): Promise<void> => {
   console.log('Disconnected - local credentials removed.');
 };
 
+// Validate the stored session instead of trusting mere token presence. Returns true to short-circuit
+// (valid or a transient blip - creds intact), false to proceed into a fresh sign-in (truly expired).
+const alreadySignedIn = async (auth: AuthState, deps: SetupDeps): Promise<boolean> => {
+  try {
+    await deps.introspect(auth, links(auth.siteFqdn));
+    console.log(
+      `Already signed in. Run ${chalk.white('agentage setup --reauth')} to sign in again.\n`
+    );
+    await deps.printStatus();
+    return true;
+  } catch (err) {
+    if (err instanceof AuthRequiredError) {
+      console.log('Session expired - signing you in again.\n');
+      return false; // fall through to the sign-in flow, no --reauth needed
+    }
+    // Transient: do not force reauth on a blip; keep credentials and show status.
+    console.log('You appear signed in (could not fully verify - temporary).\n');
+    await deps.printStatus();
+    return true;
+  }
+};
+
 export const runSetup = async (
   opts: SetupOptions,
   deps: SetupDeps = defaultDeps
@@ -94,13 +119,8 @@ export const runSetup = async (
     await disconnect(deps);
     return;
   }
-  if (readAuth() && !opts.reauth) {
-    console.log(
-      `Already signed in. Run ${chalk.white('agentage setup --reauth')} to sign in again.\n`
-    );
-    await deps.printStatus();
-    return;
-  }
+  const stored = readAuth();
+  if (stored && !opts.reauth && (await alreadySignedIn(stored, deps))) return;
   const fqdn = siteFqdn();
   const target = links(fqdn);
   ensureConfigDir();

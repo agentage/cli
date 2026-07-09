@@ -33,7 +33,7 @@ export interface StatusReport {
   fqdn: string;
   env: Env;
   target: { fqdn: string; env: Env; reachable: boolean };
-  auth: { signedIn: boolean; tokenExpiresAt?: string; note?: string };
+  auth: { signedIn: boolean; tokenExpiresAt?: string; note?: string; transient?: boolean };
   endpoint: { url: string; reachable: boolean };
   update: UpdateInfo;
   daemon?: DaemonStatus;
@@ -101,6 +101,13 @@ const probeDaemon = async (): Promise<DaemonProbe> => {
   return { status, sync };
 };
 
+// AuthRequiredError = truly expired (terminal). TransientAuthError (or any non-terminal) = a blip
+// while we could not re-verify: never rendered as expired, never told to run setup, exit stays 0.
+const classifyAuthError = (err: unknown): StatusReport['auth'] =>
+  err instanceof AuthRequiredError
+    ? { signedIn: false, note: 'session expired - run: agentage setup' }
+    : { signedIn: true, transient: true, note: 'signed in (could not re-verify - temporary)' };
+
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {
   const target = links(fqdn);
   const env = environment(fqdn);
@@ -130,13 +137,7 @@ export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promis
     const session = await introspectToken(auth, target);
     report.auth = { signedIn: true, tokenExpiresAt: session.expiresAt };
   } catch (err) {
-    report.auth =
-      err instanceof AuthRequiredError
-        ? { signedIn: false, note: 'session expired - run: agentage setup' }
-        : {
-            signedIn: false,
-            note: `could not verify session: ${err instanceof Error ? err.message : String(err)}`,
-          };
+    report.auth = classifyAuthError(err);
   }
   return report;
 };

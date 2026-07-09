@@ -71,13 +71,28 @@ export const buildAuthorizeUrl = (
   return url.toString();
 };
 
+// A token-endpoint failure that carries the HTTP status and any RFC 6749 `error` code so the
+// caller can tell a dead grant (invalid_grant/invalid_client/401) from a transient blip (429/5xx).
+export class TokenRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly oauthError?: string
+  ) {
+    super(`token request failed (${status}${oauthError ? ` ${oauthError}` : ''})`);
+    this.name = 'TokenRequestError';
+  }
+}
+
 const postForm = async (url: string, form: Record<string, string>): Promise<TokenResponse> => {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', ...cliHeaders() },
     body: new URLSearchParams(form).toString(),
   });
-  if (!res.ok) throw new Error(`token request failed (${res.status})`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new TokenRequestError(res.status, body?.error);
+  }
   return (await res.json()) as TokenResponse;
 };
 

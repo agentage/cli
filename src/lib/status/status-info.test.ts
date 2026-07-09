@@ -108,12 +108,14 @@ describe('gatherStatus', () => {
     expect(report.auth.note).toBeUndefined();
   });
 
-  it('reports session expired when the 200 + null refresh fails', async () => {
+  it('reports session expired when a 200 + null survives a terminal (invalid_grant) refresh', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) =>
         Promise.resolve(
-          String(url).includes('/token') ? jsonResponse(400, {}) : jsonResponse(200, null)
+          String(url).includes('/token')
+            ? jsonResponse(400, { error: 'invalid_grant' })
+            : jsonResponse(200, null)
         )
       )
     );
@@ -122,12 +124,14 @@ describe('gatherStatus', () => {
     expect(report.auth.note).toBe('session expired - run: agentage setup');
   });
 
-  it('downgrades to signed-out with a hint when the token is rejected', async () => {
+  it('reports session expired when the token is authoritatively rejected (401)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string) =>
         Promise.resolve(
-          String(url).includes('/token') ? jsonResponse(400, {}) : jsonResponse(401, {})
+          String(url).includes('/token')
+            ? jsonResponse(400, { error: 'invalid_grant' })
+            : jsonResponse(401, {})
         )
       )
     );
@@ -136,14 +140,37 @@ describe('gatherStatus', () => {
     expect(report.auth.note).toContain('session expired');
   });
 
-  it('reports verification failures without claiming signed-in', async () => {
+  it('reports signed-in (never expired) on a 5xx blip while holding an unexpired token', async () => {
+    const future = Date.now() + 3_600_000;
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse(500, {}))
     );
-    const report = await gatherStatus(auth, 'dev.agentage.io');
-    expect(report.auth.signedIn).toBe(false);
-    expect(report.auth.note).toContain('could not verify session');
+    const report = await gatherStatus(
+      { ...auth, tokens: { ...auth.tokens, expiresAt: future } },
+      'dev.agentage.io'
+    );
+    // An unexpired token + a get-session blip stays a clean signed-in (exit 0), never "expired".
+    expect(report.auth.signedIn).toBe(true);
+    expect(report.auth.note ?? '').not.toContain('expired');
+  });
+
+  it('does not report expired when a refresh blips transiently on an expired token', async () => {
+    // Stored token past expiry -> proactive refresh returns 429 (transient), never invalid_grant.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) =>
+        Promise.resolve(
+          String(url).includes('/token') ? jsonResponse(429, {}) : jsonResponse(200, null)
+        )
+      )
+    );
+    const report = await gatherStatus(
+      { ...auth, tokens: { ...auth.tokens, expiresAt: Date.now() - 1000 } },
+      'dev.agentage.io'
+    );
+    expect(report.auth.transient).toBe(true);
+    expect(report.auth.note).not.toContain('expired');
   });
 
   it('reports the daemon as stopped when no pidfile is present', async () => {
