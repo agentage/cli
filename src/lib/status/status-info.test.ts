@@ -89,6 +89,16 @@ describe('gatherStatus', () => {
     expect(report.auth).toEqual({ signedIn: true, tokenExpiresAt: '2026-06-12T20:00:00Z' });
   });
 
+  it('flags pat auth when the credential is a personal access token', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: 'x' }))
+    );
+    const patAuth: AuthState = { ...auth, kind: 'pat', tokens: { accessToken: 'aga_x' } };
+    const report = await gatherStatus(patAuth, 'dev.agentage.io');
+    expect(report.auth).toEqual({ signedIn: true, tokenExpiresAt: 'x', pat: true });
+  });
+
   it('refreshes on a 200 + null session and reports signed-in', async () => {
     vi.stubGlobal(
       'fetch',

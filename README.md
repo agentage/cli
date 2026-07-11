@@ -73,6 +73,20 @@ Prefer to host it yourself? You can point a memory at your own git remote instea
 `agentage vault add <name> --git <remote>` - see [`docs/reference.md`](docs/reference.md)
 for details.
 
+## Token auth (CI / headless)
+
+For CI or non-interactive machines, skip the browser sign-in and authenticate with a
+personal access token. Mint one in the dashboard under **Settings -> API tokens**
+(scopes `memory:read` / `memory:write`), then set it in the environment:
+
+```bash
+export AGENTAGE_TOKEN=aga_...
+agentage status
+```
+
+The token is used as the bearer for memory (MCP) calls; `--token aga_...` works per command
+too. Account-channel provisioning still needs an interactive `agentage setup` session.
+
 ## Going deeper
 
 - [`docs/architecture.md`](docs/architecture.md) - how the CLI, the local helper, your

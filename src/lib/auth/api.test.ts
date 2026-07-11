@@ -8,8 +8,10 @@ import {
   AuthRequiredError,
   currentBearer,
   introspectToken,
+  refreshOrThrow,
   TransientAuthError,
 } from './api.js';
+import { patAuthState } from './credentials.js';
 import { readAuth, type AuthState } from '../fs/config.js';
 import { links } from '../net/origins.js';
 import { VERSION } from '../../utils/version.js';
@@ -374,5 +376,62 @@ describe('introspectToken', () => {
     expect(session.userId).toBe('u2');
     const tokenCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/token'));
     expect(tokenCalls).toHaveLength(1);
+  });
+});
+
+// A PAT-backed credential must ride through the same authed request paths as an OAuth access token
+// (it IS an oauthAccessToken row server-side) - but it carries no refresh token and must never
+// attempt an OAuth refresh.
+describe('PAT-backed AuthState', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agentage-api-'));
+    process.env['AGENTAGE_CONFIG_DIR'] = dir;
+  });
+
+  afterEach(() => {
+    delete process.env['AGENTAGE_CONFIG_DIR'];
+    rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+  });
+
+  const pat = patAuthState('aga_test123', 'dev.agentage.io');
+
+  it('sends the PAT as the Bearer on an authed GET', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    await authedGet(pat, target, 'https://memory.dev.agentage.io/mcp/me');
+    expect(fetchMock).toHaveBeenCalledWith('https://memory.dev.agentage.io/mcp/me', {
+      headers: { authorization: 'Bearer aga_test123', ...versionHeaders },
+      redirect: 'manual',
+    });
+  });
+
+  it('sends the PAT as the Bearer on an authed POST', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    await authedPost(pat, target, 'https://memory.dev.agentage.io/mcp', { jsonrpc: '2.0' });
+    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
+    expect(headers['authorization']).toBe('Bearer aga_test123');
+  });
+
+  it('refuses to refresh a PAT (no OAuth refresh grant) with a dashboard-pointing message', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(refreshOrThrow(pat, target)).rejects.toThrow(AuthRequiredError);
+    await expect(refreshOrThrow(pat, target)).rejects.toThrow(/personal access token/);
+    // Never hits the token endpoint - a PAT cannot be refreshed.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not attempt a refresh on a 401 (a PAT is terminal on 401)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(401, {}));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(authedGet(pat, target, 'https://memory.dev.agentage.io/mcp/me')).rejects.toThrow(
+      AuthRequiredError
+    );
+    // Exactly one call (the original) - no /token refresh attempt.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
