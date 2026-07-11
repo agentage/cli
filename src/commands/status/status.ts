@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
-import { readAuth } from '../../lib/fs/config.js';
+import { resolveAuth } from '../../lib/auth/credentials.js';
 import { siteFqdn } from '../../lib/net/origins.js';
 import { formatUptime } from '../../lib/status/format.js';
 import {
@@ -24,10 +24,11 @@ const authLine = (auth: StatusReport['auth']): string => {
   // Env mismatch: the credential is valid but for another target - neutral `!`, not the expired ✗.
   if (auth.mismatch)
     return `${chalk.yellow('!')} ${auth.note ?? 'signed in to another environment'}`;
+  const via = auth.pat ? ' via token' : '';
   if (!auth.signedIn) return `${mark(false)} ${auth.note ?? 'not signed in'}`;
   // Transient: we hold a valid-looking token but could not re-verify - a non-terminal `~`, never ✗.
-  if (auth.transient) return `${chalk.yellow('~')} ${auth.note ?? 'signed in'}`;
-  return `${mark(true)} signed in (session active)`;
+  if (auth.transient) return `${chalk.yellow('~')} ${auth.note ?? 'signed in'}${via}`;
+  return `${mark(true)} signed in${via} (session active)`;
 };
 
 const updateLine = (update: UpdateInfo): string => {
@@ -81,8 +82,8 @@ export const printStatus = (report: StatusReport): void => {
   if (report.update.message) console.log(chalk.yellow(`\n${report.update.message}`));
 };
 
-export const runStatus = async (opts: { json?: boolean } = {}): Promise<void> => {
-  const report = await gatherStatus(readAuth(), siteFqdn());
+export const runStatus = async (opts: { json?: boolean; token?: string } = {}): Promise<void> => {
+  const report = await gatherStatus(resolveAuth({ token: opts.token }), siteFqdn());
   if (opts.json) {
     console.log(JSON.stringify(report, null, 2));
     return;
@@ -95,5 +96,9 @@ export const registerStatus = (program: Command): void => {
     .command('status')
     .description('Show CLI, account, and endpoint status')
     .option('--json', 'machine-readable output')
+    .option(
+      '--token <token>',
+      'authenticate with a personal access token (aga_...); or set AGENTAGE_TOKEN'
+    )
     .action(runStatus);
 };

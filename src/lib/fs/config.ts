@@ -23,6 +23,9 @@ export interface AuthState {
   clientId: string;
   tokens: StoredTokens;
   user?: { id: string; email: string };
+  // 'pat' marks a credential synthesized from a personal access token (AGENTAGE_TOKEN / --token):
+  // it is never persisted, carries no refresh token, and must not attempt an OAuth refresh.
+  kind?: 'pat';
 }
 
 export const getConfigDir = (): string =>

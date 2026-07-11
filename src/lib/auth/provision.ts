@@ -51,6 +51,18 @@ export const provisionAccountVault = async (
       message: registeredLocally(name, ' - run `agentage setup` to sync.'),
     };
   }
+  // A PAT is an MCP-surface credential; the backend REST provisioning endpoint rejects plain
+  // bearers (only session cookies), so it cannot provision an account channel. Fail clearly.
+  if (auth.kind === 'pat') {
+    return {
+      status: 'unauthenticated',
+      message: registeredLocally(
+        name,
+        ' - account-channel provisioning needs an interactive session (run `agentage setup`); ' +
+          'a personal access token only authorizes memory (MCP) calls.'
+      ),
+    };
+  }
 
   const links = deps.links();
   let res: Response;

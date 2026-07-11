@@ -13,6 +13,10 @@ const cliHeaders = (): Record<string, string> => requestHeaders({ component: 'cl
 // throws: AuthRequiredError when the grant is dead (401/invalid_grant/invalid_client), else
 // TransientAuthError (429/5xx/network/timeout) - a blip that must not be read as a dead session.
 export const refreshOrThrow = async (auth: AuthState, links: Links): Promise<void> => {
+  if (auth.kind === 'pat')
+    throw new AuthRequiredError(
+      'personal access token expired or revoked - mint a new one in the dashboard (Settings -> API tokens)'
+    );
   if (!auth.tokens.refreshToken) throw new AuthRequiredError('no refresh token');
   let fresh;
   try {

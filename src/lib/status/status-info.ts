@@ -39,6 +39,9 @@ export interface StatusReport {
     tokenExpiresAt?: string;
     note?: string;
     transient?: boolean;
+    // Set when authenticated via a personal access token (AGENTAGE_TOKEN / --token) rather than a
+    // stored OAuth session, so the printer can label the line.
+    pat?: boolean;
     // Set when the stored credential's env differs from the current target: signedIn is false and the
     // printer renders a neutral "signed in to X - CLI targets Y" line, never "session expired".
     mismatch?: AuthEnvMismatch;
@@ -157,11 +160,13 @@ export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promis
     report.auth = mismatchAuth(mismatch);
     return report;
   }
+  // Only carry `pat: true`; omit it for OAuth so existing exact-match reports stay unchanged.
+  const patFlag = auth.kind === 'pat' ? { pat: true } : {};
   try {
     const session = await introspectToken(auth, target);
-    report.auth = { signedIn: true, tokenExpiresAt: session.expiresAt };
+    report.auth = { signedIn: true, tokenExpiresAt: session.expiresAt, ...patFlag };
   } catch (err) {
-    report.auth = classifyAuthError(err);
+    report.auth = { ...classifyAuthError(err), ...patFlag };
   }
   return report;
 };

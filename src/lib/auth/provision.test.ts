@@ -92,6 +92,16 @@ describe('provisionAccountVault', () => {
     expect(post).not.toHaveBeenCalled();
   });
 
+  it('PAT credential -> unauthenticated without any network call (MCP-only, no REST provision)', async () => {
+    const post = vi.fn(async () => jsonResponse(201));
+    const patAuth: AuthState = { ...auth, kind: 'pat', tokens: { accessToken: 'aga_x' } };
+    const { deps } = makeDeps({ readAuth: () => patAuth, post });
+    const res = await provisionAccountVault('acct', deps);
+    expect(res.status).toBe('unauthenticated');
+    expect(res.message).toContain('personal access token only authorizes memory');
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it('network failure -> offline, kept locally, will provision when online', async () => {
     const post = vi.fn(async () => {
       throw new Error('ECONNREFUSED');
