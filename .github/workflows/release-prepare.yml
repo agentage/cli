@@ -98,6 +98,8 @@ jobs:
         id: changelog
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Optional Anthropic-compatible endpoint override (e.g. Azure); SDK reads it natively.
+          ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
         run: |
           CHANGELOG=$(node scripts/generate-changelog.js ${{ steps.bump.outputs.new_version }})
           echo "$CHANGELOG" > changelog-content.md
