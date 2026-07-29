@@ -1,0 +1,227 @@
+name: Release Train
+
+# Fully automated Friday MINOR release of @agentage/cli to npm. No human step on
+# the happy path. Weekly cadence, always a minor bump.
+#
+# Level 2 in the @agentage dependency chain: this repo depends on
+# @agentage/memory-core AND @agentage/server-memory, which release earlier the
+# same evening (20:00 / 21:00 Prague). This train runs at 22:00 Prague so it picks
+# up their freshly published versions. Both scheduled crons fire (one per DST
+# offset); the prague-gate job proceeds only when the local hour is 22.
+#
+# GITHUB_TOKEN caveats handled here: its branch pushes don't fire pr-validation on
+# the release PR (the in-workflow `npm run verify` is the CI gate), and its merges
+# don't fire publish.yml's push trigger - so after merging, this workflow
+# dispatches publish.yml explicitly.
+on:
+  schedule:
+    # Friday 22:00 Europe/Prague across both DST offsets; the gate job filters.
+    - cron: '0 20 * * 5'
+    - cron: '0 21 * * 5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  prague-gate:
+    name: Friday 22:00 Prague gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.gate.outputs.go }}
+    steps:
+      - name: Check local Prague hour (DST-proof)
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "workflow_dispatch - bypassing hour gate."
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          HOUR=$(TZ=Europe/Prague date +%H)
+          if [ "$HOUR" = "22" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Prague hour is $HOUR, not 22 - wrong DST cron slot, skipping."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  dependabot-quiescence:
+    name: Wait for dependabot triage to finish
+    needs: prague-gate
+    if: needs.prague-gate.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Wait until this repo has no fresh open dependabot PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Dependabot merging is owned by the org triage automation; this job only
+          # delays the train while that agent may still be working. PRs still open
+          # after the wait were deliberately left by triage - the train departs
+          # without them.
+          for i in $(seq 1 45); do
+            OPEN=$(gh pr list -R "$REPO" --author "app/dependabot" --state open --json number --jq 'length')
+            [ "$OPEN" = "0" ] && { echo "No open dependabot PRs - proceeding."; exit 0; }
+            echo "poll $i: $OPEN open dependabot PR(s), waiting for triage..."
+            sleep 60
+          done
+          echo "Dependabot PR(s) still open after wait - releasing without them." | tee -a "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Cut minor release
+    needs: [prague-gate, dependabot-quiescence]
+    if: needs.prague-gate.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Skip if an open release PR exists
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh pr list --state open --json headRefName \
+            --jq '[.[] | select(.headRefName | startswith("release/"))] | length')
+          if [ "$EXISTING" != "0" ]; then
+            echo "Open release PR already exists - a previous train is stuck. Skipping." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump internal @agentage/* dependencies to latest
+        id: deps
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          # L2 upgrade: pull in memory-core + server-memory versions released
+          # earlier tonight. A dep change alone justifies the weekly release.
+          npx --yes npm-check-updates -u --dep prod,dev --filter "@agentage/*"
+          npm install
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No @agentage/* dependency changes."
+            echo "deps_changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Internal dependencies bumped."
+            git --no-pager diff -- package.json | grep -E '@agentage/' || true
+            echo "deps_changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect releasable commits since the last tag
+        id: detect
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          # Anchor on the CURRENT release line: the repo carries stale v0.24.x
+          # tags from the pre-reboot CLI that sort above the live 0.x line, so
+          # semver-max would flag every week as releasable forever. Prefer the
+          # tag of the current package.json version; fall back to the nearest
+          # ancestor tag.
+          PKG_TAG="v$(node -p "require('./package.json').version")"
+          if git rev-parse -q --verify "refs/tags/${PKG_TAG}" >/dev/null; then
+            LAST_TAG="$PKG_TAG"
+          else
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          fi
+          RANGE=""; [ -n "$LAST_TAG" ] && RANGE="${LAST_TAG}..HEAD"
+          echo "Last tag: ${LAST_TAG:-none}"
+          SUBJECTS=$(git log $RANGE --no-merges --pretty=%s)
+          # Releasable = anything except docs/ci/plain-chore; chore(deps) counts
+          # (dependabot bundles ship weekly), chore(release) does not.
+          RELEASABLE=$(printf '%s\n' "$SUBJECTS" \
+            | grep -vE '^(docs|ci)(\([^)]*\))?!?:' \
+            | grep -vE '^chore(\([^)]*\))?!?:' || true)
+          DEPS=$(printf '%s\n' "$SUBJECTS" | grep -E '^chore\(deps' || true)
+          COUNT=$(printf '%s\n%s\n' "$RELEASABLE" "$DEPS" | grep -c . || true)
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No releasable commits since ${LAST_TAG:-repo start}."
+            echo "commits=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found $COUNT releasable commit(s)."
+            echo "commits=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Decide whether to release
+        id: decide
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          if [ "${{ steps.deps.outputs.deps_changed }}" = "true" ] || [ "${{ steps.detect.outputs.commits }}" = "true" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Neither dep changes nor releasable commits - no release this week." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump minor version
+        id: bump
+        if: steps.decide.outputs.release == 'true'
+        run: |
+          set -euo pipefail
+          OUT=$(node scripts/bump-version.js minor)
+          echo "$OUT"
+          NEW=$(echo "$OUT" | grep "NEW_VERSION=" | cut -d= -f2)
+          npm install --package-lock-only
+          echo "New version: $NEW"
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Verify
+        if: steps.bump.outputs.version
+        run: npm run verify
+
+      - name: Create + auto-merge release PR
+        id: pr
+        if: steps.bump.outputs.version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.bump.outputs.version }}"
+          BRANCH="release/${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add package.json package-lock.json
+          git commit -m "chore(release): ${VERSION}"
+          git push origin "$BRANCH"
+          PR_URL=$(gh pr create --base master --head "$BRANCH" \
+            --title "chore(release): ${VERSION}" \
+            --body "Weekly minor release train. Version ${VERSION} of @agentage/cli. Publish happens via publish.yml after merge.")
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+          sleep 5
+          # A GITHUB_TOKEN-created PR fires no PR checks, so --auto is rejected with
+          # "clean status" - fall back to an immediate squash merge.
+          if ! OUT=$(gh pr merge "$PR_URL" --auto --squash 2>&1); then
+            echo "$OUT"
+            echo "$OUT" | grep -q "clean status" && gh pr merge "$PR_URL" --squash || exit 1
+          fi
+
+      - name: Dispatch publish workflow
+        if: steps.pr.outputs.pr_url
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # A GITHUB_TOKEN merge never fires publish.yml's push trigger, so dispatch
+          # it explicitly. Its dispatch path re-verifies, skips if the version is
+          # already on npm, then publishes + tags.
+          gh workflow run publish.yml --ref master --repo "${{ github.repository }}"
+          echo "Released ${{ steps.bump.outputs.version }} - publish.yml dispatched." >> "$GITHUB_STEP_SUMMARY"
