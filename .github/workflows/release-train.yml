@@ -132,7 +132,17 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          LAST_TAG=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1)
+          # Anchor on the CURRENT release line: the repo carries stale v0.24.x
+          # tags from the pre-reboot CLI that sort above the live 0.x line, so
+          # semver-max would flag every week as releasable forever. Prefer the
+          # tag of the current package.json version; fall back to the nearest
+          # ancestor tag.
+          PKG_TAG="v$(node -p "require('./package.json').version")"
+          if git rev-parse -q --verify "refs/tags/${PKG_TAG}" >/dev/null; then
+            LAST_TAG="$PKG_TAG"
+          else
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          fi
           RANGE=""; [ -n "$LAST_TAG" ] && RANGE="${LAST_TAG}..HEAD"
           echo "Last tag: ${LAST_TAG:-none}"
           SUBJECTS=$(git log $RANGE --no-merges --pretty=%s)
