@@ -5,9 +5,10 @@ name: Release Train
 #
 # Level 2 in the @agentage dependency chain: this repo depends on
 # @agentage/memory-core AND @agentage/server-memory, which release earlier the
-# same evening (20:00 / 21:00 Prague). This train runs at 22:00 Prague so it picks
-# up their freshly published versions. Both scheduled crons fire (one per DST
-# offset); the prague-gate job proceeds only when the local hour is 22.
+# same evening. L0 runs 19:00 UTC, L1 runs 20:00 UTC, this L2 train runs 21:00
+# UTC so it picks up their freshly published versions. Single plain UTC cron -
+# no Prague/DST gate: if GitHub fires the cron late, the train simply departs
+# late instead of being gated away.
 #
 # GITHUB_TOKEN caveats handled here: its branch pushes don't fire pr-validation on
 # the release PR (the in-workflow `npm run verify` is the CI gate), and its merges
@@ -15,8 +16,6 @@ name: Release Train
 # dispatches publish.yml explicitly.
 on:
   schedule:
-    # Friday 22:00 Europe/Prague across both DST offsets; the gate job filters.
-    - cron: '0 20 * * 5'
     - cron: '0 21 * * 5'
   workflow_dispatch:
 
@@ -26,33 +25,8 @@ permissions:
   actions: write
 
 jobs:
-  prague-gate:
-    name: Friday 22:00 Prague gate
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      go: ${{ steps.gate.outputs.go }}
-    steps:
-      - name: Check local Prague hour (DST-proof)
-        id: gate
-        run: |
-          if [ "${{ github.event_name }}" != "schedule" ]; then
-            echo "workflow_dispatch - bypassing hour gate."
-            echo "go=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          HOUR=$(TZ=Europe/Prague date +%H)
-          if [ "$HOUR" = "22" ]; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Prague hour is $HOUR, not 22 - wrong DST cron slot, skipping."
-            echo "go=false" >> "$GITHUB_OUTPUT"
-          fi
-
   dependabot-quiescence:
     name: Wait for dependabot triage to finish
-    needs: prague-gate
-    if: needs.prague-gate.outputs.go == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     steps:
@@ -76,8 +50,7 @@ jobs:
 
   release:
     name: Cut minor release
-    needs: [prague-gate, dependabot-quiescence]
-    if: needs.prague-gate.outputs.go == 'true'
+    needs: dependabot-quiescence
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
