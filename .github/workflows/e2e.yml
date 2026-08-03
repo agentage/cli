@@ -1,10 +1,11 @@
 # E2E - builds the CLI and runs ./e2e against the built dist/cli.js. Two tiers:
 #  - e2e-offline: the @offline-tagged tests only. Self-contained (temp bare
-#    remotes, no live stack), so this is the fast required signal even when
-#    dev.agentage.io is down. No live-stack env or secrets.
-#  - e2e-live: the full suite against a live deployed stack (default dev).
+#    remotes, no live stack), so this is the required signal on every PR/push.
+#    No live-stack env or secrets.
+#  - e2e-live: the full suite against a live deployed stack. Manual dispatch
+#    only - the dev stack was decommissioned, so there is no default target.
 #    Self-contained @p0 OAuth: when E2E_AUTH_* secrets are absent it signs up a
-#    throwaway account (open signup on dev). No browser binaries needed.
+#    throwaway account (open signup on the target). No browser binaries needed.
 name: E2E
 
 on:
@@ -16,7 +17,7 @@ on:
     inputs:
       target:
         description: 'Target site FQDN'
-        default: 'dev.agentage.io'
+        required: true
 
 jobs:
   e2e-offline:
@@ -51,7 +52,8 @@ jobs:
           retention-days: 7
 
   e2e-live:
-    name: 🧪 E2E vs ${{ inputs.target || 'dev.agentage.io' }}
+    name: 🧪 E2E vs ${{ inputs.target }}
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -73,7 +75,7 @@ jobs:
       - name: 🧪 Run e2e
         run: npm run test:e2e
         env:
-          AGENTAGE_SITE_FQDN: ${{ inputs.target || 'dev.agentage.io' }}
+          AGENTAGE_SITE_FQDN: ${{ inputs.target }}
           E2E_AUTH_EMAIL: ${{ secrets.E2E_AUTH_EMAIL }}
           E2E_AUTH_PASSWORD: ${{ secrets.E2E_AUTH_PASSWORD }}
 
