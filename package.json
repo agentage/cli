@@ -1,6 +1,6 @@
 {
   "name": "@agentage/cli",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "The agentage CLI - connect this machine to agentage from the terminal",
   "type": "module",
   "main": "./dist/index.js",
@@ -40,8 +40,8 @@
     "prepublishOnly": "npm run verify"
   },
   "dependencies": {
-    "@agentage/memory-core": "^0.3.2",
-    "@agentage/server-memory": "^0.1.0",
+    "@agentage/memory-core": "^0.4.0",
+    "@agentage/server-memory": "^0.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "chalk": "^6.0.0",
     "commander": "^15.0.0",
