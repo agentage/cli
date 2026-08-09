@@ -176,3 +176,8 @@ export const ensureSession = async (
   }
   expect(false, `ensureSession failed after retries (last status ${last})`).toBe(true);
 };
+
+// Chalk colours whenever it detects a colour-capable environment (CI included), so any
+// assertion that straddles a style boundary must compare against the plain text.
+const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
+export const plain = (s: string): string => s.replace(ANSI, '');

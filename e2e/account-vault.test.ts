@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { assertCliBuilt, createCliMachine, statusJson } from './helpers.js';
+import { assertCliBuilt, createCliMachine, plain, statusJson } from './helpers.js';
 
 // Account vaults are offline-first: a no-flag `vault add` writes the local entry and folder with
 // zero network, creating the account-side memory only when signed in. They have no sync channel,
@@ -105,10 +105,10 @@ test.describe('account vault (offline) @p0 @offline', () => {
       // An account vault has no sync channel: say so, never a crash (exit 0), never a success line.
       const sync = await m.exec(['vault', 'sync', 'acct']);
       expect(sync.code, sync.stderr).toBe(0);
-      expect(sync.stdout).toContain('acct (account): not synced');
-      expect(sync.stdout).toContain('account vaults have no sync channel');
-      expect(sync.stdout).not.toContain('up to date');
-      expect(sync.stdout).not.toContain('Syncing');
+      const out = plain(sync.stdout);
+      expect(out).toContain('acct (account): not synced - account vaults have no sync channel');
+      expect(out).not.toContain('up to date');
+      expect(out).not.toContain('Syncing');
     } finally {
       m.cleanup();
     }
@@ -128,8 +128,8 @@ test.describe('account vault (offline) @p0 @offline', () => {
 
       const human = await m.exec(['status']);
       expect(human.code, human.stderr).toBe(0);
-      expect(human.stdout).toContain('not synced - account vaults have no sync channel');
-      expect(human.stdout).not.toContain('connected');
+      expect(plain(human.stdout)).toContain('not synced - account vaults have no sync channel');
+      expect(plain(human.stdout)).not.toContain('connected');
     } finally {
       m.cleanup();
     }
