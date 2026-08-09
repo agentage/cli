@@ -6,7 +6,6 @@ import {
   authedGet,
   authedPost,
   AuthRequiredError,
-  currentBearer,
   introspectToken,
   refreshOrThrow,
   TransientAuthError,
@@ -140,7 +139,6 @@ describe('authedPost', () => {
     vi.stubGlobal('fetch', fetchMock);
     const res = await authedPost(makeAuth(), target, 'https://x.example/api/memories', {
       name: 'acct',
-      channel: 'couch',
     });
     expect(res.status).toBe(201);
     expect(fetchMock).toHaveBeenCalledWith('https://x.example/api/memories', {
@@ -150,7 +148,7 @@ describe('authedPost', () => {
         'content-type': 'application/json',
         ...versionHeaders,
       },
-      body: JSON.stringify({ name: 'acct', channel: 'couch' }),
+      body: JSON.stringify({ name: 'acct' }),
       redirect: 'manual',
     });
   });
@@ -176,77 +174,6 @@ describe('authedPost', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(403, { error: { code: 'X' } })));
     const res = await authedPost(makeAuth(), target, 'https://x.example/api/memories', {});
     expect(res.status).toBe(403);
-  });
-});
-
-describe('currentBearer', () => {
-  let dir: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'agentage-api-'));
-    process.env['AGENTAGE_CONFIG_DIR'] = dir;
-  });
-
-  afterEach(() => {
-    delete process.env['AGENTAGE_CONFIG_DIR'];
-    rmSync(dir, { recursive: true, force: true });
-    vi.unstubAllGlobals();
-  });
-
-  it('returns a valid unexpired token as-is, with zero network', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    const auth = makeAuth({ accessToken: 'live-token', expiresAt: Date.now() + 60_000 });
-    const bearer = await currentBearer(() => auth, target);
-    expect(bearer).toBe('live-token');
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('refreshes exactly once on an expired token, returns and persists the new bearer', async () => {
-    const fetchMock = vi.fn((url: string) =>
-      Promise.resolve(
-        String(url).includes('/token')
-          ? jsonResponse(200, {
-              access_token: 'fresh-token',
-              refresh_token: 'rt2',
-              expires_in: 3600,
-            })
-          : jsonResponse(500, {})
-      )
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    const auth = makeAuth({ accessToken: 'stale-token', expiresAt: Date.now() - 1000 });
-    const bearer = await currentBearer(() => auth, target);
-    expect(bearer).toBe('fresh-token');
-    const tokenCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('/token'));
-    expect(tokenCalls).toHaveLength(1);
-    expect(readAuth()?.tokens.accessToken).toBe('fresh-token');
-  });
-
-  it('returns null (never throws) when the refresh fails', async () => {
-    const fetchMock = vi.fn((url: string) =>
-      Promise.resolve(
-        String(url).includes('/token') ? jsonResponse(400, {}) : jsonResponse(200, {})
-      )
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    const auth = makeAuth({ accessToken: 'stale-token', expiresAt: Date.now() - 1000 });
-    await expect(currentBearer(() => auth, target)).resolves.toBeNull();
-  });
-
-  it('returns null with no refresh attempt when an expired token has no refresh token', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    const auth = makeAuth({ expiresAt: Date.now() - 1000, refreshToken: undefined });
-    await expect(currentBearer(() => auth, target)).resolves.toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it('returns null when signed out (no stored access token)', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    await expect(currentBearer(() => null, target)).resolves.toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

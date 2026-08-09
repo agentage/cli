@@ -10,7 +10,7 @@ export const DEFAULT_INTERVAL_SECONDS = 300;
 // the defaults, and an empty array syncs everything.
 export const DEFAULT_IGNORE: readonly string[] = ['.obsidian/', 'data.json'];
 
-// The reserved cloud channel is never synced over external git (that path is out of scope here).
+// The reserved account remote is a sentinel, not a URL: never synced over external git.
 const RESERVED_REMOTE = 'agentage';
 
 export interface SyncTarget {
@@ -31,8 +31,8 @@ export const intervalMs = (seconds: number): number => Math.max(0, Math.floor(se
 const remoteNameFor = (index: number): string => (index === 0 ? 'sync' : `sync-${index}`);
 
 // Flatten (vault, origin) pairs into sync targets. A target needs a local `path` (the working
-// copy to commit/push from) AND an external origin; origin-only entries (cloud remote backends)
-// and the reserved cloud channel are skipped.
+// copy to commit/push from) AND an external origin; origin-only entries (remote backends) and the
+// reserved account remote are skipped.
 export const syncTargets = (config: VaultsConfig): SyncTarget[] => {
   const out: SyncTarget[] = [];
   for (const [vault, entry] of Object.entries(config.vaults ?? {})) {

@@ -154,13 +154,25 @@ describe('printStatus', () => {
       ...baseReport,
       daemon: { running: true, port: 4243, mcp: true },
       vaults: [
-        { name: 'notes', channel: 'cloud', status: 'ok', lastRun: '2026-07-08T18:40:00Z' },
+        { name: 'notes', channel: 'git', status: 'ok', lastRun: '2026-07-08T18:40:00Z' },
         { name: 'work', channel: 'git', status: 'error', lastError: 'auth failed\ndetail' },
       ],
     });
     expect(out).toMatch(/vaults\s+2 connected/);
-    expect(out).toMatch(/notes\s+cloud\s+\S+ last ok/);
+    expect(out).toMatch(/notes\s+git\s+\S+ last ok/);
     expect(out).toMatch(/work\s+git\s+\S+ error \(auth failed\)/);
+  });
+
+  it('renders an account vault as not synced, and never counts it as connected', () => {
+    const out = captureLines({
+      ...baseReport,
+      daemon: { running: true, port: 4243, mcp: true },
+      vaults: [{ name: 'notes', channel: 'account', status: 'unsynced' }],
+    });
+    expect(out).toMatch(/notes\s+account\s+\S+ not synced - account vaults have no sync channel/);
+    expect(out).not.toContain('connected');
+    const vaultRow = out.split('\n').find((l) => l.includes('notes'))!;
+    expect(vaultRow).not.toMatch(/up to date|last ok|syncing/);
   });
 
   it('renders a syncing vault while a cycle is in flight', () => {
@@ -197,9 +209,9 @@ describe('printStatus', () => {
     const out = captureLines({
       ...baseReport,
       daemon: { running: false, port: 4243 },
-      vaults: [{ name: 'notes', channel: 'cloud', status: 'unknown' }],
+      vaults: [{ name: 'notes', channel: 'git', status: 'unknown' }],
     });
-    expect(out).toMatch(/notes\s+cloud\s+.*unknown \(daemon stopped\)/);
+    expect(out).toMatch(/notes\s+git\s+.*unknown \(daemon stopped\)/);
   });
 
   it('prints an actionable hint when there are zero vaults', () => {

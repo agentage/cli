@@ -2,9 +2,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type MemoryClient } from '../lib/memory/memory-client.js';
 import { type SyncResult } from '../sync/git/cycle.js';
-import { type CouchSyncResult } from '../sync/couch/manager.js';
 import { type SyncStatus } from '../sync/git/manager.js';
-import { dispatchMemory, isMemoryVerb, type MemoryVerb } from './actions.js';
+import { dispatchMemory, isMemoryVerb } from './actions.js';
 import { isAllowedHost, isAllowedOrigin, loopbackHosts } from './guards.js';
 import { handleMcp } from './mcp-http.js';
 
@@ -13,8 +12,7 @@ const AUTH_HEADER = 'x-agentage-token';
 
 export interface DaemonSyncApi {
   status: () => SyncStatus;
-  // A git vault yields a SyncResult, an account vault a CouchSyncResult - the caller branches.
-  runNow: (vault: string) => Promise<SyncResult | CouchSyncResult>;
+  runNow: (vault: string) => Promise<SyncResult>;
 }
 
 export interface DaemonServerOptions {
@@ -23,9 +21,6 @@ export interface DaemonServerOptions {
   buildMcpServer?: () => Promise<McpServer>;
   // The git-sync surface: GET /api/sync/status + POST /api/sync/run; omit to leave both unmounted.
   sync?: DaemonSyncApi;
-  // Fired after a successful write/edit/delete so the account channel can push-on-save. Never
-  // awaited: a couch failure must not affect the memory API response.
-  onMutation?: (verb: MemoryVerb, body: unknown) => void;
   // Per-daemon secret required on X-Agentage-Token for every /api/* call except /api/health.
   authToken: string;
   version: string;
@@ -127,7 +122,6 @@ export const createDaemonServer = (opts: DaemonServerOptions): DaemonServer => {
         const body = await readBody(req);
         const result = await dispatchMemory(await opts.getClient(), verb, body);
         served += 1;
-        opts.onMutation?.(verb, body); // fire-and-forget account push-on-save
         return send(res, 200, result);
       } catch (err) {
         return send(res, 400, { error: err instanceof Error ? err.message : String(err) });

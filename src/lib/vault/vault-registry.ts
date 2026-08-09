@@ -11,13 +11,12 @@ import { redactRemoteUrl } from '../../sync/git/remote-url.js';
 import { isValidVaultName } from './vaults.schema.js';
 
 // Offline registry operations over the unified vaults.json (object map keyed by name). No
-// network here: account (agentage channel), local (--local) and git-origin (--git) entries.
+// network here: account (agentage origin), local (--local) and git-origin (--git) entries.
 
 export type VaultType = 'account' | 'git' | 'local' | 'remote';
 
-// The human-facing type of an entry: an agentage origin is an account vault (local mirror +
-// cloud channel); otherwise a path with an external origin is git, a bare path is local, and an
-// origin without a path is remote.
+// The human-facing type of an entry: an agentage origin is an account vault; otherwise a path with
+// an external origin is git, a bare path is local, and an origin without a path is remote.
 export const vaultType = (entry: VaultEntry): VaultType => {
   if (isAccountVault(entry)) return 'account';
   if (entry.path) return entry.origin?.length ? 'git' : 'local';

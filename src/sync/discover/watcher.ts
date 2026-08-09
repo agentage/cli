@@ -120,7 +120,7 @@ export const createDiscoverWatcher = (deps: DiscoverWatcherDeps = {}): DiscoverW
     if (added.length === 0) return [];
     for (const c of added) {
       log(`discovered account vault '${c.name}' -> ${c.entry.path}`);
-      void provision(c.name).catch(() => {}); // never fatal: the couch loop re-provisions
+      void provision(c.name).catch(() => {}); // never fatal: the next scan re-provisions
     }
     return added;
   };

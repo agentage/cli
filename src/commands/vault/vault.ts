@@ -59,7 +59,8 @@ const buildEntry = (name: string, opts: VaultAddOptions): VaultEntry => {
     const path = typeof opts.local === 'string' ? opts.local : `~/vaults/${name}`;
     return { path, mcp: ['local'] };
   }
-  // No --local/--git: an account vault - a local mirror synced to the account (agentage) channel.
+  // No --local/--git: an account vault - a local folder plus a memory in your account; this CLI
+  // has no channel that syncs the two.
   return { path: opts.path ?? `~/vaults/${name}`, origin: [{ remote: 'agentage' }] };
 };
 
@@ -167,7 +168,7 @@ export const registerVault = (program: Command): void => {
 
   vault
     .command('sync [name]')
-    .description('Sync vaults now (git commit/push/pull, or the account channel)')
+    .description('Sync vaults now (git commit/push/pull)')
     .action((name: string | undefined) =>
       runVaultSync(name, defaultVaultSyncDeps()).catch((err: unknown) => {
         console.error(chalk.red(err instanceof Error ? err.message : String(err)));

@@ -66,21 +66,20 @@ const checkSite = async (siteUrl: string, headers: Record<string, string>): Prom
   return res !== null;
 };
 
-// Fold the git + couch per-vault states into one summary: any error wins, then any in-flight
-// run, else ok. lastRun is the freshest reported; lastError the first seen.
+// Fold the per-vault git states into one summary: any error wins, then any in-flight run, else ok.
+// lastRun is the freshest reported; lastError the first seen. Account vaults are absent by design -
+// they have no sync channel, so they are never counted as synced here (the vaults block names them).
 const summarizeSync = (sync: SyncStatus): DaemonSyncSummary => {
   const git = Array.isArray(sync.vaults) ? sync.vaults : [];
-  const couch = Array.isArray(sync.couch) ? sync.couch : [];
-  const vaults = git.length + couch.length;
-  const error =
-    git.find((v) => v.lastError)?.lastError ?? couch.find((v) => v.lastError)?.lastError;
-  const running = git.some((v) => v.running) || couch.some((v) => v.running);
+  const error = git.find((v) => v.lastError)?.lastError;
+  const running = git.some((v) => v.running);
   const state: DaemonSyncSummary['state'] = error ? 'error' : running ? 'syncing' : 'ok';
-  const runs = [...git.map((v) => v.lastRun), ...couch.map((v) => v.lastSync)].filter(
-    (r): r is string => Boolean(r)
-  );
-  const lastRun = runs.sort().at(-1);
-  return { vaults, state, lastRun, lastError: error };
+  const lastRun = git
+    .map((v) => v.lastRun)
+    .filter((r): r is string => Boolean(r))
+    .sort()
+    .at(-1);
+  return { vaults: git.length, state, lastRun, lastError: error };
 };
 
 // One detection routine shared with `daemon start`: a health 200 (any shape, even a legacy 0.0.3

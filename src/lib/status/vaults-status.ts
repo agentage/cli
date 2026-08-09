@@ -2,8 +2,8 @@ import { isAccountVault, type VaultEntry, type VaultsConfig } from '@agentage/me
 import { loadVaultsConfig } from '../vault/vaults.js';
 import { type SyncStatus } from '../../sync/git/manager.js';
 
-export type VaultChannel = 'local' | 'git' | 'cloud';
-export type VaultSyncState = 'ok' | 'syncing' | 'error' | 'idle' | 'unknown';
+export type VaultChannel = 'local' | 'git' | 'account';
+export type VaultSyncState = 'ok' | 'syncing' | 'error' | 'idle' | 'unknown' | 'unsynced';
 
 export interface VaultStatus {
   name: string;
@@ -13,23 +13,25 @@ export interface VaultStatus {
   lastError?: string;
 }
 
-// Config alone decides the channel: an `agentage` origin is the cloud (couch) channel, any other
-// origin is an external git remote, and no origin at all is a local-only vault (nothing to sync).
+// Config alone decides the channel: an external remote means git (it really syncs), else an
+// `agentage` origin means account, else local-only. External wins so a hand-edited entry carrying
+// both is reported by the channel that actually moves bytes.
 const channelOf = (entry: VaultEntry): VaultChannel => {
-  if (isAccountVault(entry)) return 'cloud';
-  return entry.origin?.some((o) => o.remote.trim() && o.remote.trim() !== 'agentage')
-    ? 'git'
-    : 'local';
+  const external = entry.origin?.some((o) => o.remote.trim() && o.remote.trim() !== 'agentage');
+  if (external) return 'git';
+  return isAccountVault(entry) ? 'account' : 'local';
 };
 
-// Live state from the daemon wins; a local-only vault is `idle` (nothing to sync), and any synced
-// vault with no daemon report is `unknown` (daemon down or the vault not yet scheduled).
+// Live state from the daemon wins; a local-only vault is `idle` (nothing to sync), an account vault
+// is always `unsynced` (it has no sync channel, so no daemon report can make it healthy), and any
+// git vault with no daemon report is `unknown` (daemon down or the vault not yet scheduled).
 const stateFrom = (
   channel: VaultChannel,
   live: { running?: boolean; lastError?: string; lastRun?: string } | undefined,
   daemonUp: boolean
 ): VaultSyncState => {
   if (channel === 'local') return 'idle';
+  if (channel === 'account') return 'unsynced';
   if (!daemonUp) return 'unknown';
   if (!live) return 'unknown';
   if (live.lastError) return 'error';
@@ -37,15 +39,13 @@ const stateFrom = (
   return live.lastRun ? 'ok' : 'idle';
 };
 
-// Index the daemon's per-vault reports by name across both channels into one lookup.
+// Index the daemon's per-vault git reports by name.
 const indexLive = (
   sync: SyncStatus | null
 ): Map<string, { running?: boolean; lastError?: string; lastRun?: string }> => {
   const map = new Map<string, { running?: boolean; lastError?: string; lastRun?: string }>();
   for (const v of sync?.vaults ?? [])
     map.set(v.vault, { running: v.running, lastError: v.lastError, lastRun: v.lastRun });
-  for (const c of sync?.couch ?? [])
-    map.set(c.vault, { running: c.running, lastError: c.lastError, lastRun: c.lastSync });
   return map;
 };
 

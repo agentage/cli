@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type VaultsConfig } from '@agentage/memory-core';
 import { type SyncResult } from '../../sync/git/cycle.js';
-import { type CouchSyncResult } from '../../sync/couch/manager.js';
 import { type SyncTarget } from '../../sync/git/planner.js';
-import { runVaultSync, type VaultSyncDeps } from './vault-sync.js';
+import { ACCOUNT_NO_CHANNEL, runVaultSync, type VaultSyncDeps } from './vault-sync.js';
 
 const result = (over: Partial<SyncResult> = {}): SyncResult => ({
   vault: 'v',
@@ -12,16 +11,6 @@ const result = (over: Partial<SyncResult> = {}): SyncResult => ({
   committed: false,
   pushed: true,
   conflicts: [],
-  ...over,
-});
-
-const couchResult = (over: Partial<CouchSyncResult> = {}): CouchSyncResult => ({
-  vault: 'acct',
-  channel: 'couch',
-  ok: true,
-  committed: false,
-  pulled: false,
-  pendingCount: 0,
   ...over,
 });
 
@@ -42,7 +31,6 @@ const makeDeps = (over: Partial<VaultSyncDeps> = {}): { deps: VaultSyncDeps; log
     daemonPort: async () => null,
     runViaDaemon: async () => result(),
     runGitInProcess: async () => result(),
-    runCouchInProcess: async () => couchResult(),
     log: (m) => logs.push(m),
     ...over,
   };
@@ -76,45 +64,49 @@ describe('runVaultSync', () => {
     expect(logs.join()).toContain('No syncable vaults');
   });
 
-  it('runs an account vault in-process over the couch channel', async () => {
-    const runCouchInProcess = vi.fn(async () => couchResult({ committed: true, pulled: true }));
+  it('names an account vault as unsynced instead of reporting success', async () => {
     const runGitInProcess = vi.fn(async (_t: SyncTarget) => result());
+    const runViaDaemon = vi.fn(async () => result());
     const { deps, logs } = makeDeps({
       loadConfig: acctConfig,
       daemonPort: async () => null,
-      runCouchInProcess,
       runGitInProcess,
+      runViaDaemon,
     });
     await runVaultSync('acct', deps);
-    expect(runCouchInProcess).toHaveBeenCalledWith('acct');
     expect(runGitInProcess).not.toHaveBeenCalled();
-    expect(logs.join()).toContain('acct (account): ');
-    expect(logs.join()).toContain('committed');
-    expect(logs.join()).toContain('pulled');
+    expect(runViaDaemon).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toContain(`acct (account): ${ACCOUNT_NO_CHANNEL}`);
+    expect(logs.join('\n')).not.toContain('up to date');
+    expect(logs.join('\n')).not.toContain('Syncing');
   });
 
-  it('renders a paused account vault clearly', async () => {
+  it('reports account vaults even when a reachable daemon could be asked', async () => {
+    const runViaDaemon = vi.fn(async () => result());
     const { deps, logs } = makeDeps({
-      loadConfig: acctConfig,
-      daemonPort: async () => null,
-      runCouchInProcess: async () => couchResult({ paused: 'signed out' }),
-    });
-    await runVaultSync('acct', deps);
-    expect(logs.join()).toContain('paused (signed out)');
-  });
-
-  it('delegates an account vault to the daemon when one is reachable', async () => {
-    const runViaDaemon = vi.fn(async () => couchResult());
-    const runCouchInProcess = vi.fn(async () => couchResult());
-    const { deps } = makeDeps({
       loadConfig: acctConfig,
       daemonPort: async () => 4243,
       runViaDaemon,
-      runCouchInProcess,
     });
-    await runVaultSync('acct', deps);
-    expect(runViaDaemon).toHaveBeenCalledWith(4243, 'acct');
-    expect(runCouchInProcess).not.toHaveBeenCalled();
+    await runVaultSync(undefined, deps);
+    expect(runViaDaemon).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toContain(ACCOUNT_NO_CHANNEL);
+  });
+
+  it('syncs git vaults and still names the account vaults alongside them', async () => {
+    const mixed = (): VaultsConfig => ({
+      version: 1,
+      vaults: {
+        ...gitConfig().vaults,
+        ...acctConfig().vaults,
+      },
+    });
+    const { deps, logs } = makeDeps({ loadConfig: mixed, daemonPort: async () => null });
+    await runVaultSync(undefined, deps);
+    const out = logs.join('\n');
+    expect(out).toContain('Syncing 1 vault(s)...');
+    expect(out).toContain('pushed');
+    expect(out).toContain(`acct (account): ${ACCOUNT_NO_CHANNEL}`);
   });
 
   it('runs a git vault in-process when the daemon is down', async () => {
