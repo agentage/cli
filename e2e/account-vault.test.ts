@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { assertCliBuilt, createCliMachine } from './helpers.js';
+import { assertCliBuilt, createCliMachine, statusJson } from './helpers.js';
 
-// Account vaults (agentage channel) are offline-first: a no-flag `vault add` writes the local
-// entry and mirror dir with zero network, provisioning the cloud channel only when signed in.
+// Account vaults are offline-first: a no-flag `vault add` writes the local entry and folder with
+// zero network, creating the account-side memory only when signed in. They have no sync channel,
+// which `status` and `vault sync` must state outright rather than imply health or stay silent.
 // Egress is blackholed via unroutable proxies to prove the offline path never reaches out. @p0
 const BLACKHOLE = 'http://127.0.0.1:1';
 const OFFLINE = {
@@ -95,17 +96,40 @@ test.describe('account vault (offline) @p0 @offline', () => {
     }
   });
 
-  test('vault sync on an offline, signed-out account vault pauses instead of erroring', async () => {
+  test('vault sync names an account vault as unsynced instead of claiming success', async () => {
     const m = createCliMachine(OFFLINE);
     try {
       const vaultDir = join(m.configDir, 'acct');
       expect((await m.exec(['vault', 'add', 'acct', '--path', vaultDir])).code).toBe(0);
 
-      // Not signed in: the couch cycle pauses with zero network, never a crash (exit 0).
+      // An account vault has no sync channel: say so, never a crash (exit 0), never a success line.
       const sync = await m.exec(['vault', 'sync', 'acct']);
       expect(sync.code, sync.stderr).toBe(0);
-      expect(sync.stdout).toContain('acct (account)');
-      expect(sync.stdout).toContain('paused (signed out)');
+      expect(sync.stdout).toContain('acct (account): not synced');
+      expect(sync.stdout).toContain('account vaults have no sync channel');
+      expect(sync.stdout).not.toContain('up to date');
+      expect(sync.stdout).not.toContain('Syncing');
+    } finally {
+      m.cleanup();
+    }
+  });
+
+  test('status lists an account vault as not synced rather than healthy or hidden', async () => {
+    const m = createCliMachine(OFFLINE);
+    try {
+      const vaultDir = join(m.configDir, 'acct');
+      expect((await m.exec(['vault', 'add', 'acct', '--path', vaultDir])).code).toBe(0);
+
+      const report = await statusJson(m);
+      const acct = report.vaults.find((v) => v.name === 'acct');
+      expect(acct, 'account vault missing from status').toBeDefined();
+      expect(acct!.channel).toBe('account');
+      expect(acct!.status).toBe('unsynced');
+
+      const human = await m.exec(['status']);
+      expect(human.code, human.stderr).toBe(0);
+      expect(human.stdout).toContain('not synced - account vaults have no sync channel');
+      expect(human.stdout).not.toContain('connected');
     } finally {
       m.cleanup();
     }

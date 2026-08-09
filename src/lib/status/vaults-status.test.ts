@@ -8,13 +8,24 @@ const config = (vaults: VaultsConfig['vaults']): VaultsConfig => ({ version: 1, 
 const emptySync: SyncStatus = { vaults: [] };
 
 describe('buildVaultStatuses channel classification', () => {
-  it('classifies an agentage-origin vault as cloud', () => {
+  it('classifies an agentage-origin vault as account', () => {
     const [v] = buildVaultStatuses(
       emptySync,
       true,
       config({ notes: { path: '~/notes', origin: [{ remote: 'agentage' }] } })
     );
-    expect(v?.channel).toBe('cloud');
+    expect(v?.channel).toBe('account');
+  });
+
+  it('classifies an entry carrying both an agentage and an external origin as git', () => {
+    const [v] = buildVaultStatuses(
+      emptySync,
+      true,
+      config({
+        mixed: { path: '~/m', origin: [{ remote: 'agentage' }, { remote: 'https://g/x.git' }] },
+      })
+    );
+    expect(v?.channel).toBe('git');
   });
 
   it('classifies an external-remote vault as git', () => {
@@ -70,28 +81,28 @@ describe('buildVaultStatuses status states', () => {
     expect(buildVaultStatuses(null, false, gitVault)[0]?.status).toBe('unknown');
   });
 
-  it('folds couch-channel state (lastSync) into the cloud vault', () => {
+  const acctVault = config({ notes: { path: '~/n', origin: [{ remote: 'agentage' }] } });
+
+  it('reports an account vault as unsynced with the daemon up', () => {
+    const [v] = buildVaultStatuses(emptySync, true, acctVault);
+    expect(v?.channel).toBe('account');
+    expect(v?.status).toBe('unsynced');
+    expect(v?.lastRun).toBeUndefined();
+  });
+
+  it('never reports an account vault as ok, even if the daemon reports a run for it', () => {
     const sync: SyncStatus = {
-      vaults: [],
-      couch: [
-        {
-          vault: 'notes',
-          channel: 'couch',
-          intervalSeconds: 60,
-          running: false,
-          lastSync: '2026-07-08T18:40:00Z',
-          pendingCount: 0,
-        },
+      vaults: [
+        { vault: 'notes', remote: 'r', intervalSeconds: 60, running: false, lastRun: 'then' },
       ],
     };
-    const [v] = buildVaultStatuses(
-      sync,
-      true,
-      config({ notes: { path: '~/n', origin: [{ remote: 'agentage' }] } })
-    );
-    expect(v?.channel).toBe('cloud');
-    expect(v?.status).toBe('ok');
-    expect(v?.lastRun).toBe('2026-07-08T18:40:00Z');
+    expect(buildVaultStatuses(sync, true, acctVault)[0]?.status).toBe('unsynced');
+  });
+
+  it('lists an account vault rather than omitting it when the daemon is down', () => {
+    const [v] = buildVaultStatuses(null, false, acctVault);
+    expect(v?.name).toBe('notes');
+    expect(v?.status).toBe('unsynced');
   });
 
   it('returns an empty array when no vaults are configured', () => {

@@ -261,13 +261,15 @@ describe('gatherStatus daemon probe', () => {
     });
   });
 
-  it('marks mcp off and folds an error across git + couch vaults', async () => {
+  it('marks mcp off and folds an error across the git vaults', async () => {
     bootPidFiles();
     stubDaemon(
       { ok: true, version: '9.9.9', pid: process.pid, uptime: 5, served: 0, mcp: false },
       {
-        vaults: [{ vault: 'a', running: true, lastRun: '2026-07-08T09:00:00Z' }],
-        couch: [{ vault: 'b', running: false, lastError: 'push rejected', pendingCount: 0 }],
+        vaults: [
+          { vault: 'a', running: true, lastRun: '2026-07-08T09:00:00Z' },
+          { vault: 'b', running: false, lastError: 'push rejected' },
+        ],
       }
     );
     const report = await gatherStatus(null, 'dev.agentage.io');

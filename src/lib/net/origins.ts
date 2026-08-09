@@ -7,7 +7,7 @@ export interface Links {
   api: string;
   auth: string;
   mcp: string;
-  // Sync bootstrap host for GET /.well-known/agentage-sync (git + couch endpoints).
+  // Git smart-HTTP sync host; mirrors @agentage/shared links().
   sync: string;
 }
 

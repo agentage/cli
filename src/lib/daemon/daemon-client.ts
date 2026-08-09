@@ -10,12 +10,8 @@ import {
 } from '@agentage/memory-core';
 import { EADDRINUSE_EXIT_CODE, readDaemonToken, resolvePort } from '../../daemon/lifecycle.js';
 import { type SyncResult } from '../../sync/git/cycle.js';
-import { type CouchSyncResult } from '../../sync/couch/manager.js';
 import { type SyncStatus } from '../../sync/git/manager.js';
 import { VERSION } from '../../utils/version.js';
-
-// One vault syncs on exactly one channel; /api/sync/run yields whichever result fits the vault.
-export type SyncRunResult = SyncResult | CouchSyncResult;
 import {
   type DeleteResult,
   type ListOptions,
@@ -81,9 +77,8 @@ export const syncStatus = async (port: number, timeoutMs = 1000): Promise<SyncSt
   }
 };
 
-// Ask the daemon to sync one vault now; the daemon runs the cycle in its own process. The result
-// shape depends on the vault's channel (git SyncResult vs account CouchSyncResult).
-export const syncRun = async (port: number, vault: string): Promise<SyncRunResult> => {
+// Ask the daemon to sync one vault now; the daemon runs the git cycle in its own process.
+export const syncRun = async (port: number, vault: string): Promise<SyncResult> => {
   const res = await fetch(`${base(port)}/api/sync/run`, {
     method: 'POST',
     headers: apiHeaders(),
@@ -93,7 +88,7 @@ export const syncRun = async (port: number, vault: string): Promise<SyncRunResul
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || `sync request failed: ${res.status}`);
   }
-  return res.json() as Promise<SyncRunResult>;
+  return res.json() as Promise<SyncResult>;
 };
 
 export const waitForHealth = async (

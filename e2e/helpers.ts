@@ -124,6 +124,7 @@ export interface CliStatusReport {
   env: string;
   auth: { signedIn: boolean; tokenExpiresAt?: string; note?: string };
   endpoint: { url: string; reachable: boolean };
+  vaults: { name: string; channel: string; status: string }[];
 }
 
 export const statusJson = async (machine: CliMachine): Promise<CliStatusReport> => {

@@ -102,18 +102,18 @@ describe('vault add', () => {
     expect(h.ensured).toEqual(['/data/acct']);
   });
 
-  it('surfaces the provisioning message even when the channel is disabled', async () => {
+  it('surfaces the provisioning message even when provisioning did not succeed', async () => {
     const h = makeDeps(
       { version: 1, vaults: {} },
       {
-        status: 'disabled',
-        message: "Vault 'acct' registered locally. Account sync is not enabled.",
+        status: 'offline',
+        message: "Vault 'acct' registered locally - will provision when online.",
       }
     );
     await runVaultAdd('acct', {}, h.deps);
     // Provisioning is never fatal: the entry stands and the calm one-liner is printed.
     expect(h.get().vaults?.acct).toBeDefined();
-    expect(h.logs.join()).toContain('Account sync is not enabled');
+    expect(h.logs.join()).toContain('will provision when online');
   });
 
   it('rejects --path combined with --local/--git', async () => {

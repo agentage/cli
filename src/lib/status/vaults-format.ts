@@ -26,13 +26,17 @@ const statusCell = (v: VaultStatus): string => {
       return `${mark(false)} error (${shortError(v.lastError)})`;
     case 'unknown':
       return chalk.dim('- unknown (daemon stopped)');
+    case 'unsynced':
+      return `${mark(false)} not synced - account vaults have no sync channel`;
     case 'idle':
       return v.channel === 'local' ? chalk.dim('- local only') : chalk.dim('- idle');
   }
 };
 
+// Only git vaults are "connected": an account vault has no sync channel, so counting it would
+// re-tell the lie the per-vault row exists to correct.
 const countLabel = (vaults: VaultStatus[]): string => {
-  const connected = vaults.filter((v) => v.channel !== 'local').length;
+  const connected = vaults.filter((v) => v.channel === 'git').length;
   if (connected > 0) return `${connected} connected`;
   const n = vaults.length;
   return `${n} ${n === 1 ? 'vault' : 'vaults'}`;
@@ -44,9 +48,10 @@ export const vaultLines = (vaults: VaultStatus[]): string[] => {
   if (vaults.length === 0)
     return [`${'vaults'.padEnd(10)} none - run: agentage vault add <name> --local`];
   const nameW = Math.max(...vaults.map((v) => v.name.length));
+  const chanW = Math.max(...vaults.map((v) => v.channel.length));
   const header = `${'vaults'.padEnd(10)} ${countLabel(vaults)}`;
   const rows = vaults.map(
-    (v) => `  ${v.name.padEnd(nameW)}  ${v.channel.padEnd(6)} ${statusCell(v)}`
+    (v) => `  ${v.name.padEnd(nameW)}  ${v.channel.padEnd(chanW)} ${statusCell(v)}`
   );
   return [header, ...rows];
 };

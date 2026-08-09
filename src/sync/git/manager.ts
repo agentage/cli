@@ -1,6 +1,5 @@
 import { type VaultsConfig } from '@agentage/memory-core';
 import { loadVaultsConfig } from '../../lib/vault/vaults.js';
-import { type CouchTargetStatus } from '../couch/manager.js';
 import { type DiscoverStatus } from '../discover/watcher.js';
 import { runSyncCycle, type SyncResult } from './cycle.js';
 import { autoSyncTargets, intervalMs, syncTargets, type SyncTarget } from './planner.js';
@@ -17,8 +16,6 @@ export interface VaultSyncState {
 
 export interface SyncStatus {
   vaults: VaultSyncState[];
-  // The account (couch) targets, composed in by the daemon; absent on an older daemon.
-  couch?: CouchTargetStatus[];
   // The active discover roots, composed in by the daemon; absent on an older daemon.
   discover?: DiscoverStatus;
 }
