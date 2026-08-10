@@ -1,0 +1,206 @@
+name: Publish Package
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # =========================================================================
+  # GATE — only publish from release-prepare workflow (release/* branch merges)
+  # =========================================================================
+  release-gate:
+    name: 🔒 Release Gate
+    runs-on: ubuntu-latest
+    outputs:
+      is-release: ${{ steps.check.outputs.is-release }}
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 5
+
+      - name: 🔒 Check if this is a release commit
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # For workflow_dispatch, always allow
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "is-release=true" >> $GITHUB_OUTPUT
+            echo "✅ Manual trigger — allowed"
+            exit 0
+          fi
+
+          # Check if the merge commit came from a release/* branch
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          echo "Commit message: $COMMIT_MSG"
+
+          # Match squash merges from release/* branches or release prepare commits
+          # Match: merge commits from release/*, squash merges (PR title "Release v..."), or release prepare commits
+          if echo "$COMMIT_MSG" | grep -qE "(^Merge pull request .* from .*/release/|^Release v|^chore: prepare release|^chore\(release\))"; then
+            echo "is-release=true" >> $GITHUB_OUTPUT
+            echo "✅ Release commit detected — proceeding with publish"
+          else
+            echo "is-release=false" >> $GITHUB_OUTPUT
+            echo "⛔ Not a release commit — skipping publish"
+            echo "💡 All releases must go through the release-prepare workflow"
+          fi
+
+  detect-changes:
+    name: 🔍 Detect Version Changes
+    needs: [release-gate]
+    if: needs.release-gate.outputs.is-release == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      should-publish: ${{ steps.detect.outputs.should-publish }}
+      name: ${{ steps.detect.outputs.name }}
+      version: ${{ steps.detect.outputs.version }}
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v7
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🔍 Detect version changes
+        id: detect
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          private=$(node -p "require('./package.json').private || false")
+
+          echo "name=${name}" >> $GITHUB_OUTPUT
+          echo "version=${version}" >> $GITHUB_OUTPUT
+
+          if [ "$private" = "true" ]; then
+            echo "should-publish=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  Package is private, skipping publish"
+            exit 0
+          fi
+
+          echo "📦 Checking ${name}@${version}..."
+
+          if npm view "${name}@${version}" version 2>/dev/null; then
+            echo "should-publish=false" >> $GITHUB_OUTPUT
+            echo "⏭️  Version ${version} already published for ${name}"
+          else
+            echo "should-publish=true" >> $GITHUB_OUTPUT
+            echo "✨ New version detected: ${name}@${version}"
+          fi
+
+  verify:
+    name: ✅ Verify Package
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.should-publish == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v7
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: ✅ Verify
+        run: npm run verify
+
+  publish:
+    name: 📤 Publish Package
+    needs: [detect-changes, verify]
+    if: needs.detect-changes.outputs.should-publish == 'true' && needs.verify.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v7
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🏗️ Build package
+        run: npm run build
+
+      - name: 📤 Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "📤 Publishing ${{ needs.detect-changes.outputs.name }}@${{ needs.detect-changes.outputs.version }}"
+          npm publish --access public --provenance
+
+      - name: 🏷️ Create git tag
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          TAG_NAME="v${{ needs.detect-changes.outputs.version }}"
+
+          git tag -a "${TAG_NAME}" -m "Release ${{ needs.detect-changes.outputs.name }}@${{ needs.detect-changes.outputs.version }}"
+          git push origin "${TAG_NAME}"
+
+      - name: ✅ Published successfully
+        run: |
+          echo "🎉 Successfully published ${{ needs.detect-changes.outputs.name }}@${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "📦 Package URL: https://www.npmjs.com/package/${{ needs.detect-changes.outputs.name }}/v/${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+
+  summary:
+    name: 📋 Publish Summary
+    needs: [release-gate, detect-changes, verify, publish]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📊 Create summary
+        run: |
+          echo "## 📦 Package Publishing Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.release-gate.outputs.is-release }}" != "true" ]; then
+            echo "⛔ **Blocked — not a release commit**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All releases must go through the \`release-prepare\` workflow." >> $GITHUB_STEP_SUMMARY
+            echo "Run: \`gh workflow run release-prepare.yml -f bump_type=patch\`" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.detect-changes.outputs.should-publish }}" != "true" ]; then
+            echo "ℹ️ **No new version to publish**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Version ${{ needs.detect-changes.outputs.version }} is already published or package is private." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.verify.result }}" != "success" ]; then
+            echo "❌ **Verification failed - package not published**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please fix verification errors and try again." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.publish.result }}" == "success" ]; then
+            echo "✅ **Package published successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **${{ needs.detect-changes.outputs.name }}** version ${{ needs.detect-changes.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Package failed to publish**" >> $GITHUB_STEP_SUMMARY
+          fi
