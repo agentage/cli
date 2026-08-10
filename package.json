@@ -58,7 +58,7 @@
     "eslint-config-prettier": "latest",
     "eslint-plugin-prettier": "latest",
     "prettier": "latest",
-    "typescript": "7.0.2",
+    "typescript": "6.0.3",
     "vitest": "latest"
   },
   "keywords": [
