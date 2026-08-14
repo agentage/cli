@@ -14,6 +14,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, request as apiRequest, type APIRequestContext } from '@playwright/test';
+import { testClientHeader } from './client-type.js';
 
 export const TARGET_FQDN = process.env['AGENTAGE_SITE_FQDN'] ?? 'dev.agentage.io';
 export const AUTH_URL = `https://auth.${TARGET_FQDN}`;
@@ -150,7 +151,10 @@ export const testAccount = (): TestAccount => {
 
 // Better Auth 403s cookie-bearing POSTs without a same-origin Origin header.
 export const newBrowserContext = (): Promise<APIRequestContext> =>
-  apiRequest.newContext({ baseURL: AUTH_URL, extraHTTPHeaders: { Origin: AUTH_URL } });
+  apiRequest.newContext({
+    baseURL: AUTH_URL,
+    extraHTTPHeaders: { Origin: AUTH_URL, ...testClientHeader() },
+  });
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { assertCliBuilt, createCliMachine, freePort, type CliMachine } from './helpers.js';
+import { testClientHeader } from './client-type.js';
 
 // Frozen MCP contract behavior tier. mcp-daemon.test.ts proves the tool surface exists (6 tools,
 // dual-channel output); this proves the BEHAVIORS a bad @agentage/server-memory or
@@ -28,7 +29,11 @@ const rpc = async (
 ): Promise<{ result?: ToolResult; error?: { message: string } }> => {
   const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      ...testClientHeader(),
+    },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   });
   expect(res.ok, `POST /mcp ${method} -> ${res.status}`).toBe(true);
