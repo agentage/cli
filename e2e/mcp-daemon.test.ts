@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { assertCliBuilt, createCliMachine, freePort, type CliMachine } from './helpers.js';
+import { testClientHeader } from './client-type.js';
 
 // M3 daemon MCP tier: the daemon exposes the frozen 6 memory__* tools at POST /mcp (stateless
 // Streamable HTTP). An ephemeral port + isolated AGENTAGE_CONFIG_DIR keep it off the real daemon /
@@ -36,7 +37,11 @@ interface RpcResult {
 const mcpRpc = async (port: number, method: string, params: unknown): Promise<RpcResult> => {
   const res = await fetch(`http://127.0.0.1:${port}/mcp`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      ...testClientHeader(),
+    },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   });
   expect(res.ok, `POST /mcp ${method} -> ${res.status}`).toBe(true);
