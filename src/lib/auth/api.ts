@@ -33,11 +33,12 @@ export const refreshOrThrow = async (auth: AuthState, links: Links): Promise<voi
   };
   auth.tokens = tokens; // the caller retries its request with this in-memory copy
   // Persist under the lock, folding the new tokens onto the freshly-read state so a concurrent
-  // writer's other fields (clientId, siteFqdn) are not clobbered by a stale in-memory copy.
+  // writer's other fields (clientId, siteFqdn) are not clobbered by a stale in-memory copy. A null
+  // re-read means a sign-out won the race: skip the write rather than resurrect it (issue #236).
   await mutateAuth((current) => {
-    const base = current ?? auth;
-    base.tokens = tokens;
-    return base;
+    if (!current) return null;
+    current.tokens = tokens;
+    return current;
   });
 };
 

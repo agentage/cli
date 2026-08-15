@@ -2,6 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { acquireFileLock, releaseFileLock } from './file-lock.js';
 import {
   deleteAuth,
   ensureConfigDir,
@@ -57,10 +58,27 @@ describe('config store', () => {
     expect(readAuth()).toBeNull();
   });
 
-  it('deletes auth state idempotently', () => {
+  it('deletes auth state idempotently', async () => {
     saveAuth(sample);
-    deleteAuth();
-    deleteAuth();
+    await deleteAuth();
+    await deleteAuth();
+    expect(readAuth()).toBeNull();
+    expect(readdirSync(getConfigDir()).filter((f) => f.endsWith('.lock'))).toEqual([]);
+  });
+
+  // Sign-out is serialized against mutateAuth by the same lock (issue #236): while a refresh holds
+  // it, deleteAuth waits instead of unlinking inside someone else's read-modify-write.
+  it('waits for a held lock before unlinking', async () => {
+    saveAuth(sample);
+    const target = join(getConfigDir(), 'auth.json');
+    expect(acquireFileLock(target)).toBe(true);
+    let done = false;
+    const pending = deleteAuth().then(() => void (done = true));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(done).toBe(false);
+    expect(readAuth()).toEqual(sample); // untouched while the other writer holds the lock
+    releaseFileLock(target);
+    await pending;
     expect(readAuth()).toBeNull();
   });
 
