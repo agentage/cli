@@ -86,7 +86,7 @@ const disconnect = async (deps: SetupDeps): Promise<void> => {
     return;
   }
   await deps.revoke(links(auth.siteFqdn).auth, auth.tokens.accessToken);
-  deleteAuth();
+  await deleteAuth();
   console.log('Disconnected - local credentials removed.');
 };
 

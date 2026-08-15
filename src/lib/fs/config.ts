@@ -61,9 +61,14 @@ export const saveAuth = (state: AuthState): void => {
   renameSync(tmp, path);
 };
 
-export const deleteAuth = (): void => {
+// Sign-out under the same lock mutateAuth takes (issue #236), so a concurrent token refresh can
+// never slip its re-read+save between this existence check and the unlink.
+export const deleteAuth = async (): Promise<void> => {
+  ensureConfigDir();
   const path = authPath();
-  if (existsSync(path)) unlinkSync(path);
+  await withFileLock(path, () => {
+    if (existsSync(path)) unlinkSync(path);
+  });
 };
 
 // Cross-process-safe read-modify-write on auth.json (issue #231). Under the advisory lock, re-read

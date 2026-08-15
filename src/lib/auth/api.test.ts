@@ -11,7 +11,7 @@ import {
   TransientAuthError,
 } from './api.js';
 import { patAuthState } from './credentials.js';
-import { readAuth, type AuthState } from '../fs/config.js';
+import { deleteAuth, readAuth, saveAuth, type AuthState } from '../fs/config.js';
 import { links } from '../net/origins.js';
 import { VERSION } from '../../utils/version.js';
 
@@ -79,6 +79,7 @@ describe('authedGet', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const auth = makeAuth();
+    saveAuth(auth); // a real refresh always runs against a session already on disk
     const result = await authedGet<{ ok: boolean }>(auth, target, 'https://x.example/me');
     expect(result.ok).toBe(true);
     expect(auth.tokens.accessToken).toBe('new-token');
@@ -164,6 +165,7 @@ describe('authedPost', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const auth = makeAuth();
+    saveAuth(auth);
     const res = await authedPost(auth, target, 'https://x.example/api/memories', { name: 'a' });
     expect(res.status).toBe(201);
     expect(auth.tokens.accessToken).toBe('new-token');
@@ -218,6 +220,7 @@ describe('introspectToken', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     const auth = makeAuth();
+    saveAuth(auth);
     const session = await introspectToken(auth, target);
     expect(session.userId).toBe('u1');
     expect(auth.tokens.accessToken).toBe('new-token');
@@ -360,5 +363,72 @@ describe('PAT-backed AuthState', () => {
     );
     // Exactly one call (the original) - no /token refresh attempt.
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Issue #236: a sign-out that lands while a token refresh is in flight must stay signed out. The
+// refresh may still use its fresh tokens in memory for the request already on the wire, but the
+// null re-read is the authoritative "session ended" - it is never folded back onto disk.
+describe('refreshOrThrow vs a concurrent sign-out', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agentage-api-'));
+    process.env['AGENTAGE_CONFIG_DIR'] = dir;
+  });
+
+  afterEach(() => {
+    delete process.env['AGENTAGE_CONFIG_DIR'];
+    rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+  });
+
+  const refreshOnce = (onTokenCall: () => Promise<void>): ReturnType<typeof vi.fn> =>
+    vi.fn(async (url: string) => {
+      if (!String(url).includes('/token')) return jsonResponse(200, {});
+      await onTokenCall(); // the sign-out lands while the refresh is on the wire
+      return jsonResponse(200, { access_token: 'new-token', expires_in: 60 });
+    });
+
+  it('does not resurrect auth.json when deleteAuth lands during the refresh', async () => {
+    const auth = makeAuth();
+    saveAuth(auth);
+    vi.stubGlobal(
+      'fetch',
+      refreshOnce(() => deleteAuth())
+    );
+    await refreshOrThrow(auth, target);
+    expect(readAuth()).toBeNull(); // signed out stays signed out
+    expect(auth.tokens.accessToken).toBe('new-token'); // in-flight request still retries
+  });
+
+  it('stays signed out across 50 sign-out/refresh races', async () => {
+    for (let i = 0; i < 50; i++) {
+      const auth = makeAuth();
+      saveAuth(auth);
+      let signOut: Promise<void> | undefined;
+      vi.stubGlobal(
+        'fetch',
+        refreshOnce(() => {
+          signOut = deleteAuth(); // raced, not awaited: either order must end signed out
+          return Promise.resolve();
+        })
+      );
+      await refreshOrThrow(auth, target);
+      await signOut;
+      expect(readAuth()).toBeNull();
+    }
+  });
+
+  it('still persists the refreshed tokens when no sign-out races it', async () => {
+    const auth = makeAuth();
+    saveAuth(auth);
+    vi.stubGlobal(
+      'fetch',
+      refreshOnce(() => Promise.resolve())
+    );
+    await refreshOrThrow(auth, target);
+    expect(readAuth()?.tokens.accessToken).toBe('new-token');
+    expect(readAuth()?.clientId).toBe('c1'); // other fields preserved
   });
 });
