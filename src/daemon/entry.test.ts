@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createStateCleanup, isEaddrinuse, mcpEnabled, safeReschedule } from './daemon-entry.js';
+import { createStateCleanup, isEaddrinuse, mcpEnabled, safeReschedule } from './entry.js';
 
 describe('mcpEnabled', () => {
   it('serves MCP by default and only AGENTAGE_DAEMON_NO_MCP=1 turns it off', () => {
