@@ -9,6 +9,7 @@ import {
   type WriteResult,
 } from '@agentage/memory-core';
 import { EADDRINUSE_EXIT_CODE, readDaemonToken, resolvePort } from '../../daemon/lifecycle.js';
+import { daemonServiceName } from '../../observability.js';
 import { type SyncResult } from '../../sync/git/cycle.js';
 import { type SyncStatus } from '../../sync/git/manager.js';
 import { VERSION } from '../../utils/version.js';
@@ -150,6 +151,8 @@ export const spawnDaemon = async (
       env: {
         ...process.env,
         AGENTAGE_DAEMON_PORT: String(port),
+        // Its own service in telemetry: never inherit the name we defaulted into the CLI's env.
+        OTEL_SERVICE_NAME: daemonServiceName(),
         ...(opts.noMcp ? { AGENTAGE_DAEMON_NO_MCP: '1' } : {}),
       },
     });

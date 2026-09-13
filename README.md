@@ -94,6 +94,14 @@ too. Account-channel provisioning still needs an interactive `agentage setup` se
 - [`docs/reference.md`](docs/reference.md) - every command and flag, the full sync
   options, MCP details, and environment variables.
 
+## Telemetry (off by default)
+
+Nothing leaves your machine unless you ask for it. The CLI and its local helper ship with
+`@agentage/observability`, which stays inert until `OTEL_EXPORTER_OTLP_ENDPOINT` points at a
+collector you choose - then the CLI reports as `agentage-cli` and the helper as `agentage-daemon`
+(override with `OTEL_SERVICE_NAME`). Every line it writes goes to stderr, so `--json` output and the
+helper's MCP wire stay clean.
+
 ## Development
 
 ```bash

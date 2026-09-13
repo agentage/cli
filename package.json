@@ -41,8 +41,10 @@
   },
   "dependencies": {
     "@agentage/memory-core": "^0.5.0",
+    "@agentage/observability": "^1.0.0",
     "@agentage/server-memory": "^0.7.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opentelemetry/api": "^1.9.0",
     "chalk": "^6.0.0",
     "commander": "^15.0.0",
     "open": "^11.0.0"

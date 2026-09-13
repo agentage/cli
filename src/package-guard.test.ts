@@ -40,11 +40,16 @@ describe('package guard (R6)', () => {
     };
     // @agentage/memory-core is the one local engine at M2-C (decision V7/V11-C). M3 adds the MCP
     // contract layer: @agentage/server-memory (the frozen 6-tool builder, wrapped verbatim) and
-    // @modelcontextprotocol/sdk (stdio + Streamable HTTP transports). Still minimal: no daemon.
+    // @modelcontextprotocol/sdk (stdio + Streamable HTTP transports). @agentage/observability is
+    // the estate kit (+ its @opentelemetry/api peer, listed so one copy is hoisted): affordable
+    // here because `agentage` is installed globally once, unlike npx-per-call server-memory, which
+    // takes the kit optionally. Still minimal: no daemon.
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
       '@agentage/memory-core',
+      '@agentage/observability',
       '@agentage/server-memory',
       '@modelcontextprotocol/sdk',
+      '@opentelemetry/api',
       'chalk',
       'commander',
       'open',
