@@ -50,7 +50,7 @@
     "open": "^11.0.0"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "0.124.0",
+    "@anthropic-ai/sdk": "0.125.0",
     "@playwright/test": "latest",
     "@types/node": "latest",
     "@typescript-eslint/eslint-plugin": "latest",
