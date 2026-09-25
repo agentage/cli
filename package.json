@@ -42,7 +42,7 @@
   "dependencies": {
     "@agentage/memory-core": "^0.5.0",
     "@agentage/observability": "^1.2.0",
-    "@agentage/server-memory": "^0.7.0",
+    "@agentage/server-memory": "^0.9.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.0",
     "chalk": "^6.0.0",
@@ -50,7 +50,7 @@
     "open": "^11.0.0"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "0.125.0",
+    "@anthropic-ai/sdk": "0.127.0",
     "@playwright/test": "latest",
     "@types/node": "latest",
     "@typescript-eslint/eslint-plugin": "latest",
