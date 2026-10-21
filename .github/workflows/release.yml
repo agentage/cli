@@ -18,7 +18,7 @@ env:
 
 jobs:
   # =========================================================================
-  # GATE — only publish from release-prepare workflow (release/* branch merges)
+  # GATE - only publish on a chore(release) merge (prepare-release.yml PR)
   # =========================================================================
   release-gate:
     name: 🔒 Release Gate
@@ -55,7 +55,7 @@ jobs:
           else
             echo "is-release=false" >> $GITHUB_OUTPUT
             echo "⛔ Not a release commit — skipping publish"
-            echo "💡 All releases must go through the release-prepare workflow"
+            echo "💡 All releases go through prepare-release.yml"
           fi
 
   detect-changes:
@@ -191,8 +191,8 @@ jobs:
           if [ "${{ needs.release-gate.outputs.is-release }}" != "true" ]; then
             echo "⛔ **Blocked — not a release commit**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "All releases must go through the \`release-prepare\` workflow." >> $GITHUB_STEP_SUMMARY
-            echo "Run: \`gh workflow run release-prepare.yml -f bump_type=patch\`" >> $GITHUB_STEP_SUMMARY
+            echo "All releases go through \`prepare-release.yml\`." >> $GITHUB_STEP_SUMMARY
+            echo "Run: \`gh workflow run prepare-release.yml -f bump=patch\`" >> $GITHUB_STEP_SUMMARY
           elif [ "${{ needs.detect-changes.outputs.should-publish }}" != "true" ]; then
             echo "ℹ️ **No new version to publish**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
