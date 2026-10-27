@@ -77,8 +77,8 @@ nothing is installed beyond this package.
 
 ```bash
 npm ci
-npm run verify                                         # type-check + lint + format:check + test + build
-npm run build && npm run test:e2e -- --grep @offline   # offline e2e: no network, no account
+npm run verify
+npm run build && npm run test:e2e -- --grep @offline
 ```
 
 ## Release
