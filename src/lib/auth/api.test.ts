@@ -1,10 +1,10 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
-  authedGet,
-  authedPost,
+  authedFetch,
+  authedJson,
   AuthRequiredError,
   introspectToken,
   refreshOrThrow,
@@ -13,15 +13,21 @@ import {
 import { patAuthState } from './credentials.js';
 import { deleteAuth, readAuth, saveAuth, type AuthState } from '../fs/config.js';
 import { links } from '../net/origins.js';
-import { VERSION } from '../../utils/version.js';
+
+// cliFetch pins the global fetch at load, so tests swap the module's export instead.
+const net = vi.hoisted(() => ({
+  fetch: (..._args: unknown[]): Promise<Response> => Promise.reject(),
+}));
+vi.mock('../net/fetch.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  cliFetch: (url: string, init?: RequestInit) => net.fetch(url, init),
+}));
+type FetchStub = (url: string, init?: RequestInit) => Promise<Response>;
+const useFetch = (fn: FetchStub): void => {
+  net.fetch = fn as typeof net.fetch;
+};
 
 const target = links('dev.agentage.io');
-
-// The CLI version headers requestHeaders() adds to every authed request.
-const versionHeaders = {
-  'User-Agent': `agentage-cli/${VERSION}`,
-  'X-Agentage-CLI-Version': VERSION,
-};
 
 const makeAuth = (overrides: Partial<AuthState['tokens']> = {}): AuthState => ({
   siteFqdn: 'dev.agentage.io',
@@ -32,7 +38,7 @@ const makeAuth = (overrides: Partial<AuthState['tokens']> = {}): AuthState => ({
 const jsonResponse = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-describe('authedGet', () => {
+describe('authedJson', () => {
   let dir: string;
 
   beforeEach(() => {
@@ -43,27 +49,16 @@ describe('authedGet', () => {
   afterEach(() => {
     delete process.env['AGENTAGE_CONFIG_DIR'];
     rmSync(dir, { recursive: true, force: true });
-    vi.unstubAllGlobals();
   });
 
   it('sends the bearer token and returns the parsed body', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
-    vi.stubGlobal('fetch', fetchMock);
-    const result = await authedGet<{ ok: boolean }>(makeAuth(), target, 'https://x.example/me');
+    useFetch(fetchMock);
+    const result = await authedJson<{ ok: boolean }>(makeAuth(), target, 'https://x.example/me');
     expect(result.ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith('https://x.example/me', {
-      headers: { authorization: 'Bearer old-token', ...versionHeaders },
-      redirect: 'manual',
+      headers: { authorization: 'Bearer old-token' },
     });
-  });
-
-  it('sends the CLI version identification headers alongside the bearer', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, {}));
-    vi.stubGlobal('fetch', fetchMock);
-    await authedGet(makeAuth(), target, 'https://x.example/me');
-    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
-    expect(headers['User-Agent']).toBe(`agentage-cli/${VERSION}`);
-    expect(headers['X-Agentage-CLI-Version']).toBe(VERSION);
   });
 
   it('refreshes once on 401, persists the new tokens, and retries', async () => {
@@ -75,19 +70,19 @@ describe('authedGet', () => {
         bearer === 'Bearer new-token' ? jsonResponse(200, { ok: true }) : jsonResponse(401, {})
       );
     });
-    vi.stubGlobal('fetch', fetchMock);
+    useFetch(fetchMock);
     const auth = makeAuth();
     saveAuth(auth); // a real refresh always runs against a session already on disk
-    const result = await authedGet<{ ok: boolean }>(auth, target, 'https://x.example/me');
+    const result = await authedJson<{ ok: boolean }>(auth, target, 'https://x.example/me');
     expect(result.ok).toBe(true);
     expect(auth.tokens.accessToken).toBe('new-token');
     expect(readAuth()?.tokens.accessToken).toBe('new-token');
   });
 
   it('throws AuthRequiredError when 401 and no refresh token', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(401, {})));
+    useFetch(vi.fn().mockResolvedValue(jsonResponse(401, {})));
     await expect(
-      authedGet(makeAuth({ refreshToken: undefined }), target, 'https://x.example/me')
+      authedJson(makeAuth({ refreshToken: undefined }), target, 'https://x.example/me')
     ).rejects.toThrow(AuthRequiredError);
   });
 
@@ -95,85 +90,23 @@ describe('authedGet', () => {
     const fetchMock = vi.fn((url: string) =>
       Promise.resolve(url.includes('/token') ? jsonResponse(400, {}) : jsonResponse(401, {}))
     );
-    vi.stubGlobal('fetch', fetchMock);
-    await expect(authedGet(makeAuth(), target, 'https://x.example/me')).rejects.toThrow(
+    useFetch(fetchMock);
+    await expect(authedJson(makeAuth(), target, 'https://x.example/me')).rejects.toThrow(
       AuthRequiredError
     );
   });
 
   it('surfaces non-auth errors with the status code', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(500, {})));
-    await expect(authedGet(makeAuth(), target, 'https://x.example/x')).rejects.toThrow('500');
+    useFetch(vi.fn().mockResolvedValue(jsonResponse(500, {})));
+    await expect(authedJson(makeAuth(), target, 'https://x.example/x')).rejects.toThrow('500');
   });
 
   it('refuses to follow a redirect and reports its status', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(302, {}));
-    vi.stubGlobal('fetch', fetchMock);
-    await expect(authedGet(makeAuth(), target, 'https://x.example/me')).rejects.toThrow(
-      'refused redirect (302)'
+    useFetch(fetchMock);
+    await expect(authedJson(makeAuth(), target, 'https://x.example/me')).rejects.toThrow(
+      'GET https://x.example/me refused redirect (302)'
     );
-    expect(fetchMock).toHaveBeenCalledWith('https://x.example/me', {
-      headers: { authorization: 'Bearer old-token', ...versionHeaders },
-      redirect: 'manual',
-    });
-  });
-});
-
-describe('authedPost', () => {
-  let dir: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'agentage-api-'));
-    process.env['AGENTAGE_CONFIG_DIR'] = dir;
-  });
-
-  afterEach(() => {
-    delete process.env['AGENTAGE_CONFIG_DIR'];
-    rmSync(dir, { recursive: true, force: true });
-    vi.unstubAllGlobals();
-  });
-
-  it('sends the bearer token, a JSON body, and returns the raw response', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(201, { ok: true }));
-    vi.stubGlobal('fetch', fetchMock);
-    const res = await authedPost(makeAuth(), target, 'https://x.example/api/memories', {
-      name: 'acct',
-    });
-    expect(res.status).toBe(201);
-    expect(fetchMock).toHaveBeenCalledWith('https://x.example/api/memories', {
-      method: 'POST',
-      headers: {
-        authorization: 'Bearer old-token',
-        'content-type': 'application/json',
-        ...versionHeaders,
-      },
-      body: JSON.stringify({ name: 'acct' }),
-      redirect: 'manual',
-    });
-  });
-
-  it('refreshes once on 401, persists the new tokens, and retries the POST', async () => {
-    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-      if (url.includes('/token'))
-        return Promise.resolve(jsonResponse(200, { access_token: 'new-token', expires_in: 60 }));
-      const bearer = (init?.headers as Record<string, string> | undefined)?.['authorization'];
-      return Promise.resolve(
-        bearer === 'Bearer new-token' ? jsonResponse(201, { ok: true }) : jsonResponse(401, {})
-      );
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const auth = makeAuth();
-    saveAuth(auth);
-    const res = await authedPost(auth, target, 'https://x.example/api/memories', { name: 'a' });
-    expect(res.status).toBe(201);
-    expect(auth.tokens.accessToken).toBe('new-token');
-    expect(readAuth()?.tokens.accessToken).toBe('new-token');
-  });
-
-  it('returns a non-2xx response without throwing so the caller can branch', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(403, { error: { code: 'X' } })));
-    const res = await authedPost(makeAuth(), target, 'https://x.example/api/memories', {});
-    expect(res.status).toBe(403);
   });
 });
 
@@ -188,7 +121,6 @@ describe('introspectToken', () => {
   afterEach(() => {
     delete process.env['AGENTAGE_CONFIG_DIR'];
     rmSync(dir, { recursive: true, force: true });
-    vi.unstubAllGlobals();
   });
 
   it('calls the introspection endpoint and maps the session', async () => {
@@ -197,7 +129,7 @@ describe('introspectToken', () => {
       .mockResolvedValue(
         jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: '2026-06-12T20:00:00Z' })
       );
-    vi.stubGlobal('fetch', fetchMock);
+    useFetch(fetchMock);
     const session = await introspectToken(makeAuth(), target);
     expect(session).toEqual({ userId: 'u1', expiresAt: '2026-06-12T20:00:00Z' });
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
@@ -216,7 +148,7 @@ describe('introspectToken', () => {
           : jsonResponse(200, null)
       );
     });
-    vi.stubGlobal('fetch', fetchMock);
+    useFetch(fetchMock);
     const auth = makeAuth();
     saveAuth(auth);
     const session = await introspectToken(auth, target);
@@ -233,7 +165,7 @@ describe('introspectToken', () => {
           : jsonResponse(200, null)
       )
     );
-    vi.stubGlobal('fetch', fetchMock);
+    useFetch(fetchMock);
     await expect(introspectToken(makeAuth(), target)).rejects.toThrow(AuthRequiredError);
   });
 
@@ -243,14 +175,14 @@ describe('introspectToken', () => {
         String(url).includes('/token') ? jsonResponse(429, {}) : jsonResponse(200, null)
       )
     );
-    vi.stubGlobal('fetch', fetchMock);
+    useFetch(fetchMock);
     await expect(introspectToken(makeAuth(), target)).rejects.toThrow(TransientAuthError);
   });
 
   it('reports the unexpired stored token as signed-in when get-session blips 5xx', async () => {
     const expiresAt = Date.now() + 3_600_000;
     const fetchMock = vi.fn(async () => jsonResponse(500, {}));
-    vi.stubGlobal('fetch', fetchMock);
+    useFetch(fetchMock);
     const auth = makeAuth({ expiresAt });
     const session = await introspectToken(auth, target);
     // Held an unexpired token: treat the 5xx as a blip, report the stored expiry, never throw.
@@ -263,7 +195,7 @@ describe('introspectToken', () => {
         String(url).includes('/token') ? jsonResponse(503, {}) : jsonResponse(200, {})
       )
     );
-    vi.stubGlobal('fetch', fetchMock);
+    useFetch(fetchMock);
     const auth = makeAuth({ expiresAt: Date.now() - 1000 });
     await expect(introspectToken(auth, target)).rejects.toThrow(TransientAuthError);
   });
@@ -281,7 +213,7 @@ describe('introspectToken', () => {
           : jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: past })
       );
     });
-    vi.stubGlobal('fetch', fetchMock);
+    useFetch(fetchMock);
     const auth = makeAuth();
     const session = await introspectToken(auth, target);
     // The displayed expiry must be the post-refresh future value, never the stale past one.
@@ -298,7 +230,7 @@ describe('introspectToken', () => {
         bearer === 'Bearer fresh' ? jsonResponse(200, { userId: 'u2' }) : jsonResponse(200, null)
       );
     });
-    vi.stubGlobal('fetch', fetchMock);
+    useFetch(fetchMock);
     const auth = makeAuth({ expiresAt: Date.now() - 1000 });
     const session = await introspectToken(auth, target);
     expect(session.userId).toBe('u2');
@@ -321,32 +253,22 @@ describe('PAT-backed AuthState', () => {
   afterEach(() => {
     delete process.env['AGENTAGE_CONFIG_DIR'];
     rmSync(dir, { recursive: true, force: true });
-    vi.unstubAllGlobals();
   });
 
   const pat = patAuthState('aga_test123', 'dev.agentage.io');
 
   it('sends the PAT as the Bearer on an authed GET', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
-    vi.stubGlobal('fetch', fetchMock);
-    await authedGet(pat, target, 'https://memory.dev.agentage.io/mcp/me');
+    useFetch(fetchMock);
+    await authedJson(pat, target, 'https://memory.dev.agentage.io/mcp/me');
     expect(fetchMock).toHaveBeenCalledWith('https://memory.dev.agentage.io/mcp/me', {
-      headers: { authorization: 'Bearer aga_test123', ...versionHeaders },
-      redirect: 'manual',
+      headers: { authorization: 'Bearer aga_test123' },
     });
-  });
-
-  it('sends the PAT as the Bearer on an authed POST', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
-    vi.stubGlobal('fetch', fetchMock);
-    await authedPost(pat, target, 'https://memory.dev.agentage.io/mcp', { jsonrpc: '2.0' });
-    const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
-    expect(headers['authorization']).toBe('Bearer aga_test123');
   });
 
   it('refuses to refresh a PAT (no OAuth refresh grant) with a dashboard-pointing message', async () => {
     const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+    useFetch(fetchMock);
     await expect(refreshOrThrow(pat, target)).rejects.toThrow(AuthRequiredError);
     await expect(refreshOrThrow(pat, target)).rejects.toThrow(/personal access token/);
     // Never hits the token endpoint - a PAT cannot be refreshed.
@@ -355,8 +277,8 @@ describe('PAT-backed AuthState', () => {
 
   it('does not attempt a refresh on a 401 (a PAT is terminal on 401)', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(401, {}));
-    vi.stubGlobal('fetch', fetchMock);
-    await expect(authedGet(pat, target, 'https://memory.dev.agentage.io/mcp/me')).rejects.toThrow(
+    useFetch(fetchMock);
+    await expect(authedJson(pat, target, 'https://memory.dev.agentage.io/mcp/me')).rejects.toThrow(
       AuthRequiredError
     );
     // Exactly one call (the original) - no /token refresh attempt.
@@ -378,10 +300,9 @@ describe('refreshOrThrow vs a concurrent sign-out', () => {
   afterEach(() => {
     delete process.env['AGENTAGE_CONFIG_DIR'];
     rmSync(dir, { recursive: true, force: true });
-    vi.unstubAllGlobals();
   });
 
-  const refreshOnce = (onTokenCall: () => Promise<void>): ReturnType<typeof vi.fn> =>
+  const refreshOnce = (onTokenCall: () => Promise<void>): Mock<FetchStub> =>
     vi.fn(async (url: string) => {
       if (!String(url).includes('/token')) return jsonResponse(200, {});
       await onTokenCall(); // the sign-out lands while the refresh is on the wire
@@ -391,10 +312,7 @@ describe('refreshOrThrow vs a concurrent sign-out', () => {
   it('does not resurrect auth.json when deleteAuth lands during the refresh', async () => {
     const auth = makeAuth();
     saveAuth(auth);
-    vi.stubGlobal(
-      'fetch',
-      refreshOnce(() => deleteAuth())
-    );
+    useFetch(refreshOnce(() => deleteAuth()));
     await refreshOrThrow(auth, target);
     expect(readAuth()).toBeNull(); // signed out stays signed out
     expect(auth.tokens.accessToken).toBe('new-token'); // in-flight request still retries
@@ -405,8 +323,7 @@ describe('refreshOrThrow vs a concurrent sign-out', () => {
       const auth = makeAuth();
       saveAuth(auth);
       let signOut: Promise<void> | undefined;
-      vi.stubGlobal(
-        'fetch',
+      useFetch(
         refreshOnce(() => {
           signOut = deleteAuth(); // raced, not awaited: either order must end signed out
           return Promise.resolve();
@@ -421,12 +338,79 @@ describe('refreshOrThrow vs a concurrent sign-out', () => {
   it('still persists the refreshed tokens when no sign-out races it', async () => {
     const auth = makeAuth();
     saveAuth(auth);
-    vi.stubGlobal(
-      'fetch',
-      refreshOnce(() => Promise.resolve())
-    );
+    useFetch(refreshOnce(() => Promise.resolve()));
     await refreshOrThrow(auth, target);
     expect(readAuth()?.tokens.accessToken).toBe('new-token');
     expect(readAuth()?.clientId).toBe('c1'); // other fields preserved
+  });
+});
+
+describe('authedFetch and the shared refresh', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agentage-api-'));
+    process.env['AGENTAGE_CONFIG_DIR'] = dir;
+  });
+
+  afterEach(() => {
+    delete process.env['AGENTAGE_CONFIG_DIR'];
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const rotating = (): Mock<FetchStub> =>
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes('/token')) {
+        await new Promise((r) => setTimeout(r, 20)); // keep the grant in flight
+        return jsonResponse(200, { access_token: 'new-token', refresh_token: 'rt-2' });
+      }
+      const bearer = (init?.headers as Record<string, string> | undefined)?.['authorization'];
+      return bearer === 'Bearer new-token' ? jsonResponse(200, {}) : jsonResponse(401, {});
+    });
+
+  it('returns the raw response for any status, passing the caller init through', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(403, { error: 'x' }));
+    useFetch(fetchMock);
+    const init = { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' };
+    const res = await authedFetch(makeAuth(), target, 'https://x.example/api', init);
+    expect(res.status).toBe(403);
+    expect(fetchMock).toHaveBeenCalledWith('https://x.example/api', {
+      ...init,
+      headers: { 'content-type': 'application/json', authorization: 'Bearer old-token' },
+    });
+  });
+
+  it('refreshes once for parallel 401s that share a refresh token', async () => {
+    const fetchMock = rotating();
+    useFetch(fetchMock);
+    saveAuth(makeAuth());
+    const [a, b] = [makeAuth(), makeAuth()];
+    const results = await Promise.all([
+      authedFetch(a, target, 'https://x.example/1'),
+      authedFetch(b, target, 'https://x.example/2'),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([200, 200]);
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes('/token'))).toHaveLength(1);
+    expect([a.tokens.refreshToken, b.tokens.refreshToken]).toEqual(['rt-2', 'rt-2']);
+    expect(readAuth()?.tokens.refreshToken).toBe('rt-2');
+  });
+
+  it('does not persist refreshed tokens over a sign-in by another client', async () => {
+    useFetch(
+      vi.fn(async () => {
+        saveAuth({ ...makeAuth({ accessToken: 'theirs' }), clientId: 'c2' }); // lands mid-refresh
+        return jsonResponse(200, { access_token: 'new-token', expires_in: 60 });
+      })
+    );
+    saveAuth(makeAuth());
+    const auth = makeAuth();
+    await refreshOrThrow(auth, target);
+    expect(auth.tokens.accessToken).toBe('new-token'); // in-memory retry still works
+    expect(readAuth()).toMatchObject({ clientId: 'c2', tokens: { accessToken: 'theirs' } });
+  });
+
+  it('throws TransientAuthError when the refresh network call fails', async () => {
+    useFetch(vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+    await expect(refreshOrThrow(makeAuth(), target)).rejects.toThrow(TransientAuthError);
   });
 });

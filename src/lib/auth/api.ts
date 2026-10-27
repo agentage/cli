@@ -1,49 +1,62 @@
 import { mutateAuth, type AuthState, type StoredTokens } from '../fs/config.js';
-import { refreshTokens, TokenRequestError } from './oauth.js';
+import { cliFetch, isRedirect, type CliRequestInit } from '../net/fetch.js';
 import { type Links } from '../net/origins.js';
-import { requestHeaders } from '../net/user-agent.js';
 import { AuthRequiredError, isTerminalRefresh, TransientAuthError } from './auth-errors.js';
+import { refreshTokens, TokenRequestError, tokensFrom } from './oauth.js';
 
 export { AuthRequiredError, TransientAuthError } from './auth-errors.js';
 
-// Every authed call is CLI-originated; identify the caller alongside the bearer.
-const cliHeaders = (): Record<string, string> => requestHeaders();
-
-// Refresh the stored token in place. On success mutates auth + persists and returns. On failure it
-// throws: AuthRequiredError when the grant is dead (401/invalid_grant/invalid_client), else
-// TransientAuthError (429/5xx/network/timeout) - a blip that must not be read as a dead session.
-export const refreshOrThrow = async (auth: AuthState, links: Links): Promise<void> => {
-  if (auth.kind === 'pat')
-    throw new AuthRequiredError(
-      'personal access token expired or revoked - mint a new one in the dashboard (Settings -> API tokens)'
-    );
-  if (!auth.tokens.refreshToken) throw new AuthRequiredError('no refresh token');
-  let fresh;
+const requestTokens = async (auth: AuthState, links: Links, rt: string): Promise<StoredTokens> => {
   try {
-    fresh = await refreshTokens(links.auth, auth.clientId, auth.tokens.refreshToken);
+    return tokensFrom(await refreshTokens(links.auth, auth.clientId, rt), rt);
   } catch (err) {
     if (err instanceof TokenRequestError && isTerminalRefresh(err.status, err.oauthError))
       throw new AuthRequiredError('session expired');
     throw new TransientAuthError('refresh temporarily failed');
   }
-  const tokens: StoredTokens = {
-    accessToken: fresh.access_token,
-    refreshToken: fresh.refresh_token ?? auth.tokens.refreshToken,
-    expiresAt: fresh.expires_in ? Date.now() + fresh.expires_in * 1000 : undefined,
-  };
-  auth.tokens = tokens; // the caller retries its request with this in-memory copy
-  // Persist under the lock, folding the new tokens onto the freshly-read state so a concurrent
-  // writer's other fields (clientId, siteFqdn) are not clobbered by a stale in-memory copy. A null
-  // re-read means a sign-out won the race: skip the write rather than resurrect it (issue #236).
+};
+
+// Never resurrect a sign-out (null) or overwrite a newer sign-in by another client.
+const persistTokens = async (clientId: string, tokens: StoredTokens): Promise<void> => {
   await mutateAuth((current) => {
-    if (!current) return null;
+    if (!current || current.clientId !== clientId) return null;
     current.tokens = tokens;
     return current;
   });
 };
 
-// Boolean shim for the request paths that just want "refresh once, then retry": any failure
-// (terminal or transient) collapses to false so they fall through to their own status handling.
+const refreshAndPersist = async (
+  auth: AuthState,
+  links: Links,
+  rt: string
+): Promise<StoredTokens> => {
+  const tokens = await requestTokens(auth, links, rt);
+  await persistTokens(auth.clientId, tokens);
+  return tokens;
+};
+
+// Keyed by refresh token: parallel 401s share one grant instead of racing its rotation.
+const inflight = new Map<string, Promise<StoredTokens>>();
+
+const sharedRefresh = (auth: AuthState, links: Links, rt: string): Promise<StoredTokens> => {
+  const pending = inflight.get(rt);
+  if (pending) return pending;
+  const next = refreshAndPersist(auth, links, rt).finally(() => inflight.delete(rt));
+  inflight.set(rt, next);
+  return next;
+};
+
+// Throws AuthRequiredError for a dead grant, TransientAuthError for a blip (429/5xx/network).
+export const refreshOrThrow = async (auth: AuthState, links: Links): Promise<void> => {
+  if (auth.kind === 'pat')
+    throw new AuthRequiredError(
+      'personal access token expired or revoked - mint a new one in the dashboard (Settings -> API tokens)'
+    );
+  const rt = auth.tokens.refreshToken;
+  if (!rt) throw new AuthRequiredError('no refresh token');
+  auth.tokens = await sharedRefresh(auth, links, rt); // the caller retries with this copy
+};
+
 const tryRefresh = async (auth: AuthState, links: Links): Promise<boolean> => {
   try {
     await refreshOrThrow(auth, links);
@@ -53,46 +66,36 @@ const tryRefresh = async (auth: AuthState, links: Links): Promise<boolean> => {
   }
 };
 
-// redirect: 'manual' so the bearer is never replayed to a redirect target; any 3xx is an error.
-const isRedirect = (res: Response): boolean =>
-  res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400);
+const withBearer = (auth: AuthState, init: CliRequestInit): CliRequestInit => ({
+  ...init,
+  headers: { ...init.headers, authorization: `Bearer ${auth.tokens.accessToken}` },
+});
 
-export const authedGet = async <T>(auth: AuthState, links: Links, url: string): Promise<T> => {
-  const call = (): Promise<Response> =>
-    fetch(url, {
-      headers: { authorization: `Bearer ${auth.tokens.accessToken}`, ...cliHeaders() },
-      redirect: 'manual',
-    });
-  let res = await call();
-  if (res.status === 401 && (await tryRefresh(auth, links))) res = await call();
-  if (res.status === 401) throw new AuthRequiredError('session expired');
-  if (isRedirect(res)) throw new Error(`GET ${url} refused redirect (${res.status})`);
-  if (!res.ok) throw new Error(`GET ${url} failed (${res.status})`);
-  return (await res.json()) as T;
-};
-
-// A bearer POST with the same refresh-once dance as authedGet. Unlike authedGet it returns the
-// raw Response (never throws on a non-2xx): callers branch on the status codes themselves.
-export const authedPost = async (
+// The raw Response after at most one refresh-and-retry on 401; callers branch on the status.
+export const authedFetch = async (
   auth: AuthState,
   links: Links,
   url: string,
-  body: unknown
+  init: CliRequestInit = {}
 ): Promise<Response> => {
-  const call = (): Promise<Response> =>
-    fetch(url, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${auth.tokens.accessToken}`,
-        'content-type': 'application/json',
-        ...cliHeaders(),
-      },
-      body: JSON.stringify(body),
-      redirect: 'manual',
-    });
-  let res = await call();
-  if (res.status === 401 && (await tryRefresh(auth, links))) res = await call();
-  return res;
+  const res = await cliFetch(url, withBearer(auth, init));
+  if (res.status !== 401 || !(await tryRefresh(auth, links))) return res;
+  await res.body?.cancel();
+  return cliFetch(url, withBearer(auth, init));
+};
+
+export const authedJson = async <T>(
+  auth: AuthState,
+  links: Links,
+  url: string,
+  init: CliRequestInit = {}
+): Promise<T> => {
+  const method = init.method ?? 'GET';
+  const res = await authedFetch(auth, links, url, init);
+  if (res.status === 401) throw new AuthRequiredError('session expired');
+  if (isRedirect(res)) throw new Error(`${method} ${url} refused redirect (${res.status})`);
+  if (!res.ok) throw new Error(`${method} ${url} failed (${res.status})`);
+  return (await res.json()) as T;
 };
 
 // Re-export the introspection surface so existing callers keep importing from './api.js'.

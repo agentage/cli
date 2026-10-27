@@ -53,7 +53,12 @@ export const printStatus = (report: StatusReport): void => {
   if (report.update.message) console.log(chalk.yellow(`\n${report.update.message}`));
 };
 
-export const runStatus = async (opts: { json?: boolean; token?: string } = {}): Promise<void> => {
+export interface StatusOptions {
+  json?: boolean;
+  token?: string;
+}
+
+export const runStatus = async (opts: StatusOptions = {}): Promise<void> => {
   const report = await gatherStatus(resolveAuth({ token: opts.token }), siteFqdn());
   if (opts.json) {
     console.log(JSON.stringify(report, null, 2));
@@ -62,7 +67,10 @@ export const runStatus = async (opts: { json?: boolean; token?: string } = {}): 
   printStatus(report);
 };
 
-export const registerStatus = (program: Command): void => {
+export const registerStatus = (
+  program: Command,
+  action: (opts: StatusOptions) => Promise<void>
+): void => {
   program
     .command('status')
     .description('Show CLI, account, and endpoint status')
@@ -71,5 +79,5 @@ export const registerStatus = (program: Command): void => {
       '--token <token>',
       'authenticate with a personal access token (aga_...); or set AGENTAGE_TOKEN'
     )
-    .action(runStatus);
+    .action(action);
 };

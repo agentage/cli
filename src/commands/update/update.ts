@@ -1,12 +1,32 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { join } from 'node:path';
 import chalk from 'chalk';
 import { type Command } from 'commander';
+import { getConfigDir } from '../../lib/fs/config.js';
+import { acquireFileLock, releaseFileLock, type LockOptions } from '../../lib/fs/file-lock.js';
+import { requireNpm10, runNpm } from '../../lib/npm/npm-cli.js';
 import { checkForUpdate, INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
-import { acquireUpdateLock, releaseUpdateLock } from '../../lib/update/update-lock.js';
 import { VERSION } from '../../utils/version.js';
 
-const pexec = promisify(execFile);
+const INSTALL_TIMEOUT_MS = 5 * 60_000;
+const NPM_TAIL_LINES = 10;
+// An install takes minutes, so the crashed-holder ages scale up from the config-write defaults.
+const UPDATE_LOCK: LockOptions = { ttlMs: 10 * 60_000, hardStaleMs: 30 * 60_000 };
+
+const updateLockTarget = (): string => join(getConfigDir(), 'update');
+
+const tail = (text: string): string => text.trimEnd().split('\n').slice(-NPM_TAIL_LINES).join('\n');
+
+export const installLatest = async (
+  run: typeof runNpm = runNpm,
+  check: typeof requireNpm10 = requireNpm10
+): Promise<void> => {
+  await check(run);
+  const res = await run(['install', '-g', '@agentage/cli@latest'], {
+    timeoutMs: INSTALL_TIMEOUT_MS,
+  });
+  if (res.code !== 0)
+    throw new Error(`npm install failed (exit ${res.code}):\n${tail(res.stderr || res.stdout)}`);
+};
 
 export interface UpdateDeps {
   check: (installed: string) => Promise<UpdateInfo>;
@@ -18,11 +38,9 @@ export interface UpdateDeps {
 
 const defaultDeps: UpdateDeps = {
   check: checkForUpdate,
-  install: async () => {
-    await pexec('npm', ['install', '-g', '@agentage/cli@latest']);
-  },
-  acquireLock: () => acquireUpdateLock(),
-  releaseLock: releaseUpdateLock,
+  install: () => installLatest(),
+  acquireLock: () => acquireFileLock(updateLockTarget(), Date.now(), UPDATE_LOCK),
+  releaseLock: () => releaseFileLock(updateLockTarget()),
   log: (msg) => console.log(msg),
 };
 
@@ -52,9 +70,7 @@ const install = async (deps: UpdateDeps): Promise<void> => {
   deps.log(chalk.green('Updated. Run `agentage status` to confirm.'));
 };
 
-// --check reports the verdict and never installs. Otherwise, install only when the registry says
-// we're behind (available/unsupported), guarded by a single-writer lock; current/unreachable just
-// report.
+// --check never installs; otherwise install only when behind, under a single-writer lock.
 export const runUpdate = async (
   opts: UpdateOptions,
   deps: UpdateDeps = defaultDeps
@@ -74,17 +90,13 @@ export const runUpdate = async (
   }
 };
 
-export const registerUpdate = (program: Command): void => {
+export const registerUpdate = (
+  program: Command,
+  action: (opts: UpdateOptions) => Promise<void>
+): void => {
   program
     .command('update')
     .description('Update @agentage/cli to the latest published version')
     .option('--check', 'report whether an update is available, without installing')
-    .action(async (opts: UpdateOptions) => {
-      try {
-        await runUpdate(opts);
-      } catch (err) {
-        console.error(chalk.red(err instanceof Error ? err.message : String(err)));
-        process.exitCode = 1;
-      }
-    });
+    .action(action);
 };

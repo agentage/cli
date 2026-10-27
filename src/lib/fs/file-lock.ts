@@ -2,22 +2,31 @@ import { randomBytes } from 'node:crypto';
 import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-// A cross-process advisory lock keyed to a target file (`<target>.lock`). Config read-modify-writes
-// are sub-millisecond, so a lock past this age whose holder is gone is a crashed holder to take over.
-const LOCK_TTL_MS = 10_000;
-// A caller blocks up to this long for a contended lock. Past the TTL so a crashed holder is taken
-// over rather than wedging the caller; a throw only happens if the lock is genuinely stuck.
-const MAX_WAIT_MS = 15_000;
-// Past this age a holder is taken over even if its pid still resolves - the only explanation left is
-// pid reuse after a crash. Far beyond any real critical section or plausible scheduler pause, so a
-// live-but-CPU-starved holder is never mistaken for crashed below it.
-const STALE_HARD_MS = 60_000;
+// A cross-process advisory lock keyed to a target file (`<target>.lock`).
+export interface LockOptions {
+  // Past this age a holder whose pid is gone counts as crashed and is taken over.
+  ttlMs?: number;
+  // Past this age a holder is taken over even if its pid resolves: only pid reuse explains it.
+  hardStaleMs?: number;
+  // How long withFileLock blocks on a contended lock before it throws.
+  maxWaitMs?: number;
+}
+
+type Limits = Required<LockOptions>;
+
+// Sized for sub-millisecond config read-modify-writes; the wait outlives the TTL on purpose.
+const DEFAULTS: Limits = { ttlMs: 10_000, hardStaleMs: 60_000, maxWaitMs: 15_000 };
 const STEP_MS = 25;
+
+const limitsOf = (opts: LockOptions): Limits => ({
+  ttlMs: opts.ttlMs ?? DEFAULTS.ttlMs,
+  hardStaleMs: opts.hardStaleMs ?? DEFAULTS.hardStaleMs,
+  maxWaitMs: opts.maxWaitMs ?? DEFAULTS.maxWaitMs,
+});
 
 const lockPath = (target: string): string => `${target}.lock`;
 
-// The lock file holds "<pid> <timestamp>": pid gates crash-takeover, the trailing token is the
-// acquisition time used for staleness. A legacy single-token file parses as pid 0 (unknown holder).
+// "<pid> <at>"; a legacy single-token file parses as pid 0 (unknown holder) and ages out on the TTL.
 const holderOf = (path: string): { pid: number; at: number } | null => {
   try {
     const parts = readFileSync(path, 'utf-8').trim().split(/\s+/);
@@ -30,8 +39,7 @@ const holderOf = (path: string): { pid: number; at: number } | null => {
   }
 };
 
-// Same-host liveness probe. ESRCH = the holder is gone (crashed); EPERM = alive but owned by another
-// user. pid 0/unknown counts as gone so a legacy or malformed lock still ages out on the TTL.
+// ESRCH = gone; EPERM = alive under another user; pid 0 (unknown) counts as gone.
 const holderAlive = (pid: number): boolean => {
   if (pid <= 0) return false;
   try {
@@ -42,14 +50,11 @@ const holderAlive = (pid: number): boolean => {
   }
 };
 
-// A holder is safe to take over only once it is past the TTL AND provably gone: a dead pid, our own
-// leftover pid (we cannot be inside our own synchronous section while here), or so old that pid reuse
-// is the only explanation. A live holder merely starved of CPU is NEVER stolen - stealing it would
-// put two writers in the critical section and silently drop an append (issue #249).
-const isCrashed = (holder: { pid: number; at: number }, now: number): boolean => {
+// Never steal a live-but-CPU-starved holder: two writers in the section drop an append (#249).
+const isCrashed = (holder: { pid: number; at: number }, now: number, lim: Limits): boolean => {
   const age = now - holder.at;
-  if (age < LOCK_TTL_MS) return false;
-  if (age >= STALE_HARD_MS) return true;
+  if (age < lim.ttlMs) return false;
+  if (age >= lim.hardStaleMs) return true;
   return holder.pid === process.pid || !holderAlive(holder.pid);
 };
 
@@ -61,10 +66,7 @@ const unlinkQuiet = (path: string): void => {
   }
 };
 
-// Atomic exclusive create: writeFileSync('wx') is create-then-write, so a concurrent holderOf can
-// read the freshly created but still-empty lock and mistake a live holder for absent (issue #231
-// lost-update). Instead write the full "<pid> <at>" to a unique temp, then linkSync it into place:
-// link is atomic and fails EEXIST if held, so the content is always complete when the lock appears.
+// Write-then-link: a reader can never see the lock before its "<pid> <at>" content (#231).
 const createLockExclusive = (path: string, content: string): void => {
   const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.new`;
   writeFileSync(tmp, content);
@@ -75,15 +77,12 @@ const createLockExclusive = (path: string, content: string): void => {
   }
 };
 
-// Serialize stale-lock takeover behind its own exclusive create so no taker can delete a lock that
-// turned FRESH mid-takeover (the ABA race: a reader sees the stale timestamp, a winner re-creates
-// the lock, the reader deletes the winner's file). Same O_EXCL-guard design proven in
-// update-lock.ts. Returns whether to re-race the create.
-const takeOverStale = (target: string, now: number): boolean => {
+// Takeover runs under its own exclusive guard so no taker deletes a lock that turned fresh (ABA).
+const takeOverStale = (target: string, now: number, lim: Limits): boolean => {
   const path = lockPath(target);
   const guard = `${path}.takeover`;
   const guardHeld = holderOf(guard);
-  if (guardHeld !== null && isCrashed(guardHeld, now)) unlinkQuiet(guard);
+  if (guardHeld !== null && isCrashed(guardHeld, now, lim)) unlinkQuiet(guard);
   try {
     createLockExclusive(guard, `${process.pid} ${now}`);
   } catch {
@@ -91,10 +90,8 @@ const takeOverStale = (target: string, now: number): boolean => {
   }
   try {
     const holder = holderOf(path);
-    // A null holder means the lock file exists but its content did not read cleanly. Never treat that
-    // as absent: clearing it here would steal a live holder still writing its bytes. Only a holder we
-    // can positively prove crashed is taken over.
-    if (holder === null || !isCrashed(holder, now)) return false;
+    // Unreadable content is not proof of a crash: only a provably crashed holder is cleared.
+    if (holder === null || !isCrashed(holder, now, lim)) return false;
     unlinkQuiet(path);
     return true;
   } finally {
@@ -102,60 +99,70 @@ const takeOverStale = (target: string, now: number): boolean => {
   }
 };
 
-// One-shot acquire: the atomic link IS the mutex - concurrent callers cannot both win it, and the
-// linked content is always complete so no reader sees an empty lock. A fresh or live holder refuses;
-// a crashed one (dead holder past the TTL) is cleared under the takeover guard and re-raced once.
-// `now` is injectable for tests.
-export const acquireFileLock = (target: string, now: number = Date.now()): boolean => {
-  mkdirSync(dirname(target), { recursive: true });
+// Only EEXIST is contention; a permission error never clears, so it fails fast.
+const lockWriteError = (err: unknown, path: string): Error | null => {
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === 'EEXIST') return null;
+  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS')
+    return new Error(`permission denied: ${path}`);
+  return new Error(`could not write lock file ${path}${code ? ` (${code})` : ''}`);
+};
+
+const tryCreate = (path: string, now: number): boolean => {
+  try {
+    createLockExclusive(path, `${process.pid} ${now}`);
+    return true;
+  } catch (err) {
+    const fatal = lockWriteError(err, path);
+    if (fatal) throw fatal;
+    return false;
+  }
+};
+
+// One-shot acquire: the atomic link IS the mutex; a crashed holder is cleared and re-raced once.
+export const acquireFileLock = (
+  target: string,
+  now: number = Date.now(),
+  opts: LockOptions = {}
+): boolean => {
+  const lim = limitsOf(opts);
+  const path = lockPath(target);
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
   for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      createLockExclusive(lockPath(target), `${process.pid} ${now}`);
-      return true;
-    } catch (err) {
-      // Only EEXIST means contention. A permission/read-only error never clears, so failing fast
-      // beats burning the full MAX_WAIT_MS before reporting a generic "could not acquire lock".
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== 'EEXIST') {
-        const path = lockPath(target);
-        throw new Error(
-          code === 'EACCES' || code === 'EPERM' || code === 'EROFS'
-            ? `permission denied: ${path}`
-            : `could not write lock file ${path}${code ? ` (${code})` : ''}`
-        );
-      }
-      const holder = holderOf(lockPath(target));
-      // Refuse unless the holder is positively crashed. A null holder (unreadable content) is NOT
-      // proof of a crash: attempting takeover on it once stole a live holder's lock (issue #231).
-      if (holder === null || !isCrashed(holder, now)) return false;
-      if (!takeOverStale(target, now)) return false;
-    }
+    if (tryCreate(path, now)) return true;
+    const holder = holderOf(path);
+    if (holder === null || !isCrashed(holder, now, lim)) return false;
+    if (!takeOverStale(target, now, lim)) return false;
   }
   return false;
 };
 
-export const releaseFileLock = (target: string): void => unlinkQuiet(lockPath(target));
+// Only our own lock: a holder that took over after the hard-stale age keeps theirs.
+export const releaseFileLock = (target: string): void => {
+  const path = lockPath(target);
+  if (holderOf(path)?.pid === process.pid) unlinkQuiet(path);
+};
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-// Run `fn` while holding the advisory lock for `target`, blocking with bounded backoff until the
-// lock is free (or a crashed holder is taken over past the TTL). `fn` MUST be synchronous: the lock
-// is held only across one synchronous critical section, so in-process callers can never both be
-// inside it. The whole read-modify-write belongs in `fn` - locking only the write still loses
-// updates across the read->write gap. Released in a finally, so a throw never wedges the lock.
-export const withFileLock = async <T>(target: string, fn: () => T): Promise<T> => {
-  const deadline = Date.now() + MAX_WAIT_MS;
+// `fn` MUST be synchronous and hold the whole read-modify-write; released in a finally.
+export const withFileLock = async <T>(
+  target: string,
+  fn: () => T,
+  opts: LockOptions = {}
+): Promise<T> => {
+  const { maxWaitMs } = limitsOf(opts);
+  const deadline = Date.now() + maxWaitMs;
   for (;;) {
-    if (acquireFileLock(target)) {
+    if (acquireFileLock(target, Date.now(), opts)) {
       try {
         return fn();
       } finally {
         releaseFileLock(target);
       }
     }
-    if (Date.now() >= deadline) {
-      throw new Error(`could not acquire lock for ${target} within ${MAX_WAIT_MS}ms`);
-    }
+    if (Date.now() >= deadline)
+      throw new Error(`could not acquire lock for ${target} within ${maxWaitMs}ms`);
     await sleep(STEP_MS + Math.floor(Math.random() * STEP_MS));
   }
 };

@@ -1,8 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { requestHeaders } from '../net/user-agent.js';
-
-// OAuth register/token/revoke are all CLI-originated; identify the caller on each.
-const cliHeaders = (): Record<string, string> => requestHeaders();
+import { type StoredTokens } from '../fs/config.js';
+import { AUTH_TIMEOUT_MS, cliFetch, type CliRequestInit } from '../net/fetch.js';
 
 export interface PkcePair {
   verifier: string;
@@ -21,6 +19,7 @@ const REGISTER_PATH = '/api/auth/mcp/register';
 const AUTHORIZE_PATH = '/api/auth/mcp/authorize';
 const TOKEN_PATH = '/api/auth/mcp/token';
 const REVOKE_PATH = '/api/auth/mcp/revoke';
+const REVOKE_TIMEOUT_MS = 3_000;
 
 export const DEFAULT_SCOPE = 'memory:read memory:write offline_access';
 
@@ -32,18 +31,32 @@ export const pkcePair = (): PkcePair => {
 
 export const randomState = (): string => randomBytes(16).toString('base64url');
 
-export const registerClient = async (authUrl: string, redirectUri: string): Promise<string> => {
-  const res = await fetch(`${authUrl}${REGISTER_PATH}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...cliHeaders() },
-    body: JSON.stringify({
-      client_name: 'agentage CLI',
-      redirect_uris: [redirectUri],
-      token_endpoint_auth_method: 'none',
-      grant_types: ['authorization_code', 'refresh_token'],
-      response_types: ['code'],
-    }),
+// A refresh that does not rotate keeps the previous refresh token.
+export const tokensFrom = (res: TokenResponse, previousRefresh?: string): StoredTokens => ({
+  accessToken: res.access_token,
+  refreshToken: res.refresh_token ?? previousRefresh,
+  expiresAt: res.expires_in ? Date.now() + res.expires_in * 1000 : undefined,
+});
+
+const registration = (redirectUri: string): string =>
+  JSON.stringify({
+    client_name: 'agentage CLI',
+    redirect_uris: [redirectUri],
+    token_endpoint_auth_method: 'none',
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
   });
+
+export const registerClient = async (authUrl: string, redirectUri: string): Promise<string> => {
+  const res = await cliFetch(
+    `${authUrl}${REGISTER_PATH}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: registration(redirectUri),
+    },
+    { timeoutMs: AUTH_TIMEOUT_MS }
+  );
   if (!res.ok) throw new Error(`client registration failed (${res.status})`);
   const body = (await res.json()) as { client_id?: string };
   if (!body.client_id) throw new Error('client registration returned no client_id');
@@ -83,12 +96,14 @@ export class TokenRequestError extends Error {
   }
 }
 
+const formInit = (form: Record<string, string>): CliRequestInit => ({
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: new URLSearchParams(form).toString(),
+});
+
 const postForm = async (url: string, form: Record<string, string>): Promise<TokenResponse> => {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded', ...cliHeaders() },
-    body: new URLSearchParams(form).toString(),
-  });
+  const res = await cliFetch(url, formInit(form), { timeoutMs: AUTH_TIMEOUT_MS });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
     throw new TokenRequestError(res.status, body?.error);
@@ -119,21 +134,15 @@ export const refreshTokens = (
     client_id: clientId,
   });
 
-// AbortSignal.timeout caps a stalled revoke on a packet-drop network; residual undici keepalive is
-// acceptable here since --disconnect exits right after and errors are swallowed anyway.
+// Best-effort with a short cap: local credentials are removed whatever the server says.
 export const revokeToken = async (
   authUrl: string,
   token: string,
-  timeoutMs = 3000
+  timeoutMs = REVOKE_TIMEOUT_MS
 ): Promise<void> => {
   try {
-    await fetch(`${authUrl}${REVOKE_PATH}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', ...cliHeaders() },
-      body: new URLSearchParams({ token }).toString(),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    await cliFetch(`${authUrl}${REVOKE_PATH}`, formInit({ token }), { timeoutMs });
   } catch {
-    // best-effort: local credentials are removed regardless
+    // a stalled or refused revoke never blocks sign-out
   }
 };

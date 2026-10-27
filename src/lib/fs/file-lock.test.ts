@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -167,10 +168,62 @@ describe('file lock', () => {
     expect(arr.sort((a, b) => a - b)).toEqual(Array.from({ length: 30 }, (_, i) => i));
   });
 
+  describe('options', () => {
+    const slow = { ttlMs: 600_000, hardStaleMs: 1_800_000 };
+
+    it('honours a custom TTL: fresh inside it, taken over past it', () => {
+      const now = 1_000_000;
+      expect(acquireFileLock(target, now, slow)).toBe(true);
+      expect(acquireFileLock(target, now + 60_000, slow)).toBe(false); // the 10s default would steal
+      expect(acquireFileLock(target, now + 601_000, slow)).toBe(true); // own leftover pid, past TTL
+      releaseFileLock(target);
+    });
+
+    it('honours a custom hard-stale age for a holder whose pid still resolves', () => {
+      const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
+      try {
+        writeFileSync(lockFile(), `${holder.pid} ${1_000_000}`);
+        const opts = { ttlMs: 1_000, hardStaleMs: 5_000 };
+        expect(acquireFileLock(target, 1_000_000 + 3_000, opts)).toBe(false); // alive, under hard
+        expect(acquireFileLock(target, 1_000_000 + 6_000, opts)).toBe(true); // past hard: pid reuse
+        releaseFileLock(target);
+      } finally {
+        holder.kill('SIGKILL');
+      }
+    });
+
+    it('honours a custom max wait in withFileLock', async () => {
+      const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
+      try {
+        writeFileSync(lockFile(), `${holder.pid} ${Date.now()}`);
+        const started = Date.now();
+        await expect(withFileLock(target, () => 1, { maxWaitMs: 100 })).rejects.toThrow(
+          /within 100ms/
+        );
+        expect(Date.now() - started).toBeLessThan(2_000);
+      } finally {
+        holder.kill('SIGKILL');
+      }
+    });
+
+    it('releases only a lock this process holds', () => {
+      writeFileSync(lockFile(), `${process.pid + 1_000_000} ${Date.now()}`);
+      releaseFileLock(target);
+      expect(existsSync(lockFile())).toBe(true); // another holder's lock survives our release
+    });
+
+    it('creates a missing parent dir 0700', () => {
+      const nested = join(dir, 'fresh', 'data.json');
+      expect(acquireFileLock(nested)).toBe(true);
+      expect(statSync(join(dir, 'fresh')).mode & 0o777).toBe(0o700);
+      releaseFileLock(nested);
+    });
+  });
+
   // Real OS processes racing the exact read-modify-write shape from issue #231. Each child appends
   // its id to one shared JSON array through withFileLock; a lockless RMW drops appends whose read
   // raced another writer's write. The transpiled module has no non-builtin imports.
-  const raceAppends = async (count: number): Promise<string[]> => {
+  const transpiledLock = (): string => {
     const libDir = join(dir, 'lib');
     mkdirSync(libDir, { recursive: true });
     const out = ts.transpileModule(
@@ -180,7 +233,26 @@ describe('file lock', () => {
       }
     ).outputText;
     writeFileSync(join(libDir, 'file-lock.js'), out, 'utf-8');
-    const mod = pathToFileURL(join(libDir, 'file-lock.js')).href;
+    return pathToFileURL(join(libDir, 'file-lock.js')).href;
+  };
+
+  const runAll = (
+    count: number,
+    script: string,
+    args: (i: number) => string[]
+  ): Promise<string[]> =>
+    Promise.all(
+      Array.from(
+        { length: count },
+        (_, i) =>
+          new Promise<string>((resolve) => {
+            execFile(process.execPath, [script, ...args(i)], {}, (_e, stdout) => resolve(stdout));
+          })
+      )
+    );
+
+  const raceAppends = async (count: number): Promise<string[]> => {
+    const mod = transpiledLock();
     const script = join(dir, 'race.mjs');
     writeFileSync(
       script,
@@ -197,18 +269,34 @@ describe('file lock', () => {
         `process.stdout.write('ok');\n`,
       'utf-8'
     );
-    return Promise.all(
-      Array.from(
-        { length: count },
-        (_, i) =>
-          new Promise<string>((resolve) => {
-            execFile(process.execPath, [script, target, String(i)], {}, (_e, stdout) =>
-              resolve(stdout)
-            );
-          })
-      )
-    );
+    return runAll(count, script, (i) => [target, String(i)]);
   };
+
+  // The ABA proof: a naive unlink-takeover lets a taker delete the fresh winner's lock and re-win.
+  const raceAcquire = async (count: number, now: number): Promise<string[]> => {
+    const mod = transpiledLock();
+    const script = join(dir, 'acquire.mjs');
+    const opts = JSON.stringify({ ttlMs: 600_000, hardStaleMs: 1_800_000 });
+    writeFileSync(
+      script,
+      `import { acquireFileLock } from '${mod}';\n` +
+        `process.stdout.write(acquireFileLock(process.argv[2], ${now}, ${opts}) ? '1' : '0');\n`,
+      'utf-8'
+    );
+    return runAll(count, script, () => [target]);
+  };
+
+  it('exactly one of many concurrent processes wins a free lock', async () => {
+    const runs = await raceAcquire(12, 1_000_000);
+    expect(runs.filter((r) => r === '1')).toHaveLength(1);
+  }, 20_000);
+
+  it('exactly one of many concurrent processes takes over a stale lock', async () => {
+    const now = 1_000_000;
+    writeFileSync(lockFile(), String(now - 11 * 60_000)); // legacy pid-less lock, past the TTL
+    const runs = await raceAcquire(12, now);
+    expect(runs.filter((r) => r === '1')).toHaveLength(1);
+  }, 20_000);
 
   it('20 concurrent processes each land their append, zero lost, no leftover lock', async () => {
     writeFileSync(target, JSON.stringify([]));

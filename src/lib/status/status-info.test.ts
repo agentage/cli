@@ -9,6 +9,18 @@ import { gatherStatus } from './status-info.js';
 vi.mock('../net/http.js', () => ({ fetchJsonUnref: vi.fn() }));
 const httpMock = vi.mocked(fetchJsonUnref);
 
+// cliFetch pins the global fetch at load, so get-session is stubbed at the module export.
+const net = vi.hoisted(() => ({
+  fetch: (..._args: unknown[]): Promise<Response> => Promise.reject(),
+}));
+vi.mock('../net/fetch.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  cliFetch: (url: string, init?: RequestInit) => net.fetch(url, init),
+}));
+const useFetch = (fn: (url: string, init?: RequestInit) => Promise<Response>): void => {
+  net.fetch = fn as typeof net.fetch;
+};
+
 const auth: AuthState = {
   siteFqdn: 'dev.agentage.io',
   clientId: 'c1',
@@ -19,7 +31,7 @@ const jsonResponse = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 // health, the site-root reachability probe, and the npm-registry update check all go through
-// fetchJsonUnref (node:https); introspection (get-session) still uses global fetch via authedGet.
+// fetchJsonUnref (node:http/s); introspection (get-session) goes through cliFetch via authedJson.
 // The site probe hits the bare origin (no /health, no /latest) and counts any non-null response.
 const stubHttp = (health: 'reachable' | 'unreachable'): void => {
   httpMock.mockImplementation((url: string) => {
@@ -44,7 +56,6 @@ afterEach(() => {
   delete process.env['AGENTAGE_CONFIG_DIR'];
   rmSync(dir, { recursive: true, force: true });
   httpMock.mockReset();
-  vi.unstubAllGlobals();
 });
 
 describe('gatherStatus', () => {
@@ -79,8 +90,7 @@ describe('gatherStatus', () => {
   });
 
   it('reports signed-in with token expiry when introspection succeeds', async () => {
-    vi.stubGlobal(
-      'fetch',
+    useFetch(
       vi.fn(async () =>
         jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: '2026-06-12T20:00:00Z' })
       )
@@ -90,18 +100,14 @@ describe('gatherStatus', () => {
   });
 
   it('flags pat auth when the credential is a personal access token', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: 'x' }))
-    );
+    useFetch(vi.fn(async () => jsonResponse(200, { userId: 'u1', accessTokenExpiresAt: 'x' })));
     const patAuth: AuthState = { ...auth, kind: 'pat', tokens: { accessToken: 'aga_x' } };
     const report = await gatherStatus(patAuth, 'dev.agentage.io');
     expect(report.auth).toEqual({ signedIn: true, tokenExpiresAt: 'x', pat: true });
   });
 
   it('refreshes on a 200 + null session and reports signed-in', async () => {
-    vi.stubGlobal(
-      'fetch',
+    useFetch(
       vi.fn((url: string, init?: RequestInit) => {
         if (String(url).includes('/token'))
           return Promise.resolve(jsonResponse(200, { access_token: 'new', expires_in: 60 }));
@@ -119,8 +125,7 @@ describe('gatherStatus', () => {
   });
 
   it('reports session expired when a 200 + null survives a terminal (invalid_grant) refresh', async () => {
-    vi.stubGlobal(
-      'fetch',
+    useFetch(
       vi.fn((url: string) =>
         Promise.resolve(
           String(url).includes('/token')
@@ -135,8 +140,7 @@ describe('gatherStatus', () => {
   });
 
   it('reports session expired when the token is authoritatively rejected (401)', async () => {
-    vi.stubGlobal(
-      'fetch',
+    useFetch(
       vi.fn((url: string) =>
         Promise.resolve(
           String(url).includes('/token')
@@ -152,10 +156,7 @@ describe('gatherStatus', () => {
 
   it('reports signed-in (never expired) on a 5xx blip while holding an unexpired token', async () => {
     const future = Date.now() + 3_600_000;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse(500, {}))
-    );
+    useFetch(vi.fn(async () => jsonResponse(500, {})));
     const report = await gatherStatus(
       { ...auth, tokens: { ...auth.tokens, expiresAt: future } },
       'dev.agentage.io'
@@ -167,8 +168,7 @@ describe('gatherStatus', () => {
 
   it('does not report expired when a refresh blips transiently on an expired token', async () => {
     // Stored token past expiry -> proactive refresh returns 429 (transient), never invalid_grant.
-    vi.stubGlobal(
-      'fetch',
+    useFetch(
       vi.fn((url: string) =>
         Promise.resolve(
           String(url).includes('/token') ? jsonResponse(429, {}) : jsonResponse(200, null)

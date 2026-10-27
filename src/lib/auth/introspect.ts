@@ -1,6 +1,6 @@
 import { type AuthState } from '../fs/config.js';
 import { type Links } from '../net/origins.js';
-import { authedGet, refreshOrThrow } from './api.js';
+import { authedJson, refreshOrThrow } from './api.js';
 import { AuthRequiredError, TransientAuthError } from './auth-errors.js';
 
 interface IntrospectionResponse {
@@ -19,19 +19,16 @@ const isPast = (iso?: string): boolean => {
   return !Number.isNaN(t) && t <= Date.now();
 };
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => {
-    // unref so a pending backoff never keeps `status` from exiting.
-    const timer = setTimeout(resolve, ms);
-    timer.unref();
-  });
+const RETRY_BACKOFF_MS = 300;
 
-// Introspection over global fetch: a network error reflects as a transient (a blip must not read as
-// a dead session), never letting the raw error escape to gatherStatus. Only a 401 stays terminal.
+// Ref'd on purpose: an unref'd backoff let Node exit 13 mid-retry once nothing else held the loop.
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Any failure but a 401 is a transient: a network blip must never read as a dead session.
 const getSession = async (auth: AuthState, links: Links): Promise<IntrospectionResponse | null> => {
   const url = `${links.auth}/api/auth/mcp/get-session`;
   try {
-    return await authedGet<IntrospectionResponse | null>(auth, links, url);
+    return await authedJson<IntrospectionResponse | null>(auth, links, url);
   } catch (err) {
     if (err instanceof AuthRequiredError) throw err;
     throw new TransientAuthError('get-session temporarily failed');
@@ -92,13 +89,13 @@ const introspectOnce = async (auth: AuthState, links: Links): Promise<TokenSessi
   return freshenIfStale(auth, links, body);
 };
 
-// A retry-once with a short unref'd backoff absorbs a lone transient blip; a terminal error skips it.
+// A retry-once with a short backoff absorbs a lone transient blip; a terminal error skips it.
 export const introspectToken = async (auth: AuthState, links: Links): Promise<TokenSession> => {
   try {
     return await introspectOnce(auth, links);
   } catch (err) {
     if (err instanceof AuthRequiredError) throw err; // terminal: no point retrying a dead session
-    await sleep(300);
+    await sleep(RETRY_BACKOFF_MS);
     return introspectOnce(auth, links); // one transient-only retry; a 2nd transient propagates
   }
 };

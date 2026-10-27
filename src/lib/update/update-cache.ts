@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ensureConfigDir, getConfigDir } from '../fs/config.js';
+import { isRecord, readJson, writeJsonAtomic } from '../fs/json-file.js';
 import { fetchJsonUnref } from '../net/http.js';
 import { compareVersions, INSTALL_HINT, REGISTRY_URL } from './update-check.js';
 import { VERSION } from '../../utils/version.js';
@@ -16,18 +16,17 @@ export interface UpdateCache {
 
 const cachePath = (): string => join(getConfigDir(), CACHE_FILE);
 
-export const readUpdateCache = (): UpdateCache | null => {
-  try {
-    const c = JSON.parse(readFileSync(cachePath(), 'utf-8')) as UpdateCache;
-    return typeof c.checkedAt === 'number' ? c : null;
-  } catch {
-    return null;
-  }
-};
+// A wrong-typed field reads as no cache: the post-action hint must never throw.
+export const isUpdateCache = (value: unknown): value is UpdateCache =>
+  isRecord(value) &&
+  typeof value['checkedAt'] === 'number' &&
+  (value['latest'] === null || typeof value['latest'] === 'string');
+
+export const readUpdateCache = (): UpdateCache | null => readJson(cachePath(), isUpdateCache);
 
 const writeUpdateCache = (latest: string | null, now: number): void => {
   ensureConfigDir();
-  writeFileSync(cachePath(), JSON.stringify({ checkedAt: now, latest }) + '\n', 'utf-8');
+  writeJsonAtomic(cachePath(), { checkedAt: now, latest });
 };
 
 // The one dim hint line printed after a command, read purely from the cache (never the network),

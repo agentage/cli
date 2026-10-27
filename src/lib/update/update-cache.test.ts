@@ -1,10 +1,20 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getConfigDir } from '../fs/config.js';
 import {
   fetchLatestVersion,
+  isUpdateCache,
+  readUpdateCache,
   refreshUpdateCache,
   updateHint,
   type UpdateCache,
@@ -47,6 +57,23 @@ describe('update cache', () => {
       expect(updateHint()).toBeNull();
       writeCache({ checkedAt: Date.now(), latest: null });
       expect(updateHint()).toBeNull();
+    });
+  });
+
+  describe('isUpdateCache', () => {
+    it('accepts a numeric checkedAt with a string or null latest', () => {
+      expect(isUpdateCache({ checkedAt: 1, latest: '1.0.0' })).toBe(true);
+      expect(isUpdateCache({ checkedAt: 1, latest: null })).toBe(true);
+    });
+
+    it('rejects anything else, so a corrupt cache never breaks a command', () => {
+      for (const bad of [{}, [], null, { checkedAt: '1', latest: null }, { checkedAt: 1 }]) {
+        expect(isUpdateCache(bad), JSON.stringify(bad)).toBe(false);
+      }
+      mkdirSync(getConfigDir(), { recursive: true });
+      writeFileSync(cacheFile(), JSON.stringify({ checkedAt: 1, latest: 7 }));
+      expect(readUpdateCache()).toBeNull();
+      expect(updateHint()).toBeNull(); // used to throw on the non-string latest
     });
   });
 
@@ -104,6 +131,8 @@ describe('update cache', () => {
       expect(cache.latest).toBe('9.9.9');
       expect(typeof cache.checkedAt).toBe('number');
       expect(updateHint()).toContain('9.9.9');
+      expect(statSync(cacheFile()).mode & 0o777).toBe(0o600);
+      expect(readdirSync(getConfigDir()).filter((f) => f.endsWith('.tmp'))).toEqual([]);
     });
 
     it('an on-disk failure record throttles the next refresh (offline retries hourly)', async () => {

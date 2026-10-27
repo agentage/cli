@@ -34,6 +34,8 @@ agentage update           # install the latest published version via npm
 agentage update --check   # report whether an update is available, don't install
 ```
 
+`update` needs npm 10 or newer and prints npm's last output lines if the install fails.
+
 ## Token auth (CI and headless)
 
 Machines without a browser authenticate with a personal access token. Mint one in the
@@ -42,10 +44,13 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 
 ## Exit codes
 
-| Code | Meaning                                                                         |
-| ---- | ------------------------------------------------------------------------------- |
-| `0`  | Success, including `--help`, `--version`, and `status` while signed out         |
-| `1`  | Failure: sign-in or update failed, an invalid token, or an unknown command/flag |
+| Code | Meaning                                                                      |
+| ---- | ---------------------------------------------------------------------------- |
+| `0`  | Success, including `--help`, `--version`, and `status` while signed out      |
+| `1`  | A step failed: sign-in or update failed, or an invalid token                 |
+| `2`  | Usage error: an unknown command or flag, a missing flag value, or no command |
+
+Errors go to stderr; stdout carries only command output (`status --json` stays parseable).
 
 ## Environment
 
@@ -54,5 +59,4 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 | `AGENTAGE_SITE_FQDN`  | Target host                                        | `agentage.io` |
 | `AGENTAGE_CONFIG_DIR` | Config and credentials directory (`auth.json`)     | `~/.agentage` |
 | `AGENTAGE_TOKEN`      | Personal access token for CI and headless machines | unset         |
-| `AGENTAGE_DEBUG`      | Print diagnostics to stderr                        | unset         |
-| `NO_COLOR`            | Disable colored output                             | unset         |
+| `NO_COLOR`            | Disable colored output (any non-empty value)       | unset         |
