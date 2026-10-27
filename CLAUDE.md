@@ -41,15 +41,16 @@ only, not OAuth bearers.
 
 ## E2E (`./e2e`, Playwright)
 Drives the built `dist/cli.js` as a subprocess. Tiers are tags in the test titles:
-- `@offline` - the PR tier (`e2e.yml` on every PR): no live stack, no secrets; version,
-  signed-out status, and the in-process registry
-- `@smoke` - version + degraded status against a live target
-- `@p0` - full headless OAuth round trip: the test plays "the browser": signed-in session
-  (Origin-stamped request context - the AS 403s cookie POSTs without it) -> authorize 302 ->
-  the CLI's localhost callback. Self-contained: without `E2E_AUTH_*` env it signs up a
-  throwaway account per run
-Run via `npm run build && npm run test:e2e -- --grep @offline`; the live tiers run by manual
-dispatch of `e2e.yml` with a target. Never point it at production.
+- `@offline` - the PR tier (`e2e.yml` on every PR): hermetic, no live stack, no secrets; the
+  CLI talks only to loopback stubs (`e2e/stub/` site + auth server, `e2e/registry/` npm)
+- `@p0` - the hermetic `setup --no-browser` sign-in round trip against the loopback stub
+  (`e2e/stub/`, `AGENTAGE_SITE_FQDN=127.0.0.1:<port>`): DCR, PKCE authorize, code exchange,
+  get-session, refresh rotation, revoke. The test plays "the browser" with a manual-redirect
+  fetch; also tagged `@offline`, so it runs on every PR
+- `@smoke` - the read-only live tier: version + degraded signed-out status against the
+  target (`AGENTAGE_SITE_FQDN`, default `agentage.io`); nothing signs in or writes
+Run via `npm run build && npm run test:e2e -- --grep @offline`; `@smoke` runs by manual dispatch
+of `e2e.yml` with a target.
 
 ## Conventions
 - `AGENTAGE_SITE_FQDN` selects the target host (production default); `AGENTAGE_CONFIG_DIR`

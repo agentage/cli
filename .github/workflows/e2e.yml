@@ -1,11 +1,10 @@
 # E2E - builds the CLI and runs ./e2e against the built dist/cli.js. Two tiers:
-#  - e2e-offline: the @offline-tagged tests only. Self-contained (CLI subprocess
-#    plus an in-process npm registry on loopback), so this is the required signal
-#    on every PR/push. No live-stack env or secrets.
-#  - e2e-live: the full suite (@smoke + @p0 OAuth) against a live deployed stack.
-#    Manual dispatch only - there is no default target. Self-contained @p0 OAuth:
-#    when E2E_AUTH_* secrets are absent it signs up a throwaway account (open
-#    signup on the target). No browser binaries needed.
+#  - e2e-offline: the @offline-tagged tests only. Hermetic (CLI subprocess plus
+#    in-process loopback stubs: the site/auth server incl. the @p0 sign-in round
+#    trip, and an npm registry), so this is the required signal on every PR/push.
+#    No live-stack env or secrets.
+#  - e2e-live: the read-only @smoke tests against the dispatched target. Manual
+#    dispatch only; nothing signs in or signs up, so no secrets. No browser binaries.
 name: E2E
 
 on:
@@ -107,12 +106,10 @@ jobs:
       - name: 🏗️ Build
         run: npm run build
 
-      - name: 🧪 Run e2e
-        run: npm run test:e2e
+      - name: 🧪 Run smoke e2e
+        run: npm run test:e2e -- --grep @smoke
         env:
           AGENTAGE_SITE_FQDN: ${{ inputs.target }}
-          E2E_AUTH_EMAIL: ${{ secrets.E2E_AUTH_EMAIL }}
-          E2E_AUTH_PASSWORD: ${{ secrets.E2E_AUTH_PASSWORD }}
 
       - name: 📊 Upload report
         if: failure()

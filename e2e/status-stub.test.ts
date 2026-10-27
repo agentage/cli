@@ -1,34 +1,26 @@
 /**
- * @offline - the built CLI against a single-origin loopback stub
- * (AGENTAGE_SITE_FQDN=127.0.0.1:<port>, plain http): status reachability,
+ * @offline - the built CLI against the loopback stub (e2e/stub/, plain http on
+ * AGENTAGE_SITE_FQDN=127.0.0.1:<port>): status reachability, signed-out status,
  * a malformed auth.json, and the exit-code contract (0 / 1 / 2).
  */
 import { writeFileSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
-import { type AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { assertCliBuilt, createCliMachine, type CliMachine } from './helpers.js';
+import { startStubSite, stubEnv, type StubSite } from './stub/auth-server.js';
 
-let stub: Server;
+let stub: StubSite;
 let machine: CliMachine;
 
 test.beforeAll(async () => {
   assertCliBuilt();
-  stub = createServer((req, res) => {
-    const health = req.url === '/api/health';
-    res.writeHead(health ? 200 : 404, { 'content-type': 'application/json' });
-    res.end(health ? '{"status":"ok"}' : '{}');
-  });
-  await new Promise<void>((resolve) => stub.listen(0, '127.0.0.1', resolve));
-  const fqdn = `127.0.0.1:${(stub.address() as AddressInfo).port}`;
-  machine = createCliMachine({ AGENTAGE_SITE_FQDN: fqdn });
+  stub = await startStubSite();
+  machine = createCliMachine(stubEnv(stub));
 });
 
-test.afterAll(() => {
+test.afterAll(async () => {
   machine.cleanup();
-  stub.closeAllConnections();
-  stub.close();
+  await stub.close();
 });
 
 test('status reaches an http loopback target instead of failing on the protocol @offline', async () => {
@@ -40,6 +32,13 @@ test('status reaches an http loopback target instead of failing on the protocol 
   };
   expect(report.target.reachable).toBe(true);
   expect(report.endpoint.reachable).toBe(true);
+});
+
+test('status never leaks a stack trace when signed out @offline', async () => {
+  const result = await machine.exec(['status']);
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain('not signed in - run: agentage setup');
+  expect(result.stdout + result.stderr).not.toMatch(/\bat .*\(.*:\d+:\d+\)/);
 });
 
 test('a malformed auth.json reads as signed out, never a silent exit 13 @offline', async () => {
