@@ -5,8 +5,8 @@ extend it through `src/core/` (gated by `AGENTAGE_PLUGINS=1`).
 memory, vault, daemon, sync and MCP code lives in git history up to v0.37.2 and returns as plugins.
 
 ## Layout
-- `src/cli.ts` - the bin is a loader: Node version guard, observability bootstrap, then a dynamic
-  import of `program.ts` (excluded from coverage; keep logic out of it)
+- `src/cli.ts` - the bin: Node version guard, then a dynamic import of `program.ts` (excluded
+  from coverage; keep logic out of it)
 - `src/program.ts` - commander wiring: registers the commands and the post-action update hint
 - `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability:
   `auth/` (setup), `status/`, `update/`
@@ -22,8 +22,9 @@ memory, vault, daemon, sync and MCP code lives in git history up to v0.37.2 and 
 - `src/plugin.ts` - the `@agentage/cli/plugin` subpath export, versioned by `PLUGIN_API_VERSION`
 - `fixtures/` - test-only plugin packages (`@agentage/fixture-*`), never published
 - `e2e/registry/` - in-process npm registry serving `npm pack` output to e2e on loopback
+- `scripts/bump-version.js` - release helper (`node scripts/bump-version.js patch|minor|major`)
 - `src/package-guard.test.ts` - CI guard: no product or agent-runtime imports; runtime deps stay
-  exactly `@agentage/observability + @opentelemetry/api + chalk + commander + open`
+  exactly `chalk + commander + open`
 
 ## Auth model
 Fresh DCR public client per `setup` run (the redirect URI binds the ephemeral callback

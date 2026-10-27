@@ -21,6 +21,8 @@ const FORBIDDEN = [
   '@agentage/memory-core',
   '@agentage/server-memory',
   '@modelcontextprotocol/sdk',
+  '@agentage/observability',
+  '@opentelemetry/',
   '@supabase/',
   "from 'express'",
   "from 'ws'",
@@ -31,7 +33,6 @@ const FORBIDDEN = [
 const CORE_FORBIDDEN: RegExp[] = [
   /['"](\.\.\/)+(daemon|mcp|sync|lib\/memory|lib\/vault)\b/,
   /['"]express['"]/,
-  /@agentage\/observability/,
 ];
 
 describe('package guard (launcher core)', () => {
@@ -68,14 +69,7 @@ describe('package guard (launcher core)', () => {
       dependencies: Record<string, string>;
       bin: Record<string, string>;
     };
-    // The telemetry kit plus its @opentelemetry/api peer (listed so one copy is hoisted).
-    expect(Object.keys(pkg.dependencies).sort()).toEqual([
-      '@agentage/observability',
-      '@opentelemetry/api',
-      'chalk',
-      'commander',
-      'open',
-    ]);
+    expect(Object.keys(pkg.dependencies).sort()).toEqual(['chalk', 'commander', 'open']);
     expect(pkg.bin['agentage']).toBe('./dist/cli.js');
   });
 

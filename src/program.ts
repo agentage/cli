@@ -33,7 +33,7 @@ registerSetup(program);
 registerStatus(program);
 registerUpdate(program);
 
-// Called by the bin (src/cli.ts) once the observability bootstrap has run.
+// Called by the bin (src/cli.ts).
 export const run = async (): Promise<void> => {
   await program.parseAsync().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : String(err));
