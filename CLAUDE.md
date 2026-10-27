@@ -1,8 +1,6 @@
 # CLAUDE.md - @agentage/cli
 
-The agentage CLI. Versioning RESTARTED at 0.0.x (old npm versions were
-unpublished; earliest burned slot is 0.1.19 - stay below it until the line naturally
-passes). Commands: `setup` (OAuth sign-in), `status`, `vault` (incl. `vault sync`), `memory`, `daemon`, `update`.
+The agentage CLI. Commands: `setup` (OAuth sign-in), `status`, `vault` (incl. `vault sync`), `memory`, `daemon`, `update`.
 MCP is served by the daemon at `/mcp` (Streamable HTTP), not a standalone command; gate it off with
 `daemon start --no-mcp` / `AGENTAGE_DAEMON_NO_MCP=1`. The old
 agent-runtime CLI (run/agents/machines/...) lives in git history only - do not resurrect
@@ -39,9 +37,15 @@ its agent-runtime patterns (the local memory daemon was deliberately ported from
     (memory-core's createGit is private); no new deps
   - `src/sync/discover/` - `watcher` (auto-discovers new vaults, provisions account vaults)
   - `vault sync [name]` forces a git cycle via the daemon (`/api/sync/run`) or in-process when down
+- `src/plugin.ts` - the `@agentage/cli/plugin` subpath export, versioned by `PLUGIN_API_VERSION`
+- `src/core/` - launcher core, gated by `AGENTAGE_PLUGINS=1`; must import nothing from
+  daemon/mcp/sync/memory/vault (the package guard enforces it)
+- `fixtures/` - test-only plugin packages (`@agentage/fixture-*`), never published
+- `e2e/registry/` - in-process npm registry serving `npm pack` output to e2e on loopback
 - `src/package-guard.test.ts` - CI guard: no agent-runtime remnants (express/ws/sqlite/
   core/platform/supabase), runtime deps stay exactly `@agentage/memory-core +
-  @agentage/server-memory + @modelcontextprotocol/sdk + chalk + commander + open`
+  @agentage/observability + @agentage/server-memory + @modelcontextprotocol/sdk +
+  @opentelemetry/api + chalk + commander + open`
 
 ## Auth model
 Fresh DCR public client per `setup` run (the redirect URI binds the ephemeral callback

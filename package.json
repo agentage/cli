@@ -5,6 +5,17 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "agentage": "./dist/cli.js"
   },
@@ -25,11 +36,11 @@
   },
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
-    "type-check": "tsc --noEmit",
-    "lint": "eslint src",
-    "lint:fix": "eslint src --fix",
-    "format": "prettier --write \"{src,e2e}/**/*.ts\"",
-    "format:check": "prettier --check \"{src,e2e}/**/*.ts\"",
+    "type-check": "tsc --noEmit && tsc -p fixtures",
+    "lint": "eslint src e2e fixtures",
+    "lint:fix": "eslint src e2e fixtures --fix",
+    "format": "prettier --write \"{src,e2e}/**/*.ts\" \"fixtures/**/*.{js,json}\"",
+    "format:check": "prettier --check \"{src,e2e}/**/*.ts\" \"fixtures/**/*.{js,json}\"",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

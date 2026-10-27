@@ -45,11 +45,20 @@ export interface CliMachine {
 
 export const createCliMachine = (extraEnv: NodeJS.ProcessEnv = {}): CliMachine => {
   const configDir = mkdtempSync(join(tmpdir(), 'agentage-cli-e2e-'));
+  const home = mkdtempSync(join(tmpdir(), 'agentage-cli-home-'));
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     AGENTAGE_CONFIG_DIR: configDir,
     AGENTAGE_SITE_FQDN: TARGET_FQDN,
     NO_COLOR: '1',
+    // Loopback (the in-process registry) must bypass the blackhole proxies offline tests set.
+    NO_PROXY: '127.0.0.1,localhost',
+    // A throwaway home: nothing may read or write the developer's real dotfiles.
+    HOME: home,
+    // npm run exports the developer's npmrc path; pin it inside the throwaway home.
+    npm_config_userconfig: join(home, '.npmrc'),
+    // A private cache so a test can neither read nor poison the developer's npm cache.
+    npm_config_cache: join(home, '.npm'),
     // Default the offline tiers to the in-process engine: deterministic, never forks a daemon
     // (the sandbox kills forked children), never probes the real :4243. The daemon tier opts
     // back in with AGENTAGE_NO_DAEMON='' plus its own ephemeral AGENTAGE_DAEMON_PORT.
@@ -87,7 +96,10 @@ export const createCliMachine = (extraEnv: NodeJS.ProcessEnv = {}): CliMachine =
     configDir,
     exec,
     startSetup,
-    cleanup: () => rmSync(configDir, { recursive: true, force: true }),
+    cleanup: () => {
+      rmSync(configDir, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    },
   };
 };
 

@@ -1,9 +1,11 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { PLUGIN_API_VERSION } from './plugin.js';
 
 const SRC = join(import.meta.dirname, '.');
 const PKG = join(import.meta.dirname, '..', 'package.json');
+const CORE = join(SRC, 'core');
 
 const sourceFiles = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -23,6 +25,16 @@ const FORBIDDEN = [
   'better-sqlite3',
 ];
 
+// Quote-anchored so static, re-export and dynamic imports from src/core all match.
+const CORE_FORBIDDEN: RegExp[] = [
+  /['"](\.\.\/)+(daemon|mcp|sync|lib\/memory|lib\/vault)\b/,
+  /['"]express['"]/,
+  /@modelcontextprotocol\/sdk/,
+  /@agentage\/memory-core/,
+  /@agentage\/server-memory/,
+  /@agentage\/observability/,
+];
+
 describe('package guard (R6)', () => {
   it('source contains no agent-runtime remnants', () => {
     for (const file of sourceFiles(SRC)) {
@@ -31,6 +43,25 @@ describe('package guard (R6)', () => {
         expect(content.includes(token), `${file} contains forbidden token "${token}"`).toBe(false);
       }
     }
+  });
+
+  it('core imports nothing product-shaped', () => {
+    const files = sourceFiles(CORE);
+    expect(files.length, 'src/core holds at least one source file').toBeGreaterThan(0);
+    for (const file of files) {
+      const content = readFileSync(file, 'utf-8');
+      for (const pattern of CORE_FORBIDDEN) {
+        expect(pattern.test(content), `${file} matches forbidden ${pattern}`).toBe(false);
+      }
+    }
+  });
+
+  it('exposes the plugin contract as a subpath export', () => {
+    const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
+      exports: { './plugin'?: { default?: string } };
+    };
+    expect(pkg.exports['./plugin']?.default).toBe('./dist/plugin.js');
+    expect(PLUGIN_API_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   it('runtime dependencies are exactly the minimal client set', () => {
