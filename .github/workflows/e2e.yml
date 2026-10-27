@@ -1,11 +1,11 @@
 # E2E - builds the CLI and runs ./e2e against the built dist/cli.js. Two tiers:
-#  - e2e-offline: the @offline-tagged tests only. Self-contained (temp bare
-#    remotes, no live stack), so this is the required signal on every PR/push.
-#    No live-stack env or secrets.
-#  - e2e-live: the full suite against a live deployed stack. Manual dispatch
-#    only - the dev stack was decommissioned, so there is no default target.
-#    Self-contained @p0 OAuth: when E2E_AUTH_* secrets are absent it signs up a
-#    throwaway account (open signup on the target). No browser binaries needed.
+#  - e2e-offline: the @offline-tagged tests only. Self-contained (CLI subprocess
+#    plus an in-process npm registry on loopback), so this is the required signal
+#    on every PR/push. No live-stack env or secrets.
+#  - e2e-live: the full suite (@smoke + @p0 OAuth) against a live deployed stack.
+#    Manual dispatch only - there is no default target. Self-contained @p0 OAuth:
+#    when E2E_AUTH_* secrets are absent it signs up a throwaway account (open
+#    signup on the target). No browser binaries needed.
 name: E2E
 
 on:

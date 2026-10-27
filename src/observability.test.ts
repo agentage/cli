@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type * as Observability from './observability.js';
 
-// Fresh module each time: the user's OTEL_SERVICE_NAME is captured at import.
+// Fresh module each time so no test sees another's imported state.
 const load = async (): Promise<typeof Observability> => {
   vi.resetModules();
   return import('./observability.js');
@@ -18,17 +18,10 @@ describe('observability', () => {
     vi.restoreAllMocks();
   });
 
-  it('names the daemon separately from the CLI', async () => {
+  it('names the CLI service', async () => {
     clearEnv();
     const obs = await load();
-    expect(obs.daemonServiceName()).toBe('agentage-daemon');
     expect(obs.CLI_SERVICE).toBe('agentage-cli');
-  });
-
-  it("lets the daemon inherit the user's own service name", async () => {
-    process.env['OTEL_SERVICE_NAME'] = 'my-service';
-    const obs = await load();
-    expect(obs.daemonServiceName()).toBe('my-service');
   });
 
   it('defaults the service name only when the user set none', async () => {

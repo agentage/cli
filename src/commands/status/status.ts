@@ -2,13 +2,7 @@ import chalk from 'chalk';
 import { type Command } from 'commander';
 import { resolveAuth } from '../../lib/auth/credentials.js';
 import { siteFqdn } from '../../lib/net/origins.js';
-import { formatUptime } from '../../lib/status/format.js';
-import {
-  gatherStatus,
-  type DaemonStatus,
-  type StatusReport,
-} from '../../lib/status/status-info.js';
-import { vaultLines } from '../../lib/status/vaults-format.js';
+import { gatherStatus, type StatusReport } from '../../lib/status/status-info.js';
 import { INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
 
 const mark = (good: boolean): string => (good ? chalk.green('✓') : chalk.red('✗'));
@@ -44,27 +38,6 @@ const updateLine = (update: UpdateInfo): string => {
   }
 };
 
-const daemonLine = (d: DaemonStatus, cliVersion: string): string => {
-  if (!d.running) return `${mark(false)} stopped - run: agentage daemon start`;
-  const up = d.uptimeSeconds !== undefined ? `, up ${formatUptime(d.uptimeSeconds)}` : '';
-  const stale =
-    d.daemonVersion && d.daemonVersion !== cliVersion
-      ? chalk.yellow(` (version ${d.daemonVersion} != cli ${cliVersion})`)
-      : '';
-  return `${mark(true)} running (pid ${d.pid ?? '?'}, port ${d.port}${up})${stale}`;
-};
-
-const mcpLine = (d: DaemonStatus): string =>
-  d.mcp ? `${mark(true)} serving at http://127.0.0.1:${d.port}/mcp` : `${mark(false)} off`;
-
-// Daemon rows honor version-mismatch inline (appended to the daemon row) and print mcp only when
-// running; the per-vault sync breakdown now lives in its own `vaults` block (printStatus).
-const printDaemon = (d: DaemonStatus, cliVersion: string): void => {
-  row('daemon', daemonLine(d, cliVersion));
-  if (!d.running) return;
-  row('mcp', mcpLine(d));
-};
-
 export const printStatus = (report: StatusReport): void => {
   row('version', report.version);
   row('update', updateLine(report.update));
@@ -77,8 +50,6 @@ export const printStatus = (report: StatusReport): void => {
     `${mark(report.endpoint.reachable)} ${report.endpoint.url} ` +
       (report.endpoint.reachable ? 'reachable' : 'unreachable')
   );
-  if (report.daemon) printDaemon(report.daemon, report.version);
-  for (const line of vaultLines(report.vaults)) console.log(line);
   if (report.update.message) console.log(chalk.yellow(`\n${report.update.message}`));
 };
 

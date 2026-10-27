@@ -2,13 +2,9 @@ export type Env = 'development' | 'production';
 
 export interface Links {
   site: string;
-  // Backend REST base. Dedicated `api.<fqdn>` host (the apex `<fqdn>/api` was
-  // retired in the 2026-06-17 subdomain cutover); mirrors @agentage/shared links().
+  // Backend REST base on the dedicated `api.<fqdn>` host.
   api: string;
   auth: string;
-  mcp: string;
-  // Git smart-HTTP sync host; mirrors @agentage/shared links().
-  sync: string;
 }
 
 const DEFAULT_FQDN = 'agentage.io';
@@ -40,20 +36,16 @@ export const environment = (fqdn: string): Env =>
 
 export const links = (fqdn: string): Links => {
   const stub = stubOrigin(fqdn);
-  if (stub) return { site: stub, api: `${stub}/api`, auth: stub, mcp: `${stub}/mcp`, sync: stub };
+  if (stub) return { site: stub, api: `${stub}/api`, auth: stub };
   return isLocal(fqdn)
     ? {
         site: 'http://localhost:3000',
         api: 'http://localhost:3001/api',
         auth: 'http://localhost:3010',
-        mcp: 'http://localhost:3003/mcp',
-        sync: 'http://localhost:3011',
       }
     : {
         site: `https://${fqdn}`,
         api: `https://api.${fqdn}/api`,
         auth: `https://auth.${fqdn}`,
-        mcp: `https://memory.${fqdn}/mcp`,
-        sync: `https://sync.${fqdn}`,
       };
 };

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-// The bin is a loader, nothing else. @agentage/observability instruments node:http, fetch and MCP
-// tool registration through module hooks, and a hook only sees a module imported after it is
-// registered - so the bootstrap runs first and the program is imported dynamically behind it.
+// The bin is a loader, nothing else. @agentage/observability instruments node:http and fetch
+// through module hooks, and a hook only sees a module imported after it is registered - so the
+// bootstrap runs first and the program is imported dynamically behind it.
 
 // Dependency-free guard so the message survives even if deps fail to parse on old Node.
 const nodeMajor = Number(process.versions.node.split('.')[0]);

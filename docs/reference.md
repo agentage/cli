@@ -1,143 +1,58 @@
 # Command reference
 
-The full option set for every `agentage` command. Run `agentage <command> --help` for
-the authoritative, up-to-date flags. Global flags: `--no-daemon` runs memory verbs
-in-process instead of via the daemon, `-V/--version` prints the version.
+Every `agentage` command, its exit codes and environment variables. Run
+`agentage <command> --help` for the authoritative flags. Global flags: `-V, --version`
+prints the version, `-h, --help` prints help.
 
-## memory
-
-Six offline verbs over your local vaults. Reference a document as `@<vault>/<path>`
-or as `<path> --vault <name>`; omit `--vault` to use the default vault. Every verb
-accepts `--json` for machine-readable output.
+## setup
 
 ```bash
-agentage memory search <query...>   # search a vault (git grep); --limit <n> (default 20)
-agentage memory read <ref>          # print a document
-agentage memory write <ref>         # create or overwrite (--body <text>, or stdin)
-agentage memory edit <ref>          # --old/--new (str_replace), or --body (--append)
-agentage memory list [folder]       # list documents, optionally under a folder
-agentage memory delete <ref>        # delete (recoverable from git history)
-```
-
-`write` reads the body from `--body` or, when omitted (or `--body -`), from stdin;
-pass `--frontmatter '<json>'` to set YAML frontmatter as a JSON object. `edit` either
-replaces an exact, unique substring (`--old`/`--new`, omit `--new` to delete the
-match) or replaces the whole body (`--body`, add `--append` to append instead).
-Documents larger than 64 KB are clamped on read, and the engine refuses to store
-obvious secrets. Errors are friendly: an unknown vault, a missing document, or a
-non-unique `--old` match report what went wrong and exit non-zero.
-
-## vault
-
-```bash
-agentage vault add <name>                  # register a vault (account by default)
-agentage vault add <name> --local [path]   # a local folder (default ~/vaults/<name>)
-agentage vault add <name> --git <remote>   # synced to an external git remote
-agentage vault list                        # list registered vaults (--json)
-agentage vault remove <name>               # unregister (files stay on disk)
-agentage vault sync [name]                 # sync now; all vaults, or just one
-```
-
-`vault add` registers an account vault by default; pass `--local` for a folder that
-never leaves this machine, or `--git <remote>` to bind it to a remote you host. For
-an account vault, `--path <dir>` sets the local mirror directory.
-
-## setup and status
-
-```bash
-agentage setup                      # browser OAuth 2.1 sign-in (PKCE), then prints status
-agentage setup --no-browser         # print the sign-in URL instead of opening a browser
-agentage setup --reauth             # force a fresh sign-in
-agentage setup --disconnect         # sign out and remove local credentials
-agentage status                     # CLI version, target, sign-in state, endpoint (--json)
+agentage setup                # browser OAuth 2.1 sign-in (PKCE), then prints status
+agentage setup --no-browser   # print the sign-in URL instead of opening a browser
+agentage setup --reauth       # force a fresh sign-in
+agentage setup --disconnect   # sign out and remove local credentials
 ```
 
 No passwords touch the terminal; tokens are stored in `~/.agentage/auth.json`
-(mode 0600). `status` also surfaces a passive hint when a newer version is available.
+(mode 0600). Running `setup` while signed in validates the session and prints status
+instead of starting a new sign-in; an expired session falls through to a fresh sign-in.
 
-## daemon
+## status
 
 ```bash
-agentage daemon status              # pid, uptime, mcp state, version
-agentage daemon start               # start it explicitly (idempotent)
-agentage daemon start --no-mcp      # start without serving the local /mcp endpoint
-agentage daemon stop                # stop it
+agentage status                   # version, update, target, sign-in state, endpoint
+agentage status --json            # the same report as JSON on stdout
+agentage status --token aga_...   # check with a personal access token
 ```
+
+`status` also surfaces a passive hint when a newer version is available.
 
 ## update
 
 ```bash
-agentage update                     # install the latest published version
-agentage update --check             # report whether an update is available, don't install
+agentage update           # install the latest published version via npm
+agentage update --check   # report whether an update is available, don't install
 ```
 
-## MCP integration in depth
+## Token auth (CI and headless)
 
-Any AI client on this machine can read and write your memory through the same frozen
-six tools the cloud endpoint exposes: `memory__search`, `memory__read`,
-`memory__write`, `memory__edit`, `memory__list`, and `memory__delete`.
+Machines without a browser authenticate with a personal access token. Mint one in the
+dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or pass
+`--token aga_...` per command. A token takes precedence over a stored sign-in.
 
-The daemon serves them over Streamable HTTP at `http://127.0.0.1:4243/mcp`. Point a
-client at it with `claude mcp add`:
+## Exit codes
 
-```bash
-claude mcp add --transport http agentage http://127.0.0.1:4243/mcp
-```
-
-or drop the URL into your client's `.mcp.json` (for example `~/.cursor/mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "agentage": {
-      "url": "http://127.0.0.1:4243/mcp"
-    }
-  }
-}
-```
-
-The daemon must be running: it autostarts on the first memory verb, or start it with
-`agentage daemon start`. To disable the endpoint (it then 404s), start the daemon with
-`agentage daemon start --no-mcp` or set `AGENTAGE_DAEMON_NO_MCP=1`.
-
-The cloud MCP endpoint, for AI outside this machine, is `memory.agentage.io/mcp`.
-
-## The daemon in depth
-
-A small local daemon (loopback only, `127.0.0.1:4243` by default) owns the engine so
-vault writes are serialized and sync runs in the background. It autostarts on the
-first memory verb; you rarely touch it directly. Its API is bound to `127.0.0.1`,
-token-guarded, and rejects cross-origin requests, so nothing off the machine can
-reach it. If the port is already in use it reports the conflict rather than failing
-silently.
-
-To skip the daemon and run verbs in-process, pass `--no-daemon` or set
-`AGENTAGE_NO_DAEMON=1`.
-
-## Sync in depth
-
-Two channels keep your markdown in sync, and both are optional.
-
-**Git remotes.** Bind a vault to an external remote you host, and the daemon commits
-and pushes local changes and pulls remote ones on an interval.
-
-```bash
-agentage vault add work --git git@github.com:you/memory.git
-agentage vault sync work            # force a cycle now; progress prints per vault
-```
-
-**Account sync.** Sign in with `agentage setup` and your account vaults sync to the
-agentage cloud, so the same memory follows you across machines.
-
-Conflicts never lose a write. When both sides changed the same file, the remote copy
-is kept alongside yours as `<file>.conflict.md` for you to reconcile.
+| Code | Meaning                                                                         |
+| ---- | ------------------------------------------------------------------------------- |
+| `0`  | Success, including `--help`, `--version`, and `status` while signed out         |
+| `1`  | Failure: sign-in or update failed, an invalid token, or an unknown command/flag |
 
 ## Environment
 
-| Variable                 | Purpose                                                             | Default       |
-| ------------------------ | ------------------------------------------------------------------- | ------------- |
-| `AGENTAGE_CONFIG_DIR`    | Config + credentials dir (`auth.json`, `vaults.json`, daemon state) | `~/.agentage` |
-| `AGENTAGE_DAEMON_PORT`   | Local daemon port                                                   | `4243`        |
-| `AGENTAGE_DAEMON_NO_MCP` | Set to `1` to start the daemon without the `/mcp` endpoint          | unset         |
-| `AGENTAGE_NO_DAEMON`     | Set to `1` to run memory verbs in-process                           | unset         |
-| `AGENTAGE_SITE_FQDN`     | Cloud target host                                                   | `agentage.io` |
+| Variable              | Purpose                                            | Default       |
+| --------------------- | -------------------------------------------------- | ------------- |
+| `AGENTAGE_SITE_FQDN`  | Target host                                        | `agentage.io` |
+| `AGENTAGE_CONFIG_DIR` | Config and credentials directory (`auth.json`)     | `~/.agentage` |
+| `AGENTAGE_TOKEN`      | Personal access token for CI and headless machines | unset         |
+| `AGENTAGE_DEBUG`      | Print diagnostics to stderr                        | unset         |
+| `NO_COLOR`            | Disable colored output                             | unset         |

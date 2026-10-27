@@ -14,11 +14,13 @@ const sourceFiles = (dir: string): string[] =>
     return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [full] : [];
   });
 
-// R6 (amended for M2.5, DO10): the local daemon is now a sanctioned feature, so the
-// daemon-entry / ensure-daemon / :4243 strip markers are dropped. The agent-runtime bans stay.
+// No product code in the CLI: memory, MCP and agent-runtime packages return only as plugins.
 const FORBIDDEN = [
   '@agentage/core',
   '@agentage/platform',
+  '@agentage/memory-core',
+  '@agentage/server-memory',
+  '@modelcontextprotocol/sdk',
   '@supabase/',
   "from 'express'",
   "from 'ws'",
@@ -29,14 +31,11 @@ const FORBIDDEN = [
 const CORE_FORBIDDEN: RegExp[] = [
   /['"](\.\.\/)+(daemon|mcp|sync|lib\/memory|lib\/vault)\b/,
   /['"]express['"]/,
-  /@modelcontextprotocol\/sdk/,
-  /@agentage\/memory-core/,
-  /@agentage\/server-memory/,
   /@agentage\/observability/,
 ];
 
-describe('package guard (R6)', () => {
-  it('source contains no agent-runtime remnants', () => {
+describe('package guard (launcher core)', () => {
+  it('source contains no product or agent-runtime imports', () => {
     for (const file of sourceFiles(SRC)) {
       const content = readFileSync(file, 'utf-8');
       for (const token of FORBIDDEN) {
@@ -64,22 +63,14 @@ describe('package guard (R6)', () => {
     expect(PLUGIN_API_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it('runtime dependencies are exactly the minimal client set', () => {
+  it('runtime dependencies are exactly the launcher core set', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
       dependencies: Record<string, string>;
       bin: Record<string, string>;
     };
-    // @agentage/memory-core is the one local engine at M2-C (decision V7/V11-C). M3 adds the MCP
-    // contract layer: @agentage/server-memory (the frozen 6-tool builder, wrapped verbatim) and
-    // @modelcontextprotocol/sdk (stdio + Streamable HTTP transports). @agentage/observability is
-    // the estate kit (+ its @opentelemetry/api peer, listed so one copy is hoisted): affordable
-    // here because `agentage` is installed globally once, unlike npx-per-call server-memory, which
-    // takes the kit optionally. Still minimal: no daemon.
+    // The telemetry kit plus its @opentelemetry/api peer (listed so one copy is hoisted).
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
-      '@agentage/memory-core',
       '@agentage/observability',
-      '@agentage/server-memory',
-      '@modelcontextprotocol/sdk',
       '@opentelemetry/api',
       'chalk',
       'commander',

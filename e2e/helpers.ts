@@ -1,5 +1,5 @@
 /**
- * E2E harness for the Memory CLI - drives the built CLI (dist/cli.js) as a
+ * E2E harness for the CLI - drives the built CLI (dist/cli.js) as a
  * subprocess against a live deployed stack. Run `npm run build` first.
  *
  * Target: AGENTAGE_SITE_FQDN (default dev.agentage.io). The suite signs up
@@ -10,7 +10,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, request as apiRequest, type APIRequestContext } from '@playwright/test';
@@ -59,10 +58,6 @@ export const createCliMachine = (extraEnv: NodeJS.ProcessEnv = {}): CliMachine =
     npm_config_userconfig: join(home, '.npmrc'),
     // A private cache so a test can neither read nor poison the developer's npm cache.
     npm_config_cache: join(home, '.npm'),
-    // Default the offline tiers to the in-process engine: deterministic, never forks a daemon
-    // (the sandbox kills forked children), never probes the real :4243. The daemon tier opts
-    // back in with AGENTAGE_NO_DAEMON='' plus its own ephemeral AGENTAGE_DAEMON_PORT.
-    AGENTAGE_NO_DAEMON: '1',
     ...extraEnv,
   };
 
@@ -103,19 +98,6 @@ export const createCliMachine = (extraEnv: NodeJS.ProcessEnv = {}): CliMachine =
   };
 };
 
-// An ephemeral loopback port for the daemon tier - the OS picks it, so tests never touch a
-// real daemon's port.
-export const freePort = (): Promise<number> =>
-  new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address();
-      const port = typeof addr === 'object' && addr ? addr.port : 0;
-      srv.close(() => (port > 0 ? resolve(port) : reject(new Error('no free port'))));
-    });
-    srv.on('error', reject);
-  });
-
 // Poll the CLI's streamed output until the OAuth authorize URL is printed.
 export const waitForAuthorizeUrl = async (
   setup: SetupProcess,
@@ -137,7 +119,6 @@ export interface CliStatusReport {
   env: string;
   auth: { signedIn: boolean; tokenExpiresAt?: string; note?: string };
   endpoint: { url: string; reachable: boolean };
-  vaults: { name: string; channel: string; status: string }[];
 }
 
 export const statusJson = async (machine: CliMachine): Promise<CliStatusReport> => {

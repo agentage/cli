@@ -7,7 +7,7 @@ import { AuthRequiredError, isTerminalRefresh, TransientAuthError } from './auth
 export { AuthRequiredError, TransientAuthError } from './auth-errors.js';
 
 // Every authed call is CLI-originated; identify the caller alongside the bearer.
-const cliHeaders = (): Record<string, string> => requestHeaders({ component: 'cli' });
+const cliHeaders = (): Record<string, string> => requestHeaders();
 
 // Refresh the stored token in place. On success mutates auth + persists and returns. On failure it
 // throws: AuthRequiredError when the grant is dead (401/invalid_grant/invalid_client), else

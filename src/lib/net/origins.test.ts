@@ -33,11 +33,8 @@ describe('links', () => {
       site: 'https://agentage.io',
       api: 'https://api.agentage.io/api',
       auth: 'https://auth.agentage.io',
-      mcp: 'https://memory.agentage.io/mcp',
-      sync: 'https://sync.agentage.io',
     });
     expect(links('dev.agentage.io').auth).toBe('https://auth.dev.agentage.io');
-    expect(links('dev.agentage.io').sync).toBe('https://sync.dev.agentage.io');
   });
 
   it('maps localhost to the local port set', () => {
@@ -45,8 +42,6 @@ describe('links', () => {
       site: 'http://localhost:3000',
       api: 'http://localhost:3001/api',
       auth: 'http://localhost:3010',
-      mcp: 'http://localhost:3003/mcp',
-      sync: 'http://localhost:3011',
     });
   });
 
@@ -55,8 +50,6 @@ describe('links', () => {
       site: 'http://127.0.0.1:8080',
       api: 'http://127.0.0.1:8080/api',
       auth: 'http://127.0.0.1:8080',
-      mcp: 'http://127.0.0.1:8080/mcp',
-      sync: 'http://127.0.0.1:8080',
     });
   });
 });
