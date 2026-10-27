@@ -1,8 +1,6 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
 import { startCallbackServer } from '../../lib/auth/callback-server.js';
-import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
-import { daemonDisabled } from '../../lib/daemon/daemon-pref.js';
 import {
   deleteAuth,
   ensureConfigDir,
@@ -22,7 +20,6 @@ import {
   type TokenResponse,
 } from '../../lib/auth/oauth.js';
 import { links, siteFqdn } from '../../lib/net/origins.js';
-import { ensureVaultsConfig } from '../../lib/vault/vaults.js';
 import { runStatus } from '../status/status.js';
 
 export interface SetupOptions {
@@ -38,7 +35,6 @@ export interface SetupDeps {
   startServer: typeof startCallbackServer;
   openBrowser: (url: string) => Promise<void>;
   printStatus: () => Promise<void>;
-  ensureDaemon: typeof ensureDaemon;
   introspect: typeof introspectToken;
 }
 
@@ -52,7 +48,6 @@ const defaultDeps: SetupDeps = {
     await open(url);
   },
   printStatus: () => runStatus({}),
-  ensureDaemon,
   introspect: introspectToken,
 };
 
@@ -65,19 +60,6 @@ const toAuthState = (fqdn: string, clientId: string, tokens: TokenResponse): Aut
     expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
   },
 });
-
-// After sign-in, bring the daemon up so account sync starts immediately; ensureDaemon reuses a
-// live daemon and starts a stopped one (idempotent). Honor the --no-daemon / AGENTAGE_NO_DAEMON
-// disable switches.
-const startDaemon = async (deps: SetupDeps): Promise<void> => {
-  if (daemonDisabled()) {
-    console.log('Daemon disabled - account sync will run in-process on demand.');
-    return;
-  }
-  const client = await deps.ensureDaemon();
-  const fail = 'Could not start the daemon - run: agentage daemon start';
-  console.log(client ? 'Daemon running.' : fail);
-};
 
 const disconnect = async (deps: SetupDeps): Promise<void> => {
   const auth = readAuth();
@@ -134,7 +116,6 @@ export const runSetup = async (
   const fqdn = siteFqdn();
   const target = links(fqdn);
   ensureConfigDir();
-  ensureVaultsConfig();
   const { verifier, challenge } = pkcePair();
   const state = randomState();
   const server = await deps.startServer(state);
@@ -162,7 +143,6 @@ export const runSetup = async (
     });
     await mutateAuth(() => toAuthState(fqdn, clientId, tokens));
     console.log(chalk.green('\nSigned in.\n'));
-    await startDaemon(deps);
     await deps.printStatus();
   } finally {
     server.close();

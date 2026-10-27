@@ -1,11 +1,11 @@
 # E2E - builds the CLI and runs ./e2e against the built dist/cli.js. Two tiers:
-#  - e2e-offline: the @offline-tagged tests only. Self-contained (temp bare
-#    remotes, no live stack), so this is the required signal on every PR/push.
-#    No live-stack env or secrets.
-#  - e2e-live: the full suite against a live deployed stack. Manual dispatch
-#    only - the dev stack was decommissioned, so there is no default target.
-#    Self-contained @p0 OAuth: when E2E_AUTH_* secrets are absent it signs up a
-#    throwaway account (open signup on the target). No browser binaries needed.
+#  - e2e-offline: the @offline-tagged tests only. Self-contained (CLI subprocess
+#    plus an in-process npm registry on loopback), so this is the required signal
+#    on every PR/push. No live-stack env or secrets.
+#  - e2e-live: the full suite (@smoke + @p0 OAuth) against a live deployed stack.
+#    Manual dispatch only - there is no default target. Self-contained @p0 OAuth:
+#    when E2E_AUTH_* secrets are absent it signs up a throwaway account (open
+#    signup on the target). No browser binaries needed.
 name: E2E
 
 on:
@@ -50,6 +50,41 @@ jobs:
           name: e2e-offline-report
           path: playwright-report/
           retention-days: 7
+
+  pack-consumer:
+    name: 📦 Pack consumer (plugin subpath)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v7
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🏗️ Build
+        run: npm run build
+
+      - name: 📦 Pack the publish tarball
+        run: |
+          mkdir -p /tmp/pack
+          npm pack --pack-destination /tmp/pack
+
+      - name: 🔌 Import @agentage/cli/plugin from a consumer
+        run: |
+          set -euo pipefail
+          tarball=$(ls /tmp/pack/*.tgz)
+          consumer=$(mktemp -d)
+          cd "$consumer"
+          npm init -y > /dev/null
+          npm i "$tarball" --no-audit --no-fund
+          node --input-type=module -e "const m = await import('@agentage/cli/plugin'); if (m.PLUGIN_API_VERSION !== '1.0.0') process.exit(1); console.log('plugin subpath ok')"
 
   e2e-live:
     name: 🧪 E2E vs ${{ inputs.target }}

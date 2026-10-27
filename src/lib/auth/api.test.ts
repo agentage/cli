@@ -21,7 +21,6 @@ const target = links('dev.agentage.io');
 const versionHeaders = {
   'User-Agent': `agentage-cli/${VERSION}`,
   'X-Agentage-CLI-Version': VERSION,
-  'X-Agentage-Daemon-Version': 'none',
 };
 
 const makeAuth = (overrides: Partial<AuthState['tokens']> = {}): AuthState => ({
@@ -65,7 +64,6 @@ describe('authedGet', () => {
     const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>;
     expect(headers['User-Agent']).toBe(`agentage-cli/${VERSION}`);
     expect(headers['X-Agentage-CLI-Version']).toBe(VERSION);
-    expect(headers['X-Agentage-Daemon-Version']).toBe('none');
   });
 
   it('refreshes once on 401, persists the new tokens, and retries', async () => {

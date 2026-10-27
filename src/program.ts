@@ -1,12 +1,8 @@
 import chalk from 'chalk';
 import { Command } from 'commander';
-import { registerDaemon } from './commands/daemon/daemon-cmd.js';
-import { registerMemory } from './commands/memory/memory.js';
 import { registerSetup } from './commands/auth/setup.js';
 import { registerStatus } from './commands/status/status.js';
 import { registerUpdate } from './commands/update/update.js';
-import { registerVault } from './commands/vault/vault.js';
-import { disableDaemon } from './lib/daemon/daemon-pref.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
 
@@ -14,18 +10,10 @@ const program = new Command();
 
 program
   .name('agentage')
-  .description('The offline-first terminal client for agentage Memory')
-  .version(VERSION)
-  .option('--no-daemon', 'run memory verbs in-process instead of via the daemon');
+  .description('Connect this machine to agentage from the terminal')
+  .version(VERSION);
 
-program.addHelpText(
-  'after',
-  '\nNew here? Run: agentage vault add <name> --local, or agentage setup to connect an account.'
-);
-
-program.hook('preAction', () => {
-  if (program.opts().daemon === false) disableDaemon();
-});
+program.addHelpText('after', '\nNew here? Run: agentage setup to connect this machine.');
 
 // After any command (except the update-aware ones, which report richer state themselves), print a
 // one-line hint from the cache, then kick a fire-and-forget refresh. Never awaited, never throws -
@@ -43,12 +31,9 @@ program.hook('postAction', (_thisCommand, actionCommand) => {
 
 registerSetup(program);
 registerStatus(program);
-registerVault(program);
-registerMemory(program);
-registerDaemon(program);
 registerUpdate(program);
 
-// Called by the bin (src/cli.ts) once the observability bootstrap has run.
+// Called by the bin (src/cli.ts).
 export const run = async (): Promise<void> => {
   await program.parseAsync().catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : String(err));

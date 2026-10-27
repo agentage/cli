@@ -1,33 +1,11 @@
 import { AuthRequiredError, introspectToken } from '../auth/api.js';
 import { detectEnvMismatch, type AuthEnvMismatch } from '../auth/env-match.js';
 import { type AuthState } from '../fs/config.js';
-import { health, syncStatus } from '../daemon/daemon-client.js';
 import { fetchJsonUnref } from '../net/http.js';
 import { requestHeaders } from '../net/user-agent.js';
 import { environment, links, type Env } from '../net/origins.js';
 import { checkForUpdate, type UpdateInfo } from '../update/update-check.js';
 import { VERSION } from '../../utils/version.js';
-import { isDaemonRunning, resolvePort } from '../../daemon/lifecycle.js';
-import { type SyncStatus } from '../../sync/git/manager.js';
-import { buildVaultStatuses, type VaultStatus } from './vaults-status.js';
-
-export interface DaemonSyncSummary {
-  vaults: number;
-  state: 'ok' | 'error' | 'syncing';
-  lastRun?: string;
-  lastError?: string;
-}
-
-export interface DaemonStatus {
-  running: boolean;
-  pid?: number;
-  port: number;
-  uptimeSeconds?: number;
-  mcp?: boolean;
-  // The running daemon's own version, so the printer can flag a stale binary inline.
-  daemonVersion?: string;
-  sync?: DaemonSyncSummary;
-}
 
 export interface StatusReport {
   version: string;
@@ -48,8 +26,6 @@ export interface StatusReport {
   };
   endpoint: { url: string; reachable: boolean };
   update: UpdateInfo;
-  daemon?: DaemonStatus;
-  vaults: VaultStatus[];
 }
 
 // node:https via fetchJsonUnref, not global fetch: undici's ref'd connect timer keeps the process
@@ -64,52 +40,6 @@ const checkEndpoint = async (apiUrl: string, headers: Record<string, string>): P
 const checkSite = async (siteUrl: string, headers: Record<string, string>): Promise<boolean> => {
   const res = await fetchJsonUnref(siteUrl, 3000, headers);
   return res !== null;
-};
-
-// Fold the per-vault git states into one summary: any error wins, then any in-flight run, else ok.
-// lastRun is the freshest reported; lastError the first seen. Account vaults are absent by design -
-// they have no sync channel, so they are never counted as synced here (the vaults block names them).
-const summarizeSync = (sync: SyncStatus): DaemonSyncSummary => {
-  const git = Array.isArray(sync.vaults) ? sync.vaults : [];
-  const error = git.find((v) => v.lastError)?.lastError;
-  const running = git.some((v) => v.running);
-  const state: DaemonSyncSummary['state'] = error ? 'error' : running ? 'syncing' : 'ok';
-  const lastRun = git
-    .map((v) => v.lastRun)
-    .filter((r): r is string => Boolean(r))
-    .sort()
-    .at(-1);
-  return { vaults: git.length, state, lastRun, lastError: error };
-};
-
-// One detection routine shared with `daemon start`: a health 200 (any shape, even a legacy 0.0.3
-// daemon lacking mcp/pid/uptime) OR a live pidfile means running; only a refused/no-response
-// health with no live pidfile is stopped. Probe health regardless of the pidfile so a legacy
-// daemon that never wrote this config dir's pidfile is not misreported as stopped. A stopped
-// daemon still costs only one 1s-timeout /health that fast-fails on connection refused.
-interface DaemonProbe {
-  status: DaemonStatus;
-  // The raw per-vault sync report, kept so the caller can build the full vaults breakdown.
-  sync: SyncStatus | null;
-}
-
-const probeDaemon = async (): Promise<DaemonProbe> => {
-  const port = resolvePort();
-  const h = await health(port);
-  if (!h) return { status: { running: isDaemonRunning(), port }, sync: null };
-  const sync = await syncStatus(port);
-  const summary = sync ? summarizeSync(sync) : undefined;
-  const status: DaemonStatus = {
-    running: true,
-    pid: h.pid,
-    port,
-    uptimeSeconds: h.uptime,
-    // Absent on a legacy daemon that predates the /mcp gate; treat undefined as serving (on).
-    mcp: h.mcp !== false,
-    daemonVersion: h.version,
-    sync: summary && summary.vaults > 0 ? summary : undefined,
-  };
-  return { status, sync };
 };
 
 // AuthRequiredError = truly expired (terminal). TransientAuthError (or any non-terminal) = a blip
@@ -132,9 +62,7 @@ const mismatchAuth = (m: AuthEnvMismatch): StatusReport['auth'] => ({
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {
   const target = links(fqdn);
   const env = environment(fqdn);
-  // Probe the local daemon first (fast, 1s-capped /health) so its version can ride the probe headers.
-  const probe = await probeDaemon();
-  const headers = requestHeaders({ component: 'cli', daemonVersion: probe.status.daemonVersion });
+  const headers = requestHeaders();
   // Endpoint reachability and the (npm-registry) update check are independent - run them
   // together so `status` stays snappy.
   const [reachable, siteReachable, update] = await Promise.all([
@@ -150,8 +78,6 @@ export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promis
     auth: { signedIn: false, note: 'not signed in - run: agentage setup' },
     endpoint: { url: target.api, reachable },
     update,
-    daemon: probe.status,
-    vaults: buildVaultStatuses(probe.sync, probe.status.running),
   };
   if (!auth) return report;
   const mismatch = detectEnvMismatch(auth, fqdn);

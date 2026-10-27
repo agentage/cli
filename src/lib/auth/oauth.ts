@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { requestHeaders } from '../net/user-agent.js';
 
 // OAuth register/token/revoke are all CLI-originated; identify the caller on each.
-const cliHeaders = (): Record<string, string> => requestHeaders({ component: 'cli' });
+const cliHeaders = (): Record<string, string> => requestHeaders();
 
 export interface PkcePair {
   verifier: string;

@@ -3,120 +3,71 @@
 [![CI](https://github.com/agentage/cli/actions/workflows/ci.yml/badge.svg)](https://github.com/agentage/cli/actions/workflows/ci.yml)
 [![npm version](https://badge.fury.io/js/%40agentage%2Fcli.svg)](https://badge.fury.io/js/%40agentage%2Fcli)
 
-Give every AI on your machine one shared memory - plain markdown you own, synced across your devices.
+Connect this machine to your [agentage](https://agentage.io) account from the terminal. One
+command signs you in through your browser; from then on the machine is known to your account.
 
-Claude, Cursor, and your other AI tools each keep their own separate memory today. This
-CLI gives them a single shared one. It lives on your disk as ordinary markdown files
-you can open, edit, and back up like any other folder. Your AI tools read and write
-those same files, so they all remember the same things. Connect a free account and your
-memory follows you to every device - and nothing is locked in, because the files are
-always just markdown you can export.
+## What is this?
 
-## How it fits together
+`agentage` is the command-line entry point to agentage. It keeps your sign-in on this machine
+(OAuth 2.1 with PKCE, nothing typed into the terminal), tells you whether the machine is connected,
+and keeps itself up to date. It is intentionally small: everything beyond sign-in, status and
+update arrives as plugins the CLI installs for you.
 
-![Architecture](https://github.com/agentage/cli/raw/master/docs/architecture.svg)
+## Get started
 
-## Quickstart
-
-Three steps from nothing to a shared memory your AI can use.
-
-**1. Install it.** Needs Node.js 22 or newer.
+Needs Node.js 22 or newer.
 
 ```bash
 npm install -g @agentage/cli
-```
-
-**2. Create a memory.** This makes a plain folder of markdown files at `~/vaults/notes`.
-No sign-in needed.
-
-```bash
-agentage vault add notes --local
-```
-
-**3. Connect your AI.** This example wires up Claude Code over MCP, the open protocol AI
-tools use to call tools. Any AI tool that speaks MCP connects the same way.
-
-```bash
-claude mcp add --transport http agentage http://127.0.0.1:4243/mcp
-```
-
-That's it. Ask your AI to remember something, and it lands in your `~/vaults/notes`
-folder as a markdown file you own.
-
-## What your AI can do
-
-Once connected, your AI can:
-
-- Remember things you tell it, saved as a note.
-- Find them again later by keyword.
-- Read back a specific note in full.
-- Update a note in place, or add to it.
-- Browse the folders your notes are organized into.
-- Remove a note it no longer needs (deletes are recoverable).
-
-You can do all of this from the terminal too - run `agentage memory --help` to see how.
-
-## Sync across devices
-
-Want the same memory on your laptop, desktop, and phone? Connect a free account:
-
-```bash
 agentage setup
 ```
 
-This opens your browser for a one-time sign-in - no API key to copy or passwords in the
-terminal. After that, sync runs quietly in the background and the same memory follows
-you everywhere. Your files always stay yours: they remain plain markdown on your disk,
-and you can export them any time.
-
-Prefer to host it yourself? You can point a memory at your own git remote instead with
-`agentage vault add <name> --git <remote>` - see [`docs/reference.md`](docs/reference.md)
-for details.
-
-## Token auth (CI / headless)
-
-For CI or non-interactive machines, skip the browser sign-in and authenticate with a
-personal access token. Mint one in the dashboard under **Settings -> API tokens**
-(scopes `memory:read` / `memory:write`), then set it in the environment:
+`setup` opens your browser, you sign in, and the CLI stores the session in `~/.agentage`. Then:
 
 ```bash
-export AGENTAGE_TOKEN=aga_...
 agentage status
 ```
 
-The token is used as the bearer for memory (MCP) calls; `--token aga_...` works per command
-too. Account-channel provisioning still needs an interactive `agentage setup` session.
+prints the version, whether an update is available, the target host, your sign-in state and
+whether the endpoint is reachable.
 
-## Going deeper
+## Commands
 
-- [`docs/architecture.md`](docs/architecture.md) - how the CLI, the local helper, your
-  files, and sync fit together.
-- [`docs/reference.md`](docs/reference.md) - every command and flag, the full sync
-  options, MCP details, and environment variables.
+| Command                       | What it does                                                            |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `agentage setup`              | Sign in through your browser, then show status                          |
+| `agentage setup --no-browser` | Print the sign-in URL instead of opening a browser (SSH, containers)    |
+| `agentage setup --reauth`     | Force a fresh sign-in                                                   |
+| `agentage setup --disconnect` | Sign out and remove local credentials                                   |
+| `agentage status`             | Version, update, target, sign-in state, endpoint (`--json` for scripts) |
+| `agentage update`             | Install the latest published version (`--check` only reports)           |
 
-## Telemetry (off by default)
+Flags, exit codes and token auth for CI are in [`docs/reference.md`](docs/reference.md).
 
-Nothing leaves your machine unless you ask for it. The CLI and its local helper ship with
-`@agentage/observability`, which stays inert until `OTEL_EXPORTER_OTLP_ENDPOINT` points at a
-collector you choose - then the CLI reports as `agentage-cli` and the helper as `agentage-daemon`
-(override with `OTEL_SERVICE_NAME`). Every line it writes goes to stderr, so `--json` output and the
-helper's MCP wire stay clean.
+## Configuration
 
-## Development
+| Env                   | Default       | Purpose                                            |
+| --------------------- | ------------- | -------------------------------------------------- |
+| `AGENTAGE_SITE_FQDN`  | `agentage.io` | Target host                                        |
+| `AGENTAGE_CONFIG_DIR` | `~/.agentage` | Config and credentials directory                   |
+| `AGENTAGE_TOKEN`      | -             | Personal access token for CI and headless machines |
+| `AGENTAGE_DEBUG`      | -             | Print diagnostics to stderr                        |
+| `NO_COLOR`            | -             | Disable colored output                             |
+
+## Develop
 
 ```bash
 npm ci
-npm run verify        # type-check + lint + format:check + unit tests + build
+npm run verify                                         # type-check + lint + format:check + test + build
+npm run build && npm run test:e2e -- --grep @offline   # offline e2e: no network, no account
 ```
 
-End-to-end tests (Playwright) run in tiers - the offline tiers need no network or
-account. See [`docs/reference.md`](docs/reference.md) for more.
+## Release
 
-```bash
-npm run build && npm run test:e2e                      # all e2e tiers
-npm run build && npm run test:e2e -- --grep @offline   # offline tiers only
-```
+Releases publish to npm via GitHub Actions when a `chore(release): X.Y.Z` commit that touches
+`package.json` lands on `master` (the squash-merge subject of a release PR). The workflow skips
+any version already on npm.
 
 ## License
 
-MIT
+MIT - see [LICENSE](./LICENSE).
