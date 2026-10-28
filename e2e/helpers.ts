@@ -1,23 +1,28 @@
 /**
  * E2E harness for the CLI - drives the built CLI (dist/cli.js) as a
- * subprocess against a live deployed stack. Run `npm run build` first.
+ * subprocess. Run `npm run build` first.
  *
- * Target: AGENTAGE_SITE_FQDN (default dev.agentage.io). The suite signs up
- * throwaway accounts - never point it at production.
- * Account: E2E_AUTH_EMAIL / E2E_AUTH_PASSWORD reuse a stable account when set;
- * otherwise each run signs up a fresh throwaway user.
+ * Tiers: @offline is the PR tier - hermetic, the CLI talks only to loopback
+ * stubs (e2e/stub/ for the site, e2e/registry/ for npm). @smoke tests are
+ * read-only against the default target, AGENTAGE_SITE_FQDN (default agentage.io).
  */
 import { execFile, spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, request as apiRequest, type APIRequestContext } from '@playwright/test';
-import { testClientHeader } from './client-type.js';
+import { expect } from '@playwright/test';
 
-export const TARGET_FQDN = process.env['AGENTAGE_SITE_FQDN'] ?? 'dev.agentage.io';
-export const AUTH_URL = `https://auth.${TARGET_FQDN}`;
+export const TARGET_FQDN = process.env['AGENTAGE_SITE_FQDN'] ?? 'agentage.io';
+
+// Mirrors the CLI's origins: a `127.0.0.1:<port>` stub serves auth itself over plain http.
+export const authUrlFor = (fqdn: string): string =>
+  /^127\.0\.0\.1:\d+$/.test(fqdn) ? `http://${fqdn}` : `https://auth.${fqdn}`;
+
+export const AUTH_URL = authUrlFor(TARGET_FQDN);
 export const CLI_BIN = process.env['CLI_BIN'] ?? join(process.cwd(), 'dist', 'cli.js');
+
+// GNU timeout's convention, so a hung child never reads as an ordinary exit 1.
+export const EXIT_TIMED_OUT = 124;
 
 export const assertCliBuilt = (): void => {
   expect(existsSync(CLI_BIN), `CLI not built at ${CLI_BIN} - run: npm run build`).toBe(true);
@@ -27,11 +32,13 @@ export interface ExecResult {
   stdout: string;
   stderr: string;
   code: number;
+  timedOut: boolean;
 }
 
 export interface SetupProcess {
   output: () => string;
-  waitExit: () => Promise<number>;
+  stderr: () => string;
+  waitExit: (timeoutMs?: number) => Promise<number>;
   kill: () => void;
 }
 
@@ -42,55 +49,64 @@ export interface CliMachine {
   cleanup: () => void;
 }
 
+const machineEnv = (configDir: string, home: string, extra: NodeJS.ProcessEnv) => ({
+  ...process.env,
+  AGENTAGE_CONFIG_DIR: configDir,
+  AGENTAGE_SITE_FQDN: TARGET_FQDN,
+  NO_COLOR: '1',
+  // Loopback (the in-process stubs) must bypass any proxy, blackhole or real.
+  NO_PROXY: '127.0.0.1,localhost',
+  // A throwaway home: nothing may read or write the developer's real dotfiles.
+  HOME: home,
+  // npm run exports the developer's npmrc path; pin it inside the throwaway home.
+  npm_config_userconfig: join(home, '.npmrc'),
+  // A private cache so a test can neither read nor poison the developer's npm cache.
+  npm_config_cache: join(home, '.npm'),
+  ...extra,
+});
+
+const execCli = (env: NodeJS.ProcessEnv, args: string[], timeoutMs: number) =>
+  new Promise<ExecResult>((resolve) => {
+    execFile(process.execPath, [CLI_BIN, ...args], { env, timeout: timeoutMs }, (err, out, e) => {
+      const timedOut = err?.killed === true;
+      const exit = err && typeof err.code === 'number' ? err.code : err ? 1 : 0;
+      resolve({ stdout: out, stderr: e, code: timedOut ? EXIT_TIMED_OUT : exit, timedOut });
+    });
+  });
+
+// A child still running at the deadline is killed and reported as EXIT_TIMED_OUT.
+const exitWithin =
+  (exit: Promise<number>, kill: () => void) =>
+  async (timeoutMs = 30_000): Promise<number> => {
+    const deadline = new Promise<null>((r) => setTimeout(() => r(null), timeoutMs).unref());
+    const code = await Promise.race([exit, deadline]);
+    if (code !== null) return code;
+    kill();
+    return EXIT_TIMED_OUT;
+  };
+
+const spawnSetup = (env: NodeJS.ProcessEnv, args: string[]): SetupProcess => {
+  const child = spawn(process.execPath, [CLI_BIN, ...args], { env });
+  let buffer = '';
+  let errBuffer = '';
+  child.stdout.on('data', (chunk: Buffer) => (buffer += chunk.toString()));
+  child.stderr.on('data', (chunk: Buffer) => {
+    buffer += chunk.toString();
+    errBuffer += chunk.toString();
+  });
+  const exit = new Promise<number>((resolve) => child.on('close', (code) => resolve(code ?? 1)));
+  const kill = (): void => void child.kill('SIGTERM');
+  return { output: () => buffer, stderr: () => errBuffer, waitExit: exitWithin(exit, kill), kill };
+};
+
 export const createCliMachine = (extraEnv: NodeJS.ProcessEnv = {}): CliMachine => {
   const configDir = mkdtempSync(join(tmpdir(), 'agentage-cli-e2e-'));
   const home = mkdtempSync(join(tmpdir(), 'agentage-cli-home-'));
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    AGENTAGE_CONFIG_DIR: configDir,
-    AGENTAGE_SITE_FQDN: TARGET_FQDN,
-    NO_COLOR: '1',
-    // Loopback (the in-process registry) must bypass the blackhole proxies offline tests set.
-    NO_PROXY: '127.0.0.1,localhost',
-    // A throwaway home: nothing may read or write the developer's real dotfiles.
-    HOME: home,
-    // npm run exports the developer's npmrc path; pin it inside the throwaway home.
-    npm_config_userconfig: join(home, '.npmrc'),
-    // A private cache so a test can neither read nor poison the developer's npm cache.
-    npm_config_cache: join(home, '.npm'),
-    ...extraEnv,
-  };
-
-  const exec = (args: string[], timeoutMs = 30_000): Promise<ExecResult> =>
-    new Promise((resolve) => {
-      execFile(
-        process.execPath,
-        [CLI_BIN, ...args],
-        { env, timeout: timeoutMs },
-        (error, stdout, stderr) => {
-          const code = error && typeof error.code === 'number' ? error.code : error ? 1 : 0;
-          resolve({ stdout, stderr, code });
-        }
-      );
-    });
-
-  const startSetup = (args = ['setup', '--no-browser']): SetupProcess => {
-    const child = spawn(process.execPath, [CLI_BIN, ...args], { env });
-    let buffer = '';
-    child.stdout.on('data', (chunk: Buffer) => (buffer += chunk.toString()));
-    child.stderr.on('data', (chunk: Buffer) => (buffer += chunk.toString()));
-    const exit = new Promise<number>((resolve) => child.on('close', (code) => resolve(code ?? 1)));
-    return {
-      output: () => buffer,
-      waitExit: () => exit,
-      kill: () => child.kill('SIGTERM'),
-    };
-  };
-
+  const env = machineEnv(configDir, home, extraEnv);
   return {
     configDir,
-    exec,
-    startSetup,
+    exec: (args, timeoutMs = 30_000) => execCli(env, args, timeoutMs),
+    startSetup: (args = ['setup', '--no-browser']) => spawnSetup(env, args),
     cleanup: () => {
       rmSync(configDir, { recursive: true, force: true });
       rmSync(home, { recursive: true, force: true });
@@ -105,7 +121,7 @@ export const waitForAuthorizeUrl = async (
 ): Promise<string> => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const match = setup.output().match(/https:\/\/\S+\/authorize\?\S+/);
+    const match = setup.output().match(/https?:\/\/\S+\/authorize\?\S+/);
     if (match) return match[0];
     await new Promise((r) => setTimeout(r, 250));
   }
@@ -117,7 +133,8 @@ export interface CliStatusReport {
   version: string;
   fqdn: string;
   env: string;
-  auth: { signedIn: boolean; tokenExpiresAt?: string; note?: string };
+  target: { fqdn: string; reachable: boolean };
+  auth: { signedIn: boolean; tokenExpiresAt?: string; note?: string; transient?: boolean };
   endpoint: { url: string; reachable: boolean };
 }
 
@@ -125,53 +142,6 @@ export const statusJson = async (machine: CliMachine): Promise<CliStatusReport> 
   const result = await machine.exec(['status', '--json']);
   expect(result.code, `status --json failed:\n${result.stderr}`).toBe(0);
   return JSON.parse(result.stdout) as CliStatusReport;
-};
-
-export interface TestAccount {
-  email: string;
-  password: string;
-}
-
-export const testAccount = (): TestAccount => {
-  const email = process.env['E2E_AUTH_EMAIL'];
-  const password = process.env['E2E_AUTH_PASSWORD'];
-  if (email && password) return { email, password };
-  return {
-    email: `cli-e2e-${randomBytes(6).toString('hex')}@agentage.test`,
-    password: `cli-e2e-${randomBytes(9).toString('base64url')}`,
-  };
-};
-
-// Better Auth 403s cookie-bearing POSTs without a same-origin Origin header.
-export const newBrowserContext = (): Promise<APIRequestContext> =>
-  apiRequest.newContext({
-    baseURL: AUTH_URL,
-    extraHTTPHeaders: { Origin: AUTH_URL, ...testClientHeader() },
-  });
-
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
-// Sign the account in (sign up on first use); back off on 429 rate limits.
-export const ensureSession = async (
-  browser: APIRequestContext,
-  account: TestAccount
-): Promise<void> => {
-  let last = 0;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const signIn = await browser.post('/api/auth/sign-in/email', {
-      data: { email: account.email, password: account.password },
-    });
-    if (signIn.ok()) return;
-    last = signIn.status();
-    if (last === 401 || last === 400) {
-      const signUp = await browser.post('/api/auth/sign-up/email', {
-        data: { email: account.email, password: account.password, name: 'CLI e2e' },
-      });
-      if (signUp.ok()) return;
-    }
-    await sleep(2_000 * (attempt + 1));
-  }
-  expect(false, `ensureSession failed after retries (last status ${last})`).toBe(true);
 };
 
 // Chalk colours whenever it detects a colour-capable environment (CI included), so any

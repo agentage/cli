@@ -1,7 +1,8 @@
 /**
- * @smoke - the built CLI identifies itself and degrades cleanly when
- * unauthenticated, against the live deployed target (AGENTAGE_SITE_FQDN,
- * default dev). No credentials needed.
+ * @smoke - read-only against the default target (AGENTAGE_SITE_FQDN, default
+ * agentage.io): the built CLI identifies itself and degrades cleanly when
+ * unauthenticated. No credentials, nothing written server-side. Only the
+ * version case is also @offline: it makes no network call.
  */
 import { createRequire } from 'node:module';
 import { expect, test } from '@playwright/test';
@@ -32,7 +33,7 @@ test('unauthenticated status degrades with a setup hint @smoke', async () => {
   expect(report.endpoint.reachable, `endpoint ${report.endpoint.url} unreachable`).toBe(true);
 });
 
-test('status never leaks a stack trace when signed out @smoke @offline', async () => {
+test('status never leaks a stack trace when signed out @smoke', async () => {
   const result = await machine.exec(['status']);
   expect(result.code).toBe(0);
   expect(result.stdout).toContain('not signed in - run: agentage setup');

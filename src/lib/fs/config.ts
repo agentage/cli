@@ -1,16 +1,8 @@
-import { randomBytes } from 'node:crypto';
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { withFileLock } from './file-lock.js';
+import { isRecord, readJson, writeJsonAtomic } from './json-file.js';
 
 export interface StoredTokens {
   accessToken: string;
@@ -39,26 +31,27 @@ export const ensureConfigDir = (): string => {
 
 const authPath = (): string => join(getConfigDir(), 'auth.json');
 
-export const readAuth = (): AuthState | null => {
-  const path = authPath();
-  if (!existsSync(path)) return null;
-  try {
-    return JSON.parse(readFileSync(path, 'utf-8')) as AuthState;
-  } catch {
-    return null;
-  }
-};
+const isOptional = (value: unknown, type: 'string' | 'number'): boolean =>
+  value === undefined || typeof value === type;
 
-// Atomic 0600 write: a token file is never left half-written or briefly world-readable. Write a
-// per-save sibling temp (unique name: concurrent savers can never clobber each other's tmp),
-// chmod it 0600 BEFORE the rename, then rename over the target in one step.
+const isStoredTokens = (value: unknown): value is StoredTokens =>
+  isRecord(value) &&
+  typeof value['accessToken'] === 'string' &&
+  isOptional(value['refreshToken'], 'string') &&
+  isOptional(value['expiresAt'], 'number');
+
+// A malformed auth.json (e.g. `{}`) reads as signed out rather than crashing every command.
+export const isAuthState = (value: unknown): value is AuthState =>
+  isRecord(value) &&
+  typeof value['siteFqdn'] === 'string' &&
+  typeof value['clientId'] === 'string' &&
+  isStoredTokens(value['tokens']);
+
+export const readAuth = (): AuthState | null => readJson(authPath(), isAuthState);
+
 export const saveAuth = (state: AuthState): void => {
   ensureConfigDir();
-  const path = authPath();
-  const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
-  writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n', { encoding: 'utf-8', mode: 0o600 });
-  chmodSync(tmp, 0o600);
-  renameSync(tmp, path);
+  writeJsonAtomic(authPath(), state);
 };
 
 // Sign-out under the same lock mutateAuth takes (issue #236), so a concurrent token refresh can

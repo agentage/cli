@@ -7,6 +7,7 @@ import {
   deleteAuth,
   ensureConfigDir,
   getConfigDir,
+  isAuthState,
   mutateAuth,
   readAuth,
   saveAuth,
@@ -56,6 +57,24 @@ describe('config store', () => {
     ensureConfigDir();
     writeFileSync(join(getConfigDir(), 'auth.json'), 'not json');
     expect(readAuth()).toBeNull();
+  });
+
+  it('reads a wrong-shaped auth.json (e.g. `{}`) as signed out', () => {
+    ensureConfigDir();
+    const bad = [
+      {},
+      { ...sample, tokens: {} },
+      { ...sample, clientId: 7 },
+      { ...sample, tokens: { accessToken: 'at', expiresAt: 'soon' } },
+      { ...sample, tokens: { accessToken: 'at', refreshToken: 1 } },
+    ];
+    for (const body of bad) {
+      writeFileSync(join(getConfigDir(), 'auth.json'), JSON.stringify(body));
+      expect(readAuth(), JSON.stringify(body)).toBeNull();
+      expect(isAuthState(body)).toBe(false);
+    }
+    expect(isAuthState(sample)).toBe(true);
+    expect(isAuthState({ ...sample, tokens: { accessToken: 'at' } })).toBe(true);
   });
 
   it('deletes auth state idempotently', async () => {

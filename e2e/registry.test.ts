@@ -1,15 +1,12 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { expect, test } from '@playwright/test';
-import { resolveNpmCli } from './registry/npm-cli.js';
+import { loadNpmCli } from './registry/npm-cli.js';
 import { startRegistry, type Registry } from './registry/registry.js';
 
 // Serves `npm pack` output on loopback so e2e installs never touch the public registry. @p0
-const run = promisify(execFile);
 const FIXTURE = join(process.cwd(), 'fixtures', 'plugin-hello');
 const NAME = '@agentage/fixture-hello';
 
@@ -28,12 +25,15 @@ test.describe('in-process npm registry @p0 @offline', () => {
     const packDir = join(root, 'pack');
     mkdirSync(packDir);
     const env = {
-      ...process.env,
       npm_config_userconfig: join(root, '.npmrc'),
       npm_config_cache: join(root, '.npm'),
     };
-    const args = [resolveNpmCli(), 'pack', FIXTURE, '--pack-destination', packDir];
-    await run(process.execPath, args, { env, timeout: 60_000 });
+    const { runNpm } = await loadNpmCli();
+    const packed = await runNpm(['pack', FIXTURE, '--pack-destination', packDir], {
+      env,
+      timeoutMs: 60_000,
+    });
+    expect(packed.code, packed.stderr).toBe(0);
     registry = await startRegistry(packDir);
   });
 

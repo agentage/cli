@@ -1,19 +1,15 @@
-import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-// Run npm as `node npm-cli.js` so no shell or platform shim sits between the test and npm.
-export const resolveNpmCli = (): string => {
-  const bundled = join(
-    dirname(process.execPath),
-    '..',
-    'lib',
-    'node_modules',
-    'npm',
-    'bin',
-    'npm-cli.js'
-  );
-  if (existsSync(bundled)) return bundled;
-  const fromEnv = process.env['npm_execpath'];
-  if (fromEnv?.endsWith('npm-cli.js')) return fromEnv;
-  throw new Error(`npm-cli.js not found next to ${process.execPath}`);
-};
+interface NpmCli {
+  runNpm: (
+    args: string[],
+    opts: { env?: NodeJS.ProcessEnv; timeoutMs: number }
+  ) => Promise<{ code: number; stdout: string; stderr: string }>;
+}
+
+// The shipped dist module, by computed path so type-check:e2e never needs a build first.
+export const loadNpmCli = async (): Promise<NpmCli> =>
+  (await import(
+    pathToFileURL(join(process.cwd(), 'dist', 'lib', 'npm', 'npm-cli.js')).href
+  )) as NpmCli;

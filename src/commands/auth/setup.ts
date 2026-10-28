@@ -1,168 +1,32 @@
-import chalk from 'chalk';
 import { type Command } from 'commander';
-import { startCallbackServer } from '../../lib/auth/callback-server.js';
-import {
-  deleteAuth,
-  ensureConfigDir,
-  mutateAuth,
-  readAuth,
-  type AuthState,
-} from '../../lib/fs/config.js';
-import { AuthRequiredError, introspectToken } from '../../lib/auth/api.js';
-import { detectEnvMismatch } from '../../lib/auth/env-match.js';
-import {
-  buildAuthorizeUrl,
-  exchangeCode,
-  pkcePair,
-  randomState,
-  registerClient,
-  revokeToken,
-  type TokenResponse,
-} from '../../lib/auth/oauth.js';
-import { links, siteFqdn } from '../../lib/net/origins.js';
-import { runStatus } from '../status/status.js';
+import { type SignInOptions, type SignInResult } from '../../lib/auth/sign-in.js';
 
-export interface SetupOptions {
+export interface SetupOptions extends SignInOptions {
   disconnect?: boolean;
-  reauth?: boolean;
-  browser?: boolean;
 }
 
+// printStatus comes from the program root, so this command never imports the status command.
 export interface SetupDeps {
-  register: typeof registerClient;
-  exchange: typeof exchangeCode;
-  revoke: typeof revokeToken;
-  startServer: typeof startCallbackServer;
-  openBrowser: (url: string) => Promise<void>;
+  ensureSignedIn: (opts: SignInOptions) => Promise<SignInResult>;
+  signOut: () => Promise<void>;
   printStatus: () => Promise<void>;
-  introspect: typeof introspectToken;
 }
 
-const defaultDeps: SetupDeps = {
-  register: registerClient,
-  exchange: exchangeCode,
-  revoke: revokeToken,
-  startServer: startCallbackServer,
-  openBrowser: async (url) => {
-    const { default: open } = await import('open');
-    await open(url);
-  },
-  printStatus: () => runStatus({}),
-  introspect: introspectToken,
+export const runSetup = async (opts: SetupOptions, deps: SetupDeps): Promise<void> => {
+  if (opts.disconnect) return deps.signOut();
+  await deps.ensureSignedIn({ reauth: opts.reauth, browser: opts.browser });
+  await deps.printStatus();
 };
 
-const toAuthState = (fqdn: string, clientId: string, tokens: TokenResponse): AuthState => ({
-  siteFqdn: fqdn,
-  clientId,
-  tokens: {
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token,
-    expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
-  },
-});
-
-const disconnect = async (deps: SetupDeps): Promise<void> => {
-  const auth = readAuth();
-  if (!auth) {
-    console.log('Nothing to disconnect.');
-    return;
-  }
-  await deps.revoke(links(auth.siteFqdn).auth, auth.tokens.accessToken);
-  await deleteAuth();
-  console.log('Disconnected - local credentials removed.');
-};
-
-// Validate the stored session instead of trusting mere token presence. Returns true to short-circuit
-// (valid or a transient blip - creds intact), false to proceed into a fresh sign-in (truly expired or
-// the credential belongs to a different target than the current run).
-const alreadySignedIn = async (auth: AuthState, deps: SetupDeps): Promise<boolean> => {
-  const mismatch = detectEnvMismatch(auth, siteFqdn());
-  if (mismatch) {
-    console.log(
-      `Signed in to ${mismatch.credentialFqdn} (${mismatch.credentialEnv}), but this run targets ` +
-        `${mismatch.targetFqdn} (${mismatch.targetEnv}) - signing you into ${mismatch.targetEnv}.\n`
-    );
-    return false; // proceed to a fresh sign-in against the current target
-  }
-  try {
-    await deps.introspect(auth, links(auth.siteFqdn));
-    console.log(
-      `Already signed in. Run ${chalk.white('agentage setup --reauth')} to sign in again.\n`
-    );
-    await deps.printStatus();
-    return true;
-  } catch (err) {
-    if (err instanceof AuthRequiredError) {
-      console.log('Session expired - signing you in again.\n');
-      return false; // fall through to the sign-in flow, no --reauth needed
-    }
-    // Transient: do not force reauth on a blip; keep credentials and show status.
-    console.log('You appear signed in (could not fully verify - temporary).\n');
-    await deps.printStatus();
-    return true;
-  }
-};
-
-export const runSetup = async (
-  opts: SetupOptions,
-  deps: SetupDeps = defaultDeps
-): Promise<void> => {
-  if (opts.disconnect) {
-    await disconnect(deps);
-    return;
-  }
-  const stored = readAuth();
-  if (stored && !opts.reauth && (await alreadySignedIn(stored, deps))) return;
-  const fqdn = siteFqdn();
-  const target = links(fqdn);
-  ensureConfigDir();
-  const { verifier, challenge } = pkcePair();
-  const state = randomState();
-  const server = await deps.startServer(state);
-  try {
-    const clientId = await deps.register(target.auth, server.redirectUri);
-    const url = buildAuthorizeUrl(target.auth, {
-      clientId,
-      redirectUri: server.redirectUri,
-      challenge,
-      state,
-    });
-    console.log(`\nSign in to agentage (${fqdn}):\n\n  ${url}\n`);
-    if (opts.browser === false) console.log('Open the URL above in a browser to continue.');
-    else
-      await deps
-        .openBrowser(url)
-        .catch(() => console.log('Could not open a browser - use the URL above.'));
-    console.log('Waiting for sign-in to complete...');
-    const code = await server.waitForCode();
-    const tokens = await deps.exchange(target.auth, {
-      clientId,
-      code,
-      redirectUri: server.redirectUri,
-      verifier,
-    });
-    await mutateAuth(() => toAuthState(fqdn, clientId, tokens));
-    console.log(chalk.green('\nSigned in.\n'));
-    await deps.printStatus();
-  } finally {
-    server.close();
-  }
-};
-
-export const registerSetup = (program: Command): void => {
+export const registerSetup = (
+  program: Command,
+  action: (opts: SetupOptions) => Promise<void>
+): void => {
   program
     .command('setup')
     .description('Sign in and connect this machine to your agentage account')
     .option('--disconnect', 'sign out and remove local credentials')
     .option('--reauth', 'force a fresh sign-in')
     .option('--no-browser', 'print the sign-in URL instead of opening a browser')
-    .action(async (opts: SetupOptions) => {
-      try {
-        await runSetup(opts);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error(chalk.red(`Setup failed: ${message}`));
-        process.exitCode = 1;
-      }
-    });
+    .action(action);
 };

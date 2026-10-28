@@ -4,8 +4,8 @@
 const nodeMajor = Number(process.versions.node.split('.')[0]);
 if (nodeMajor < 22) {
   process.stderr.write(`agentage requires Node.js >= 22 (you have v${process.versions.node})\n`);
-  process.exit(1);
+  process.exitCode = 1;
+} else {
+  const { run } = await import('./program.js');
+  process.exitCode = await run();
 }
-
-const { run } = await import('./program.js');
-await run();

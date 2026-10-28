@@ -29,10 +29,7 @@ export interface UpdateInfo {
 // ignored - good enough for an update hint. Returns -1 / 0 / 1.
 export const compareVersions = (a: string, b: string): number => {
   const parts = (v: string): number[] =>
-    v
-      .split('-')[0]
-      .split('.')
-      .map((n) => Number.parseInt(n, 10) || 0);
+    (v.split('-')[0] ?? '').split('.').map((n) => Number.parseInt(n, 10) || 0);
   const pa = parts(a);
   const pb = parts(b);
   for (let i = 0; i < 3; i++) {

@@ -41,9 +41,11 @@ const scan = (packDir: string): PackIndex => {
 
 // Release versions only: compares numeric major.minor.patch and ignores prerelease tags.
 const isNewer = (a: string, b: string): boolean => {
-  const [x, y] = [a, b].map((v) => v.split('-')[0].split('.').map(Number));
+  const parse = (v: string): number[] => (v.split('-')[0] ?? '').split('.').map(Number);
+  const x = parse(a);
+  const y = parse(b);
   const i = x.findIndex((n, k) => n !== y[k]);
-  return i !== -1 && x[i] > y[i];
+  return i !== -1 && (x[i] ?? 0) > (y[i] ?? 0);
 };
 
 const packument = (url: string, name: string, versions: PackedVersion[]): object => ({
