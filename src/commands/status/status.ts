@@ -1,9 +1,12 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
+import { pluginsEnabled } from '../../core/flag.js';
 import { resolveAuth } from '../../lib/auth/credentials.js';
 import { siteFqdn } from '../../lib/net/origins.js';
 import { gatherStatus, type StatusReport } from '../../lib/status/status-info.js';
 import { INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
+import { pluginStatusLines } from '../plugins/status-print.js';
+import { gatherPluginStatus, type PluginsGather } from '../plugins/status-rows.js';
 
 const mark = (good: boolean): string => (good ? chalk.green('✓') : chalk.red('✗'));
 
@@ -58,26 +61,79 @@ export interface StatusOptions {
   token?: string;
 }
 
-export const runStatus = async (opts: StatusOptions = {}): Promise<void> => {
-  const report = await gatherStatus(resolveAuth({ token: opts.token }), siteFqdn());
-  if (opts.json) {
-    console.log(JSON.stringify(report, null, 2));
+export interface StatusDeps {
+  gather: (opts: StatusOptions) => Promise<StatusReport>;
+  // null while the plugins flag is off, so today's output stays byte-identical.
+  plugins: () => Promise<PluginsGather | null>;
+}
+
+const defaultDeps: StatusDeps = {
+  gather: (opts) => gatherStatus(resolveAuth({ token: opts.token }), siteFqdn()),
+  plugins: () => (pluginsEnabled() ? gatherPluginStatus() : Promise.resolve(null)),
+};
+
+type PluginsOutcome = { gathered: PluginsGather | null; error: unknown };
+
+const settle = async (deps: StatusDeps): Promise<PluginsOutcome> => {
+  try {
+    return { gathered: await deps.plugins(), error: null };
+  } catch (error) {
+    return { gathered: null, error };
+  }
+};
+
+const emit = (report: StatusReport, gathered: PluginsGather | null, json?: boolean): void => {
+  if (json) {
+    console.log(JSON.stringify(gathered ? { ...report, ...gathered.status } : report, null, 2));
     return;
   }
   printStatus(report);
+  for (const text of gathered ? pluginStatusLines(gathered.status) : []) console.log(text);
 };
+
+const profileFailure = (gathered: PluginsGather | null): Error | null => {
+  const profile = gathered?.status.profile;
+  if (profile?.state !== 'invalid') return null;
+  return new Error(`profile.json is invalid:\n${profile.errors.map((e) => `  ${e}`).join('\n')}`);
+};
+
+// The report always prints; a plugin-side failure then fails the step (exit 1) on stderr.
+export const runStatus = async (
+  opts: StatusOptions = {},
+  deps: StatusDeps = defaultDeps
+): Promise<void> => {
+  const report = await deps.gather(opts);
+  const { gathered, error } = await settle(deps);
+  emit(report, gathered, opts.json);
+  for (const warning of gathered?.warnings ?? [])
+    console.error(chalk.yellow(`warning: ${warning}`));
+  if (error) throw error;
+  const failure = profileFailure(gathered);
+  if (failure) throw failure;
+};
+
+const PLUGINS_HELP = `
+Plugins: one row per plugin in the profile or a dev path: id, state (installed, off,
+blocked, invalid, missing), package, installed version, wanted range, contributed commands,
+the last run from state/<id>.json, and the reason when it cannot load. Plugin code is never
+loaded; the only file written is machine.json.`;
 
 export const registerStatus = (
   program: Command,
   action: (opts: StatusOptions) => Promise<void>
 ): void => {
-  program
+  const command = program
     .command('status')
-    .description('Show CLI, account, and endpoint status')
+    .description(
+      pluginsEnabled()
+        ? 'Show CLI, account, endpoint, machine, profile, and plugin status'
+        : 'Show CLI, account, and endpoint status'
+    )
     .option('--json', 'machine-readable output')
     .option(
       '--token <token>',
       'authenticate with a personal access token (aga_...); or set AGENTAGE_TOKEN'
     )
     .action(action);
+  if (pluginsEnabled()) command.addHelpText('after', PLUGINS_HELP);
 };

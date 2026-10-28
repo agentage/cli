@@ -44,6 +44,7 @@ export interface SetupProcess {
 
 export interface CliMachine {
   configDir: string;
+  home: string;
   exec: (args: string[], timeoutMs?: number) => Promise<ExecResult>;
   startSetup: (args?: string[]) => SetupProcess;
   cleanup: () => void;
@@ -105,6 +106,7 @@ export const createCliMachine = (extraEnv: NodeJS.ProcessEnv = {}): CliMachine =
   const env = machineEnv(configDir, home, extraEnv);
   return {
     configDir,
+    home,
     exec: (args, timeoutMs = 30_000) => execCli(env, args, timeoutMs),
     startSetup: (args = ['setup', '--no-browser']) => spawnSetup(env, args),
     cleanup: () => {

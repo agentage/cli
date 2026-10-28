@@ -1,0 +1,13 @@
+{
+  "name": "@agentage/fixture-old-engine",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "engines": {
+    "agentage": "^0.1"
+  },
+  "agentage": {
+    "id": "oldengine"
+  }
+}
