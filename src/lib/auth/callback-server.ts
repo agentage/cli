@@ -1,16 +1,11 @@
 import { createServer } from 'node:http';
+import { callbackPage as page } from './callback-page.js';
 
 export interface CallbackServer {
   redirectUri: string;
   waitForCode: (timeoutMs?: number) => Promise<string>;
   close: () => void;
 }
-
-const page = (ok: boolean, detail: string): string =>
-  '<!doctype html><html><head><meta charset="utf-8"><title>agentage</title></head>' +
-  '<body style="font-family:system-ui;display:grid;place-items:center;min-height:80vh">' +
-  `<div style="text-align:center"><h1>${ok ? 'Signed in' : 'Sign-in failed'}</h1>` +
-  `<p>${detail}</p></div></body></html>`;
 
 interface Settle {
   resolve: (code: string) => void;
