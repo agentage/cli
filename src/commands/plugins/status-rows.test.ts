@@ -70,7 +70,7 @@ describe('gatherPluginStatus (T19)', () => {
 
   const seedThree = (): void => {
     placeTree(join(cfg, 'plugins'), ['hello', 'world', 'old-engine']);
-    writeJson('machine.json', { id: MACHINE_ID, name: 'box' });
+    writeJson('machine.json', { id: MACHINE_ID, name: 'box', dev: {}, profileSource: 'default' });
     writeJson('profile.json', {
       version: 1,
       plugins: { [WORLD]: '^1', [HELLO]: '^1.0.0', [OLD]: '*' },
@@ -97,7 +97,7 @@ describe('gatherPluginStatus (T19)', () => {
     expect(status.plugins[1]?.error).toContain('does not match plugin API');
   });
 
-  it('writes nothing but the completed legacy machine.json', async () => {
+  it('writes nothing over a complete config dir', async () => {
     seedThree();
     const before = listTree(cfg);
     await gatherPluginStatus();
@@ -145,7 +145,12 @@ describe('gatherPluginStatus (T19)', () => {
   it('lists dev plugins as dev rows and reports an invalid profile', async () => {
     const devDir = join(cfg, 'dev-hello');
     cpSync(join(FIXTURES, 'plugin-hello'), devDir, { recursive: true });
-    writeJson('machine.json', { id: MACHINE_ID, name: 'box', dev: { [HELLO]: devDir } });
+    writeJson('machine.json', {
+      id: MACHINE_ID,
+      name: 'box',
+      dev: { [HELLO]: devDir },
+      profileSource: 'default',
+    });
     writeJson('profile.json', { version: 1, plugins: { [WORLD]: 'file:../x' } });
     const { status } = await gatherPluginStatus();
     expect(status.profile).toEqual({

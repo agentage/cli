@@ -13,6 +13,7 @@ export const HELLO = '@agentage/fixture-hello';
 export const WORLD = '@agentage/fixture-world';
 export const OLD = '@agentage/fixture-old-engine';
 export const DUP = '@agentage/fixture-dup-id';
+export const MACHINE = { id: MACHINE_ID, name: 'e2e-box', dev: {}, profileSource: 'default' };
 export const LAST_RUN = { at: '2026-10-29T10:00:00.000Z', pid: 4242, state: 'ok', error: null };
 
 export const writeJson = (dir: string, rel: string, value: unknown): void => {
@@ -30,14 +31,14 @@ export const placeTree = (configDir: string, fixtures: string[]): void => {
   writeFileSync(join(configDir, 'plugins', 'current'), 'x\n');
 };
 
-// Every fixture in the tree, a legacy {id, name} machine.json and one state file for hello.
+// Every fixture in the tree, a complete machine.json and one state file for hello.
 export const seed = (
   configDir: string,
   plugins: Record<string, string>,
   off: string[] = []
 ): void => {
   placeTree(configDir, ['hello', 'world', 'old-engine', 'dup-id']);
-  writeJson(configDir, 'machine.json', { id: MACHINE_ID, name: 'e2e-box' });
+  writeJson(configDir, 'machine.json', MACHINE);
   writeJson(configDir, 'profile.json', {
     version: 1,
     plugins,
@@ -60,9 +61,6 @@ export const snapshot = (dir: string, prefix = ''): Record<string, string> =>
       };
     })
   );
-
-export const withoutMachine = (snap: Record<string, string>): Record<string, string> =>
-  Object.fromEntries(Object.entries(snap).filter(([path]) => path !== 'machine.json'));
 
 export const fixtureVersion = (fixture: string): string => {
   const path = join(FIXTURES, `plugin-${fixture}`, 'package.json');

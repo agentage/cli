@@ -92,7 +92,7 @@ const toRow = (
 
 const UNKNOWN: StaticResult = { state: 'invalid', error: null };
 
-// Reads manifests, profile and state files; writes only a missing or legacy machine.json.
+// Reads manifests, profile and state files; writes only a missing machine.json.
 export const gatherPluginStatus = async (
   deps: StatusRowsDeps = defaultDeps
 ): Promise<PluginsGather> => {

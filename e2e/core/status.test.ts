@@ -1,9 +1,9 @@
 /**
  * @offline - `status` with AGENTAGE_PLUGINS=1 over a hand-placed plugins tree and a
  * profile.json: every static state, versions read from the tree, nothing loaded, and
- * machine.json as the only file written. The site is the loopback stub, so nothing leaves.
+ * machine.json created when absent. The site is the loopback stub, so nothing leaves.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { assertCliBuilt, createCliMachine, plain, type CliMachine } from '../helpers.js';
@@ -17,7 +17,6 @@ import {
   OLD,
   seed,
   snapshot,
-  withoutMachine,
   WORLD,
 } from './plugin-tree.js';
 
@@ -74,6 +73,8 @@ test.describe('core status @offline', () => {
       expect(report).toMatchObject({ profile: { state: 'missing' }, plugins: [] });
       expect(report.machine.id).toMatch(/^m_[0-9a-f]{8}$/);
       expect(readdirSync(machine.configDir)).toEqual(['machine.json']);
+      const machineFile = join(machine.configDir, 'machine.json');
+      expect(statSync(machineFile).mode & 0o777).toBe(0o600);
       expect(readdirSync(machine.home)).toEqual([]);
     } finally {
       machine.cleanup();
@@ -101,18 +102,14 @@ test.describe('core status @offline', () => {
     }
   });
 
-  test('nothing is loaded and machine.json is the only file written @p0', async () => {
+  test('nothing is loaded and nothing is written over a complete config dir @p0', async () => {
     const machine = pluginsMachine();
     try {
       seed(machine.configDir, THREE);
       const before = snapshot(machine.configDir);
       expect((await machine.exec(['status'])).code).toBe(0);
       expect(readdirSync(join(machine.configDir, 'state'))).toEqual(['hello.json']);
-      expect(withoutMachine(snapshot(machine.configDir))).toEqual(withoutMachine(before));
-      const machineFile = join(machine.configDir, 'machine.json');
-      const legacyKept = { id: MACHINE_ID, name: 'e2e-box', dev: {}, profileSource: 'default' };
-      expect(JSON.parse(readFileSync(machineFile, 'utf-8'))).toEqual(legacyKept);
-      expect(statSync(machineFile).mode & 0o777).toBe(0o600);
+      expect(snapshot(machine.configDir)).toEqual(before);
       expect(readdirSync(machine.home)).toEqual([]);
     } finally {
       machine.cleanup();

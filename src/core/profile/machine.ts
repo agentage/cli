@@ -24,6 +24,7 @@ export interface MachineDeps {
   newId: () => string;
 }
 
+export const MACHINE_ID = /^m_[0-9a-f]{8}$/;
 const SOURCES: readonly string[] = ['cloud', 'file', 'default'];
 
 const readRaw = (path: string): unknown => {
@@ -46,45 +47,35 @@ const defaultDeps: MachineDeps = {
   newId: () => `m_${randomBytes(4).toString('hex')}`,
 };
 
-const nonEmpty = (value: unknown): string | null =>
-  typeof value === 'string' && value !== '' ? value : null;
+const isDevMap = (value: unknown): value is Record<string, string> =>
+  isRecord(value) && Object.values(value).every((path) => typeof path === 'string');
 
-const devOf = (value: unknown): Record<string, string> =>
-  isRecord(value)
-    ? Object.fromEntries(
-        Object.entries(value).filter((e): e is [string, string] => typeof e[1] === 'string')
-      )
-    : {};
-
-const sourceOf = (value: unknown): ProfileSource =>
-  typeof value === 'string' && SOURCES.includes(value) ? (value as ProfileSource) : 'default';
-
-// Keeps an existing id (a legacy uuid included) and any keys a newer CLI added.
-export const normalizeMachine = (raw: unknown, deps: MachineDeps): MachineFile => {
-  const rec = isRecord(raw) ? raw : {};
-  return {
-    ...rec,
-    id: nonEmpty(rec['id']) ?? deps.newId(),
-    name: nonEmpty(rec['name']) ?? deps.hostname(),
-    dev: devOf(rec['dev']),
-    profileSource: sourceOf(rec['profileSource']),
-  };
+// Strict: anything but the exact v1 shape is treated as absent, so no old file is migrated.
+export const parseMachine = (raw: unknown): MachineFile | null => {
+  if (!isRecord(raw) || Object.keys(raw).length !== 4) return null;
+  const { id, name, dev, profileSource } = raw;
+  if (typeof id !== 'string' || !MACHINE_ID.test(id)) return null;
+  if (typeof name !== 'string' || name === '') return null;
+  if (!isDevMap(dev) || typeof profileSource !== 'string' || !SOURCES.includes(profileSource))
+    return null;
+  return { id, name, dev, profileSource: profileSource as ProfileSource };
 };
 
-const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
-
 // Re-read under the lock so two first runs agree on one id.
-const repair = (deps: MachineDeps, path: string): MachineFile => {
-  const fresh = deps.read(path);
-  const machine = normalizeMachine(fresh, deps);
-  if (!same(fresh, machine)) deps.write(path, machine);
+const create = (deps: MachineDeps, path: string): MachineFile => {
+  const fresh = parseMachine(deps.read(path));
+  if (fresh) return fresh;
+  const machine: MachineFile = {
+    id: deps.newId(),
+    name: deps.hostname(),
+    dev: {},
+    profileSource: 'default',
+  };
+  deps.write(path, machine);
   return machine;
 };
 
 export const loadMachine = async (deps: MachineDeps = defaultDeps): Promise<MachineFile> => {
   const path = deps.path();
-  const current = deps.read(path);
-  const machine = normalizeMachine(current, deps);
-  if (same(current, machine)) return machine;
-  return deps.lock(path, () => repair(deps, path));
+  return parseMachine(deps.read(path)) ?? deps.lock(path, () => create(deps, path));
 };
