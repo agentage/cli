@@ -5,6 +5,11 @@
   "main": "index.js",
   "license": "MIT",
   "agentage": {
-    "id": "hello"
+    "id": "hello",
+    "contributes": {
+      "commands": [
+        "hello"
+      ]
+    }
   }
 }

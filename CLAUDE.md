@@ -25,6 +25,10 @@ memory, vault, daemon, sync and MCP code lives in git history up to v0.37.2 and 
   - `update/` - update-check, update-cache
 - `src/core/` - launcher core, gated by `AGENTAGE_PLUGINS=1`; imports nothing product-shaped (the
   package guard enforces it)
+  - `profile/` (schema v1 validator, `profile.json` reader, `machine.json`, install/load set
+    merge) and `loader/` (manifests from `plugins/current` and dev paths, static states,
+    `state/<id>.json` reader; never imports plugin code); `src/commands/plugins/` renders the
+    rows `status` prints
 - `src/plugin.ts` - the `@agentage/cli/plugin` subpath export, versioned by `PLUGIN_API_VERSION`
 - `fixtures/` - test-only plugin packages (`@agentage/fixture-*`), never published
 - `e2e/registry/` - in-process npm registry serving `npm pack` output to e2e on loopback

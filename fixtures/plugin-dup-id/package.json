@@ -1,0 +1,10 @@
+{
+  "name": "@agentage/fixture-dup-id",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "agentage": {
+    "id": "hello"
+  }
+}

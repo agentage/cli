@@ -1,0 +1,18 @@
+{
+  "name": "@agentage/fixture-world",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "peerDependencies": {
+    "@agentage/fixture-hello": "^1.0.0"
+  },
+  "agentage": {
+    "id": "world",
+    "contributes": {
+      "commands": [
+        "world"
+      ]
+    }
+  }
+}

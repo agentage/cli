@@ -27,6 +27,24 @@ agentage status --token aga_...   # check with a personal access token
 
 `status` also surfaces a passive hint when a newer version is available.
 
+With `AGENTAGE_PLUGINS=1`, `status` adds the machine (`machine.json`), the local profile
+version (`profile.json`) and one row per plugin after the lines above; `--json` adds
+`machine`, `profile` and `plugins[]` after the existing keys. Plugin code is never loaded and
+the only file written is `machine.json`. With no profile it prints `no profile` and exits 0;
+an invalid `profile.json` still prints the report, then exits 1 naming each bad path.
+`AGENTAGE_PLUGINS_DIR` relocates the plugins directory (default `~/.agentage/plugins`).
+
+| Column   | JSON field  | Meaning                                                          |
+| -------- | ----------- | ---------------------------------------------------------------- |
+| id       | `id`        | `agentage.id` from the plugin's `package.json`                   |
+| state    | `state`     | `installed`, `off`, `blocked`, `invalid` or `missing`            |
+| package  | `package`   | package name; `mode` is `dev` for a local path in `machine.json` |
+| version  | `installed` | version found in the installed tree                              |
+| wants    | `wanted`    | range or `https:` URL from the profile's `plugins`               |
+| commands | `commands`  | `agentage.contributes.commands`                                  |
+| last run | `lastRun`   | `state/<id>.json`: `at`, `state` (`ok` or `failed`), `error`     |
+| reason   | `error`     | why the plugin is `invalid`, `blocked` or `missing`              |
+
 ## update
 
 ```bash
