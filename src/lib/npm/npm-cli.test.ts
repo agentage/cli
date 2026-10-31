@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { requireNpm10, resolveNpmCli, runNpm, type NpmResult } from './npm-cli.js';
+import { requireNpm10, resolveNpmCli, runNpm, scrubNpmEnv, type NpmResult } from './npm-cli.js';
 
 const touch = (path: string): string => {
   mkdirSync(dirname(path), { recursive: true });
@@ -69,6 +69,25 @@ describe('runNpm', () => {
     const env = { npm_config_init_license: 'EXPLICIT' };
     const explicit = await runNpm(['config', 'get', 'init-license'], { env, timeoutMs: 30_000 });
     expect(explicit.stdout.trim()).toBe('EXPLICIT');
+  });
+
+  it('runs a pre-resolved npm-cli.js without resolving again', async () => {
+    const res = await runNpm(['--version'], { timeoutMs: 30_000, npmCli: resolveNpmCli() });
+    expect(res.code).toBe(0);
+  });
+
+  it('scrubNpmEnv drops npm_config_* in any case and NODE_OPTIONS, then adds the extras', () => {
+    const parent = {
+      PATH: '/bin',
+      npm_config_cache: '/c',
+      NPM_CONFIG_PREFIX: '/p',
+      NODE_OPTIONS: 'x',
+    };
+    expect(scrubNpmEnv(parent)).toEqual({ PATH: '/bin' });
+    expect(scrubNpmEnv(parent, { npm_config_cache: '/mine' })).toEqual({
+      PATH: '/bin',
+      npm_config_cache: '/mine',
+    });
   });
 
   it('returns npm exit code and stderr on failure, and names a timeout', async () => {

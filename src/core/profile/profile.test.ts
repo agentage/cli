@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readProfile } from './profile.js';
+import { defaultProfile } from './default-profile.js';
+import { mutateProfile, readProfile } from './profile.js';
 
 describe('readProfile', () => {
   let dir: string;
@@ -46,5 +47,48 @@ describe('readProfile', () => {
       },
     });
     expect(result).toEqual({ ok: false, errors: ['profile.json: denied'] });
+  });
+});
+
+describe('mutateProfile', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agentage-profile-write-'));
+    process.env['AGENTAGE_CONFIG_DIR'] = join(dir, 'cfg');
+  });
+
+  afterEach(() => {
+    delete process.env['AGENTAGE_CONFIG_DIR'];
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes the default profile as a 0600 v1 document, creating the config dir', async () => {
+    const seen: unknown[] = [];
+    await mutateProfile((current) => {
+      seen.push(current);
+      return defaultProfile();
+    });
+    const path = join(dir, 'cfg', 'profile.json');
+    expect(seen).toEqual([null]);
+    expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual({
+      version: 1,
+      plugins: {},
+      config: {},
+      machines: {},
+    });
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it('hands the newest local copy to fn and keeps unknown keys on the round trip', async () => {
+    mkdirSync(join(dir, 'cfg'));
+    const path = join(dir, 'cfg', 'profile.json');
+    writeFileSync(path, JSON.stringify({ version: 1, plugins: { '@agentage/a': '^1' }, x: 1 }));
+    const next = await mutateProfile((current) => ({
+      ...(current ?? defaultProfile()),
+      plugins: { ...current?.plugins, '@agentage/b': '^2' },
+    }));
+    expect(next.plugins).toEqual({ '@agentage/a': '^1', '@agentage/b': '^2' });
+    expect(JSON.parse(readFileSync(path, 'utf-8'))).toMatchObject({ x: 1 });
   });
 });

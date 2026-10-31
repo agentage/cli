@@ -29,11 +29,11 @@ const unlinkQuiet = (path: string): void => {
 };
 
 // Unique temp sibling + chmod before rename: never half-written, never briefly world-readable.
-export const writeJsonAtomic = (path: string, value: unknown, mode = 0o600): void => {
+export const writeTextAtomic = (path: string, text: string, mode = 0o600): void => {
   const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   let renamed = false;
   try {
-    writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf-8', mode });
+    writeFileSync(tmp, text, { encoding: 'utf-8', mode });
     chmodSync(tmp, mode);
     renameSync(tmp, path);
     renamed = true;
@@ -41,3 +41,6 @@ export const writeJsonAtomic = (path: string, value: unknown, mode = 0o600): voi
     if (!renamed) unlinkQuiet(tmp);
   }
 };
+
+export const writeJsonAtomic = (path: string, value: unknown, mode = 0o600): void =>
+  writeTextAtomic(path, JSON.stringify(value, null, 2) + '\n', mode);

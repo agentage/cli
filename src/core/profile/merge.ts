@@ -25,3 +25,9 @@ export const effective = (profile: Profile | null, machine: MachineFile): Effect
   const config = mergeConfig(profile?.config ?? {}, self?.config ?? {});
   return { install, load, off, dev: { ...machine.dev }, config };
 };
+
+// `setup --profile` replaces the shared fields; this machine's own `off` and `config` survive.
+export const keepMachine = (next: Profile, current: Profile | null, machineId: string): Profile => {
+  const self = current?.machines[machineId];
+  return self ? { ...next, machines: { ...next.machines, [machineId]: self } } : next;
+};

@@ -1,8 +1,15 @@
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
-import { registerSetup, runSetup, type SetupOptions } from './commands/auth/setup.js';
+import {
+  registerSetup,
+  runSetup,
+  type SetupDeps,
+  type SetupOptions,
+} from './commands/auth/setup.js';
+import { pluginsSetupDeps, runPluginsSetup } from './commands/plugins/setup.js';
 import { registerStatus, runStatus, type StatusOptions } from './commands/status/status.js';
 import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
+import { pluginsEnabled } from './core/flag.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
@@ -17,13 +24,17 @@ export interface ProgramDeps {
   writeErr: (text: string) => void;
 }
 
+const setupDeps: SetupDeps = {
+  ensureSignedIn: (signInOpts) => ensureSignedIn(signInOpts),
+  signOut: () => signOut(),
+  printStatus: () => runStatus({}),
+};
+
 const defaultDeps: ProgramDeps = {
   setup: (opts) =>
-    runSetup(opts, {
-      ensureSignedIn: (signInOpts) => ensureSignedIn(signInOpts),
-      signOut: () => signOut(),
-      printStatus: () => runStatus({}),
-    }),
+    pluginsEnabled()
+      ? runPluginsSetup(opts, pluginsSetupDeps(setupDeps))
+      : runSetup(opts, setupDeps),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
   updateHint,

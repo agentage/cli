@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import { runSetup, type SetupDeps } from './setup.js';
+import { Command } from 'commander';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { registerSetup, runSetup, type SetupDeps } from './setup.js';
 
 const makeDeps = () => {
   const calls: string[] = [];
@@ -33,5 +34,26 @@ describe('runSetup', () => {
     vi.mocked(deps.ensureSignedIn).mockRejectedValue(new Error('boom'));
     await expect(runSetup({}, deps)).rejects.toThrow('boom');
     expect(calls).toEqual([]);
+  });
+});
+
+describe('registerSetup', () => {
+  afterEach(() => {
+    delete process.env['AGENTAGE_PLUGINS'];
+  });
+
+  const flags = (): string[] => {
+    const program = new Command();
+    registerSetup(program, async () => undefined);
+    return program.commands[0]?.options.map((o) => o.long ?? '') ?? [];
+  };
+
+  it("keeps today's flags while the plugins flag is off", () => {
+    expect(flags()).toEqual(['--disconnect', '--reauth', '--no-browser']);
+  });
+
+  it('adds --profile and --dry-run behind AGENTAGE_PLUGINS=1', () => {
+    process.env['AGENTAGE_PLUGINS'] = '1';
+    expect(flags()).toEqual(['--disconnect', '--reauth', '--no-browser', '--profile', '--dry-run']);
   });
 });

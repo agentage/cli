@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { isRecord, readJson, writeJsonAtomic } from './json-file.js';
+import { isRecord, readJson, writeJsonAtomic, writeTextAtomic } from './json-file.js';
 
 const isNamed = (v: unknown): v is { name: string } => isRecord(v) && typeof v['name'] === 'string';
 
@@ -37,6 +37,15 @@ describe('json-file', () => {
     const path = join(dir, 'b.json');
     writeJsonAtomic(path, { name: 'x' }, 0o640);
     expect(statSync(path).mode & 0o777).toBe(0o640);
+  });
+
+  it('writes text verbatim, replacing the old content in one rename', () => {
+    const path = join(dir, 'current');
+    writeTextAtomic(path, 'one\n');
+    writeTextAtomic(path, 'two\n');
+    expect(readFileSync(path, 'utf-8')).toBe('two\n');
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(readdirSync(dir)).toEqual(['current']);
   });
 
   it('returns null for a missing, unparsable or wrong-shaped file', () => {

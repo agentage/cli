@@ -79,3 +79,17 @@ export const loadMachine = async (deps: MachineDeps = defaultDeps): Promise<Mach
   const path = deps.path();
   return parseMachine(deps.read(path)) ?? deps.lock(path, () => create(deps, path));
 };
+
+export const setProfileSource = async (
+  source: ProfileSource,
+  deps: MachineDeps = defaultDeps
+): Promise<MachineFile> => {
+  const path = deps.path();
+  return deps.lock(path, () => {
+    const machine = create(deps, path);
+    if (machine.profileSource === source) return machine;
+    const next = { ...machine, profileSource: source };
+    deps.write(path, next);
+    return next;
+  });
+};

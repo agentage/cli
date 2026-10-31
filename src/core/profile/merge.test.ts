@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type MachineFile } from './machine.js';
-import { effective, mergeConfig } from './merge.js';
+import { effective, keepMachine, mergeConfig } from './merge.js';
 import { type Profile } from './schema.js';
 
 const HELLO = '@agentage/fixture-hello';
@@ -57,5 +57,27 @@ describe('effective (T04)', () => {
 
   it('merges config maps by plugin id', () => {
     expect(mergeConfig({ a: { k: 1 } }, { b: { k: 2 } })).toEqual({ a: { k: 1 }, b: { k: 2 } });
+  });
+});
+
+describe('keepMachine', () => {
+  const next: Profile = {
+    version: 1,
+    plugins: { [HELLO]: '^2' },
+    config: {},
+    machines: { m_8f2a91c0: { off: [], config: {}, extra: {} } },
+    extra: {},
+  };
+
+  it('replaces the shared fields and keeps this machine entry from the local copy', () => {
+    const kept = keepMachine(next, profile, 'm_8f2a91c0');
+    expect(kept.plugins).toEqual({ [HELLO]: '^2' });
+    expect(kept.machines['m_8f2a91c0']).toEqual(profile.machines['m_8f2a91c0']);
+    expect(kept.machines['m_other']).toBeUndefined();
+  });
+
+  it('takes the new document as is when there is nothing local to keep', () => {
+    expect(keepMachine(next, null, 'm_8f2a91c0')).toBe(next);
+    expect(keepMachine(next, profile, 'm_nothere')).toBe(next);
   });
 });

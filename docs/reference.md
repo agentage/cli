@@ -17,6 +17,44 @@ No passwords touch the terminal; tokens are stored in `~/.agentage/auth.json`
 (mode 0600). Running `setup` while signed in validates the session and prints status
 instead of starting a new sign-in; an expired session falls through to a fresh sign-in.
 
+With `AGENTAGE_PLUGINS=1`, `setup` also installs plugins:
+
+```bash
+agentage setup --profile ./profile.json            # install from a profile file, no sign-in
+agentage setup --profile ./profile.json --dry-run  # print the install plan, write nothing
+agentage setup                                     # sign in, then install from profile.json
+```
+
+`--profile <file>` validates the file (schema v1), saves it as `profile.json` (mode 0600,
+keeping this machine's own `machines[<id>]` entry), records `profileSource: "file"` in
+`machine.json` and installs; it never signs in. Every name must be in the `@agentage` scope
+(`AGENTAGE_PLUGIN_SCOPES` widens it) and every version a semver range or an `https:`
+tarball URL; a refused profile names each plugin and the rule and writes nothing. Plain
+`setup` signs in, then installs from the local `profile.json`; with none it saves the
+built-in default profile (no plugins) locally and says the cloud profile is unavailable.
+`--dry-run` prints the plan (install set, registry, npm command, tree) and stops before npm;
+it never signs in. `--disconnect` skips the plugins steps.
+
+The installer runs npm 10 or newer as `node npm-cli.js` (no shell, `--ignore-scripts`,
+`npm_config_*` and `NODE_OPTIONS` removed from its environment) into a staged tree under
+the plugins directory:
+
+| Path                             | What                                                               |
+| -------------------------------- | ------------------------------------------------------------------ |
+| `plugins/package.json`           | the install set, sorted, `private: true`, no scripts               |
+| `plugins/package-lock.json`      | npm's lock for the current tree                                    |
+| `plugins/npm-major`              | the npm major that wrote that lock                                 |
+| `plugins/trees/<hash>/`          | an immutable tree named by the lock's `name@version+integrity` set |
+| `plugins/trees/<hash>/.complete` | written once npm succeeded; a tree without it is ignored           |
+| `plugins/current`                | one line naming the tree in use, rewritten atomically              |
+| `plugins/install.lock`           | held for the whole install; a second run waits for it              |
+
+`npm ci` runs when the lock matches `package.json`, `npm install` otherwise; a complete
+tree for the same lock is reused without npm, and an empty install set skips npm and
+points `current` at an empty tree. If npm fails, `current` is left as it was, the staged
+tree is removed and npm's last 20 lines are printed; `setup` still prints the plugin rows,
+then exits 1.
+
 ## status
 
 ```bash
@@ -62,19 +100,24 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 
 ## Exit codes
 
-| Code | Meaning                                                                      |
-| ---- | ---------------------------------------------------------------------------- |
-| `0`  | Success, including `--help`, `--version`, and `status` while signed out      |
-| `1`  | A step failed: sign-in or update failed, or an invalid token                 |
-| `2`  | Usage error: an unknown command or flag, a missing flag value, or no command |
+| Code | Meaning                                                                                  |
+| ---- | ---------------------------------------------------------------------------------------- |
+| `0`  | Success, including `--help`, `--version`, and `status` while signed out                  |
+| `1`  | A step failed: sign-in, install or update failed, a refused profile, or an invalid token |
+| `2`  | Usage error: an unknown command or flag, a missing flag value, or no command             |
 
 Errors go to stderr; stdout carries only command output (`status --json` stays parseable).
 
 ## Environment
 
-| Variable              | Purpose                                            | Default       |
-| --------------------- | -------------------------------------------------- | ------------- |
-| `AGENTAGE_SITE_FQDN`  | Target host                                        | `agentage.io` |
-| `AGENTAGE_CONFIG_DIR` | Config and credentials directory (`auth.json`)     | `~/.agentage` |
-| `AGENTAGE_TOKEN`      | Personal access token for CI and headless machines | unset         |
-| `NO_COLOR`            | Disable colored output (any non-empty value)       | unset         |
+| Variable                  | Purpose                                                       | Default                      |
+| ------------------------- | ------------------------------------------------------------- | ---------------------------- |
+| `AGENTAGE_SITE_FQDN`      | Target host                                                   | `agentage.io`                |
+| `AGENTAGE_CONFIG_DIR`     | Config and credentials directory (`auth.json`)                | `~/.agentage`                |
+| `AGENTAGE_TOKEN`          | Personal access token for CI and headless machines            | unset                        |
+| `NO_COLOR`                | Disable colored output (any non-empty value)                  | unset                        |
+| `AGENTAGE_PLUGINS`        | `1` enables the plugin commands and rows                      | unset                        |
+| `AGENTAGE_PLUGINS_DIR`    | Plugins directory (trees, lock, `current`)                    | `~/.agentage/plugins`        |
+| `AGENTAGE_NPM_REGISTRY`   | Registry the installer passes to npm                          | `https://registry.npmjs.org` |
+| `AGENTAGE_NPM_TIMEOUT_MS` | Timeout for one npm run                                       | `600000`                     |
+| `AGENTAGE_PLUGIN_SCOPES`  | Extra npm scopes allowed besides `@agentage`, comma-separated | unset                        |

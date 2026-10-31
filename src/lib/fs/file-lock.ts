@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 // A cross-process advisory lock keyed to a target file (`<target>.lock`).
@@ -141,6 +141,20 @@ export const acquireFileLock = (
 export const releaseFileLock = (target: string): void => {
   const path = lockPath(target);
   if (holderOf(path)?.pid === process.pid) unlinkQuiet(path);
+};
+
+// Heartbeat for a long holder: a fresh stamp keeps waiters from ever reading it as crashed.
+export const refreshFileLock = (target: string, now: number = Date.now()): boolean => {
+  const path = lockPath(target);
+  if (holderOf(path)?.pid !== process.pid) return false;
+  const tmp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.new`;
+  writeFileSync(tmp, `${process.pid} ${now}`);
+  try {
+    renameSync(tmp, path);
+  } finally {
+    unlinkQuiet(tmp);
+  }
+  return true;
 };
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));

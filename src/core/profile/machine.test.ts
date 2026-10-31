@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadMachine, parseMachine, type MachineDeps } from './machine.js';
+import { loadMachine, parseMachine, setProfileSource, type MachineDeps } from './machine.js';
 
 const OLD_ID = '260d7044-b229-4afb-bbf3-40af745c3926';
 const FRESH = { id: 'm_0123abcd', name: 'box', dev: {}, profileSource: 'default' };
@@ -84,6 +84,21 @@ describe('machine.json', () => {
     deps.read = vi.fn().mockReturnValueOnce(null).mockReturnValue(winner);
     expect(await loadMachine(deps)).toEqual(winner);
     expect(deps.write).not.toHaveBeenCalled();
+  });
+
+  it('records the profile source under the lock, writing only on a change', async () => {
+    const deps = fakeDeps({ ...FRESH });
+    expect(await setProfileSource('file', deps)).toEqual({ ...FRESH, profileSource: 'file' });
+    expect(deps.write).toHaveBeenCalledTimes(1);
+    expect(await loadMachine(deps)).toMatchObject({ id: FRESH.id, profileSource: 'file' });
+    await setProfileSource('file', deps);
+    expect(deps.write).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates machine.json when the source is recorded first', async () => {
+    const deps = fakeDeps(null);
+    expect(await setProfileSource('file', deps)).toEqual({ ...FRESH, profileSource: 'file' });
+    expect(deps.write).toHaveBeenCalledTimes(2);
   });
 
   it.each([
