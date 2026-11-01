@@ -1,94 +1,48 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { defaultProfile } from './default-profile.js';
-import { mutateProfile, readProfile } from './profile.js';
+import { statSync } from 'node:fs';
+import { describe, expect } from 'vitest';
+import { pkg, test } from '../../test/config-dir.js';
+import { defaultProfile, mutateProfile, readProfile } from './profile.js';
 
-describe('readProfile', () => {
-  let dir: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'agentage-profile-'));
-    process.env['AGENTAGE_CONFIG_DIR'] = dir;
-  });
-
-  afterEach(() => {
-    delete process.env['AGENTAGE_CONFIG_DIR'];
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('is null when profile.json is absent', () => {
+describe('profile.json', () => {
+  test('when absent, there is no profile', () => {
     expect(readProfile()).toBeNull();
   });
 
-  it('parses profile.json under the config dir', () => {
-    writeFileSync(join(dir, 'profile.json'), JSON.stringify({ version: 1, extensions: {} }));
-    expect(readProfile()).toMatchObject({ ok: true, profile: { version: 1, extensions: {} } });
+  test('that is not JSON is reported, never read as absent', ({ dir }) => {
+    dir.write('profile.json', '{ nope');
+    expect(readProfile()).toEqual({ ok: false, errors: ['not valid JSON'] });
   });
 
-  it('reports unparsable JSON instead of treating it as absent', () => {
-    writeFileSync(join(dir, 'profile.json'), '{ nope');
-    expect(readProfile()).toEqual({ ok: false, errors: ['profile.json: not valid JSON'] });
+  test('that cannot be read is reported', ({ dir }) => {
+    dir.write('profile.json/inside', '');
+    expect(readProfile()).toEqual({ ok: false, errors: [expect.stringContaining('EISDIR')] });
   });
 
-  it('reports an unreadable file as an error', () => {
-    mkdirSync(join(dir, 'profile.json'));
-    const result = readProfile();
-    expect(result?.ok).toBe(false);
-    expect(result && !result.ok && result.errors[0]).toMatch(/^profile\.json: /);
-  });
-
-  it('reports a non-Error throw from injected deps', () => {
-    const result = readProfile({
-      path: () => 'x',
-      readText: () => {
-        throw 'denied';
-      },
-    });
-    expect(result).toEqual({ ok: false, errors: ['profile.json: denied'] });
-  });
-});
-
-describe('mutateProfile', () => {
-  let dir: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'agentage-profile-write-'));
-    process.env['AGENTAGE_CONFIG_DIR'] = join(dir, 'cfg');
-  });
-
-  afterEach(() => {
-    delete process.env['AGENTAGE_CONFIG_DIR'];
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('writes the default profile as a 0600 v1 document, creating the config dir', async () => {
-    const seen: unknown[] = [];
-    await mutateProfile((current) => {
-      seen.push(current);
-      return defaultProfile();
-    });
-    const path = join(dir, 'cfg', 'profile.json');
-    expect(seen).toEqual([null]);
-    expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual({
+  test('is saved with mode 0600, creating the config dir; the default names no extensions', async ({
+    dir,
+  }) => {
+    await mutateProfile(() => defaultProfile());
+    expect(dir.json('profile.json')).toEqual({
       version: 1,
       extensions: {},
       config: {},
       machines: {},
     });
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(statSync(dir.at('profile.json')).mode & 0o777).toBe(0o600);
   });
 
-  it('hands the newest local copy to fn and keeps unknown keys on the round trip', async () => {
-    mkdirSync(join(dir, 'cfg'));
-    const path = join(dir, 'cfg', 'profile.json');
-    writeFileSync(path, JSON.stringify({ version: 1, extensions: { '@agentage/a': '^1' }, x: 1 }));
-    const next = await mutateProfile((current) => ({
-      ...(current ?? defaultProfile()),
-      extensions: { ...current?.extensions, '@agentage/b': '^2' },
+  test('a save starts from the newest local copy and keeps keys this CLI does not know', async ({
+    dir,
+  }) => {
+    dir.profile({ extensions: { hello: '^1' }, teams: ['a'] });
+    await mutateProfile((current) => ({
+      ...defaultProfile(),
+      ...current,
+      extensions: { ...current?.extensions, [pkg('world')]: '^1' },
     }));
-    expect(next.extensions).toEqual({ '@agentage/a': '^1', '@agentage/b': '^2' });
-    expect(JSON.parse(readFileSync(path, 'utf-8'))).toMatchObject({ x: 1 });
+    expect(dir.json('profile.json')).toMatchObject({
+      extensions: { [pkg('hello')]: '^1', [pkg('world')]: '^1' },
+      teams: ['a'],
+    });
   });
 });

@@ -1,188 +1,167 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type NpmResult } from '../../lib/npm/npm-cli.js';
-import {
-  allowedScopes,
-  defaultInstallerDeps,
-  install,
-  installSetProblems,
-  lastLines,
-  planInstall,
-  type InstallerDeps,
-} from './installer.js';
-import { type InstallerNpm, type NpmCommand } from './npm.js';
-import { treeName } from './tree.js';
+import { rmSync } from 'node:fs';
+import { describe, expect, vi } from 'vitest';
+import { npmFromFixtures, pkg, test } from '../../test/config-dir.js';
+import { install, planInstall, type InstallSet } from './installer.js';
+import { type Npm } from './npm.js';
+import { withInstallLock } from './tree.js';
 
-const HELLO = '@agentage/fixture-hello';
-const WORLD = '@agentage/fixture-world';
-const TWO = { [WORLD]: '^1', [HELLO]: '^1.0.0' };
+const [HELLO, WORLD] = [pkg('hello'), pkg('world')];
+const ONE: InstallSet = { extensions: { [HELLO]: '^1.0.0' }, registries: {} };
+const TWO: InstallSet = { extensions: { [WORLD]: '^1', [HELLO]: '^1.0.0' }, registries: {} };
 
-// Plays npm: `install` writes a lock from package.json, both lay out node_modules.
-const fakeNpm = (result: Partial<NpmResult> = {}) => {
-  const runs: NpmCommand[] = [];
-  const npm: InstallerNpm = {
-    run: async (command, tree) => {
-      runs.push(command);
-      if (result.code) return { code: result.code, stdout: '', stderr: '', ...result };
-      const pkg = JSON.parse(readFileSync(join(tree, 'package.json'), 'utf-8')) as {
-        dependencies: Record<string, string>;
-      };
-      const packages = Object.fromEntries(
-        Object.keys(pkg.dependencies).map((n) => [
-          `node_modules/${n}`,
-          { version: '1.0.0', integrity: `sha512-${n}` },
-        ])
-      );
-      const lock = { lockfileVersion: 3, packages: { '': pkg, ...packages } };
-      if (command === 'install')
-        writeFileSync(join(tree, 'package-lock.json'), JSON.stringify(lock));
-      return { code: 0, stdout: 'added', stderr: '' };
-    },
-  };
-  return { npm, runs };
+const npmNeverRuns = async (): Promise<Npm> => {
+  throw new Error('npm must not run');
 };
 
-describe('installer', () => {
-  let dir: string;
-  let npm: ReturnType<typeof fakeNpm>;
-  let deps: InstallerDeps;
+// npm stand-ins for what no fixture can show: a failure with long output, a run without a lock.
+const npmExits =
+  (code: number, stderr = '') =>
+  async (): Promise<Npm> =>
+  async () => ({ code, stdout: '', stderr });
 
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'agentage-installer-'));
-    npm = fakeNpm();
-    deps = {
-      extensionsDir: () => dir,
-      settings: () => ({ registry: 'http://r', timeoutMs: 1, userconfig: null, cache: null }),
-      prepareNpm: vi.fn(async () => npm.npm),
-      lock: vi.fn((_dir: string, fn: () => Promise<unknown>) => fn()) as InstallerDeps['lock'],
+describe('installing a profile', () => {
+  test('builds the tree from the profile alone: a sorted, script-free package.json and an .npmrc per scope', async ({
+    dir,
+  }) => {
+    const registries = {
+      '@agentage': 'http://127.0.0.1:4873',
+      '@acme': 'https://npm.acme.example',
     };
-  });
-
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  const read = (...parts: string[]): string => readFileSync(join(dir, ...parts), 'utf-8');
-  const trees = (): string[] => readdirSync(join(dir, 'trees')).sort();
-
-  it('plans npm install with no lock, and names no tree yet', () => {
-    const plan = planInstall(TWO, deps);
-    expect(plan).toMatchObject({ npm: 'install', tree: null, reuse: false, lock: null });
-    expect(Object.keys(plan.install)).toEqual([HELLO, WORLD]);
-    expect(plan.registry).toBe('http://r');
-    expect(existsSync(join(dir, 'trees'))).toBe(false);
-  });
-
-  it('installs into a complete tree named by the lock, then points current at it', async () => {
-    const result = await install(TWO, deps);
-    expect(result).toMatchObject({ npm: 'install', reused: false, count: 2 });
-    expect(trees()).toEqual([result.tree]);
-    expect(read('current')).toBe(`${result.tree}\n`);
-    expect(existsSync(join(dir, 'trees', result.tree, '.complete'))).toBe(true);
-    expect(read('package-lock.json')).toBe(read('trees', result.tree, 'package-lock.json'));
-    expect(deps.lock).toHaveBeenCalledWith(dir, expect.any(Function));
-  });
-
-  it('reuses the complete tree on a second run without npm (T07)', async () => {
-    const first = await install(TWO, deps);
-    expect(planInstall(TWO, deps)).toMatchObject({ npm: null, tree: first.tree, reuse: true });
-    const second = await install(TWO, deps);
-    expect(second).toMatchObject({ tree: first.tree, npm: null, reused: true });
-    expect(npm.runs).toEqual(['install']);
-    expect(deps.prepareNpm).toHaveBeenCalledTimes(1);
-  });
-
-  it('runs npm ci from a matching lock when its tree is gone', async () => {
-    const first = await install(TWO, deps);
-    rmSync(join(dir, 'trees'), { recursive: true });
-    expect(planInstall(TWO, deps)).toMatchObject({ npm: 'ci', tree: first.tree, reuse: false });
-    expect(await install(TWO, deps)).toMatchObject({ tree: first.tree, npm: 'ci' });
-  });
-
-  it('carries a lock that no longer matches into npm install', async () => {
-    await install({ [HELLO]: '^1.0.0' }, deps);
-    const plan = planInstall(TWO, deps);
-    expect(plan).toMatchObject({ npm: 'install', tree: null });
-    expect(plan.lock).toBe(read('package-lock.json'));
-  });
-
-  it('skips npm for an empty set and still points current at a complete tree', async () => {
-    const result = await install({}, deps);
-    expect(result).toMatchObject({ tree: treeName([]), npm: null, reused: false, count: 0 });
-    expect(readdirSync(join(dir, 'trees', result.tree)).sort()).toEqual([
+    const result = await install({ ...TWO, registries }, npmFromFixtures);
+    const tree = `extensions/trees/${result.tree}`;
+    expect(result).toEqual({
+      tree: dir.file('extensions/current'),
+      npm: 'install',
+      reused: false,
+      count: 2,
+    });
+    expect(dir.list(tree)).toEqual([
       '.complete',
+      '.npmrc',
+      'node_modules',
+      'package-lock.json',
       'package.json',
     ]);
-    expect(deps.prepareNpm).not.toHaveBeenCalled();
-    expect(existsSync(join(dir, 'package-lock.json'))).toBe(false);
-    expect((await install({}, deps)).reused).toBe(true);
-  });
-
-  it('on npm failure keeps current, removes the staged tree and quotes npm (R11)', async () => {
-    const good = await install(TWO, deps);
-    const lines = Array.from({ length: 30 }, (_, i) => `npm error line ${i}`).join('\n');
-    npm = fakeNpm({ code: 1, stderr: lines });
-    const failing = install({ ...TWO, '@agentage/fixture-missing': '^1' }, deps);
-    await expect(failing).rejects.toThrow(
-      /^npm install failed \(exit 1\); extensions\/current is unchanged\nnpm error line 10\n/
+    expect(dir.file(`${tree}/.npmrc`)).toBe(
+      '@acme:registry=https://npm.acme.example\n@agentage:registry=http://127.0.0.1:4873'
     );
-    await failing.catch((err: Error) => {
-      expect(err.message.split('\n')).toHaveLength(21);
-      expect(err.message.endsWith('npm error line 29')).toBe(true);
-    });
-    expect(read('current')).toBe(`${good.tree}\n`);
-    expect(trees()).toEqual([good.tree]);
-    expect(JSON.parse(read('package.json'))).toMatchObject({ dependencies: TWO });
+    const manifest = {
+      name: 'agentage-extensions',
+      private: true,
+      dependencies: { [HELLO]: '^1.0.0', [WORLD]: '^1' },
+    };
+    expect(dir.file(`${tree}/package.json`)).toBe(JSON.stringify(manifest, null, 2));
+    expect(dir.file('extensions/package.json')).toBe(dir.file(`${tree}/package.json`));
+    expect(dir.file('extensions/package-lock.json')).toBe(dir.file(`${tree}/package-lock.json`));
   });
 
-  it('fails when npm succeeds but writes no lock', async () => {
-    npm.npm.run = async () => ({ code: 0, stdout: '', stderr: '' });
-    await expect(install(TWO, deps)).rejects.toThrow('npm install wrote no usable package-lock');
-    expect(trees()).toEqual([]);
-    expect(existsSync(join(dir, 'current'))).toBe(false);
-  });
-
-  it('refuses a name outside the scopes or a bad spec before taking the lock (R10)', async () => {
-    await expect(install({ '@acme/x': '^1', [HELLO]: 'file:../x' }, deps)).rejects.toThrow(
-      /extensions\["@acme\/x"\]: refused by the scope rule.*\nextensions\["@agentage\/fixture-hello"\]: file:/
-    );
-    expect(deps.lock).not.toHaveBeenCalled();
-  });
-
-  it('allows only @agentage unless AGENTAGE_EXTENSION_SCOPES widens it', () => {
-    expect(allowedScopes({})).toEqual(['@agentage']);
-    const env = { AGENTAGE_EXTENSION_SCOPES: ' acme, @beta ,,@agentage' };
-    expect(allowedScopes(env)).toEqual(['@agentage', '@acme', '@beta']);
-    const names = ['left-pad', '@acme/x', '@agentage', '@agentagex/x', '@agentage/ok'];
-    const problems = installSetProblems(Object.fromEntries(names.map((n) => [n, '^1'])));
-    expect(problems).toHaveLength(4);
-    expect(problems[0]).toBe(
-      'extensions["left-pad"]: refused by the scope rule: only @agentage packages are installed ' +
-        '(AGENTAGE_EXTENSION_SCOPES widens it)'
-    );
-    expect(installSetProblems({ '@acme/x': 'npm:y@1' }, ['@acme'])).toEqual([
-      'extensions["@acme/x"]: npm: specs are refused; use a semver range or an https: tarball URL',
+  test('with no extensions points current at an empty tree without running npm', async ({
+    dir,
+  }) => {
+    const result = await install({ extensions: {}, registries: {} }, npmNeverRuns);
+    expect(result).toMatchObject({ npm: null, count: 0 });
+    expect(dir.list(`extensions/trees/${result.tree}`)).toEqual([
+      '.complete',
+      '.npmrc',
+      'package.json',
     ]);
+    expect(dir.exists('extensions/package-lock.json')).toBe(false);
   });
 
-  it('keeps the last lines of npm output, skipping blanks', () => {
-    expect(lastLines('a\n\nb\r\nc\n', 2)).toBe('b\nc');
-    expect(lastLines('')).toBe('');
+  test('again reuses its tree without running npm', async () => {
+    const first = await install(TWO, npmFromFixtures);
+    expect(await install(TWO, npmNeverRuns)).toEqual({ ...first, npm: null, reused: true });
   });
 
-  it('default deps read the extensions dir and the npm env', () => {
-    process.env['AGENTAGE_EXTENSIONS_DIR'] = dir;
-    process.env['AGENTAGE_NPM_REGISTRY'] = 'http://127.0.0.1:1';
+  test('whose tree is gone, but whose lock still matches, rebuilds the same tree with npm ci', async ({
+    dir,
+  }) => {
+    const first = await install(TWO, npmFromFixtures);
+    rmSync(dir.at('extensions/trees'), { recursive: true });
+    expect(await install(TWO, npmFromFixtures)).toEqual({ ...first, npm: 'ci' });
+  });
+
+  test('whose tree never finished rebuilds it instead of trusting it', async ({ dir }) => {
+    const first = await install(TWO, npmFromFixtures);
+    rmSync(dir.at(`extensions/trees/${first.tree}/.complete`));
+    dir.write(`extensions/trees/${first.tree}/half-written`, '');
+    expect(await install(TWO, npmFromFixtures)).toMatchObject({ tree: first.tree, npm: 'ci' });
+    expect(dir.list(`extensions/trees/${first.tree}`)).not.toContain('half-written');
+  });
+
+  test('that changed runs npm install from the old lock, so npm keeps every pin it can', async ({
+    dir,
+  }) => {
+    await install(ONE, npmFromFixtures);
+    const plan = planInstall(TWO);
+    expect(plan).toMatchObject({ npm: 'install', tree: null, reuse: false });
+    expect(plan.lock?.trim()).toBe(dir.file('extensions/package-lock.json'));
+  });
+
+  test('switched back to an earlier one lands on its existing tree, not a copy', async ({
+    dir,
+  }) => {
+    const one = await install(ONE, npmFromFixtures);
+    await install(TWO, npmFromFixtures);
+    expect(await install(ONE, npmFromFixtures)).toMatchObject({ tree: one.tree, npm: 'install' });
+    expect(dir.list('extensions/trees')).toHaveLength(2);
+    expect(dir.file('extensions/current')).toBe(one.tree);
+  });
+
+  test("that npm fails keeps current and the last good tree, quoting npm's last 20 lines", async ({
+    dir,
+  }) => {
+    const good = await install(ONE, npmFromFixtures);
+    const lines = Array.from({ length: 30 }, (_, i) => `npm error line ${i}`);
+    const failed = await install(TWO, npmExits(1, lines.join('\n\n'))).catch(
+      (e: Error) => e.message
+    );
+    expect(failed).toBe(
+      ['npm install failed (exit 1); extensions/current is unchanged', ...lines.slice(10)].join(
+        '\n'
+      )
+    );
+    expect(dir.file('extensions/current')).toBe(good.tree);
+    expect(dir.list('extensions/trees')).toEqual([good.tree]);
+    expect(dir.json('extensions/package.json')).toMatchObject({ dependencies: ONE.extensions });
+  });
+
+  test('that npm leaves without a lock fails and installs nothing', async ({ dir }) => {
+    await expect(install(TWO, npmExits(0))).rejects.toThrow(
+      'npm install wrote no usable package-lock.json'
+    );
+    expect(dir.exists('extensions/current')).toBe(false);
+    expect(dir.list('extensions/trees')).toEqual([]);
+  });
+
+  test('clears a staging dir a crashed run left behind', async ({ dir }) => {
+    dir.write('extensions/trees/.staging-crashed/package.json', '{}');
+    const result = await install(TWO, npmFromFixtures);
+    expect(dir.list('extensions/trees')).toEqual([result.tree]);
+  });
+
+  test('goes to AGENTAGE_EXTENSIONS_DIR when it is set', async ({ dir }) => {
+    process.env['AGENTAGE_EXTENSIONS_DIR'] = dir.at('elsewhere');
+    const result = await install(TWO, npmFromFixtures);
+    expect(dir.file('elsewhere/current')).toBe(result.tree);
+    expect(dir.exists('extensions')).toBe(false);
+  });
+
+  test('that runs for minutes keeps install.lock fresh, so no waiting run takes it over', async ({
+    dir,
+  }) => {
+    vi.useFakeTimers({ now: 1_000 });
     try {
-      expect(planInstall({}, defaultInstallerDeps)).toMatchObject({
-        extensionsDir: dir,
-        registry: 'http://127.0.0.1:1',
+      const stamp = (): string => dir.file('extensions/install.lock');
+      const stamps = await withInstallLock(dir.at('extensions'), async () => {
+        const first = stamp();
+        await vi.advanceTimersByTimeAsync(20_000);
+        return [first, stamp()];
       });
+      expect(stamps).toEqual([`${process.pid} 1000`, `${process.pid} 21000`]);
+      expect(dir.exists('extensions/install.lock')).toBe(false);
     } finally {
-      delete process.env['AGENTAGE_EXTENSIONS_DIR'];
-      delete process.env['AGENTAGE_NPM_REGISTRY'];
+      vi.useRealTimers();
     }
   });
 });

@@ -4,6 +4,8 @@
  */
 import { expect, test } from './cli.js';
 
+const TWO = { extensions: { hello: '^1.0.0', world: '^1' } };
+
 test.describe('agentage status @offline', () => {
   test('agentage status on an empty config dir says "no profile" and "extensions 0" @smoke', async ({
     cli,
@@ -17,10 +19,10 @@ test.describe('agentage status @offline', () => {
     expect(cli.homeFiles()).toEqual([]);
   });
 
-  test('agentage status after setup --profile two.json shows the file profile and extensions 2 @p0', async ({
+  test('agentage status after setup --profile with hello and world shows the file profile and extensions 2 @p0', async ({
     cli,
   }) => {
-    await cli.run('setup --profile fixtures/profiles/two.json');
+    await cli.run(`setup --profile ${cli.profile(TWO)}`);
     const run = await cli.run('status');
     expect(run.lines).toContain('profile    version 1 (source: file)');
     expect(run.lines).toContain('extensions 2');
@@ -51,7 +53,7 @@ test.describe('without AGENTAGE_EXTENSIONS=1 @p0 @offline', () => {
     const status = await cli.run('status --json');
     const keys = ['version', 'fqdn', 'env', 'target', 'auth', 'endpoint', 'update'];
     expect(Object.keys(JSON.parse(status.stdout))).toEqual(keys);
-    const setup = await cli.run('setup --profile fixtures/profiles/two.json');
+    const setup = await cli.run(`setup --profile ${cli.profile(TWO)}`);
     expect(setup.code).toBe(2);
     expect(setup.stderr).toContain("error: unknown option '--profile'");
     const group = await cli.run('extension list');

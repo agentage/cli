@@ -1,8 +1,9 @@
 # fixtures
 
-Test-only extension packages used by the e2e suite. Never published; each is scoped
+Test-only extension packages used by the unit and e2e suites. Never published; each is scoped
 `@agentage/fixture-*`. The e2e registry packs every `extension-*` folder with `npm pack` and serves
-it on loopback, so `setup --profile` installs them the way it installs real extensions.
+it on loopback, so `setup --profile` installs them the way it installs real extensions; the unit
+kit (`src/test/config-dir.ts`) copies them into hand-placed trees.
 
 | Fixture                | `agentage.id` | What it covers                                              |
 | ---------------------- | ------------- | ----------------------------------------------------------- |
@@ -11,13 +12,5 @@ it on loopback, so `setup --profile` installs them the way it installs real exte
 | `extension-old-engine` | `oldengine`   | `engines.agentage: "^0.1"`, never matches the extension API |
 | `extension-dup-id`     | `hello`       | claims the same id as `extension-hello`                     |
 
-`profiles/` holds the profile files the specs pass to `setup --profile`:
-
-| Profile          | Extensions                               | Used for                                        |
-| ---------------- | ---------------------------------------- | ----------------------------------------------- |
-| `two.json`       | hello + world                            | a normal install                                |
-| `all.json`       | every fixture                            | `invalid` (duplicate id, old engine), `blocked` |
-| `off-hello.json` | hello + world, hello off on `m_0000beef` | `off` and the `blocked` dependent               |
-| `missing.json`   | hello + a package the registry lacks     | a failed npm run                                |
-| `scope-bad.json` | a name outside `@agentage`               | the scope rule                                  |
-| `spec-bad.json`  | a `file:` version                        | the version rule                                |
+Profiles are written per test: `cli.profile()` in `e2e/core/cli.ts` and `dir.profile()` in the
+unit kit take the short names `hello`, `world`, `old-engine` and `dup-id`.

@@ -5,7 +5,6 @@ import {
   gatherExtensions,
   invalidProfileError,
   type ExtensionRow,
-  type ExtensionsGather,
   type ExtensionsStatus,
   type ProfileStatus,
 } from './rows.js';
@@ -66,11 +65,8 @@ export interface ExtensionListOptions {
 }
 
 // The rows always print; an invalid profile.json then fails the step (exit 1).
-export const runExtensionList = async (
-  opts: ExtensionListOptions = {},
-  gather: () => Promise<ExtensionsGather> = gatherExtensions
-): Promise<void> => {
-  const { status, warnings } = await gather();
+export const runExtensionList = async (opts: ExtensionListOptions = {}): Promise<void> => {
+  const { status, warnings } = await gatherExtensions();
   const rows = status.extensions.length > 0 ? rowLines(status.extensions) : ['no extensions'];
   if (opts.json) console.log(JSON.stringify(status, null, 2));
   else for (const text of rows) console.log(text);

@@ -3,13 +3,13 @@ import { EXTENSION_API_VERSION } from '../../extension.js';
 import { isRange, satisfies } from '../semver-range.js';
 
 export const ID_PATTERN = /^[a-z][a-z0-9-]*$/;
-export const DEFAULT_ENGINE = '^1';
+const DEFAULT_ENGINE = '^1';
 
 const CORE_COMMANDS = ['setup', 'status', 'update', 'add', 'remove', 'help'];
 const DEVICE_NAMES = ['con', 'prn', 'aux', 'nul'].concat(
   ...Array.from({ length: 10 }, (_, n) => [`com${n}`, `lpt${n}`])
 );
-export const RESERVED_IDS: ReadonlySet<string> = new Set([...CORE_COMMANDS, ...DEVICE_NAMES]);
+const RESERVED_IDS: ReadonlySet<string> = new Set([...CORE_COMMANDS, ...DEVICE_NAMES]);
 
 export interface ManifestInfo {
   name: string | null;
@@ -36,7 +36,7 @@ const fromConditions = (value: unknown, depth = 0): string | null => {
 };
 
 // Node semantics: a present `exports` field is authoritative, `main` only applies without it.
-export const entryOf = (pkg: Record<string, unknown>): string | null => {
+const entryOf = (pkg: Record<string, unknown>): string | null => {
   const exp = pkg['exports'];
   if (exp === undefined) return str(pkg['main']);
   if (isRecord(exp) && '.' in exp) return fromConditions(exp['.']);

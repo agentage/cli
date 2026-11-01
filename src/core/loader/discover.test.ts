@@ -1,158 +1,144 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { currentTree, discover, type DiscoveredExtension } from './discover.js';
+import { describe, expect } from 'vitest';
+import { fixture, pkg, test, type ConfigDir } from '../../test/config-dir.js';
+import { extensionsDir } from '../paths.js';
+import { discover, type DiscoveredExtension } from './discover.js';
 
-const FIXTURES = join(import.meta.dirname, '..', '..', '..', 'fixtures');
-const HELLO = '@agentage/fixture-hello';
-const WORLD = '@agentage/fixture-world';
-const OLD = '@agentage/fixture-old-engine';
-const DUP = '@agentage/fixture-dup-id';
+const [HELLO, WORLD, DUP] = [pkg('hello'), pkg('world'), pkg('dup-id')];
 
-describe('discover (T14)', () => {
-  let root: string;
-  let extensionsDir: string;
-  let nodeModules: string;
+const find = (names: string[], dev: Record<string, string> = {}) =>
+  discover({ extensionsDir: extensionsDir(), names, dev });
 
-  const place = (fixture: string, name = `fixture-${fixture}`): string => {
-    const dir = join(nodeModules, '@agentage', name);
-    cpSync(join(FIXTURES, `extension-${fixture}`), dir, { recursive: true });
-    return dir;
-  };
+const byPkg = (found: DiscoveredExtension[], name: string) => found.find((e) => e.pkg === name);
 
-  const writePackage = (dir: string, manifest: Record<string, unknown>): void => {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest));
-  };
+// A package written by hand into the tree's node_modules.
+const place = (dir: ConfigDir, name: string, manifest: Record<string, unknown>): void =>
+  dir.write(join(dir.tree(), 'node_modules', name, 'package.json'), manifest);
 
-  const byPkg = (extensions: DiscoveredExtension[], pkg: string): DiscoveredExtension | undefined =>
-    extensions.find((p) => p.pkg === pkg);
+// An index.js that leaves a file behind if anything ever imports it.
+const tripwire = (dir: ConfigDir, entry: string): string => {
+  const marker = dir.at('imported');
+  dir.write(
+    entry,
+    `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, '');\n`
+  );
+  return marker;
+};
 
-  beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), 'agentage-discover-'));
-    extensionsDir = join(root, 'extensions');
-    nodeModules = join(extensionsDir, 'trees', 't1', 'node_modules');
-    mkdirSync(nodeModules, { recursive: true });
-    writeFileSync(join(extensionsDir, 'trees', 't1', '.complete'), '');
-    writeFileSync(join(extensionsDir, 'current'), 't1\n');
-    for (const f of ['hello', 'world', 'old-engine', 'dup-id']) place(f);
-  });
-
-  afterEach(() => rmSync(root, { recursive: true, force: true }));
-
-  it('reads tree manifests: versions, ids, commands, entry path', () => {
-    const { extensions, warnings } = discover({ extensionsDir, names: [HELLO, WORLD], dev: {} });
+describe('finding extensions on disk', () => {
+  test('an installed extension is read from its package.json: version, id, commands, peers, entry', ({
+    dir,
+  }) => {
+    const tree = dir.tree('hello', 'world');
+    const { extensions, warnings } = find([HELLO, WORLD]);
     expect(warnings).toEqual([]);
-    expect(byPkg(extensions, HELLO)).toMatchObject({
-      source: 'tree',
-      version: '1.0.0',
-      id: 'hello',
-      commands: ['hello'],
-      entry: join(nodeModules, '@agentage', 'fixture-hello', 'index.js'),
-      problem: null,
-      missing: false,
-    });
-    expect(byPkg(extensions, WORLD)).toMatchObject({ id: 'world', peers: [HELLO], problem: null });
+    expect(extensions).toEqual([
+      expect.objectContaining({
+        pkg: HELLO,
+        source: 'tree',
+        version: '1.0.0',
+        id: 'hello',
+        commands: ['hello'],
+        entry: join(tree, 'node_modules', HELLO, 'index.js'),
+        problem: null,
+        missing: false,
+      }),
+      expect.objectContaining({ pkg: WORLD, id: 'world', peers: [HELLO], problem: null }),
+    ]);
   });
 
-  it('marks a bad engine and both duplicate-id claimants invalid', () => {
-    const { extensions } = discover({ extensionsDir, names: [HELLO, OLD, DUP], dev: {} });
-    expect(byPkg(extensions, OLD)?.problem).toContain('engines.agentage "^0.1" does not match');
-    expect(byPkg(extensions, HELLO)?.problem).toBe(`duplicate id "hello" (also ${DUP})`);
-    expect(byPkg(extensions, DUP)?.problem).toBe(`duplicate id "hello" (also ${HELLO})`);
-  });
-
-  it('never imports an extension entry', () => {
-    const marker = join(root, 'imported');
-    const dir = place('hello');
-    writeFileSync(
-      join(dir, 'index.js'),
-      `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, 'x');\n`
+  test('an extension whose engines.agentage does not match is invalid and never imported', ({
+    dir,
+  }) => {
+    const tree = dir.tree('old-engine');
+    const marker = tripwire(dir, join(tree, 'node_modules', pkg('old-engine'), 'index.js'));
+    expect(find([pkg('old-engine')]).extensions[0]?.problem).toBe(
+      'engines.agentage "^0.1" does not match extension API 1.0.0'
     );
-    const { extensions } = discover({ extensionsDir, names: [HELLO], dev: {} });
-    expect(byPkg(extensions, HELLO)?.problem).toBeNull();
-    expect(existsSync(marker)).toBe(false);
+    expect(dir.exists(marker)).toBe(false);
   });
 
-  it('lets a dev extension with the same package name replace the installed one', () => {
-    const devDir = join(root, 'dev-hello');
-    cpSync(join(FIXTURES, 'extension-hello'), devDir, { recursive: true });
-    const { extensions } = discover({ extensionsDir, names: [HELLO], dev: { [HELLO]: devDir } });
-    expect(extensions).toHaveLength(1);
-    expect(extensions[0]).toMatchObject({ source: 'dev', dir: devDir, problem: null });
+  test('a dev path replaces the installed copy of the same package', ({ dir }) => {
+    dir.tree('hello');
+    const { extensions } = find([HELLO], { [HELLO]: fixture('hello') });
+    expect(extensions).toEqual([
+      expect.objectContaining({ pkg: HELLO, source: 'dev', dir: fixture('hello'), problem: null }),
+    ]);
   });
 
-  it('a dev extension with another package name but the same id is a duplicate', () => {
-    const devDir = join(root, 'dev-dup');
-    cpSync(join(FIXTURES, 'extension-dup-id'), devDir, { recursive: true });
-    const { extensions } = discover({ extensionsDir, names: [HELLO], dev: { [DUP]: devDir } });
-    expect(extensions.map((p) => p.problem)).toEqual([
+  test('a dev path with another package but the same id makes both invalid, naming each other', ({
+    dir,
+  }) => {
+    dir.tree('hello');
+    const { extensions } = find([HELLO], { [DUP]: fixture('dup-id') });
+    expect(extensions.map((e) => e.problem)).toEqual([
       `duplicate id "hello" (also ${DUP})`,
       `duplicate id "hello" (also ${HELLO})`,
     ]);
   });
 
-  it('reports missing packages and bad dev paths without throwing', () => {
-    const dev = { '@agentage/rel': 'relative/path', '@agentage/gone': join(root, 'nope') };
-    const { extensions } = discover({ extensionsDir, names: ['@agentage/absent'], dev });
-    expect(byPkg(extensions, '@agentage/absent')).toMatchObject({ missing: true, source: 'tree' });
-    expect(byPkg(extensions, '@agentage/rel')?.problem).toBe('dev path not absolute');
-    expect(byPkg(extensions, '@agentage/gone')).toMatchObject({ missing: true, source: 'dev' });
+  test('a dev path must be absolute, and one with no package.json is missing', () => {
+    const dev = { '@agentage/rel': 'relative/path', '@agentage/gone': '/nowhere/gone' };
+    expect(find([], dev).extensions.map((e) => [e.problem, e.missing])).toEqual([
+      ['dev path not absolute', false],
+      [null, true],
+    ]);
   });
 
-  it('flags entries that escape the package or do not exist', () => {
-    writePackage(join(nodeModules, 'esc'), {
-      name: 'esc',
-      agentage: { id: 'esc' },
-      main: '../x.js',
-    });
-    writePackage(join(nodeModules, 'nofile'), {
-      name: 'nofile',
-      agentage: { id: 'nofile' },
-      main: 'x.js',
-    });
-    writePackage(join(nodeModules, 'noentry'), { name: 'noentry', agentage: { id: 'noentry' } });
-    mkdirSync(join(nodeModules, 'broken'));
-    writeFileSync(join(nodeModules, 'broken', 'package.json'), '{ nope');
-    const { extensions } = discover({
-      extensionsDir,
-      names: ['esc', 'nofile', 'noentry', 'broken'],
-      dev: {},
-    });
-    expect(byPkg(extensions, 'esc')?.problem).toBe('entry ../x.js is outside the package');
-    expect(byPkg(extensions, 'nofile')?.problem).toBe('entry x.js not found');
-    expect(byPkg(extensions, 'noentry')?.problem).toBe('no entry point (exports or main)');
-    expect(byPkg(extensions, 'broken')?.missing).toBe(true);
+  test('a profile extension absent from the tree, or with a broken package.json, is missing', ({
+    dir,
+  }) => {
+    dir.write(join(dir.tree(), 'node_modules', 'broken', 'package.json'), '{ nope');
+    expect(find(['@agentage/absent', 'broken']).extensions.map((e) => e.missing)).toEqual([
+      true,
+      true,
+    ]);
   });
 
-  it('keeps extension peers, drops library peers, keeps unknown peers', () => {
-    writePackage(join(nodeModules, 'lib'), { name: 'lib', version: '1.0.0' });
-    writePackage(join(nodeModules, 'p'), {
-      name: 'p',
-      main: 'package.json',
-      agentage: { id: 'p' },
-      peerDependencies: { lib: '^1', [HELLO]: '^1', [WORLD]: '^1', '@agentage/absent': '^1' },
-    });
-    const { extensions } = discover({ extensionsDir, names: ['p', WORLD], dev: {} });
-    expect(byPkg(extensions, 'p')?.peers).toEqual([HELLO, WORLD, '@agentage/absent']);
+  test('an entry outside the package or not on disk, or no entry at all, makes it invalid', ({
+    dir,
+  }) => {
+    const ext = (id: string, main?: string) => ({ name: id, agentage: { id }, main });
+    place(dir, 'esc', ext('esc', '../x.js'));
+    place(dir, 'nofile', ext('nofile', 'x.js'));
+    place(dir, 'noentry', ext('noentry'));
+    expect(find(['esc', 'nofile', 'noentry']).extensions.map((e) => e.problem)).toEqual([
+      'entry ../x.js is outside the package',
+      'entry x.js not found',
+      'no entry point (exports or main)',
+    ]);
   });
 
-  it('without a complete current tree every profile extension is missing', () => {
-    rmSync(join(extensionsDir, 'trees', 't1', '.complete'));
-    const result = discover({ extensionsDir, names: [WORLD], dev: {} });
-    expect(result.warnings).toEqual(['extensions tree "t1" is incomplete and was ignored']);
-    expect(result.extensions[0]).toMatchObject({ missing: true, peers: [] });
+  test('a peer the tree holds as a plain library is not an extension peer; an unknown one is', ({
+    dir,
+  }) => {
+    place(dir, 'lib', { name: 'lib', version: '1.0.0' });
+    const peerDependencies = { lib: '^1', [HELLO]: '^1', '@agentage/absent': '^1' };
+    place(dir, 'p', { name: 'p', main: 'package.json', agentage: { id: 'p' }, peerDependencies });
+    expect(byPkg(find(['p']).extensions, 'p')?.peers).toEqual([HELLO, '@agentage/absent']);
   });
 
-  it('resolves the current pointer defensively', () => {
-    expect(currentTree(join(root, 'empty'))).toEqual({ dir: null, warning: null });
-    writeFileSync(join(extensionsDir, 'current'), '../escape');
-    expect(currentTree(extensionsDir).warning).toBe('extensions/current: bad tree "../escape"');
-    writeFileSync(join(extensionsDir, 'current'), 't1');
-    expect(currentTree(extensionsDir)).toEqual({
-      dir: join(extensionsDir, 'trees', 't1'),
-      warning: null,
+  test('an unfinished tree is ignored with a warning, and its extensions are missing', ({
+    dir,
+  }) => {
+    dir.write('extensions/trees/unfinished/package.json', '{}');
+    dir.write('extensions/current', 'unfinished\n');
+    const result = find([WORLD]);
+    expect(result.warnings).toEqual(['extensions tree "unfinished" is incomplete and was ignored']);
+    expect(result.extensions).toEqual([expect.objectContaining({ missing: true, peers: [] })]);
+  });
+
+  test('extensions/current naming anything but a tree under trees/ is ignored with a warning', ({
+    dir,
+  }) => {
+    dir.write('extensions/current', '../escape\n');
+    expect(find([WORLD]).warnings).toEqual(['extensions/current: bad tree "../escape"']);
+  });
+
+  test('with no extensions/current nothing is installed, without a warning', () => {
+    expect(find([WORLD])).toEqual({
+      extensions: [expect.objectContaining({ missing: true })],
+      warnings: [],
     });
   });
 });

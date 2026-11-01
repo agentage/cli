@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { isRange, parseVersion, satisfies } from './semver-range.js';
 
-describe('semver-range', () => {
-  it('parses full versions with prerelease and build, rejects partials', () => {
+describe('version ranges, read the way npm reads them', () => {
+  it('a version is major.minor.patch, with an optional prerelease and build', () => {
     expect(parseVersion('1.2.3')).toEqual({ major: 1, minor: 2, patch: 3, pre: null });
     expect(parseVersion('v1.2.3-beta.1+sha')).toEqual({
       major: 1,
@@ -58,19 +58,19 @@ describe('semver-range', () => {
     ['^1.0.0-beta', '1.0.0-rc', true],
     ['^1.0.0-rc', '1.0.0-beta', false],
     ['=1.0.0-rc', '1.0.0-rc', true],
-  ])('%s against %s is %s', (range, version, expected) => {
+  ])('%s matches %s: %s', (range, version, expected) => {
     expect(satisfies(version, range)).toBe(expected);
   });
 
   it.each(['', ' ', 'latest', '1.2.3 - 2.0.0', '1.x.3', '1.2-beta', '>*', '<x', '^1 ||', 'a.b.c'])(
-    'refuses %j as a range',
+    '%j is not a range and matches nothing',
     (range) => {
       expect(isRange(range)).toBe(false);
       expect(satisfies('1.0.0', range)).toBe(false);
     }
   );
 
-  it('never satisfies with an unparsable version', () => {
+  it('a version that does not parse matches nothing', () => {
     expect(satisfies('1.0', '^1')).toBe(false);
   });
 });

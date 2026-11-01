@@ -14,6 +14,8 @@ export interface MachineEntry {
 export interface Profile {
   version: number;
   extensions: Record<string, string>;
+  // npm scope -> registry URL; unlisted scopes and unscoped names use npm's public registry.
+  registries: Record<string, string>;
   config: ConfigMap;
   machines: Record<string, MachineEntry>;
   extra: Record<string, unknown>;
@@ -28,9 +30,10 @@ interface Issues {
   warnings: string[];
 }
 
-const TOP_KEYS = ['version', 'extensions', 'config', 'machines'];
+const TOP_KEYS = ['version', 'extensions', 'registries', 'config', 'machines'];
 const MACHINE_KEYS = ['off', 'config'];
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
+const SCOPE = /^@[a-z0-9][a-z0-9._~-]*$/;
 const LOOPBACK_HOST = /^(?:localhost|.+\.localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1?\])$/i;
 const REFUSED_PREFIX = /^(npm|github|file|http):/i;
 const OTHER_PROTOCOL = /^[a-z][a-z0-9+.-]*:/i;
@@ -45,16 +48,21 @@ const fail = <T>(issues: Issues, message: string, fallback: T): T => {
   return fallback;
 };
 
-const httpsProblem = (spec: string): string | null => {
+const urlOf = (text: string): URL | null => {
   try {
-    const host = new URL(spec).hostname;
-    return LOOPBACK_HOST.test(host) ? 'loopback URLs are refused' : null;
+    return new URL(text);
   } catch {
-    return 'is not a valid https: URL';
+    return null;
   }
 };
 
-export const specProblem = (spec: string): string | null => {
+const httpsProblem = (spec: string): string | null => {
+  const url = urlOf(spec);
+  if (url === null) return 'is not a valid https: URL';
+  return LOOPBACK_HOST.test(url.hostname) ? 'loopback URLs are refused' : null;
+};
+
+const specProblem = (spec: string): string | null => {
   const refused = REFUSED_PREFIX.exec(spec)?.[1];
   if (refused) return `${refused.toLowerCase()}: specs are refused; ${USE_INSTEAD}`;
   if (/^https:/i.test(spec)) return httpsProblem(spec);
@@ -69,16 +77,34 @@ const extensionProblem = (name: string, spec: unknown): string | null => {
   return specProblem(spec.trim());
 };
 
-const parseExtensions = (value: unknown, issues: Issues): Record<string, string> => {
+// Whitespace is refused outright: the URL lands on one line of the tree's .npmrc.
+const registryProblem = (scope: string, url: unknown): string | null => {
+  if (!SCOPE.test(scope)) return 'is not an npm scope (@name)';
+  const parsed = typeof url === 'string' && !/\s/.test(url) ? urlOf(url) : null;
+  if (parsed && (parsed.username || parsed.password)) return 'must not carry credentials';
+  if (parsed?.protocol === 'https:') return null;
+  if (parsed?.protocol === 'http:' && LOOPBACK_HOST.test(parsed.hostname)) return null;
+  return 'must be an https: URL, or http: on a loopback host';
+};
+
+type EntryProblem = (key: string, value: unknown) => string | null;
+
+// A map of strings: each entry is checked on its own and reported by its path.
+const parseMap = (
+  value: unknown,
+  path: string,
+  problemOf: EntryProblem,
+  issues: Issues
+): Record<string, string> => {
   if (value === undefined) return {};
-  if (!isRecord(value)) return fail(issues, 'extensions: must be an object', {});
-  const extensions: Record<string, string> = {};
-  for (const [name, spec] of Object.entries(value)) {
-    const problem = extensionProblem(name, spec);
-    if (problem) issues.errors.push(`extensions${at(name)}: ${problem}`);
-    else extensions[name] = String(spec);
+  if (!isRecord(value)) return fail(issues, `${path}: must be an object`, {});
+  const map: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const problem = problemOf(key, entry);
+    if (problem) issues.errors.push(`${path}${at(key)}: ${problem}`);
+    else map[key] = String(entry);
   }
-  return extensions;
+  return map;
 };
 
 const parseConfig = (value: unknown, path: string, issues: Issues): ConfigMap => {
@@ -144,7 +170,8 @@ export const parseProfile = (doc: unknown): ProfileParse => {
   const issues: Issues = { errors: [], warnings: [] };
   const profile: Profile = {
     version: parseVersionField(doc['version'], issues),
-    extensions: parseExtensions(doc['extensions'], issues),
+    extensions: parseMap(doc['extensions'], 'extensions', extensionProblem, issues),
+    registries: parseMap(doc['registries'], 'registries', registryProblem, issues),
     config: parseConfig(doc['config'], 'config', issues),
     machines: parseMachines(doc['machines'], issues),
     extra: extraKeys(doc, TOP_KEYS, 'profile.json', issues),
@@ -159,6 +186,7 @@ export const parseProfile = (doc: unknown): ProfileParse => {
 export const toDocument = (profile: Profile): Record<string, unknown> => ({
   version: profile.version,
   extensions: profile.extensions,
+  ...(Object.keys(profile.registries).length > 0 ? { registries: profile.registries } : {}),
   config: profile.config,
   machines: Object.fromEntries(
     Object.entries(profile.machines).map(([id, m]) => [

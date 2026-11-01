@@ -1,115 +1,67 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadMachine, parseMachine, setProfileSource, type MachineDeps } from './machine.js';
+import { statSync } from 'node:fs';
+import { hostname } from 'node:os';
+import { describe, expect } from 'vitest';
+import { MACHINE_ID, test } from '../../test/config-dir.js';
+import { loadMachine, setProfileSource } from './machine.js';
 
-const OLD_ID = '260d7044-b229-4afb-bbf3-40af745c3926';
-const FRESH = { id: 'm_0123abcd', name: 'box', dev: {}, profileSource: 'default' };
-
-const fakeDeps = (raw: unknown): MachineDeps & { write: ReturnType<typeof vi.fn> } => {
-  let stored = raw;
-  return {
-    path: () => '/cfg/machine.json',
-    read: () => stored,
-    write: vi.fn((_path: string, machine: unknown) => {
-      stored = JSON.parse(JSON.stringify(machine));
-    }),
-    lock: (_path, fn) => Promise.resolve(fn()),
-    hostname: () => 'box',
-    newId: () => 'm_0123abcd',
-  };
-};
+const COMPLETE = { id: 'm_1a2b3c4d', name: 'box', dev: {}, profileSource: 'file' };
 
 describe('machine.json', () => {
-  let dir: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'agentage-machine-'));
-    process.env['AGENTAGE_CONFIG_DIR'] = join(dir, 'cfg');
-  });
-
-  afterEach(() => {
-    delete process.env['AGENTAGE_CONFIG_DIR'];
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('creates a 0600 machine.json with an m_ + 8 hex id on first run', async () => {
+  test('the first command creates it: an m_ id, this host name, mode 0600', async ({ dir }) => {
     const machine = await loadMachine();
-    expect(machine.id).toMatch(/^m_[0-9a-f]{8}$/);
-    expect(machine).toMatchObject({ dev: {}, profileSource: 'default' });
-    expect(machine.name.length).toBeGreaterThan(0);
-    const path = join(dir, 'cfg', 'machine.json');
-    expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual(machine);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
-    expect(readdirSync(join(dir, 'cfg'))).toEqual(['machine.json']);
+    expect(machine).toEqual({
+      id: expect.stringMatching(/^m_[0-9a-f]{8}$/),
+      name: hostname(),
+      dev: {},
+      profileSource: 'default',
+    });
+    expect(dir.json('machine.json')).toEqual(machine);
+    expect(statSync(dir.at('machine.json')).mode & 0o777).toBe(0o600);
   });
 
-  it('replaces a file from an older CLI instead of migrating it (T35)', async () => {
-    const path = join(dir, 'cfg', 'machine.json');
-    await loadMachine();
-    writeFileSync(path, JSON.stringify({ id: OLD_ID, name: 'old-host' }), { mode: 0o644 });
+  test('two first runs at once agree on one id', async () => {
+    const [a, b] = await Promise.all([loadMachine(), loadMachine()]);
+    expect(a.id).toBe(b.id);
+  });
+
+  test('once complete it is read as is and never rewritten', async ({ dir }) => {
+    dir.write('machine.json', JSON.stringify({ ...COMPLETE, dev: { x: '/src/x' } }));
+    const before = dir.file('machine.json');
+    expect(await loadMachine()).toEqual({ ...COMPLETE, dev: { x: '/src/x' } });
+    expect(dir.file('machine.json')).toBe(before);
+  });
+
+  test.for([
+    ['a uuid id from an older CLI', { ...COMPLETE, id: '260d7044-b229-4afb-bbf3-40af745c3926' }],
+    ['no profileSource', { id: 'm_1a2b3c4d', name: 'box', dev: {} }],
+    ['an unknown key', { ...COMPLETE, extra: true }],
+    ['an empty name', { ...COMPLETE, name: '' }],
+    ['a dev path that is not a string', { ...COMPLETE, dev: { x: 1 } }],
+    ['an unknown profileSource', { ...COMPLETE, profileSource: 'remote' }],
+    ['a body that is not an object', [1]],
+  ] as const)('with %s is replaced with a fresh one, not migrated', async ([, raw], { dir }) => {
+    dir.write('machine.json', raw);
     const machine = await loadMachine();
+    expect(machine).toMatchObject({ name: hostname(), dev: {}, profileSource: 'default' });
+    expect(machine.id).not.toBe(COMPLETE.id);
+    expect(dir.json('machine.json')).toEqual(machine);
+  });
+
+  test('setup records where the profile came from, keeping the id', async ({ dir }) => {
+    dir.machine();
+    expect(await setProfileSource('file')).toMatchObject({ id: MACHINE_ID, profileSource: 'file' });
+    expect(dir.json('machine.json')).toMatchObject({ id: MACHINE_ID, profileSource: 'file' });
+  });
+
+  test('recording the same source again leaves it untouched', async ({ dir }) => {
+    dir.write('machine.json', JSON.stringify(COMPLETE));
+    await setProfileSource('file');
+    expect(dir.file('machine.json')).toBe(JSON.stringify(COMPLETE));
+  });
+
+  test('recording the source on a new machine creates it first', async ({ dir }) => {
+    const machine = await setProfileSource('file');
     expect(machine.id).toMatch(/^m_[0-9a-f]{8}$/);
-    expect(machine.name).not.toBe('old-host');
-    expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual(machine);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
-  });
-
-  it('is stable: a complete file is read, never rewritten', async () => {
-    const deps = fakeDeps({
-      id: 'm_1a2b3c4d',
-      name: 'n',
-      dev: { '@a/b': '/x' },
-      profileSource: 'file',
-    });
-    expect(await loadMachine(deps)).toEqual({
-      id: 'm_1a2b3c4d',
-      name: 'n',
-      dev: { '@a/b': '/x' },
-      profileSource: 'file',
-    });
-    expect(deps.write).not.toHaveBeenCalled();
-  });
-
-  it('replaces a malformed file with a fresh one', async () => {
-    const deps = fakeDeps({ id: 'm_1a2b3c4d', name: 3, dev: {}, profileSource: 'x' });
-    expect(await loadMachine(deps)).toEqual(FRESH);
-    expect(deps.write).toHaveBeenCalledTimes(1);
-  });
-
-  it('adopts the id another process wrote while this one waited on the lock', async () => {
-    const deps = fakeDeps(null);
-    const winner = { id: 'm_aaaaaaaa', name: 'w', dev: {}, profileSource: 'default' };
-    deps.read = vi.fn().mockReturnValueOnce(null).mockReturnValue(winner);
-    expect(await loadMachine(deps)).toEqual(winner);
-    expect(deps.write).not.toHaveBeenCalled();
-  });
-
-  it('records the profile source under the lock, writing only on a change', async () => {
-    const deps = fakeDeps({ ...FRESH });
-    expect(await setProfileSource('file', deps)).toEqual({ ...FRESH, profileSource: 'file' });
-    expect(deps.write).toHaveBeenCalledTimes(1);
-    expect(await loadMachine(deps)).toMatchObject({ id: FRESH.id, profileSource: 'file' });
-    await setProfileSource('file', deps);
-    expect(deps.write).toHaveBeenCalledTimes(1);
-  });
-
-  it('creates machine.json when the source is recorded first', async () => {
-    const deps = fakeDeps(null);
-    expect(await setProfileSource('file', deps)).toEqual({ ...FRESH, profileSource: 'file' });
-    expect(deps.write).toHaveBeenCalledTimes(2);
-  });
-
-  it.each([
-    ['a non-object', [1]],
-    ['a legacy uuid id', { id: OLD_ID, name: 'n', dev: {}, profileSource: 'default' }],
-    ['an empty name', { ...FRESH, name: '' }],
-    ['a non-string dev path', { ...FRESH, dev: { x: 1 } }],
-    ['an unknown profileSource', { ...FRESH, profileSource: 'remote' }],
-    ['an extra key', { ...FRESH, extra: true }],
-    ['a missing key', { id: 'm_0123abcd', name: 'box', dev: {} }],
-  ])('rejects %s', (_label, raw) => {
-    expect(parseMachine(raw)).toBeNull();
+    expect(dir.json('machine.json')).toEqual(machine);
   });
 });

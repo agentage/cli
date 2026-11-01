@@ -1,6 +1,0 @@
-{
-  "version": 1,
-  "extensions": {
-    "@agentage/fixture-hello": "file:../extension-hello"
-  }
-}

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { entryOf, manifestInfo, manifestProblem, RESERVED_IDS } from './manifest.js';
+import { manifestInfo, manifestProblem } from './manifest.js';
 
 const NAME = '@agentage/fixture-x';
 
-const pkg = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+const manifest = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
   name: NAME,
   version: '1.2.3',
   main: 'index.js',
@@ -12,12 +12,12 @@ const pkg = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
 });
 
 const problemOf = (extra: Record<string, unknown>, api = '1.0.0'): string | null =>
-  manifestProblem(NAME, manifestInfo(pkg(extra)), api);
+  manifestProblem(NAME, manifestInfo(manifest(extra)), api);
 
-describe('manifest', () => {
-  it('reads id, engine, commands and extension peers as data', () => {
+describe("an extension's package.json", () => {
+  it('is read as data: id, engine range, commands, peers and optional peers', () => {
     const info = manifestInfo(
-      pkg({
+      manifest({
         engines: { agentage: '^1.0' },
         agentage: { id: 'x', contributes: { commands: ['x', 'x:sub', 3] } },
         peerDependencies: { '@agentage/fixture-hello': '^1', express: '^5' },
@@ -36,9 +36,14 @@ describe('manifest', () => {
     });
   });
 
-  it('treats an absent engines.agentage as ^1 and missing blocks as empty', () => {
-    const info = manifestInfo({ name: NAME });
-    expect(info).toMatchObject({ engine: '^1', id: null, version: null, commands: [], peers: [] });
+  it('without engines.agentage wants extension API ^1; missing blocks read as empty', () => {
+    expect(manifestInfo({ name: NAME })).toMatchObject({
+      engine: '^1',
+      id: null,
+      version: null,
+      commands: [],
+      peers: [],
+    });
   });
 
   it.each([
@@ -52,40 +57,35 @@ describe('manifest', () => {
     [{ exports: ['./a.js'] }, null],
     [{ main: 'm.js' }, 'm.js'],
     [{}, null],
-  ])('resolves the entry of %j to %j', (fields, expected) => {
-    expect(entryOf({ name: NAME, ...fields })).toBe(expected);
+  ])('finds the entry the way Node imports it: %j gives %j', (fields, entry) => {
+    expect(manifestInfo({ name: NAME, ...fields }).entry).toBe(entry);
   });
 
-  it('accepts a valid manifest', () => {
+  it('is valid with a matching engine range', () => {
     expect(problemOf({})).toBeNull();
     expect(problemOf({ engines: { agentage: '>=1.0.0 <2' } })).toBeNull();
+    expect(problemOf({ engines: { agentage: '^2' } }, '2.1.0')).toBeNull();
   });
 
   it.each([
     [{ name: 'other' }, 'package.json name "other" is not @agentage/fixture-x'],
     [{ agentage: {} }, 'agentage.id is missing'],
     [{ agentage: { id: 'Hello' } }, 'agentage.id "Hello" must match [a-z][a-z0-9-]*'],
-    [{ agentage: { id: '1x' } }, 'must match'],
-    [{ agentage: { id: 'status' } }, 'agentage.id "status" is reserved'],
-    [{ agentage: { id: 'com1' } }, 'is reserved'],
+    [{ agentage: { id: '1x' } }, 'agentage.id "1x" must match [a-z][a-z0-9-]*'],
     [
       { engines: { agentage: '^0.1' } },
       'engines.agentage "^0.1" does not match extension API 1.0.0',
     ],
     [{ engines: { agentage: 'latest' } }, 'engines.agentage "latest" is not a supported range'],
-    [{ main: undefined }, 'no entry point (exports or main)'],
-  ])('marks %j invalid', (fields, message) => {
-    expect(problemOf(fields)).toContain(message);
+    [{ main: null }, 'no entry point (exports or main)'],
+  ])('is invalid with %j: %s', (fields, message) => {
+    expect(problemOf(fields)).toBe(message);
   });
 
-  it('matches the engine against the given API version', () => {
-    expect(problemOf({ engines: { agentage: '^2' } }, '2.1.0')).toBeNull();
-    expect(problemOf({}, '2.0.0')).toContain('does not match extension API 2.0.0');
-  });
-
-  it('reserves core commands and Windows device names', () => {
-    for (const id of ['setup', 'status', 'update', 'add', 'remove', 'help', 'con', 'nul', 'lpt9'])
-      expect(RESERVED_IDS.has(id), id).toBe(true);
-    expect(RESERVED_IDS.has('hello')).toBe(false);
-  });
+  it.each(['setup', 'status', 'update', 'add', 'remove', 'help', 'con', 'nul', 'com1', 'lpt9'])(
+    'cannot claim the id %j: core commands and Windows device names are reserved',
+    (id) => {
+      expect(problemOf({ agentage: { id } })).toBe(`agentage.id "${id}" is reserved`);
+    }
+  );
 });

@@ -5,12 +5,13 @@
 import { expect, test } from './cli.js';
 
 const LAST_RUN = { at: '2026-10-29T10:00:00.000Z', pid: 4242, state: 'ok', error: null };
+const TWO = { extensions: { hello: '^1.0.0', world: '^1' } };
 
 test.describe('agentage extension list @p0 @offline', () => {
   test('agentage extension list prints one row per extension; --json adds machine and profile', async ({
     cli,
   }) => {
-    await cli.run('setup --profile fixtures/profiles/two.json');
+    await cli.run(`setup --profile ${cli.profile(TWO)}`);
     cli.write('state/hello.json', LAST_RUN);
     const list = await cli.run('extension list');
     expect(list.code).toBe(0);
@@ -27,7 +28,8 @@ test.describe('agentage extension list @p0 @offline', () => {
   test('agentage extension list marks a duplicate id and an old engine invalid, and blocks world', async ({
     cli,
   }) => {
-    await cli.run('setup --profile fixtures/profiles/all.json');
+    const all = { 'dup-id': '^1.0.0', hello: '^1.0.0', 'old-engine': '^1.0.0', world: '^1' };
+    await cli.run(`setup --profile ${cli.profile({ extensions: all })}`);
     const list = await cli.run('extension list');
     expect(list.code).toBe(0);
     expect(list.lines).toEqual([
@@ -42,13 +44,7 @@ test.describe('agentage extension list @p0 @offline', () => {
   test('agentage extension list shows hello off and world blocked when this machine turns hello off', async ({
     cli,
   }) => {
-    cli.write('machine.json', {
-      id: 'm_0000beef',
-      name: 'e2e-box',
-      dev: {},
-      profileSource: 'default',
-    });
-    await cli.run('setup --profile fixtures/profiles/off-hello.json');
+    await cli.run(`setup --profile ${cli.profile({ ...TWO, off: ['hello'] })}`);
     const list = await cli.run('extension list');
     expect(list.lines).toContain(
       'hello  off        @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello'
@@ -61,7 +57,7 @@ test.describe('agentage extension list @p0 @offline', () => {
   test('agentage extension list and agentage status write nothing over an installed config dir', async ({
     cli,
   }) => {
-    await cli.run('setup --profile fixtures/profiles/two.json');
+    await cli.run(`setup --profile ${cli.profile(TWO)}`);
     const before = cli.snapshot();
     expect((await cli.run('extension list')).code).toBe(0);
     expect((await cli.run('status')).code).toBe(0);

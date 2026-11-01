@@ -26,9 +26,9 @@ const EXTENSIONS_HELP = `
 Extensions: --profile <file> validates a profile (schema v1), saves it as profile.json and
 installs its extensions with npm, without signing in; --dry-run prints the install plan and
 writes nothing. Plain setup signs in, then installs from the local profile.json (or the
-default profile when there is none). Packages come from AGENTAGE_NPM_REGISTRY (default
-https://registry.npmjs.org) into AGENTAGE_EXTENSIONS_DIR (default ~/.agentage/extensions);
-only @agentage packages are installed unless AGENTAGE_EXTENSION_SCOPES widens the scopes.`;
+default profile when there is none). Each package comes from the registry the profile's
+registries map names for its scope (default https://registry.npmjs.org) into
+AGENTAGE_EXTENSIONS_DIR (default ~/.agentage/extensions).`;
 
 export const registerSetup = (
   program: Command,

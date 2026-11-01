@@ -34,12 +34,6 @@ export const lockEntries = (lock: Doc): string[] => {
   return [...entries].sort();
 };
 
-export const equalLocks = (a: Doc, b: Doc): boolean => {
-  const x = lockEntries(a);
-  const y = lockEntries(b);
-  return x.length === y.length && x.every((entry, i) => entry === y[i]);
-};
-
 // npm ci refuses a lock whose root dependencies differ from package.json.
 export const lockAgrees = (lock: Doc, dependencies: Record<string, string>): boolean => {
   const root = packagesOf(lock)[''];

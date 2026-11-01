@@ -11,10 +11,11 @@ import {
   runExtensionList,
   type ExtensionListOptions,
 } from './commands/extension/list.js';
-import { extensionSetupDeps, runExtensionSetup } from './commands/extension/setup.js';
+import { runExtensionSetup } from './commands/extension/setup.js';
 import { registerStatus, runStatus, type StatusOptions } from './commands/status/status.js';
 import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
 import { extensionsEnabled } from './core/flag.js';
+import { prepareNpm } from './core/installer/npm.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
@@ -39,7 +40,7 @@ const setupDeps: SetupDeps = {
 const defaultDeps: ProgramDeps = {
   setup: (opts) =>
     extensionsEnabled()
-      ? runExtensionSetup(opts, extensionSetupDeps(setupDeps))
+      ? runExtensionSetup(opts, { ...setupDeps, npm: prepareNpm })
       : runSetup(opts, setupDeps),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),

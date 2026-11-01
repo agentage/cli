@@ -76,8 +76,9 @@ A profile is a JSON file that maps package names to version ranges:
 { "version": 1, "extensions": { "@agentage/example": "^1.0.0" } }
 ```
 
-Only `@agentage` packages are installed, and npm runs with `--ignore-scripts`. Everything lives in
-the config directory:
+Extensions are installed from npm's public registry unless the profile's `registries` names
+another npm-compatible registry for their scope. npm runs with `--ignore-scripts`. Everything lives
+in the config directory:
 
 | Path                       | What                                                      |
 | -------------------------- | --------------------------------------------------------- |

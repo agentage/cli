@@ -27,13 +27,30 @@ agentage setup                                     # sign in, then install from 
 
 `--profile <file>` validates the file (schema v1), saves it as `profile.json` (mode 0600,
 keeping this machine's own `machines[<id>]` entry), records `profileSource: "file"` in
-`machine.json` and installs; it never signs in. Every name must be in the `@agentage` scope
-(`AGENTAGE_EXTENSION_SCOPES` widens it) and every version a semver range or an `https:`
-tarball URL; a refused profile names each extension and the rule and writes nothing. Plain
-`setup` signs in, then installs from the local `profile.json`; with none it saves the
-built-in default profile (no extensions) locally and says the cloud profile is unavailable.
-`--dry-run` prints the plan (install set, registry, npm command, tree) and stops before npm;
-it never signs in. `--disconnect` skips the extension steps.
+`machine.json` and installs; it never signs in. Every version must be a semver range or an
+`https:` tarball URL (`npm:`, `github:`, `file:`, `http:` and local paths are refused); a refused
+profile names each entry and the rule and writes nothing. Plain `setup` signs in, then installs
+from the local `profile.json`; with none it saves the built-in default profile (no extensions)
+locally and says the cloud profile is unavailable. `--dry-run` prints the plan (registries,
+install set, npm command, tree) and stops before npm; it never signs in. `--disconnect` skips the
+extension steps.
+
+A profile names its extensions and, optionally, the npm-compatible registry each scope comes
+from:
+
+```json
+{
+  "version": 1,
+  "extensions": { "@agentage/example": "^1.0.0" },
+  "registries": { "@agentage": "https://registry.npmjs.org" }
+}
+```
+
+`registries` maps an npm scope to a registry URL, which must be `https:` (or `http:` on a loopback
+host); anything else is refused naming the entry, e.g. `registries["@acme"]`. Scopes it does not
+list, and unscoped packages, come from `https://registry.npmjs.org`. The installer writes one
+`@scope:registry=<url>` line per entry into the tree's own `.npmrc`, so the same profile builds the
+same tree on every machine.
 
 After installing, `setup` prints one `install` line, then the `extension list` rows:
 
@@ -44,14 +61,16 @@ world  installed  @agentage/fixture-world 1.0.0 (wants ^1)  commands: world
 ```
 
 The installer runs npm 10 or newer as `node npm-cli.js` (no shell, `--ignore-scripts`,
-`npm_config_*` and `NODE_OPTIONS` removed from its environment) into a staged tree under
-the extensions directory (`AGENTAGE_EXTENSIONS_DIR`, default `~/.agentage/extensions`):
+`npm_config_*` and `NODE_OPTIONS` removed from its environment, at most 10 minutes per run) into
+a staged tree under the extensions directory (`AGENTAGE_EXTENSIONS_DIR`, default
+`~/.agentage/extensions`):
 
 | Path                                | What                                                               |
 | ----------------------------------- | ------------------------------------------------------------------ |
 | `extensions/package.json`           | the install set, sorted, `private: true`, no scripts               |
 | `extensions/package-lock.json`      | npm's lock for the current tree                                    |
 | `extensions/trees/<hash>/`          | an immutable tree named by the lock's `name@version+integrity` set |
+| `extensions/trees/<hash>/.npmrc`    | the profile's `registries`, one `@scope:registry=<url>` per line   |
 | `extensions/trees/<hash>/.complete` | written once npm succeeded; a tree without it is ignored           |
 | `extensions/current`                | one line naming the tree in use, rewritten atomically              |
 | `extensions/install.lock`           | held for the whole install; a second run waits for it              |
@@ -143,14 +162,11 @@ Errors go to stderr; stdout carries only command output (`status --json` stays p
 
 ## Environment
 
-| Variable                    | Purpose                                                                             | Default                      |
-| --------------------------- | ----------------------------------------------------------------------------------- | ---------------------------- |
-| `AGENTAGE_SITE_FQDN`        | Target host                                                                         | `agentage.io`                |
-| `AGENTAGE_CONFIG_DIR`       | Config and credentials directory (`auth.json`)                                      | `~/.agentage`                |
-| `AGENTAGE_TOKEN`            | Personal access token for CI and headless machines                                  | unset                        |
-| `NO_COLOR`                  | Disable colored output (any non-empty value)                                        | unset                        |
-| `AGENTAGE_EXTENSIONS`       | `1` enables `setup --profile`, `extension list` and the extension lines in `status` | unset                        |
-| `AGENTAGE_EXTENSIONS_DIR`   | Extensions directory (trees, lock, `current`)                                       | `~/.agentage/extensions`     |
-| `AGENTAGE_EXTENSION_SCOPES` | Extra npm scopes allowed besides `@agentage`, comma-separated                       | unset                        |
-| `AGENTAGE_NPM_REGISTRY`     | Registry the installer passes to npm                                                | `https://registry.npmjs.org` |
-| `AGENTAGE_NPM_TIMEOUT_MS`   | Timeout for one npm run, in milliseconds                                            | `600000`                     |
+| Variable                  | Purpose                                                                             | Default                  |
+| ------------------------- | ----------------------------------------------------------------------------------- | ------------------------ |
+| `AGENTAGE_SITE_FQDN`      | Target host                                                                         | `agentage.io`            |
+| `AGENTAGE_CONFIG_DIR`     | Config and credentials directory (`auth.json`)                                      | `~/.agentage`            |
+| `AGENTAGE_TOKEN`          | Personal access token for CI and headless machines                                  | unset                    |
+| `NO_COLOR`                | Disable colored output (any non-empty value)                                        | unset                    |
+| `AGENTAGE_EXTENSIONS`     | `1` enables `setup --profile`, `extension list` and the extension lines in `status` | unset                    |
+| `AGENTAGE_EXTENSIONS_DIR` | Extensions directory (trees, lock, `current`)                                       | `~/.agentage/extensions` |

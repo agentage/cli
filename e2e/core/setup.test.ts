@@ -6,26 +6,30 @@ import { expect, test } from './cli.js';
 
 const HELLO = 'hello  installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello';
 const WORLD = 'world  installed  @agentage/fixture-world 1.0.0 (wants ^1)  commands: world';
+const TWO = { extensions: { hello: '^1.0.0', world: '^1' } };
 
 test.describe('agentage setup --profile @p0 @offline', () => {
-  test('agentage setup --profile two.json installs hello and world without signing in', async ({
+  test('agentage setup --profile with hello and world installs both without signing in', async ({
     cli,
   }) => {
-    const run = await cli.run('setup --profile fixtures/profiles/two.json');
+    const run = await cli.run(`setup --profile ${cli.profile(TWO)}`);
     expect(run.code).toBe(0);
     expect(run.lines).toContain(HELLO);
     expect(run.lines).toContain(WORLD);
-    expect(cli.exists(`extensions/trees/${cli.file('extensions/current')}/.complete`)).toBe(true);
+    const tree = `extensions/trees/${cli.file('extensions/current')}`;
+    expect(cli.exists(`${tree}/.complete`)).toBe(true);
+    expect(cli.file(`${tree}/.npmrc`)).toBe(`@agentage:registry=${cli.registry}`);
+    expect(cli.json('profile.json')['registries']).toEqual({ '@agentage': cli.registry });
     expect(cli.json('machine.json')).toMatchObject({ profileSource: 'file' });
     expect(cli.exists('auth.json')).toBe(false);
     expect(cli.homeFiles()).toEqual([]);
   });
 
-  test('running agentage setup --profile two.json again reuses the installed tree', async ({
+  test('running agentage setup --profile again with the same extensions reuses the installed tree', async ({
     cli,
   }) => {
-    expect((await cli.run('setup --profile fixtures/profiles/two.json')).code).toBe(0);
-    const again = await cli.run('setup --profile fixtures/profiles/two.json');
+    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
+    const again = await cli.run(`setup --profile ${cli.profile(TWO)}`);
     const tree = cli.file('extensions/current');
     expect(again.lines).toContain(`install    2 extensions in tree ${tree} (reused)`);
     expect(cli.list('extensions/trees')).toEqual([tree]);
@@ -36,21 +40,22 @@ test.describe('agentage setup --profile @p0 @offline', () => {
     });
   });
 
-  test('agentage setup --profile two.json on two machines installs the same tree, so the locks match', async ({
+  test('agentage setup --profile with the same extensions on two machines installs the same tree', async ({
     cli,
     launcherMachine,
   }) => {
     const other = launcherMachine();
-    expect((await cli.run('setup --profile fixtures/profiles/two.json')).code).toBe(0);
-    expect((await other.run('setup --profile fixtures/profiles/two.json')).code).toBe(0);
+    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
+    expect((await other.run(`setup --profile ${other.profile(TWO)}`)).code).toBe(0);
     expect(other.file('extensions/current')).toBe(cli.file('extensions/current'));
   });
 
   test('two agentage setup --profile runs at once: one waits for the other, both succeed', async ({
     cli,
   }) => {
-    const first = cli.start('setup --profile fixtures/profiles/two.json');
-    const second = cli.start('setup --profile fixtures/profiles/two.json');
+    const profile = cli.profile(TWO);
+    const first = cli.start(`setup --profile ${profile}`);
+    const second = cli.start(`setup --profile ${profile}`);
     expect(await Promise.all([first.waitExit(60_000), second.waitExit(60_000)])).toEqual([0, 0]);
     const waited = [first, second].filter((p) =>
       p.stderr().includes('waiting for another install')
@@ -60,53 +65,55 @@ test.describe('agentage setup --profile @p0 @offline', () => {
     expect(cli.exists('extensions/install.lock')).toBe(false);
   });
 
-  test('agentage setup --profile two.json --dry-run prints the plan and writes nothing', async ({
+  test('agentage setup --profile --dry-run prints the registries and the plan, and writes nothing', async ({
     cli,
   }) => {
-    const run = await cli.run('setup --profile fixtures/profiles/two.json --dry-run');
+    const run = await cli.run(`setup --profile ${cli.profile(TWO)} --dry-run`);
     expect(run.code).toBe(0);
     expect(run.lines).toContain('dry run    nothing written');
-    expect(run.lines).toContain(`registry   ${cli.registry.url}`);
+    expect(run.lines).toContain(`registry   @agentage  ${cli.registry}`);
+    expect(run.lines).toContain('registry   default    https://registry.npmjs.org');
     expect(run.lines).toContain('  @agentage/fixture-hello  ^1.0.0');
     expect(run.lines).toContain('npm        install --ignore-scripts (no lock yet)');
-    expect(cli.exists('profile.json')).toBe(false);
-    expect(cli.exists('extensions')).toBe(false);
+    // update-check.json is the CLI's own update throttle, written after any command.
+    expect(cli.list('').filter((name) => name !== 'update-check.json')).toEqual([]);
   });
 
-  test('agentage setup --profile refuses a package outside @agentage or a file: version, writing nothing', async ({
+  test('agentage setup --profile refuses a file: version, writing nothing', async ({ cli }) => {
+    const run = await cli.run(
+      `setup --profile ${cli.profile({ extensions: { hello: 'file:../x' } })}`
+    );
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain('extensions["@agentage/fixture-hello"]: file: specs are refused');
+    expect(cli.list('')).toEqual([]);
+  });
+
+  test('a profile that sends @acme to an http: registry that is not loopback is refused, naming registries["@acme"]', async ({
     cli,
   }) => {
-    const scope = await cli.run('setup --profile fixtures/profiles/scope-bad.json');
-    expect(scope.code).toBe(1);
-    expect(scope.stderr).toContain('extensions["@acme/fixture-hello"]: refused by the scope rule');
-    const spec = await cli.run('setup --profile fixtures/profiles/spec-bad.json');
-    expect(spec.code).toBe(1);
-    expect(spec.stderr).toContain('extensions["@agentage/fixture-hello"]: file: specs are refused');
-    expect(cli.exists('profile.json')).toBe(false);
-    expect(cli.exists('extensions')).toBe(false);
+    const registries = { '@acme': 'http://npm.acme.example' };
+    const run = await cli.run(`setup --profile ${cli.profile({ ...TWO, registries })}`);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain(
+      'registries["@acme"]: must be an https: URL, or http: on a loopback host'
+    );
+    expect(cli.list('')).toEqual([]);
   });
 
-  test('with AGENTAGE_EXTENSION_SCOPES=@acme, agentage setup --profile scope-bad.json --dry-run plans @acme', async ({
-    launcherMachine,
-  }) => {
-    const cli = launcherMachine({ AGENTAGE_EXTENSION_SCOPES: '@acme' });
-    const run = await cli.run('setup --profile fixtures/profiles/scope-bad.json --dry-run');
-    expect(run.code).toBe(0);
-    expect(run.lines).toContain('  @acme/fixture-hello      ^1.0.0');
-  });
-
-  test('when npm fails, agentage setup --profile missing.json exits 1 and keeps the last good tree', async ({
+  test('when npm fails, agentage setup --profile exits 1, still lists the extensions and keeps the last good tree', async ({
     cli,
   }) => {
-    expect((await cli.run('setup --profile fixtures/profiles/two.json')).code).toBe(0);
+    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
     const good = cli.file('extensions/current');
-    const failed = await cli.run('setup --profile fixtures/profiles/missing.json');
+    const missing = cli.profile({ extensions: { hello: '^1.0.0', missing: '^1.0.0' } });
+    const failed = await cli.run(`setup --profile ${missing}`);
     expect(failed.code).toBe(1);
     expect(failed.stderr).toContain('npm install failed');
     expect(failed.stderr).toContain('E404');
+    expect(failed.lines).toContain(HELLO);
     expect(cli.file('extensions/current')).toBe(good);
     expect(cli.list('extensions/trees')).toEqual([good]);
-    expect((await cli.run('setup --profile fixtures/profiles/two.json')).code).toBe(0);
+    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
   });
 });
 
@@ -127,11 +134,11 @@ test.describe('agentage setup (signs in) @p0 @offline', () => {
     expect(cli.exists('auth.json')).toBe(true);
   });
 
-  test('agentage setup after setup --profile two.json installs from the saved profile.json', async ({
+  test('agentage setup after setup --profile installs from the saved profile.json', async ({
     cli,
   }) => {
     expect((await cli.signIn()).code).toBe(0);
-    expect((await cli.run('setup --profile fixtures/profiles/two.json')).code).toBe(0);
+    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
     const again = await cli.run('setup --no-browser');
     expect(again.code).toBe(0);
     expect(again.stderr).toContain('cloud profile unavailable, using local profile.json');

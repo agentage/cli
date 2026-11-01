@@ -15,43 +15,14 @@ export interface MachineFile {
   profileSource: ProfileSource;
 }
 
-export interface MachineDeps {
-  path: () => string;
-  read: (path: string) => unknown;
-  write: (path: string, machine: MachineFile) => void;
-  lock: <T>(path: string, fn: () => T) => Promise<T>;
-  hostname: () => string;
-  newId: () => string;
-}
-
-export const MACHINE_ID = /^m_[0-9a-f]{8}$/;
+const MACHINE_ID = /^m_[0-9a-f]{8}$/;
 const SOURCES: readonly string[] = ['cloud', 'file', 'default'];
-
-const readRaw = (path: string): unknown => {
-  try {
-    return JSON.parse(readFileSync(path, 'utf-8'));
-  } catch {
-    return null;
-  }
-};
-
-const defaultDeps: MachineDeps = {
-  path: machinePath,
-  read: readRaw,
-  write: (path, machine) => {
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    writeJsonAtomic(path, machine);
-  },
-  lock: (path, fn) => withFileLock(path, fn),
-  hostname: () => hostname(),
-  newId: () => `m_${randomBytes(4).toString('hex')}`,
-};
 
 const isDevMap = (value: unknown): value is Record<string, string> =>
   isRecord(value) && Object.values(value).every((path) => typeof path === 'string');
 
 // Strict: anything but the exact v1 shape is treated as absent, so no old file is migrated.
-export const parseMachine = (raw: unknown): MachineFile | null => {
+const parseMachine = (raw: unknown): MachineFile | null => {
   if (!isRecord(raw) || Object.keys(raw).length !== 4) return null;
   const { id, name, dev, profileSource } = raw;
   if (typeof id !== 'string' || !MACHINE_ID.test(id)) return null;
@@ -61,35 +32,35 @@ export const parseMachine = (raw: unknown): MachineFile | null => {
   return { id, name, dev, profileSource: profileSource as ProfileSource };
 };
 
-// Re-read under the lock so two first runs agree on one id.
-const create = (deps: MachineDeps, path: string): MachineFile => {
-  const fresh = parseMachine(deps.read(path));
-  if (fresh) return fresh;
-  const machine: MachineFile = {
-    id: deps.newId(),
-    name: deps.hostname(),
-    dev: {},
-    profileSource: 'default',
-  };
-  deps.write(path, machine);
+const readMachine = (): MachineFile | null => {
+  try {
+    return parseMachine(JSON.parse(readFileSync(machinePath(), 'utf-8')));
+  } catch {
+    return null;
+  }
+};
+
+const save = (machine: MachineFile): MachineFile => {
+  mkdirSync(dirname(machinePath()), { recursive: true, mode: 0o700 });
+  writeJsonAtomic(machinePath(), machine);
   return machine;
 };
 
-export const loadMachine = async (deps: MachineDeps = defaultDeps): Promise<MachineFile> => {
-  const path = deps.path();
-  return parseMachine(deps.read(path)) ?? deps.lock(path, () => create(deps, path));
-};
-
-export const setProfileSource = async (
-  source: ProfileSource,
-  deps: MachineDeps = defaultDeps
-): Promise<MachineFile> => {
-  const path = deps.path();
-  return deps.lock(path, () => {
-    const machine = create(deps, path);
-    if (machine.profileSource === source) return machine;
-    const next = { ...machine, profileSource: source };
-    deps.write(path, next);
-    return next;
+// Re-read under the lock so two first runs agree on one id.
+const readOrCreate = (): MachineFile =>
+  readMachine() ??
+  save({
+    id: `m_${randomBytes(4).toString('hex')}`,
+    name: hostname(),
+    dev: {},
+    profileSource: 'default',
   });
-};
+
+export const loadMachine = async (): Promise<MachineFile> =>
+  readMachine() ?? withFileLock(machinePath(), readOrCreate);
+
+export const setProfileSource = async (source: ProfileSource): Promise<MachineFile> =>
+  withFileLock(machinePath(), () => {
+    const machine = readOrCreate();
+    return machine.profileSource === source ? machine : save({ ...machine, profileSource: source });
+  });

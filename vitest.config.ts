@@ -9,6 +9,7 @@ export default defineConfig({
       exclude: [
         '**/*.test.ts',
         '**/*.fixtures.ts',
+        'src/test/**',
         '**/index.ts',
         'src/cli.ts',
       ],

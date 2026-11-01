@@ -18,7 +18,7 @@ const MANIFEST_FILE = 'package.json';
 const TREES = 'trees';
 const COMPLETE = '.complete';
 // A fixed name keeps the lock's root entry identical in every tree directory.
-export const MANIFEST_NAME = 'agentage-extensions';
+const MANIFEST_NAME = 'agentage-extensions';
 // Dot-prefixed: `extensions/current` only accepts names starting with a letter or digit.
 const STAGING_PREFIX = '.staging-';
 // An install runs for minutes: a long TTL plus a heartbeat keep a live holder from looking dead.
@@ -27,6 +27,7 @@ const HEARTBEAT_MS = 20_000;
 
 export interface TreeFiles {
   manifest: string;
+  npmrc: string;
   lock: string | null;
 }
 
@@ -41,12 +42,17 @@ export const manifestText = (install: Record<string, string>): string =>
     2
   )}\n`;
 
+// npm's own per-scope registry lines; every other package uses the --registry default.
+export const npmrcText = (registries: Record<string, string>): string =>
+  Object.entries(sortedSet(registries))
+    .map(([scope, url]) => `${scope}:registry=${url}\n`)
+    .join('');
+
 // Content-addressed: the same normalized lock names the same tree on every machine.
 export const treeName = (entries: string[]): string =>
   createHash('sha256').update(entries.join('\n')).digest('hex').slice(0, 16);
 
-export const treePath = (extensionsDir: string, name: string): string =>
-  join(extensionsDir, TREES, name);
+const treePath = (extensionsDir: string, name: string): string => join(extensionsDir, TREES, name);
 
 export const isComplete = (extensionsDir: string, name: string): boolean =>
   existsSync(join(treePath(extensionsDir, name), COMPLETE));
@@ -74,6 +80,7 @@ export const stageTree = (extensionsDir: string, files: TreeFiles): string => {
   mkdirSync(trees, { recursive: true, mode: 0o700 });
   const dir = mkdtempSync(join(trees, STAGING_PREFIX));
   writeFileSync(join(dir, MANIFEST_FILE), files.manifest);
+  writeFileSync(join(dir, '.npmrc'), files.npmrc);
   if (files.lock !== null) writeFileSync(join(dir, LOCK_FILE), files.lock);
   return dir;
 };
@@ -93,7 +100,7 @@ export const pointCurrent = (extensionsDir: string, name: string): void =>
   writeTextAtomic(join(extensionsDir, 'current'), `${name}\n`);
 
 // The extensions root always describes the tree `current` names, never a failed attempt.
-export const promoteFiles = (extensionsDir: string, files: TreeFiles): void => {
+export const promoteFiles = (extensionsDir: string, files: Omit<TreeFiles, 'npmrc'>): void => {
   writeTextAtomic(join(extensionsDir, MANIFEST_FILE), files.manifest);
   const lock = join(extensionsDir, LOCK_FILE);
   if (files.lock === null) remove(lock);

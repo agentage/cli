@@ -1,138 +1,75 @@
-import chalk from 'chalk';
-import { Command } from 'commander';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerExtension, rowLines, runExtensionList, summaryLines } from './list.js';
-import { type ExtensionRow, type ExtensionsGather, type ExtensionsStatus } from './rows.js';
+import { describe, expect } from 'vitest';
+import { fixture, output, pkg, plain, test } from '../../test/config-dir.js';
+import { runExtensionList, summaryLines } from './list.js';
+import { gatherExtensions } from './rows.js';
 
-const row = (extra: Partial<ExtensionRow>): ExtensionRow => ({
-  id: 'hello',
-  package: '@agentage/fixture-hello',
-  mode: 'installed',
-  wanted: '^1',
-  installed: '1.0.0',
-  state: 'installed',
-  error: null,
-  commands: [],
-  lastRun: null,
-  ...extra,
-});
+const AT = '2026-10-29T10:00:00.000Z';
+const HELLO_DEV = 'hello  installed  @agentage/fixture-hello 1.0.0 (dev)  commands: hello';
 
-const status = (extra: Partial<ExtensionsStatus>): ExtensionsStatus => ({
-  machine: { id: 'm_0000beef', name: 'box' },
-  profile: { state: 'ok', version: 1, source: 'default', readOnly: false },
-  extensions: [],
-  ...extra,
-});
+const list = () => output(() => runExtensionList({}));
 
-describe('extension list lines', () => {
-  let level: typeof chalk.level;
-
-  beforeEach(() => {
-    level = chalk.level;
-    chalk.level = 0;
+describe('agentage extension list', () => {
+  test('shows the last run from state/<id>.json; a failed run quotes its error', async ({
+    dir,
+  }) => {
+    dir.profile({ extensions: { hello: '^1.0.0' } });
+    dir.tree('hello');
+    dir.write('state/hello.json', { at: AT, pid: 7, state: 'failed', error: 'boom' });
+    expect((await list()).lines).toEqual([
+      `hello  installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello  last run: failed "boom" at ${AT}`,
+    ]);
   });
 
-  afterEach(() => {
-    chalk.level = level;
+  test('never shows an invalid extension the last run of the id it claims', async ({ dir }) => {
+    dir.profile({ extensions: { hello: '^1', 'dup-id': '^1' } });
+    dir.tree('hello', 'dup-id');
+    dir.write('state/hello.json', { at: AT, pid: 7, state: 'ok' });
+    expect((await list()).lines).toEqual([
+      'hello  invalid    @agentage/fixture-dup-id 1.0.0 (wants ^1)  duplicate id "hello" (also @agentage/fixture-hello)',
+      'hello  invalid    @agentage/fixture-hello 1.0.0 (wants ^1)  commands: hello  duplicate id "hello" (also @agentage/fixture-dup-id)',
+    ]);
   });
 
-  it('summarizes machine, profile and the extension count for status', () => {
-    expect(summaryLines(status({ extensions: [row({})] }))).toEqual([
+  test('lists a dev path from machine.json as a dev row', async ({ dir }) => {
+    dir.machine({ hello: fixture('hello') });
+    expect((await list()).lines).toEqual([HELLO_DEV]);
+  });
+
+  test('with an invalid profile.json still prints the rows, then fails naming each bad entry', async ({
+    dir,
+  }) => {
+    dir.machine({ hello: fixture('hello') });
+    dir.profile({ extensions: { world: 'file:../x' } });
+    const run = await list();
+    expect(run.lines).toEqual([HELLO_DEV]);
+    expect(run.error).toBe(
+      `profile.json is invalid:\n  extensions["${pkg('world')}"]: file: specs are refused; ` +
+        'use a semver range or an https: tarball URL'
+    );
+  });
+
+  test('with no extensions says so, and warns about keys profile.json does not know', async ({
+    dir,
+  }) => {
+    dir.profile({ teams: ['a'] });
+    expect(await list()).toMatchObject({
+      lines: ['no extensions'],
+      stderr: 'warning: profile.json: unknown key "teams" kept',
+      error: null,
+    });
+  });
+});
+
+describe('agentage status', () => {
+  test('adds this machine, the profile and the extension count, marking a newer profile read-only', async ({
+    dir,
+  }) => {
+    dir.machine();
+    dir.profile({ version: 2, extensions: { hello: '^1' } });
+    expect(summaryLines((await gatherExtensions()).status).map(plain)).toEqual([
       'machine    m_0000beef (box)',
-      'profile    version 1 (source: default)',
+      'profile    version 2 (source: default, read-only)',
       'extensions 1',
     ]);
-    const readOnly = { state: 'ok' as const, version: 2, source: 'file' as const, readOnly: true };
-    expect(summaryLines(status({ profile: readOnly }))[1]).toBe(
-      'profile    version 2 (source: file, read-only)'
-    );
-    expect(summaryLines(status({ profile: { state: 'missing' } }))[1]).toBe(
-      'profile    no profile'
-    );
-    const invalid = status({ profile: { state: 'invalid', errors: ['x'] } });
-    expect(summaryLines(invalid)[1]).toBe('profile    invalid');
-  });
-
-  it('prints one aligned row per extension with commands, last run and reason', () => {
-    expect(
-      rowLines([
-        row({ commands: ['hello'], lastRun: { at: 'T', state: 'ok', error: null } }),
-        row({
-          id: 'oldengine',
-          package: '@agentage/fixture-old-engine',
-          state: 'invalid',
-          error: 'x',
-        }),
-        row({ id: null, mode: 'dev', installed: null, state: 'missing' }),
-        row({ wanted: null, lastRun: { at: 'T', state: 'failed', error: 'boom' } }),
-      ])
-    ).toEqual([
-      'hello      installed  @agentage/fixture-hello 1.0.0 (wants ^1)  commands: hello  last run: ok at T',
-      'oldengine  invalid    @agentage/fixture-old-engine 1.0.0 (wants ^1)  x',
-      '?          missing    @agentage/fixture-hello - (dev)',
-      'hello      installed  @agentage/fixture-hello 1.0.0 (wants ?)  last run: failed "boom" at T',
-    ]);
-  });
-});
-
-describe('runExtensionList', () => {
-  const capture = async (gathered: ExtensionsGather, json = false) => {
-    const out = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    try {
-      const error = await runExtensionList({ json }, () => Promise.resolve(gathered)).then(
-        () => null,
-        (e: unknown) => e
-      );
-      const text = (spy: typeof out) => spy.mock.calls.map((call) => String(call[0])).join('\n');
-      return { stdout: text(out), stderr: text(err), error };
-    } finally {
-      out.mockRestore();
-      err.mockRestore();
-    }
-  };
-
-  it('says "no extensions" for an empty set and prints warnings on stderr', async () => {
-    const result = await capture({ status: status({}), warnings: ['w'] });
-    expect(result).toEqual({ stdout: 'no extensions', stderr: 'warning: w', error: null });
-  });
-
-  it('--json prints machine, profile and the rows; an invalid profile then fails', async () => {
-    const invalid = status({ profile: { state: 'invalid', errors: ['bad'] } });
-    const result = await capture({ status: invalid, warnings: [] }, true);
-    expect(JSON.parse(result.stdout)).toEqual(invalid);
-    expect(String(result.error)).toContain('profile.json is invalid:\n  bad');
-  });
-});
-
-describe('registerExtension', () => {
-  const parse = async (...args: string[]) => {
-    let out = '';
-    let err = '';
-    const list = vi.fn(async () => undefined);
-    const program = new Command()
-      .exitOverride()
-      .configureOutput({ writeOut: (s) => void (out += s), writeErr: (s) => void (err += s) });
-    registerExtension(program, list);
-    const code = await program.parseAsync(['node', 'agentage', 'extension', ...args]).then(
-      () => 0,
-      (e: { exitCode: number }) => e.exitCode
-    );
-    return { code, out, err, list };
-  };
-
-  it('prints the group help for a bare `extension` and exits 0', async () => {
-    const result = await parse();
-    expect(result.code).toBe(0);
-    expect(result.out).toContain('Usage: agentage extension');
-    expect(result.out).toContain('list [options]');
-  });
-
-  it('runs `extension list --json` and refuses an unknown subcommand', async () => {
-    const listed = await parse('list', '--json');
-    expect(listed.list).toHaveBeenCalledWith({ json: true }, expect.anything());
-    const unknown = await parse('nope');
-    expect(unknown.code).not.toBe(0);
-    expect(unknown.err).toContain("error: unknown command 'nope'");
   });
 });

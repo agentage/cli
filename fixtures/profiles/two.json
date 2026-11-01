@@ -1,7 +1,0 @@
-{
-  "version": 1,
-  "extensions": {
-    "@agentage/fixture-hello": "^1.0.0",
-    "@agentage/fixture-world": "^1"
-  }
-}

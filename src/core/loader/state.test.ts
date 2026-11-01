@@ -1,59 +1,30 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect } from 'vitest';
+import { test } from '../../test/config-dir.js';
 import { readRunState } from './state.js';
 
-describe('readRunState', () => {
-  let dir: string;
+const RUN = { at: '2026-10-29T10:00:00.000Z', pid: 42, state: 'failed', error: 'boom' };
 
-  const write = (id: string, body: unknown): void => {
-    mkdirSync(join(dir, 'state'), { recursive: true });
-    writeFileSync(join(dir, 'state', `${id}.json`), JSON.stringify(body));
-  };
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'agentage-state-'));
-    process.env['AGENTAGE_CONFIG_DIR'] = dir;
+describe("an extension's last run", () => {
+  test('is read from state/<id>.json; an absent error reads as none', ({ dir }) => {
+    dir.write('state/hello.json', RUN);
+    dir.write('state/world.json', { at: 't', pid: 1, state: 'ok' });
+    expect(readRunState('hello')).toEqual(RUN);
+    expect(readRunState('world')).toEqual({ at: 't', pid: 1, state: 'ok', error: null });
   });
 
-  afterEach(() => {
-    delete process.env['AGENTAGE_CONFIG_DIR'];
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('reads state/<id>.json under the config dir', () => {
-    write('hello', { at: '2026-10-29T10:00:00.000Z', pid: 42, state: 'failed', error: 'boom' });
-    expect(readRunState('hello')).toEqual({
-      at: '2026-10-29T10:00:00.000Z',
-      pid: 42,
-      state: 'failed',
-      error: 'boom',
-    });
-  });
-
-  it('normalises an absent error to null', () => {
-    write('hello', { at: 't', pid: 1, state: 'ok' });
-    expect(readRunState('hello')?.error).toBeNull();
-  });
-
-  it('is null for a missing, malformed or wrong-shaped file', () => {
-    expect(readRunState('hello')).toBeNull();
-    for (const body of [
-      {},
-      { at: 't', pid: '1', state: 'ok' },
-      { at: 't', pid: 1, state: 'odd' },
-    ]) {
-      write('hello', body);
-      expect(readRunState('hello'), JSON.stringify(body)).toBeNull();
-    }
-    write('hello', { at: 't', pid: 1, state: 'ok', error: 3 });
+  test.for([
+    ['no file', null],
+    ['a file that is not JSON', '{ nope'],
+    ['a pid that is not a number', { at: 't', pid: '1', state: 'ok' }],
+    ['a state it does not know', { at: 't', pid: 1, state: 'odd' }],
+    ['an error that is not a string', { at: 't', pid: 1, state: 'ok', error: 3 }],
+  ] as const)('is unknown with %s', ([, body], { dir }) => {
+    if (body !== null) dir.write('state/hello.json', body);
     expect(readRunState('hello')).toBeNull();
   });
 
-  it('never builds a path from an id outside the id pattern', () => {
-    write('x', { at: 't', pid: 1, state: 'ok' });
+  test('is never read from a path built from an id outside the id pattern', ({ dir }) => {
+    dir.write('state/x.json', { at: 't', pid: 1, state: 'ok' });
     expect(readRunState('../state/x')).toBeNull();
-    expect(readRunState('x', { dir: () => join(dir, 'state') })?.state).toBe('ok');
   });
 });

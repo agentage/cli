@@ -11,7 +11,7 @@ export interface Effective {
 }
 
 // Machine values replace shared ones per key; no deep merge, so arrays are replaced whole.
-export const mergeConfig = (shared: ConfigMap, local: ConfigMap): ConfigMap => {
+const mergeConfig = (shared: ConfigMap, local: ConfigMap): ConfigMap => {
   const ids = [...new Set([...Object.keys(shared), ...Object.keys(local)])].sort();
   return Object.fromEntries(ids.map((id) => [id, { ...shared[id], ...local[id] }]));
 };
