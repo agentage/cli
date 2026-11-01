@@ -2,18 +2,19 @@
 
 ![Connect this machine to agentage from the terminal](https://github.com/agentage/cli/raw/master/docs/banner.svg)
 
-Connect this machine to your [agentage](https://agentage.io) account from the terminal. One
-command signs you in through your browser, and from then on the machine is known to your account.
+Connect this machine to your [agentage](https://agentage.io) account from the terminal, and
+install the extensions your account's profile names. One command signs you in through your
+browser; the same profile then gives you the same extensions on every machine you set up.
 
 ## What is this?
 
-agentage gives your AI tools a shared, account-backed home. Every machine you use needs to be
-connected to that account once: this package does that connection. It keeps your sign-in on
-the machine (OAuth 2.1 with PKCE, nothing typed into the terminal), tells you whether the
-machine is connected, and keeps itself up to date.
+agentage gives your AI tools a shared, account-backed home. Every machine you use is connected
+to that account once, by this package. It keeps your sign-in on the machine (OAuth 2.1 with
+PKCE, nothing typed into the terminal), tells you whether the machine is connected, and keeps
+itself up to date.
 
-It is intentionally **small**: sign-in, status and update. Everything else arrives as extensions
-that the CLI installs for you.
+The CLI itself stays **small**: sign-in, status, update, and an extension manager. Everything
+else, memory included, arrives as an extension the CLI installs for you.
 
 ## Get started
 
@@ -33,7 +34,7 @@ agentage status
 ### On a server or in CI (no browser)
 
 ```bash
-agentage setup --no-browser        # prints the sign-in URL to open elsewhere
+agentage setup --no-browser              # prints the sign-in URL to open elsewhere
 AGENTAGE_TOKEN=aga_... agentage status   # or use a personal access token
 ```
 
@@ -53,49 +54,70 @@ AGENTAGE_TOKEN=aga_... agentage status   # or use a personal access token
 | `agentage status`             | Version, update, target, sign-in state, endpoint (`--json` for scripts) |
 | `agentage update`             | Install the latest published version (`--check` only reports)           |
 
+With `AGENTAGE_EXTENSIONS=1` (see below):
+
+| Command                                      | What it does                                                     |
+| -------------------------------------------- | ---------------------------------------------------------------- |
+| `agentage setup --profile <file>`            | Install and load the extensions a profile file names, no sign-in |
+| `agentage setup --profile <file> --dry-run`  | Show what would be installed, write nothing                      |
+| `agentage extension install <name> [--off]`  | Add an extension to the profile, install and load it             |
+| `agentage extension remove <name> [--purge]` | Take it out of the profile and reinstall the rest                |
+| `agentage extension list`                    | One row per extension: state, version, commands, last run        |
+| `agentage extension check`                   | Load every extension once and refresh the states                 |
+| `agentage <command>`                         | Run a command an installed extension contributes                 |
+
 Flags, exit codes and token auth are in [`docs/reference.md`](docs/reference.md).
 
 ## Extensions
 
-An extension is an npm package that adds to the CLI, for example new commands. The extensions a
-machine uses are named in a profile, and the CLI installs them with npm. Extension support is
-experimental and off unless you set `AGENTAGE_EXTENSIONS=1`; without it the CLI behaves exactly
-as described above.
+An extension is an npm package that adds to the CLI: commands today, more later. Extension
+support is experimental and off unless you set `AGENTAGE_EXTENSIONS=1`; without it the CLI
+behaves exactly as described above.
+
+The model is simple. A **profile** says what this account wants: which extensions, at which
+version ranges, and which ones are switched off on which machine. The CLI brings the machine
+to that state: `setup` installs what the profile names, loads each extension once and prints
+whether it loaded (`ok`) or why not. `extension install` and `extension remove` edit the
+profile and then do the same. Nothing installs itself on a timer; the state only changes when
+you run a command.
 
 ```bash
 export AGENTAGE_EXTENSIONS=1
-agentage setup --profile ./profile.json            # install the extensions a profile names, no sign-in
-agentage setup --profile ./profile.json --dry-run  # show what would be installed, write nothing
-agentage extension install @agentage/example       # add one extension to profile.json, install and load it
-agentage extension remove @agentage/example        # take it out again and reinstall the rest
-agentage extension list                            # one row per extension: state, version, commands
-agentage status                                    # adds this machine, the profile and an extension count
+agentage setup --profile ./profile.json            # install and load the extensions a profile names
+agentage setup --profile ./profile.json --dry-run  # show the plan, write nothing
+agentage extension install @agentage/example       # add one extension, install and load it
+agentage extension install ./my-extension          # a local folder, for development
+agentage extension remove @agentage/example        # take it out again
+agentage extension list                            # state per extension
+agentage hello                                     # a command the hello extension contributes
 ```
 
-After installing, `setup` loads each extension once and prints whether it loaded (`ok`) or why
-not, and the commands extensions contribute run as `agentage <command>`. Extensions run in the CLI
-process with your privileges, so install only extensions you trust.
-
-A profile is a JSON file that maps package names to version ranges:
+A profile is a JSON file that maps package names to version ranges. `registries` is optional
+and routes a scope to another npm-compatible registry; everything else comes from npm's public
+registry.
 
 ```json
-{ "version": 1, "extensions": { "@agentage/example": "^1.0.0" } }
+{
+  "version": 1,
+  "extensions": { "@agentage/example": "^1.0.0" },
+  "registries": { "@acme": "https://npm.acme.example" }
+}
 ```
 
-Extensions are installed from npm's public registry unless the profile's `registries` names
-another npm-compatible registry for their scope. npm runs with `--ignore-scripts`. Everything lives
-in the config directory:
+Extensions run in the CLI process with your privileges, so install only extensions you trust.
+npm runs with `--ignore-scripts`, and the account token is removed from the environment before
+any extension code loads. Everything lives in the config directory:
 
-| Path                       | What                                                      |
-| -------------------------- | --------------------------------------------------------- |
-| `~/.agentage/profile.json` | the profile `setup` installs from                         |
-| `~/.agentage/machine.json` | this machine's id, name and dev extensions                |
-| `~/.agentage/extensions/`  | installed extensions; `extensions/current` names the tree |
+| Path                       | What                                                           |
+| -------------------------- | -------------------------------------------------------------- |
+| `~/.agentage/profile.json` | the profile: what this account wants                           |
+| `~/.agentage/machine.json` | this machine's id, name and development extensions             |
+| `~/.agentage/extensions/`  | installed extensions; `extensions/current` names the live tree |
+| `~/.agentage/state/`       | the last run of each extension                                 |
+| `~/.agentage/data/<id>/`   | what each extension keeps                                      |
 
-Details, including every state an extension can be in, are in
-[`docs/reference.md`](docs/reference.md).
-
-To write one, see [`docs/extensions.md`](docs/extensions.md).
+Every state an extension can be in, and every flag, is in [`docs/reference.md`](docs/reference.md).
+To write an extension, start with [`docs/extensions.md`](docs/extensions.md).
 
 ## How it works
 
@@ -108,13 +130,14 @@ nothing is installed beyond this package unless you turn extensions on.
 
 ## Configuration
 
-| Env                   | Default       | Purpose                                            |
-| --------------------- | ------------- | -------------------------------------------------- |
-| `AGENTAGE_SITE_FQDN`  | `agentage.io` | Target host                                        |
-| `AGENTAGE_CONFIG_DIR` | `~/.agentage` | Config and credentials directory                   |
-| `AGENTAGE_TOKEN`      | -             | Personal access token for CI and headless machines |
-| `AGENTAGE_EXTENSIONS` | -             | `1` turns on extension support (experimental)      |
-| `NO_COLOR`            | -             | Disable colored output                             |
+| Env                       | Default               | Purpose                                            |
+| ------------------------- | --------------------- | -------------------------------------------------- |
+| `AGENTAGE_SITE_FQDN`      | `agentage.io`         | Target host                                        |
+| `AGENTAGE_CONFIG_DIR`     | `~/.agentage`         | Config and credentials directory                   |
+| `AGENTAGE_TOKEN`          | -                     | Personal access token for CI and headless machines |
+| `AGENTAGE_EXTENSIONS`     | -                     | `1` turns on extension support (experimental)      |
+| `AGENTAGE_EXTENSIONS_DIR` | `<config>/extensions` | Where extensions are installed                     |
+| `NO_COLOR`                | -                     | Disable colored output                             |
 
 ## Develop
 
@@ -123,6 +146,9 @@ npm ci
 npm run verify
 npm run build && npm run test:e2e -- --grep @offline
 ```
+
+The e2e specs under `e2e/core/` read as scenarios: each title names the command and what must
+hold. They run against a loopback registry that serves the extensions under `fixtures/`.
 
 ## Release
 
