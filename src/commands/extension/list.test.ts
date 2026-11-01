@@ -1,10 +1,10 @@
 import chalk from 'chalk';
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerModule, rowLines, runModuleList, summaryLines } from './list.js';
-import { type ModuleRow, type ModulesGather, type ModulesStatus } from './rows.js';
+import { registerExtension, rowLines, runExtensionList, summaryLines } from './list.js';
+import { type ExtensionRow, type ExtensionsGather, type ExtensionsStatus } from './rows.js';
 
-const row = (extra: Partial<ModuleRow>): ModuleRow => ({
+const row = (extra: Partial<ExtensionRow>): ExtensionRow => ({
   id: 'hello',
   package: '@agentage/fixture-hello',
   mode: 'installed',
@@ -17,14 +17,14 @@ const row = (extra: Partial<ModuleRow>): ModuleRow => ({
   ...extra,
 });
 
-const status = (extra: Partial<ModulesStatus>): ModulesStatus => ({
+const status = (extra: Partial<ExtensionsStatus>): ExtensionsStatus => ({
   machine: { id: 'm_0000beef', name: 'box' },
   profile: { state: 'ok', version: 1, source: 'default', readOnly: false },
-  modules: [],
+  extensions: [],
   ...extra,
 });
 
-describe('module list lines', () => {
+describe('extension list lines', () => {
   let level: typeof chalk.level;
 
   beforeEach(() => {
@@ -36,11 +36,11 @@ describe('module list lines', () => {
     chalk.level = level;
   });
 
-  it('summarizes machine, profile and the module count for status', () => {
-    expect(summaryLines(status({ modules: [row({})] }))).toEqual([
+  it('summarizes machine, profile and the extension count for status', () => {
+    expect(summaryLines(status({ extensions: [row({})] }))).toEqual([
       'machine    m_0000beef (box)',
       'profile    version 1 (source: default)',
-      'modules    1',
+      'extensions 1',
     ]);
     const readOnly = { state: 'ok' as const, version: 2, source: 'file' as const, readOnly: true };
     expect(summaryLines(status({ profile: readOnly }))[1]).toBe(
@@ -53,7 +53,7 @@ describe('module list lines', () => {
     expect(summaryLines(invalid)[1]).toBe('profile    invalid');
   });
 
-  it('prints one aligned row per module with commands, last run and reason', () => {
+  it('prints one aligned row per extension with commands, last run and reason', () => {
     expect(
       rowLines([
         row({ commands: ['hello'], lastRun: { at: 'T', state: 'ok', error: null } }),
@@ -75,12 +75,12 @@ describe('module list lines', () => {
   });
 });
 
-describe('runModuleList', () => {
-  const capture = async (gathered: ModulesGather, json = false) => {
+describe('runExtensionList', () => {
+  const capture = async (gathered: ExtensionsGather, json = false) => {
     const out = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
-      const error = await runModuleList({ json }, () => Promise.resolve(gathered)).then(
+      const error = await runExtensionList({ json }, () => Promise.resolve(gathered)).then(
         () => null,
         (e: unknown) => e
       );
@@ -92,9 +92,9 @@ describe('runModuleList', () => {
     }
   };
 
-  it('says "no modules" for an empty set and prints warnings on stderr', async () => {
+  it('says "no extensions" for an empty set and prints warnings on stderr', async () => {
     const result = await capture({ status: status({}), warnings: ['w'] });
-    expect(result).toEqual({ stdout: 'no modules', stderr: 'warning: w', error: null });
+    expect(result).toEqual({ stdout: 'no extensions', stderr: 'warning: w', error: null });
   });
 
   it('--json prints machine, profile and the rows; an invalid profile then fails', async () => {
@@ -105,7 +105,7 @@ describe('runModuleList', () => {
   });
 });
 
-describe('registerModule', () => {
+describe('registerExtension', () => {
   const parse = async (...args: string[]) => {
     let out = '';
     let err = '';
@@ -113,22 +113,22 @@ describe('registerModule', () => {
     const program = new Command()
       .exitOverride()
       .configureOutput({ writeOut: (s) => void (out += s), writeErr: (s) => void (err += s) });
-    registerModule(program, list);
-    const code = await program.parseAsync(['node', 'agentage', 'module', ...args]).then(
+    registerExtension(program, list);
+    const code = await program.parseAsync(['node', 'agentage', 'extension', ...args]).then(
       () => 0,
       (e: { exitCode: number }) => e.exitCode
     );
     return { code, out, err, list };
   };
 
-  it('prints the group help for a bare `module` and exits 0', async () => {
+  it('prints the group help for a bare `extension` and exits 0', async () => {
     const result = await parse();
     expect(result.code).toBe(0);
-    expect(result.out).toContain('Usage: agentage module');
+    expect(result.out).toContain('Usage: agentage extension');
     expect(result.out).toContain('list [options]');
   });
 
-  it('runs `module list --json` and refuses an unknown subcommand', async () => {
+  it('runs `extension list --json` and refuses an unknown subcommand', async () => {
     const listed = await parse('list', '--json');
     expect(listed.list).toHaveBeenCalledWith({ json: true }, expect.anything());
     const unknown = await parse('nope');

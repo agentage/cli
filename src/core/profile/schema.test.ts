@@ -3,16 +3,16 @@ import { parseProfile, specProblem, toDocument, type ProfileParse } from './sche
 
 const two = {
   version: 1,
-  modules: { '@agentage/fixture-hello': '^1.0.0', '@agentage/fixture-world': '^1.0.0' },
+  extensions: { '@agentage/fixture-hello': '^1.0.0', '@agentage/fixture-world': '^1.0.0' },
   config: { hello: { greeting: 'hi' } },
   machines: { m_8f2a91c0: { off: ['@agentage/fixture-world'], config: { hello: { a: 1 } } } },
 };
 
 const errorsOf = (result: ProfileParse): string[] => (result.ok ? [] : result.errors);
 
-const withModule = (spec: unknown, name = '@agentage/x') => ({
+const withExtension = (spec: unknown, name = '@agentage/x') => ({
   version: 1,
-  modules: { [name]: spec },
+  extensions: { [name]: spec },
 });
 
 describe('parseProfile (schema v1)', () => {
@@ -32,12 +32,12 @@ describe('parseProfile (schema v1)', () => {
 
   it('defaults absent sections to empty maps', () => {
     const result = parseProfile({ version: 1 });
-    expect(result.ok && result.profile).toMatchObject({ modules: {}, config: {}, machines: {} });
+    expect(result.ok && result.profile).toMatchObject({ extensions: {}, config: {}, machines: {} });
   });
 
   it('accepts https tarball URLs and semver ranges', () => {
     for (const spec of ['https://example.com/x-1.0.0.tgz', '^1', '~1.2.3', '1.x', '>=1 <2', '*'])
-      expect(errorsOf(parseProfile(withModule(spec))), spec).toEqual([]);
+      expect(errorsOf(parseProfile(withExtension(spec))), spec).toEqual([]);
   });
 
   it.each([
@@ -49,7 +49,7 @@ describe('parseProfile (schema v1)', () => {
     ['https://localhost:8080/x.tgz', 'loopback URLs are refused'],
     ['https://[::1]/x.tgz', 'loopback URLs are refused'],
     ['https://', 'is not a valid https: URL'],
-    ['./modules/x', 'local paths are dev-only'],
+    ['./extensions/x', 'local paths are dev-only'],
     ['/abs/x', 'local paths are dev-only'],
     ['~/x', 'local paths are dev-only'],
     ['git+ssh://host/x.git', 'unsupported spec'],
@@ -58,14 +58,14 @@ describe('parseProfile (schema v1)', () => {
     ['', 'must be a non-empty string'],
     [2, 'must be a non-empty string'],
   ])('refuses %j naming the path', (spec, message) => {
-    const [error] = errorsOf(parseProfile(withModule(spec)));
-    expect(error).toContain('modules["@agentage/x"]');
+    const [error] = errorsOf(parseProfile(withExtension(spec)));
+    expect(error).toContain('extensions["@agentage/x"]');
     expect(error).toContain(message);
   });
 
   it('refuses an invalid package name', () => {
-    expect(errorsOf(parseProfile(withModule('^1', 'Bad Name')))).toEqual([
-      'modules["Bad Name"]: is not a valid package name',
+    expect(errorsOf(parseProfile(withExtension('^1', 'Bad Name')))).toEqual([
+      'extensions["Bad Name"]: is not a valid package name',
     ]);
   });
 
@@ -73,13 +73,13 @@ describe('parseProfile (schema v1)', () => {
     const errors = errorsOf(
       parseProfile({
         version: 1,
-        modules: [],
+        extensions: [],
         config: { hello: 'x' },
         machines: { m_1: { off: 'world', config: { hello: [] } }, m_2: 3 },
       })
     );
     expect(errors).toEqual([
-      'modules: must be an object',
+      'extensions: must be an object',
       'config["hello"]: must be an object',
       'machines["m_1"].off: must be an array of package names',
       'machines["m_1"].config["hello"]: must be an object',
@@ -107,7 +107,7 @@ describe('parseProfile (schema v1)', () => {
   });
 
   it('reads a higher major as read-only with a warning', () => {
-    const result = parseProfile({ version: 2, modules: { '@agentage/x': '^1' } });
+    const result = parseProfile({ version: 2, extensions: { '@agentage/x': '^1' } });
     expect(result.ok && result.readOnly).toBe(true);
     expect(result.ok && result.warnings[0]).toContain('version: 2 is newer');
   });

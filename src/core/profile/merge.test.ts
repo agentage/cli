@@ -16,7 +16,7 @@ const machine: MachineFile = {
 
 const profile: Profile = {
   version: 1,
-  modules: { [WORLD]: '^1.0.0', [HELLO]: '^1.0.0' },
+  extensions: { [WORLD]: '^1.0.0', [HELLO]: '^1.0.0' },
   config: { hello: { greeting: 'hi', tags: ['a', 'b'], keep: true } },
   machines: {
     m_8f2a91c0: {
@@ -50,12 +50,12 @@ describe('effective (T04)', () => {
     expect(eff.config['hello']?.['greeting']).toBe('hi');
   });
 
-  it('with no profile, only dev modules load', () => {
+  it('with no profile, only dev extensions load', () => {
     const eff = effective(null, machine);
     expect(eff).toEqual({ install: {}, load: [DEV], off: [], dev: machine.dev, config: {} });
   });
 
-  it('merges config maps by module id', () => {
+  it('merges config maps by extension id', () => {
     expect(mergeConfig({ a: { k: 1 } }, { b: { k: 2 } })).toEqual({ a: { k: 1 }, b: { k: 2 } });
   });
 });
@@ -63,7 +63,7 @@ describe('effective (T04)', () => {
 describe('keepMachine', () => {
   const next: Profile = {
     version: 1,
-    modules: { [HELLO]: '^2' },
+    extensions: { [HELLO]: '^2' },
     config: {},
     machines: { m_8f2a91c0: { off: [], config: {}, extra: {} } },
     extra: {},
@@ -71,7 +71,7 @@ describe('keepMachine', () => {
 
   it('replaces the shared fields and keeps this machine entry from the local copy', () => {
     const kept = keepMachine(next, profile, 'm_8f2a91c0');
-    expect(kept.modules).toEqual({ [HELLO]: '^2' });
+    expect(kept.extensions).toEqual({ [HELLO]: '^2' });
     expect(kept.machines['m_8f2a91c0']).toEqual(profile.machines['m_8f2a91c0']);
     expect(kept.machines['m_other']).toBeUndefined();
   });

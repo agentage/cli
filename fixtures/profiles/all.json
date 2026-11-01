@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "modules": {
+  "extensions": {
     "@agentage/fixture-dup-id": "^1.0.0",
     "@agentage/fixture-hello": "^1.0.0",
     "@agentage/fixture-old-engine": "^1.0.0",

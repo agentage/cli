@@ -53,7 +53,7 @@ describe('installer', () => {
     dir = mkdtempSync(join(tmpdir(), 'agentage-installer-'));
     npm = fakeNpm();
     deps = {
-      modulesDir: () => dir,
+      extensionsDir: () => dir,
       settings: () => ({ registry: 'http://r', timeoutMs: 1, userconfig: null, cache: null }),
       prepareNpm: vi.fn(async () => npm.npm),
       lock: vi.fn((_dir: string, fn: () => Promise<unknown>) => fn()) as InstallerDeps['lock'],
@@ -126,7 +126,7 @@ describe('installer', () => {
     npm = fakeNpm({ code: 1, stderr: lines });
     const failing = install({ ...TWO, '@agentage/fixture-missing': '^1' }, deps);
     await expect(failing).rejects.toThrow(
-      /^npm install failed \(exit 1\); modules\/current is unchanged\nnpm error line 10\n/
+      /^npm install failed \(exit 1\); extensions\/current is unchanged\nnpm error line 10\n/
     );
     await failing.catch((err: Error) => {
       expect(err.message.split('\n')).toHaveLength(21);
@@ -146,24 +146,24 @@ describe('installer', () => {
 
   it('refuses a name outside the scopes or a bad spec before taking the lock (R10)', async () => {
     await expect(install({ '@acme/x': '^1', [HELLO]: 'file:../x' }, deps)).rejects.toThrow(
-      /modules\["@acme\/x"\]: refused by the scope rule.*\nmodules\["@agentage\/fixture-hello"\]: file:/
+      /extensions\["@acme\/x"\]: refused by the scope rule.*\nextensions\["@agentage\/fixture-hello"\]: file:/
     );
     expect(deps.lock).not.toHaveBeenCalled();
   });
 
-  it('allows only @agentage unless AGENTAGE_MODULE_SCOPES widens it', () => {
+  it('allows only @agentage unless AGENTAGE_EXTENSION_SCOPES widens it', () => {
     expect(allowedScopes({})).toEqual(['@agentage']);
-    const env = { AGENTAGE_MODULE_SCOPES: ' acme, @beta ,,@agentage' };
+    const env = { AGENTAGE_EXTENSION_SCOPES: ' acme, @beta ,,@agentage' };
     expect(allowedScopes(env)).toEqual(['@agentage', '@acme', '@beta']);
     const names = ['left-pad', '@acme/x', '@agentage', '@agentagex/x', '@agentage/ok'];
     const problems = installSetProblems(Object.fromEntries(names.map((n) => [n, '^1'])));
     expect(problems).toHaveLength(4);
     expect(problems[0]).toBe(
-      'modules["left-pad"]: refused by the scope rule: only @agentage packages are installed ' +
-        '(AGENTAGE_MODULE_SCOPES widens it)'
+      'extensions["left-pad"]: refused by the scope rule: only @agentage packages are installed ' +
+        '(AGENTAGE_EXTENSION_SCOPES widens it)'
     );
     expect(installSetProblems({ '@acme/x': 'npm:y@1' }, ['@acme'])).toEqual([
-      'modules["@acme/x"]: npm: specs are refused; use a semver range or an https: tarball URL',
+      'extensions["@acme/x"]: npm: specs are refused; use a semver range or an https: tarball URL',
     ]);
   });
 
@@ -172,16 +172,16 @@ describe('installer', () => {
     expect(lastLines('')).toBe('');
   });
 
-  it('default deps read the modules dir and the npm env', () => {
-    process.env['AGENTAGE_MODULES_DIR'] = dir;
+  it('default deps read the extensions dir and the npm env', () => {
+    process.env['AGENTAGE_EXTENSIONS_DIR'] = dir;
     process.env['AGENTAGE_NPM_REGISTRY'] = 'http://127.0.0.1:1';
     try {
       expect(planInstall({}, defaultInstallerDeps)).toMatchObject({
-        modulesDir: dir,
+        extensionsDir: dir,
         registry: 'http://127.0.0.1:1',
       });
     } finally {
-      delete process.env['AGENTAGE_MODULES_DIR'];
+      delete process.env['AGENTAGE_EXTENSIONS_DIR'];
       delete process.env['AGENTAGE_NPM_REGISTRY'];
     }
   });

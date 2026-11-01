@@ -2,7 +2,7 @@ import { type MachineFile } from './machine.js';
 import { type ConfigMap, type Profile } from './schema.js';
 
 export interface Effective {
-  // Shared `modules` map: the same on every machine, so one lock serves them all.
+  // Shared `extensions` map: the same on every machine, so one lock serves them all.
   install: Record<string, string>;
   load: string[];
   off: string[];
@@ -17,7 +17,7 @@ export const mergeConfig = (shared: ConfigMap, local: ConfigMap): ConfigMap => {
 };
 
 export const effective = (profile: Profile | null, machine: MachineFile): Effective => {
-  const install = { ...profile?.modules };
+  const install = { ...profile?.extensions };
   const self = profile?.machines[machine.id];
   const off = self?.off ?? [];
   const kept = Object.keys(install).filter((name) => !off.includes(name));

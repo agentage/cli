@@ -51,7 +51,7 @@ jobs:
           retention-days: 7
 
   pack-consumer:
-    name: 📦 Pack consumer (module subpath)
+    name: 📦 Pack consumer (extension subpath)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -75,7 +75,7 @@ jobs:
           mkdir -p /tmp/pack
           npm pack --pack-destination /tmp/pack
 
-      - name: 🔌 Import @agentage/cli/module from a consumer
+      - name: 🔌 Import @agentage/cli/extension from a consumer
         run: |
           set -euo pipefail
           tarball=$(ls /tmp/pack/*.tgz)
@@ -83,7 +83,7 @@ jobs:
           cd "$consumer"
           npm init -y > /dev/null
           npm i "$tarball" --no-audit --no-fund
-          node --input-type=module -e "const m = await import('@agentage/cli/module'); if (m.MODULE_API_VERSION !== '1.0.0') process.exit(1); console.log('module subpath ok')"
+          node --input-type=module -e "const m = await import('@agentage/cli/extension'); if (m.EXTENSION_API_VERSION !== '1.0.0') process.exit(1); console.log('extension subpath ok')"
 
   e2e-live:
     name: 🧪 E2E vs ${{ inputs.target }}

@@ -19,9 +19,9 @@ import { mutateProfile, readProfile } from '../../core/profile/profile.js';
 import { parseProfile, type Profile, type ProfileParse } from '../../core/profile/schema.js';
 import { type SetupDeps, type SetupOptions } from '../auth/setup.js';
 import { rowLines } from './list.js';
-import { gatherModules, type ModulesGather } from './rows.js';
+import { gatherExtensions, type ExtensionsGather } from './rows.js';
 
-export interface ModuleSetupDeps extends SetupDeps {
+export interface ExtensionSetupDeps extends SetupDeps {
   readFile: (path: string) => string;
   readLocal: () => ProfileParse | null;
   loadMachine: () => Promise<MachineFile>;
@@ -29,12 +29,12 @@ export interface ModuleSetupDeps extends SetupDeps {
   setSource: (source: ProfileSource) => Promise<unknown>;
   plan: (set: Record<string, string>) => InstallPlan;
   install: (set: Record<string, string>) => Promise<InstallResult>;
-  gather: () => Promise<ModulesGather>;
+  gather: () => Promise<ExtensionsGather>;
   out: (text: string) => void;
   err: (text: string) => void;
 }
 
-export const moduleSetupDeps = (base: SetupDeps): ModuleSetupDeps => ({
+export const extensionSetupDeps = (base: SetupDeps): ExtensionSetupDeps => ({
   ...base,
   readFile: (path) => readFileSync(path, 'utf-8'),
   readLocal: () => readProfile(),
@@ -43,7 +43,7 @@ export const moduleSetupDeps = (base: SetupDeps): ModuleSetupDeps => ({
   setSource: (source) => setProfileSource(source),
   plan: (set) => planInstall(set),
   install: (set) => install(set),
-  gather: () => gatherModules(),
+  gather: () => gatherExtensions(),
   out: (text) => console.log(text),
   err: (text) => console.error(text),
 });
@@ -74,7 +74,7 @@ const parseText = (raw: string): ProfileParse => {
   }
 };
 
-const fileSource = (file: string, deps: ModuleSetupDeps): Source => {
+const fileSource = (file: string, deps: ExtensionSetupDeps): Source => {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(file))
     throw new Error(`${file}: profile URLs are not supported; pass a file path`);
   let raw: string;
@@ -87,15 +87,15 @@ const fileSource = (file: string, deps: ModuleSetupDeps): Source => {
 };
 
 // Without a cloud profile: the local profile.json, else the built-in default.
-const localSource = (deps: ModuleSetupDeps): Source => {
+const localSource = (deps: ExtensionSetupDeps): Source => {
   const parsed = deps.readLocal();
   if (parsed !== null) return sourceOf('profile.json', parsed);
   return { label: 'default profile', profile: defaultProfile(), warnings: [], fresh: true };
 };
 
-// Refused before anything is written, naming each module and the rule it broke.
+// Refused before anything is written, naming each extension and the rule it broke.
 const checked = (source: Source): Source => {
-  const problems = installSetProblems(source.profile.modules);
+  const problems = installSetProblems(source.profile.extensions);
   if (problems.length > 0) throw listed(source.label, 'is refused', problems);
   return source;
 };
@@ -103,7 +103,7 @@ const checked = (source: Source): Source => {
 const line = (label: string, value: string): string => `${label.padEnd(10)} ${value}`;
 
 const counted = (n: number): string =>
-  n === 0 ? 'no modules' : `${n} module${n === 1 ? '' : 's'}`;
+  n === 0 ? 'no extensions' : `${n} extension${n === 1 ? '' : 's'}`;
 
 const npmText = (plan: InstallPlan): string => {
   if (plan.npm === null) return plan.reuse ? 'skipped, tree already installed' : 'skipped';
@@ -119,7 +119,7 @@ export const planLines = (label: string, plan: InstallPlan): string[] => {
     line('dry run', 'nothing written'),
     line('profile', label),
     line('registry', plan.registry),
-    line('modules', plan.modulesDir),
+    line('extensions', plan.extensionsDir),
     line('install', counted(names.length)),
     ...names.map((name) => `  ${name.padEnd(width)}  ${plan.install[name] ?? ''}`),
     line('npm', npmText(plan)),
@@ -132,26 +132,26 @@ export const installLine = (result: InstallResult): string => {
   return line('install', `${counted(result.count)} in tree ${result.tree} (${how})`);
 };
 
-const printPlan = (source: Source, deps: ModuleSetupDeps): void => {
+const printPlan = (source: Source, deps: ExtensionSetupDeps): void => {
   for (const warning of source.warnings) deps.err(chalk.yellow(`warning: ${warning}`));
-  for (const text of planLines(source.label, deps.plan(source.profile.modules))) deps.out(text);
+  for (const text of planLines(source.label, deps.plan(source.profile.extensions))) deps.out(text);
 };
 
 // The rows print even after a failed install: they show what is still current.
-const installAndList = async (source: Source, deps: ModuleSetupDeps): Promise<void> => {
-  const outcome = await deps.install(source.profile.modules).then(
+const installAndList = async (source: Source, deps: ExtensionSetupDeps): Promise<void> => {
+  const outcome = await deps.install(source.profile.extensions).then(
     (result) => ({ result, error: null }),
     (error: unknown) => ({ result: null, error })
   );
   if (outcome.result) deps.out(installLine(outcome.result));
   const { status, warnings } = await deps.gather();
-  for (const text of rowLines(status.modules)) deps.out(text);
+  for (const text of rowLines(status.extensions)) deps.out(text);
   for (const warning of warnings) deps.err(chalk.yellow(`warning: ${warning}`));
   if (outcome.error) throw outcome.error;
 };
 
 // `--profile` never signs in; this machine's own entry in the local profile is kept.
-const fromFile = async (source: Source, deps: ModuleSetupDeps): Promise<void> => {
+const fromFile = async (source: Source, deps: ExtensionSetupDeps): Promise<void> => {
   const machine = await deps.loadMachine();
   await deps.saveProfile((current) => keepMachine(source.profile, current, machine.id));
   await deps.setSource('file');
@@ -160,7 +160,7 @@ const fromFile = async (source: Source, deps: ModuleSetupDeps): Promise<void> =>
 
 const UNAVAILABLE = 'cloud profile unavailable, using';
 
-const fromLocal = async (deps: ModuleSetupDeps): Promise<void> => {
+const fromLocal = async (deps: ExtensionSetupDeps): Promise<void> => {
   const source = checked(localSource(deps));
   if (!source.fresh) deps.err(chalk.dim(`${UNAVAILABLE} local profile.json`));
   else {
@@ -171,7 +171,10 @@ const fromLocal = async (deps: ModuleSetupDeps): Promise<void> => {
   await installAndList(source, deps);
 };
 
-export const runModuleSetup = async (opts: SetupOptions, deps: ModuleSetupDeps): Promise<void> => {
+export const runExtensionSetup = async (
+  opts: SetupOptions,
+  deps: ExtensionSetupDeps
+): Promise<void> => {
   if (opts.disconnect) return deps.signOut();
   const file = opts.profile === undefined ? null : checked(fileSource(opts.profile, deps));
   if (opts.dryRun) return printPlan(file ?? checked(localSource(deps)), deps);

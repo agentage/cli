@@ -3,11 +3,11 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { isRecord } from '../../lib/fs/json-file.js';
 import { manifestInfo, manifestProblem, type ManifestInfo } from './manifest.js';
 
-export type ModuleSource = 'tree' | 'dev';
+export type ExtensionSource = 'tree' | 'dev';
 
-export interface DiscoveredModule {
+export interface DiscoveredExtension {
   pkg: string;
-  source: ModuleSource;
+  source: ExtensionSource;
   dir: string;
   version: string | null;
   id: string | null;
@@ -21,13 +21,13 @@ export interface DiscoveredModule {
 }
 
 export interface DiscoverInput {
-  modulesDir: string;
+  extensionsDir: string;
   names: string[];
   dev: Record<string, string>;
 }
 
 export interface Discovery {
-  modules: DiscoveredModule[];
+  extensions: DiscoveredExtension[];
   warnings: string[];
 }
 
@@ -63,14 +63,18 @@ const readManifest = (dir: string, deps: DiscoverDeps): Record<string, unknown> 
   }
 };
 
-// `modules/current` names the tree; one without its `.complete` marker was never finished.
-export const currentTree = (modulesDir: string, deps: DiscoverDeps = defaultDeps): CurrentTree => {
-  const name = deps.readText(join(modulesDir, 'current'))?.trim() ?? '';
+// `extensions/current` names the tree; one without its `.complete` marker was never finished.
+export const currentTree = (
+  extensionsDir: string,
+  deps: DiscoverDeps = defaultDeps
+): CurrentTree => {
+  const name = deps.readText(join(extensionsDir, 'current'))?.trim() ?? '';
   if (name === '') return { dir: null, warning: null };
-  if (!TREE_NAME.test(name)) return { dir: null, warning: `modules/current: bad tree "${name}"` };
-  const dir = join(modulesDir, 'trees', name);
+  if (!TREE_NAME.test(name))
+    return { dir: null, warning: `extensions/current: bad tree "${name}"` };
+  const dir = join(extensionsDir, 'trees', name);
   if (deps.exists(join(dir, '.complete'))) return { dir, warning: null };
-  return { dir: null, warning: `modules tree "${name}" is incomplete and was ignored` };
+  return { dir: null, warning: `extensions tree "${name}" is incomplete and was ignored` };
 };
 
 const inside = (dir: string, entry: string): string | null => {
@@ -89,7 +93,7 @@ const entryProblem = (
   return deps.exists(path) ? null : `entry ${info.entry} not found`;
 };
 
-const blank = (pkg: string, source: ModuleSource, dir: string): DiscoveredModule => ({
+const blank = (pkg: string, source: ExtensionSource, dir: string): DiscoveredExtension => ({
   pkg,
   source,
   dir,
@@ -105,10 +109,10 @@ const blank = (pkg: string, source: ModuleSource, dir: string): DiscoveredModule
 
 const inspect = (
   pkg: string,
-  source: ModuleSource,
+  source: ExtensionSource,
   dir: string | null,
   deps: DiscoverDeps
-): DiscoveredModule => {
+): DiscoveredExtension => {
   const base = blank(pkg, source, dir ?? '');
   if (source === 'dev' && !isAbsolute(base.dir))
     return { ...base, problem: 'dev path not absolute' };
@@ -122,9 +126,9 @@ const inspect = (
 };
 
 // Every claimant of a shared id is invalid; a dev copy of the same package never reaches here.
-const markDuplicates = (modules: DiscoveredModule[]): DiscoveredModule[] =>
-  modules.map((p) => {
-    const others = modules.filter((o) => o !== p && p.id !== null && o.id === p.id);
+const markDuplicates = (extensions: DiscoveredExtension[]): DiscoveredExtension[] =>
+  extensions.map((p) => {
+    const others = extensions.filter((o) => o !== p && p.id !== null && o.id === p.id);
     if (others.length === 0 || p.problem) return p;
     return {
       ...p,
@@ -132,9 +136,9 @@ const markDuplicates = (modules: DiscoveredModule[]): DiscoveredModule[] =>
     };
   });
 
-// A peer counts as a module unless the tree holds it as a plain library without `agentage`.
-const modulePeers = (
-  p: DiscoveredModule,
+// A peer counts as an extension unless the tree holds it as a plain library without `agentage`.
+const extensionPeers = (
+  p: DiscoveredExtension,
   known: Set<string>,
   nodeModules: string | null,
   deps: DiscoverDeps
@@ -146,7 +150,7 @@ const modulePeers = (
   });
 
 export const discover = (input: DiscoverInput, deps: DiscoverDeps = defaultDeps): Discovery => {
-  const tree = currentTree(input.modulesDir, deps);
+  const tree = currentTree(input.extensionsDir, deps);
   const nodeModules = tree.dir === null ? null : join(tree.dir, 'node_modules');
   const installed = input.names.filter((name) => !(name in input.dev));
   const found = markDuplicates([
@@ -154,6 +158,9 @@ export const discover = (input: DiscoverInput, deps: DiscoverDeps = defaultDeps)
     ...Object.entries(input.dev).map(([name, path]) => inspect(name, 'dev', path, deps)),
   ]);
   const known = new Set(found.map((p) => p.pkg));
-  const modules = found.map((p) => ({ ...p, peers: modulePeers(p, known, nodeModules, deps) }));
-  return { modules, warnings: tree.warning === null ? [] : [tree.warning] };
+  const extensions = found.map((p) => ({
+    ...p,
+    peers: extensionPeers(p, known, nodeModules, deps),
+  }));
+  return { extensions, warnings: tree.warning === null ? [] : [tree.warning] };
 };

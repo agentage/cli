@@ -29,7 +29,7 @@ import {
   withInstallLock,
 } from './tree.js';
 
-describe('module trees', () => {
+describe('extension trees', () => {
   let dir: string;
 
   beforeEach(() => {
@@ -40,7 +40,7 @@ describe('module trees', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  const files = { manifest: '{"name":"agentage-modules"}\n', lock: '{"packages":{}}\n' };
+  const files = { manifest: '{"name":"agentage-extensions"}\n', lock: '{"packages":{}}\n' };
 
   it('names a tree by the normalized lock: stable, 16 hex, distinct per set', () => {
     const name = treeName(['a@1.0.0+x', 'b@1.0.0+y']);
@@ -49,7 +49,7 @@ describe('module trees', () => {
     expect(treeName([])).not.toBe(name);
   });
 
-  it('stages under a dot name that modules/current can never point at', () => {
+  it('stages under a dot name that extensions/current can never point at', () => {
     const staging = stageTree(dir, files);
     expect(staging.startsWith(join(dir, 'trees', '.staging-'))).toBe(true);
     expect(readdirSync(staging).sort()).toEqual(['package-lock.json', 'package.json']);
@@ -99,7 +99,7 @@ describe('module trees', () => {
     expect(readdirSync(join(dir, 'trees'))).toEqual(['kept']);
   });
 
-  it('promotes manifest and lock to the modules root, dropping a lock the tree lacks', () => {
+  it('promotes manifest and lock to the extensions root, dropping a lock the tree lacks', () => {
     promoteFiles(dir, files);
     expect(readText(join(dir, 'package.json'))).toBe(files.manifest);
     expect(readText(join(dir, 'package-lock.json'))).toBe(files.lock);

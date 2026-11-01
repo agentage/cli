@@ -1,19 +1,19 @@
 # fixtures
 
-Test-only module packages used by the e2e suite. Never published; each is scoped
-`@agentage/fixture-*`. The e2e registry packs every `module-*` folder with `npm pack` and serves
-it on loopback, so `setup --profile` installs them the way it installs real modules.
+Test-only extension packages used by the e2e suite. Never published; each is scoped
+`@agentage/fixture-*`. The e2e registry packs every `extension-*` folder with `npm pack` and serves
+it on loopback, so `setup --profile` installs them the way it installs real extensions.
 
-| Fixture             | `agentage.id` | What it covers                                             |
-| ------------------- | ------------- | ---------------------------------------------------------- |
-| `module-hello`      | `hello`       | contributes the `hello` command; returns `{ greet() }`     |
-| `module-world`      | `world`       | peer-depends on `@agentage/fixture-hello`; command `world` |
-| `module-old-engine` | `oldengine`   | `engines.agentage: "^0.1"`, never matches the module API   |
-| `module-dup-id`     | `hello`       | claims the same id as `module-hello`                       |
+| Fixture                | `agentage.id` | What it covers                                              |
+| ---------------------- | ------------- | ----------------------------------------------------------- |
+| `extension-hello`      | `hello`       | contributes the `hello` command; returns `{ greet() }`      |
+| `extension-world`      | `world`       | peer-depends on `@agentage/fixture-hello`; command `world`  |
+| `extension-old-engine` | `oldengine`   | `engines.agentage: "^0.1"`, never matches the extension API |
+| `extension-dup-id`     | `hello`       | claims the same id as `extension-hello`                     |
 
 `profiles/` holds the profile files the specs pass to `setup --profile`:
 
-| Profile          | Modules                                  | Used for                                        |
+| Profile          | Extensions                               | Used for                                        |
 | ---------------- | ---------------------------------------- | ----------------------------------------------- |
 | `two.json`       | hello + world                            | a normal install                                |
 | `all.json`       | every fixture                            | `invalid` (duplicate id, old engine), `blocked` |

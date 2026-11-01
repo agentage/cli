@@ -1,5 +1,5 @@
 import { isRecord } from '../../lib/fs/json-file.js';
-import { MODULE_API_VERSION } from '../../module.js';
+import { EXTENSION_API_VERSION } from '../../extension.js';
 import { isRange, satisfies } from '../semver-range.js';
 
 export const ID_PATTERN = /^[a-z][a-z0-9-]*$/;
@@ -72,14 +72,14 @@ const idProblem = (id: string | null): string | null => {
 const engineProblem = (engine: string, api: string): string | null => {
   if (!isRange(engine)) return `engines.agentage "${engine}" is not a supported range`;
   if (satisfies(api, engine)) return null;
-  return `engines.agentage "${engine}" does not match module API ${api}`;
+  return `engines.agentage "${engine}" does not match extension API ${api}`;
 };
 
 // Static checks only: the manifest is read as data and the entry is never imported.
 export const manifestProblem = (
   pkg: string,
   info: ManifestInfo,
-  api: string = MODULE_API_VERSION
+  api: string = EXTENSION_API_VERSION
 ): string | null => {
   if (info.name !== pkg) return `package.json name ${JSON.stringify(info.name)} is not ${pkg}`;
   return (

@@ -6,11 +6,15 @@ import {
   type SetupDeps,
   type SetupOptions,
 } from './commands/auth/setup.js';
-import { registerModule, runModuleList, type ModuleListOptions } from './commands/module/list.js';
-import { moduleSetupDeps, runModuleSetup } from './commands/module/setup.js';
+import {
+  registerExtension,
+  runExtensionList,
+  type ExtensionListOptions,
+} from './commands/extension/list.js';
+import { extensionSetupDeps, runExtensionSetup } from './commands/extension/setup.js';
 import { registerStatus, runStatus, type StatusOptions } from './commands/status/status.js';
 import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
-import { modulesEnabled } from './core/flag.js';
+import { extensionsEnabled } from './core/flag.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
@@ -19,7 +23,7 @@ export interface ProgramDeps {
   setup: (opts: SetupOptions) => Promise<void>;
   status: (opts: StatusOptions) => Promise<void>;
   update: (opts: UpdateOptions) => Promise<void>;
-  moduleList: (opts: ModuleListOptions) => Promise<void>;
+  extensionList: (opts: ExtensionListOptions) => Promise<void>;
   updateHint: () => string | null;
   refreshUpdateCache: () => Promise<void>;
   writeOut: (text: string) => void;
@@ -34,10 +38,12 @@ const setupDeps: SetupDeps = {
 
 const defaultDeps: ProgramDeps = {
   setup: (opts) =>
-    modulesEnabled() ? runModuleSetup(opts, moduleSetupDeps(setupDeps)) : runSetup(opts, setupDeps),
+    extensionsEnabled()
+      ? runExtensionSetup(opts, extensionSetupDeps(setupDeps))
+      : runSetup(opts, setupDeps),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
-  moduleList: (opts) => runModuleList(opts),
+  extensionList: (opts) => runExtensionList(opts),
   updateHint,
   refreshUpdateCache: () => refreshUpdateCache(),
   writeOut: (text) => void process.stdout.write(text),
@@ -85,7 +91,7 @@ export const createProgram = (deps: ProgramDeps = defaultDeps): Command => {
   registerSetup(program, withAction(deps, deps.setup, 'Setup failed: '));
   registerStatus(program, withAction(deps, deps.status));
   registerUpdate(program, withAction(deps, deps.update));
-  if (modulesEnabled()) registerModule(program, withAction(deps, deps.moduleList));
+  if (extensionsEnabled()) registerExtension(program, withAction(deps, deps.extensionList));
   return program;
 };
 

@@ -30,7 +30,7 @@ const isRunState = (value: unknown): value is RunState =>
   isRunStateName(value['state']) &&
   (value['error'] === undefined || value['error'] === null || typeof value['error'] === 'string');
 
-// Reads the core's own record of the last run; module logs are never consulted.
+// Reads the core's own record of the last run; extension logs are never consulted.
 export const readRunState = (id: string, deps: RunStateDeps = defaultDeps): RunState | null => {
   if (!ID_PATTERN.test(id)) return null;
   const found = readJson(join(deps.dir(), `${id}.json`), isRunState);

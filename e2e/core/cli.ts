@@ -1,7 +1,8 @@
 /**
  * The test kit for e2e/core: every spec gets `cli`, a fresh machine (throwaway config dir and
- * HOME, AGENTAGE_MODULES=1) wired to a loopback site and a loopback npm registry that serves the
- * fixture modules. `launcherMachine(env)` makes another one, e.g. a second machine or the flag off.
+ * HOME, AGENTAGE_EXTENSIONS=1) wired to a loopback site and a loopback npm registry that serves
+ * the fixture extensions. `launcherMachine(env)` makes another one, e.g. a second machine or the
+ * flag off.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -62,11 +63,11 @@ interface Site {
 
 const FIXTURES = join(process.cwd(), 'fixtures');
 
-// Every fixture module packed with `npm pack` and served on loopback, once per worker.
+// Every fixture extension packed with `npm pack` and served on loopback, once per worker.
 const startSite = async (root: string): Promise<Site & { close: () => Promise<void> }> => {
   const packDir = join(root, 'pack');
   mkdirSync(packDir);
-  const dirs = readdirSync(FIXTURES).filter((n) => n.startsWith('module-'));
+  const dirs = readdirSync(FIXTURES).filter((n) => n.startsWith('extension-'));
   const env = { npm_config_userconfig: join(root, '.npmrc'), npm_config_cache: join(root, '.npm') };
   const { runNpm } = await loadNpmCli();
   const packArgs = ['pack', ...dirs.map((d) => join(FIXTURES, d)), '--pack-destination', packDir];
@@ -81,10 +82,10 @@ const startSite = async (root: string): Promise<Site & { close: () => Promise<vo
 
 const machineEnv = (site: Site, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => ({
   ...stubEnv(site.stub),
-  AGENTAGE_MODULES: '1',
+  AGENTAGE_EXTENSIONS: '1',
   AGENTAGE_NPM_REGISTRY: site.registry,
-  AGENTAGE_MODULES_DIR: undefined,
-  AGENTAGE_MODULE_SCOPES: undefined,
+  AGENTAGE_EXTENSIONS_DIR: undefined,
+  AGENTAGE_EXTENSION_SCOPES: undefined,
   // Shared and outside HOME, so a spec can assert HOME stays empty.
   npm_config_cache: site.npmCache,
   ...env,

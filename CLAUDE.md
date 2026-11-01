@@ -1,9 +1,9 @@
 # CLAUDE.md - @agentage/cli
 
-The agentage CLI launcher core. Commands: `setup` (OAuth sign-in), `status`, `update`. Modules
-extend it through `src/core/`; with `AGENTAGE_MODULES=1`, `setup --profile` installs them and
-`module list` shows them. memory, vault, daemon, sync and MCP code lives in git history up to
-v0.37.2 and returns as modules.
+The agentage CLI launcher core. Commands: `setup` (OAuth sign-in), `status`, `update`.
+Extensions extend it through `src/core/`; with `AGENTAGE_EXTENSIONS=1`, `setup --profile`
+installs them and `extension list` shows them. memory, vault, daemon, sync and MCP code lives in
+git history up to v0.37.2 and returns as extensions.
 
 ## Layout
 - `src/cli.ts` - the bin: Node version guard, then a dynamic import of `program.ts` (excluded
@@ -12,8 +12,9 @@ v0.37.2 and returns as modules.
   never `process.exit`); one `withAction` error path for every command, the update hint,
   `NO_COLOR`
 - `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability:
-  `auth/` (setup), `status/`, `update/`, `module/` (`rows.ts` gathers the module rows,
-  `list.ts` prints them and registers the `module` group, `setup.ts` is the modules `setup` flow)
+  `auth/` (setup), `status/`, `update/`, `extension/` (`rows.ts` gathers the extension rows,
+  `list.ts` prints them and registers the `extension` group, `setup.ts` is the extensions
+  `setup` flow)
 - `src/lib/` - shared library, grouped by domain:
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,
@@ -26,17 +27,19 @@ v0.37.2 and returns as modules.
   - `npm/` - npm-cli (`resolveNpmCli`, `runNpm` as `node npm-cli.js`, `requireNpm10`)
   - `status/` - status-info (the `status` report)
   - `update/` - update-check, update-cache
-- `src/core/` - launcher core, gated by `AGENTAGE_MODULES=1`; imports nothing product-shaped (the
-  package guard enforces it)
+- `src/core/` - launcher core, gated by `AGENTAGE_EXTENSIONS=1`; imports nothing product-shaped
+  (the package guard enforces it)
   - `profile/` (schema v1 validator, `profile.json` reader and writer, `machine.json`, default
-    profile, install/load set merge) and `loader/` (manifests from `modules/current` and dev
-    paths, static states, `state/<id>.json` reader; never imports module code)
+    profile, install/load set merge) and `loader/` (manifests from `extensions/current` and dev
+    paths, static states, `state/<id>.json` reader; never imports extension code)
   - `installer/` - `npm.ts` (`node npm-cli.js`, scrubbed env), `tree.ts` (deterministic
-    `modules/package.json`, staged `modules/trees/<hash>/` + `.complete` + `modules/current`,
-    `install.lock` with a heartbeat), `compare-lock.ts` (normalized lock compare),
-    `installer.ts` (plan, install, scope rule; `InstallerDeps` injection)
-- `src/module.ts` - the `@agentage/cli/module` subpath export, versioned by `MODULE_API_VERSION`
-- `fixtures/` - test-only module packages (`@agentage/fixture-*`) and `profiles/`, never published
+    `extensions/package.json`, staged `extensions/trees/<hash>/` + `.complete` +
+    `extensions/current`, `install.lock` with a heartbeat), `compare-lock.ts` (normalized lock
+    compare), `installer.ts` (plan, install, scope rule; `InstallerDeps` injection)
+- `src/extension.ts` - the `@agentage/cli/extension` subpath export, versioned by
+  `EXTENSION_API_VERSION`
+- `fixtures/` - test-only extension packages (`@agentage/fixture-*`) and `profiles/`, never
+  published
 - `e2e/registry/` - in-process npm registry serving `npm pack` output to e2e on loopback
 - `scripts/bump-version.js` - release helper (`node scripts/bump-version.js patch|minor|major`)
 - `src/package-guard.test.ts` - CI guard: no product or agent-runtime imports; runtime deps stay
@@ -59,7 +62,7 @@ Drives the built `dist/cli.js` as a subprocess. Tiers are tags in the test title
   fetch; also tagged `@offline`, so it runs on every PR
 - `@smoke` - the read-only live tier: version + degraded signed-out status against the
   target (`AGENTAGE_SITE_FQDN`, default `agentage.io`); nothing signs in or writes
-`e2e/core/` holds the module scenarios, one requirement per test, on the `cli` kit in
+`e2e/core/` holds the extension scenarios, one requirement per test, on the `cli` kit in
 `e2e/core/cli.ts` (see `e2e/core/README.md`).
 Run via `npm run build && npm run test:e2e -- --grep @offline`; `@smoke` runs by manual dispatch
 of `e2e.yml` with a target.

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "modules": {
-    "@agentage/fixture-hello": "file:../module-hello"
+  "extensions": {
+    "@agentage/fixture-hello": "file:../extension-hello"
   }
 }

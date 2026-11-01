@@ -23,8 +23,8 @@ describe('readProfile', () => {
   });
 
   it('parses profile.json under the config dir', () => {
-    writeFileSync(join(dir, 'profile.json'), JSON.stringify({ version: 1, modules: {} }));
-    expect(readProfile()).toMatchObject({ ok: true, profile: { version: 1, modules: {} } });
+    writeFileSync(join(dir, 'profile.json'), JSON.stringify({ version: 1, extensions: {} }));
+    expect(readProfile()).toMatchObject({ ok: true, profile: { version: 1, extensions: {} } });
   });
 
   it('reports unparsable JSON instead of treating it as absent', () => {
@@ -73,7 +73,7 @@ describe('mutateProfile', () => {
     expect(seen).toEqual([null]);
     expect(JSON.parse(readFileSync(path, 'utf-8'))).toEqual({
       version: 1,
-      modules: {},
+      extensions: {},
       config: {},
       machines: {},
     });
@@ -83,12 +83,12 @@ describe('mutateProfile', () => {
   it('hands the newest local copy to fn and keeps unknown keys on the round trip', async () => {
     mkdirSync(join(dir, 'cfg'));
     const path = join(dir, 'cfg', 'profile.json');
-    writeFileSync(path, JSON.stringify({ version: 1, modules: { '@agentage/a': '^1' }, x: 1 }));
+    writeFileSync(path, JSON.stringify({ version: 1, extensions: { '@agentage/a': '^1' }, x: 1 }));
     const next = await mutateProfile((current) => ({
       ...(current ?? defaultProfile()),
-      modules: { ...current?.modules, '@agentage/b': '^2' },
+      extensions: { ...current?.extensions, '@agentage/b': '^2' },
     }));
-    expect(next.modules).toEqual({ '@agentage/a': '^1', '@agentage/b': '^2' });
+    expect(next.extensions).toEqual({ '@agentage/a': '^1', '@agentage/b': '^2' });
     expect(JSON.parse(readFileSync(path, 'utf-8'))).toMatchObject({ x: 1 });
   });
 });

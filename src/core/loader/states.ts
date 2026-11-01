@@ -1,4 +1,4 @@
-import { type DiscoveredModule } from './discover.js';
+import { type DiscoveredExtension } from './discover.js';
 
 export type StaticState = 'installed' | 'off' | 'blocked' | 'invalid' | 'missing';
 
@@ -7,7 +7,7 @@ export interface StaticResult {
   error: string | null;
 }
 
-type ByPkg = Map<string, DiscoveredModule>;
+type ByPkg = Map<string, DiscoveredExtension>;
 
 const reaches = (from: string, target: string, byPkg: ByPkg, seen: Set<string>): boolean =>
   (byPkg.get(from)?.peers ?? []).some((peer) => {
@@ -17,13 +17,13 @@ const reaches = (from: string, target: string, byPkg: ByPkg, seen: Set<string>):
     return reaches(peer, target, byPkg, seen);
   });
 
-const inCycle = (p: DiscoveredModule, byPkg: ByPkg): boolean =>
+const inCycle = (p: DiscoveredExtension, byPkg: ByPkg): boolean =>
   reaches(p.pkg, p.pkg, byPkg, new Set());
 
-const missingReason = (p: DiscoveredModule): string =>
+const missingReason = (p: DiscoveredExtension): string =>
   p.source === 'dev' ? `no package.json at ${p.dir}` : 'not installed in the current tree';
 
-const ownState = (p: DiscoveredModule, off: string[], byPkg: ByPkg): StaticResult => {
+const ownState = (p: DiscoveredExtension, off: string[], byPkg: ByPkg): StaticResult => {
   if (p.problem) return { state: 'invalid', error: p.problem };
   if (p.missing) return { state: 'missing', error: missingReason(p) };
   if (inCycle(p, byPkg)) return { state: 'invalid', error: 'peer dependency cycle' };
@@ -37,7 +37,7 @@ interface Walk {
   done: Map<string, StaticResult>;
 }
 
-const peerBlock = (p: DiscoveredModule, walk: Walk): StaticResult | null => {
+const peerBlock = (p: DiscoveredExtension, walk: Walk): StaticResult | null => {
   for (const peer of p.peers.filter((name) => !p.optionalPeers.includes(name))) {
     const target = walk.byPkg.get(peer);
     if (!target) return { state: 'blocked', error: `peer ${peer} is not in the profile` };
@@ -48,7 +48,7 @@ const peerBlock = (p: DiscoveredModule, walk: Walk): StaticResult | null => {
 };
 
 // Cycles are already invalid, so the recursion through peers always terminates.
-const resolveState = (p: DiscoveredModule, walk: Walk): StaticResult => {
+const resolveState = (p: DiscoveredExtension, walk: Walk): StaticResult => {
   const cached = walk.done.get(p.pkg);
   if (cached) return cached;
   const own: StaticResult = walk.own.get(p.pkg) ?? { state: 'invalid', error: null };
@@ -57,14 +57,14 @@ const resolveState = (p: DiscoveredModule, walk: Walk): StaticResult => {
   return result;
 };
 
-// The states `status` can know without running module code; `ok` and `failed` need a load.
+// The states `status` can know without running extension code; `ok` and `failed` need a load.
 export const staticStates = (
-  modules: DiscoveredModule[],
+  extensions: DiscoveredExtension[],
   off: string[]
 ): Map<string, StaticResult> => {
-  const byPkg: ByPkg = new Map(modules.map((p) => [p.pkg, p]));
-  const own = new Map(modules.map((p) => [p.pkg, ownState(p, off, byPkg)]));
+  const byPkg: ByPkg = new Map(extensions.map((p) => [p.pkg, p]));
+  const own = new Map(extensions.map((p) => [p.pkg, ownState(p, off, byPkg)]));
   const walk: Walk = { byPkg, own, done: new Map() };
-  for (const p of modules) resolveState(p, walk);
+  for (const p of extensions) resolveState(p, walk);
   return walk.done;
 };

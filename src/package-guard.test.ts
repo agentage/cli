@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { MODULE_API_VERSION } from './module.js';
+import { EXTENSION_API_VERSION } from './extension.js';
 
 const SRC = join(import.meta.dirname, '.');
 const PKG = join(import.meta.dirname, '..', 'package.json');
@@ -14,7 +14,7 @@ const sourceFiles = (dir: string): string[] =>
     return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [full] : [];
   });
 
-// No product code in the CLI: memory, MCP and agent-runtime packages return only as modules.
+// No product code in the CLI: memory, MCP and agent-runtime packages return only as extensions.
 const FORBIDDEN = [
   '@agentage/core',
   '@agentage/platform',
@@ -56,12 +56,12 @@ describe('package guard (launcher core)', () => {
     }
   });
 
-  it('exposes the module contract as a subpath export', () => {
+  it('exposes the extension contract as a subpath export', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
-      exports: { './module'?: { default?: string } };
+      exports: { './extension'?: { default?: string } };
     };
-    expect(pkg.exports['./module']?.default).toBe('./dist/module.js');
-    expect(MODULE_API_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(pkg.exports['./extension']?.default).toBe('./dist/extension.js');
+    expect(EXTENSION_API_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   it('runtime dependencies are exactly the launcher core set', () => {

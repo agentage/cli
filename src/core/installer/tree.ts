@@ -18,8 +18,8 @@ const MANIFEST_FILE = 'package.json';
 const TREES = 'trees';
 const COMPLETE = '.complete';
 // A fixed name keeps the lock's root entry identical in every tree directory.
-export const MANIFEST_NAME = 'agentage-modules';
-// Dot-prefixed: `modules/current` only accepts names starting with a letter or digit.
+export const MANIFEST_NAME = 'agentage-extensions';
+// Dot-prefixed: `extensions/current` only accepts names starting with a letter or digit.
 const STAGING_PREFIX = '.staging-';
 // An install runs for minutes: a long TTL plus a heartbeat keep a live holder from looking dead.
 const INSTALL_LOCK = { ttlMs: 2 * 60_000, hardStaleMs: 60 * 60_000, maxWaitMs: 30 * 60_000 };
@@ -45,10 +45,11 @@ export const manifestText = (install: Record<string, string>): string =>
 export const treeName = (entries: string[]): string =>
   createHash('sha256').update(entries.join('\n')).digest('hex').slice(0, 16);
 
-export const treePath = (modulesDir: string, name: string): string => join(modulesDir, TREES, name);
+export const treePath = (extensionsDir: string, name: string): string =>
+  join(extensionsDir, TREES, name);
 
-export const isComplete = (modulesDir: string, name: string): boolean =>
-  existsSync(join(treePath(modulesDir, name), COMPLETE));
+export const isComplete = (extensionsDir: string, name: string): boolean =>
+  existsSync(join(treePath(extensionsDir, name), COMPLETE));
 
 export const readText = (path: string): string | null => {
   try {
@@ -61,15 +62,15 @@ export const readText = (path: string): string | null => {
 const remove = (path: string): void => rmSync(path, { recursive: true, force: true });
 
 // Only called under the install lock, so every staging dir left over is from a dead run.
-export const clearStaging = (modulesDir: string): void => {
-  const trees = join(modulesDir, TREES);
+export const clearStaging = (extensionsDir: string): void => {
+  const trees = join(extensionsDir, TREES);
   if (!existsSync(trees)) return;
   for (const name of readdirSync(trees).filter((n) => n.startsWith(STAGING_PREFIX)))
     remove(join(trees, name));
 };
 
-export const stageTree = (modulesDir: string, files: TreeFiles): string => {
-  const trees = join(modulesDir, TREES);
+export const stageTree = (extensionsDir: string, files: TreeFiles): string => {
+  const trees = join(extensionsDir, TREES);
   mkdirSync(trees, { recursive: true, mode: 0o700 });
   const dir = mkdtempSync(join(trees, STAGING_PREFIX));
   writeFileSync(join(dir, MANIFEST_FILE), files.manifest);
@@ -80,21 +81,21 @@ export const stageTree = (modulesDir: string, files: TreeFiles): string => {
 export const discardTree = (dir: string): void => remove(dir);
 
 // `.complete` lands before the rename, so a tree appears finished or not at all.
-export const commitTree = (modulesDir: string, staging: string, name: string): void => {
-  const target = treePath(modulesDir, name);
+export const commitTree = (extensionsDir: string, staging: string, name: string): void => {
+  const target = treePath(extensionsDir, name);
   if (existsSync(join(target, COMPLETE))) return discardTree(staging);
   remove(target);
   writeFileSync(join(staging, COMPLETE), '');
   renameSync(staging, target);
 };
 
-export const pointCurrent = (modulesDir: string, name: string): void =>
-  writeTextAtomic(join(modulesDir, 'current'), `${name}\n`);
+export const pointCurrent = (extensionsDir: string, name: string): void =>
+  writeTextAtomic(join(extensionsDir, 'current'), `${name}\n`);
 
-// The modules root always describes the tree `current` names, never a failed attempt.
-export const promoteFiles = (modulesDir: string, files: TreeFiles): void => {
-  writeTextAtomic(join(modulesDir, MANIFEST_FILE), files.manifest);
-  const lock = join(modulesDir, LOCK_FILE);
+// The extensions root always describes the tree `current` names, never a failed attempt.
+export const promoteFiles = (extensionsDir: string, files: TreeFiles): void => {
+  writeTextAtomic(join(extensionsDir, MANIFEST_FILE), files.manifest);
+  const lock = join(extensionsDir, LOCK_FILE);
   if (files.lock === null) remove(lock);
   else writeTextAtomic(lock, files.lock);
 };
@@ -109,9 +110,9 @@ const heartbeat = async <T>(target: string, fn: () => Promise<T>): Promise<T> =>
   }
 };
 
-// A second run waits on `<modulesDir>/install.lock` instead of racing the first one.
-export const withInstallLock = <T>(modulesDir: string, fn: () => Promise<T>): Promise<T> => {
-  const target = join(modulesDir, 'install');
+// A second run waits on `<extensionsDir>/install.lock` instead of racing the first one.
+export const withInstallLock = <T>(extensionsDir: string, fn: () => Promise<T>): Promise<T> => {
+  const target = join(extensionsDir, 'install');
   const onWait = (): void =>
     console.error(`waiting for another install to finish (${target}.lock)`);
   return withFileLock(target, () => heartbeat(target, fn), { ...INSTALL_LOCK, onWait });

@@ -13,7 +13,7 @@ export interface MachineEntry {
 
 export interface Profile {
   version: number;
-  modules: Record<string, string>;
+  extensions: Record<string, string>;
   config: ConfigMap;
   machines: Record<string, MachineEntry>;
   extra: Record<string, unknown>;
@@ -28,7 +28,7 @@ interface Issues {
   warnings: string[];
 }
 
-const TOP_KEYS = ['version', 'modules', 'config', 'machines'];
+const TOP_KEYS = ['version', 'extensions', 'config', 'machines'];
 const MACHINE_KEYS = ['off', 'config'];
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
 const LOOPBACK_HOST = /^(?:localhost|.+\.localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1?\])$/i;
@@ -63,22 +63,22 @@ export const specProblem = (spec: string): string | null => {
   return isRange(spec) ? null : `is not a semver range; ${USE_INSTEAD}`;
 };
 
-const moduleProblem = (name: string, spec: unknown): string | null => {
+const extensionProblem = (name: string, spec: unknown): string | null => {
   if (!PACKAGE_NAME.test(name)) return 'is not a valid package name';
   if (typeof spec !== 'string' || spec.trim() === '') return 'must be a non-empty string';
   return specProblem(spec.trim());
 };
 
-const parseModules = (value: unknown, issues: Issues): Record<string, string> => {
+const parseExtensions = (value: unknown, issues: Issues): Record<string, string> => {
   if (value === undefined) return {};
-  if (!isRecord(value)) return fail(issues, 'modules: must be an object', {});
-  const modules: Record<string, string> = {};
+  if (!isRecord(value)) return fail(issues, 'extensions: must be an object', {});
+  const extensions: Record<string, string> = {};
   for (const [name, spec] of Object.entries(value)) {
-    const problem = moduleProblem(name, spec);
-    if (problem) issues.errors.push(`modules${at(name)}: ${problem}`);
-    else modules[name] = String(spec);
+    const problem = extensionProblem(name, spec);
+    if (problem) issues.errors.push(`extensions${at(name)}: ${problem}`);
+    else extensions[name] = String(spec);
   }
-  return modules;
+  return extensions;
 };
 
 const parseConfig = (value: unknown, path: string, issues: Issues): ConfigMap => {
@@ -144,7 +144,7 @@ export const parseProfile = (doc: unknown): ProfileParse => {
   const issues: Issues = { errors: [], warnings: [] };
   const profile: Profile = {
     version: parseVersionField(doc['version'], issues),
-    modules: parseModules(doc['modules'], issues),
+    extensions: parseExtensions(doc['extensions'], issues),
     config: parseConfig(doc['config'], 'config', issues),
     machines: parseMachines(doc['machines'], issues),
     extra: extraKeys(doc, TOP_KEYS, 'profile.json', issues),
@@ -158,7 +158,7 @@ export const parseProfile = (doc: unknown): ProfileParse => {
 // The inverse of parseProfile: unknown keys go back where they were found.
 export const toDocument = (profile: Profile): Record<string, unknown> => ({
   version: profile.version,
-  modules: profile.modules,
+  extensions: profile.extensions,
   config: profile.config,
   machines: Object.fromEntries(
     Object.entries(profile.machines).map(([id, m]) => [
