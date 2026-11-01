@@ -116,7 +116,7 @@ const answerTo = (fake: FakeAccount, r: FakeRequest): Response => {
     return r.method === 'GET' ? getProfile(fake, r) : putProfile(fake, r);
   const [, , , id, action] = r.path.split('/');
   const known = id !== undefined && fake.machines.has(id);
-  if (action === 'seen') return answer(known ? 204 : 404);
+  if (action === 'seen') return known ? answer(204) : failure(404, 'MACHINE_NOT_FOUND');
   if (r.method === 'PUT' && id) return putMachine(fake, id, r.body ?? {});
   if (!known || !id) return failure(404, 'MACHINE_NOT_FOUND');
   fake.machines.set(id, { ...fake.machines.get(id), ...r.body });

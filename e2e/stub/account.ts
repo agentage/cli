@@ -45,6 +45,7 @@ export const accountRoute = async (
   const mode = profile ? state.account.modes.profile : state.account.modes.machines;
   if (mode === 'hang') return NEVER;
   if (mode === '503') return failure(503, 'INTERNAL', 'temporarily unavailable');
+  if (mode === 'missing') return failure(404, 'NOT_FOUND', 'no such endpoint');
   const bearer = (header(req, 'authorization') ?? '').replace(/^Bearer /i, '');
   if (!liveAccess(state, bearer)) return failure(401, 'UNAUTHORIZED', 'Invalid or expired session');
   if (profile) return profileRoute(state, entry, body);

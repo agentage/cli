@@ -1,7 +1,7 @@
 /**
- * @offline - `agentage extension install` with AGENTAGE_EXTENSIONS=1: a package name or tarball
- * URL goes into profile.json, a local path into machine.json `dev`, `--off` into this machine's
- * off list; then it installs and loads the way setup does, and never signs in.
+ * @offline - `agentage extension install`: a package name or tarball URL goes into profile.json, a
+ * local path into machine.json `dev`, `--off` into this machine's off list; then it installs and
+ * loads the way setup does, and never signs in.
  */
 import { realpathSync } from 'node:fs';
 import { expect, test, type Machine } from './cli.js';

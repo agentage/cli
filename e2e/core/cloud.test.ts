@@ -1,8 +1,8 @@
 /**
- * @offline - the profile in your account with AGENTAGE_EXTENSIONS=1. Plain `setup` pulls it and
- * never pushes; the first signed-in `setup` creates it; `extension install`, `extension remove` and
- * `--off` push it once the new tree loaded; a push that loses a race replays once. The account is
- * the machine's loopback site: `cli.site` holds its profile and logs what the CLI sent.
+ * @offline - the profile in your account. Plain `setup` pulls it and never pushes; the first
+ * signed-in `setup` creates it; `extension install`, `extension remove` and `--off` push it once
+ * the new tree loaded; a push that loses a race replays once. The account is the machine's
+ * loopback site: `cli.site` holds its profile and logs what the CLI sent.
  */
 import { expect, test, type Machine } from './cli.js';
 
@@ -68,13 +68,16 @@ test.describe('agentage setup and the profile in your account @p0 @offline', () 
     expect(run.lines).toContain(HELLO);
   });
 
-  test('when your account answers 503 and there is no local profile.json, agentage setup exits 1 and installs nothing', async ({
+  test('when your account answers 503 and there is no local profile.json, agentage setup says so on one dim line, installs nothing and exits 0', async ({
     cli,
   }) => {
     cli.site.fail('profile');
     const run = await cli.signIn();
-    expect(run.code).toBe(1);
-    expect(run.stderr).toContain('cloud profile unavailable and there is no local profile.json');
+    expect(run.code).toBe(0);
+    expect(run.stderr.split('\n').filter((l) => l.includes('cloud profile'))).toEqual([
+      'cloud profile unavailable and no local profile.json, nothing installed (503 INTERNAL)',
+    ]);
+    expect(run.output).toMatch(/^extensions 0$/m);
     expect(cli.exists('profile.json')).toBe(false);
     expect(cli.exists('extensions')).toBe(false);
   });

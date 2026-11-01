@@ -18,10 +18,12 @@ export interface ExtensionCheckOptions {
 type BeforeLoad = (extensions: DiscoveredExtension[]) => Promise<void>;
 
 // Loads what can load, once: state files rewritten, rows carrying this run's ok and failed.
+// `tree` loads that tree instead of the current one.
 export const loadAndGather = async (
-  beforeLoad: BeforeLoad = async () => undefined
+  beforeLoad: BeforeLoad = async () => undefined,
+  tree?: string
 ): Promise<ExtensionsGather> => {
-  const found = scan(await loadMachine());
+  const found = scan(await loadMachine(), tree);
   const extensions = loadSet(found);
   await beforeLoad(extensions);
   const session = await loadExtensions(extensions);

@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto';
 import { createReadStream, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { type AddressInfo } from 'node:net';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { loadNpmCli } from './npm-cli.js';
 import { readPackedManifest, type PackedManifest } from './tar.js';
 
 interface PackedVersion {
+  dir: string;
   file: string;
   manifest: PackedManifest;
   integrity: string;
@@ -17,12 +18,15 @@ type PackIndex = Map<string, PackedVersion[]>;
 
 export interface Registry {
   url: string;
+  // Serves one more `npm pack` tarball from now on, as a publish would.
+  add: (tarball: string) => void;
   close: () => Promise<void>;
 }
 
-const pack = (packDir: string, file: string): PackedVersion => {
-  const bytes = readFileSync(join(packDir, file));
+const pack = (dir: string, file: string): PackedVersion => {
+  const bytes = readFileSync(join(dir, file));
   return {
+    dir,
     file,
     manifest: readPackedManifest(bytes),
     integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}`,
@@ -30,13 +34,18 @@ const pack = (packDir: string, file: string): PackedVersion => {
   };
 };
 
-const scan = (packDir: string): PackIndex => {
+// A version published again replaces the one before, as on a registry that allows it.
+const addTo = (index: PackIndex, packed: PackedVersion): void => {
+  const { name, version } = packed.manifest;
+  const others = (index.get(name) ?? []).filter((v) => v.manifest.version !== version);
+  index.set(name, [...others, packed]);
+};
+
+const scan = (packDirs: string[]): PackIndex => {
   const index: PackIndex = new Map();
-  for (const file of readdirSync(packDir).filter((f) => f.endsWith('.tgz'))) {
-    const packed = pack(packDir, file);
-    const name = packed.manifest.name;
-    index.set(name, [...(index.get(name) ?? []), packed]);
-  }
+  for (const dir of packDirs)
+    for (const file of readdirSync(dir).filter((f) => f.endsWith('.tgz')))
+      addTo(index, pack(dir, file));
   return index;
 };
 
@@ -79,7 +88,7 @@ const requestPath = (req: IncomingMessage, url: string): string => {
 };
 
 const serve =
-  (url: string, packDir: string, index: PackIndex) =>
+  (url: string, index: PackIndex) =>
   (req: IncomingMessage, res: ServerResponse): void => {
     const [name = '', file] = requestPath(req, url).split('/-/');
     const versions = index.get(name);
@@ -88,7 +97,7 @@ const serve =
     if (file === undefined) return sendJson(res, 200, packument(url, name, versions));
     if (!packed) return sendJson(res, 404, { error: 'not found' });
     res.writeHead(200, { 'content-type': 'application/octet-stream' });
-    createReadStream(join(packDir, packed.file)).pipe(res);
+    createReadStream(join(packed.dir, packed.file)).pipe(res);
   };
 
 const closeServer = (server: Server): Promise<void> =>
@@ -97,29 +106,42 @@ const closeServer = (server: Server): Promise<void> =>
     server.closeAllConnections();
   });
 
-export const startRegistry = async (packDir: string): Promise<Registry> => {
-  const index = scan(packDir);
+export const startRegistry = async (...packDirs: string[]): Promise<Registry> => {
+  const index = scan(packDirs);
   const server = createServer();
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
   });
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  server.on('request', serve(url, packDir, index));
-  return { url, close: () => closeServer(server) };
+  server.on('request', serve(url, index));
+  const add = (tarball: string): void => addTo(index, pack(dirname(tarball), basename(tarball)));
+  return { url, add, close: () => closeServer(server) };
 };
 
 const FIXTURES = join(process.cwd(), 'fixtures');
 
-// Every fixtures/extension-* packed with `npm pack` under `root` and served, read-only.
-export const startFixtureRegistry = async (root: string): Promise<Registry> => {
-  const packDir = join(root, 'pack');
-  mkdirSync(packDir);
-  const dirs = readdirSync(FIXTURES).filter((n) => n.startsWith('extension-'));
+// `npm pack` of `folders` into `destination`, npm's cache and userconfig kept under `root`.
+export const packFolders = async (folders: string[], destination: string, root: string) => {
+  mkdirSync(destination, { recursive: true });
   const env = { npm_config_userconfig: join(root, '.npmrc'), npm_config_cache: join(root, '.npm') };
   const { runNpm } = await loadNpmCli();
-  const packArgs = ['pack', ...dirs.map((d) => join(FIXTURES, d)), '--pack-destination', packDir];
-  const packed = await runNpm(packArgs, { env, timeoutMs: 120_000 });
+  const args = ['pack', ...folders, '--pack-destination', destination, '--json'];
+  const packed = await runNpm(args, { env, timeoutMs: 120_000 });
   if (packed.code !== 0) throw new Error(`npm pack failed:\n${packed.stderr}`);
-  return startRegistry(packDir);
+  return (JSON.parse(packed.stdout) as { filename: string }[]).map((p) =>
+    join(destination, p.filename)
+  );
+};
+
+// Every fixtures/extension-* packed under `root`; returns the folder holding the tarballs.
+export const packFixtures = async (root: string): Promise<string> => {
+  const dirs = readdirSync(FIXTURES).filter((n) => n.startsWith('extension-'));
+  const packDir = join(root, 'pack');
+  await packFolders(
+    dirs.map((d) => join(FIXTURES, d)),
+    packDir,
+    root
+  );
+  return packDir;
 };

@@ -1,7 +1,7 @@
 /**
- * @offline - the plan with AGENTAGE_EXTENSIONS=1: what `setup` would change to bring this machine
- * (the installed tree) to its profile. `setup --dry-run` prints it, `setup --check` verifies it and
- * exits 1 when anything would change, `extension list` and `status` show the drift.
+ * @offline - the plan: what `setup` would change to bring this machine (the installed tree) to its
+ * profile. `setup --dry-run` prints it, `setup --check` verifies it and exits 1 when anything
+ * would change, `extension list` and `status` show the drift.
  */
 import { expect, test, type Machine } from './cli.js';
 
@@ -41,7 +41,7 @@ test.describe('agentage setup --dry-run @p0 @offline', () => {
     expect(run.code).toBe(0);
     expect(run.lines).toEqual([
       'dry run    nothing written',
-      `registry   @agentage  ${cli.registry}`,
+      `registry   @agentage  ${cli.registry.url}`,
       'registry   default    https://registry.npmjs.org',
       '+ add @agentage/fixture-secret ^1',
       '- remove @agentage/fixture-world',

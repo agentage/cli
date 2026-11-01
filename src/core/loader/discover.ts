@@ -35,6 +35,8 @@ export interface DiscoverInput {
   dev: Record<string, string>;
   // Effective config per extension id.
   config: ConfigMap;
+  // A tree to read instead of the one extensions/current names: setup --latest loads it first.
+  tree?: string;
 }
 
 export interface Discovery {
@@ -153,7 +155,7 @@ const extensionPeers = (
   });
 
 export const discover = (input: DiscoverInput): Discovery => {
-  const tree = currentTree(input.extensionsDir);
+  const tree = input.tree ? { dir: input.tree, warning: null } : currentTree(input.extensionsDir);
   const nodeModules = tree.dir === null ? null : join(tree.dir, 'node_modules');
   const installed = input.names.filter((name) => !(name in input.dev));
   const found = markDuplicates(

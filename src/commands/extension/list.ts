@@ -29,7 +29,8 @@ const INSTALL_HELP = `
 <name> is resolved in this order: a local path (./path or /path) is a dev extension, kept in
 machine.json by its real path and loaded on this machine only, in place of an installed copy of
 the same package; http:, file:, npm: and github: are refused; an https: tarball URL and a
-package name are used as written (a name without @<range> is pinned to ^ its latest version);
+package name are used as written (a name without @<range> is pinned to ^ its newest version
+whose engines.agentage fits this CLI's extension API, naming each newer version it skipped);
 a short name like memory is @agentage/extension-memory, else agentage-extension-memory. A
 package goes into profile.json (created from the default profile when absent), from the
 registry the profile names for its scope; --off keeps it from loading on this machine. Then

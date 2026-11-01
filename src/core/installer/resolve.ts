@@ -1,13 +1,18 @@
 import { realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
+import { EXTENSION_API_VERSION } from '../../extension.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
+import { type NpmResult } from '../../lib/npm/npm-cli.js';
 import { PACKAGE_NAME, specProblem } from '../profile/schema.js';
+import { needs, newestCompatible, parsePublished, type Published } from './compat.js';
 import { lastLines } from './installer.js';
-import { type NpmManifest } from './npm.js';
+import { type LookupCommand, type NpmManifest } from './npm.js';
 
 // A package goes into profile.json; a dev extension into machine.json, by its real path.
+// `skipped`: newer versions left out because their engines.agentage does not fit.
 export type Resolved =
-  { kind: 'package'; name: string; spec: string } | { kind: 'dev'; name: string; path: string };
+  | { kind: 'package'; name: string; spec: string; skipped: Published[] }
+  | { kind: 'dev'; name: string; path: string };
 
 export interface Found {
   name: string;
@@ -16,6 +21,17 @@ export interface Found {
 
 // What the registry has for one spec; null when it does not have the package.
 export type Lookup = (spec: string) => Promise<Found | null>;
+
+// Every release of a name with its engines; null when the registry does not have it.
+export type Versions = (name: string) => Promise<Published[] | null>;
+
+export interface Registry {
+  find: Lookup;
+  versions: Versions;
+}
+
+// Every release: a range, not `*`, which npm view reads as the `latest` tag alone.
+const EVERY_RELEASE = '>=0.0.0';
 
 const LOCAL = /^\.{1,2}(?:[/\\]|$)/;
 const REFUSED = /^(npm|github|file|http):/i;
@@ -69,28 +85,48 @@ const firstFound = async (specs: string[], input: string, look: Lookup): Promise
 const fromUrl = async (url: string, look: Lookup): Promise<Resolved> => {
   const problem = specProblem(url);
   if (problem) throw new Error(`${url}: ${problem}`);
-  return { kind: 'package', name: (await firstFound([url], url, look)).name, spec: url };
+  const { name } = await firstFound([url], url, look);
+  return { kind: 'package', name, spec: url, skipped: [] };
 };
 
-// `name@range`; without a range, the latest version pinned as `^<version>`.
-const fromName = async (input: string, look: Lookup): Promise<Resolved> => {
+const pinned = (input: string, name: string, published: Published[]): Resolved => {
+  const { version, skipped } = newestCompatible(published);
+  if (version !== null) return { kind: 'package', name, spec: `^${version}`, skipped };
+  const newest = skipped[0] === undefined ? '' : ` (${needs(skipped[0])})`;
+  const api = `extension API ${EXTENSION_API_VERSION}`;
+  throw new Error(`${input}: no published version works with ${api}${newest}`);
+};
+
+// The first candidate the registry has, at its newest version this CLI can load.
+const compatible = async (input: string, name: string, versions: Versions) => {
+  const names = candidatesFor(name);
+  for (const candidate of names) {
+    const published = await versions(candidate);
+    if (published !== null) return pinned(input, candidate, published);
+  }
+  throw new Error(`${input}: not found; tried ${names.join(', ')}`);
+};
+
+// `name@range` keeps the range; without one, the newest compatible version as `^<version>`.
+const fromName = async (input: string, registry: Registry): Promise<Resolved> => {
   const at = input.indexOf('@', 1);
   const name = at === -1 ? input : input.slice(0, at);
   const range = at === -1 ? null : input.slice(at + 1);
   if (!PACKAGE_NAME.test(name)) throw new Error(`${input}: not a package name`);
   const problem = range === null ? null : specProblem(range);
   if (problem) throw new Error(`${input}: ${problem}`);
-  const specs = candidatesFor(name).map((c) => (range === null ? c : `${c}@${range}`));
-  const found = await firstFound(specs, input, look);
-  return { kind: 'package', name: found.name, spec: range ?? `^${found.version}` };
+  if (range === null) return compatible(input, name, registry.versions);
+  const specs = candidatesFor(name).map((c) => `${c}@${range}`);
+  const found = await firstFound(specs, input, registry.find);
+  return { kind: 'package', name: found.name, spec: range, skipped: [] };
 };
 
 // A local path, then refused schemes, then a tarball URL, then a package or short name.
-export const resolveName = async (input: string, look: Lookup): Promise<Resolved> => {
+export const resolveName = async (input: string, registry: Registry): Promise<Resolved> => {
   if (LOCAL.test(input) || isAbsolute(input)) return devExtension(input);
   const refused = refusal(input);
   if (refused) throw new Error(`${input}: ${refused}`);
-  return HTTPS.test(input) ? fromUrl(input, look) : fromName(input, look);
+  return HTTPS.test(input) ? fromUrl(input, registry.find) : fromName(input, registry);
 };
 
 const parseFound = (stdout: string): Found | null => {
@@ -103,20 +139,30 @@ const parseFound = (stdout: string): Found | null => {
   }
 };
 
-// npm is prepared on the first question; E404 means absent, any other failure stops the install.
+// E404 means absent; any other failure, or an answer that does not parse, stops the install.
+const answerOf = <T>(spec: string, res: NpmResult, parse: (stdout: string) => T | null) => {
+  if (res.code !== 0 && /\bE404\b/.test(`${res.stdout}\n${res.stderr}`)) return null;
+  const parsed = res.code === 0 ? parse(res.stdout) : null;
+  if (parsed !== null) return parsed;
+  // With --json, npm repeats its stderr lines as a JSON object on stdout.
+  const why = lastLines(res.stderr.trim() === '' ? res.stdout : res.stderr);
+  throw new Error(`npm could not read ${spec} (exit ${res.code})\n${why}`);
+};
+
+// npm is prepared on the first question, through the registries the profile routes.
 export const registryLookup = (
   prepare: () => Promise<NpmManifest>,
   registries: Record<string, string>
-): Lookup => {
+): Registry => {
   let manifest: Promise<NpmManifest> | undefined;
-  return async (spec) => {
+  const ask = async (command: LookupCommand, spec: string) => {
     manifest ??= prepare();
-    const res = await (await manifest)(spec, registries);
-    if (res.code !== 0 && /\bE404\b/.test(`${res.stdout}\n${res.stderr}`)) return null;
-    const found = res.code === 0 ? parseFound(res.stdout) : null;
-    if (found) return found;
-    // With --json, npm repeats its stderr lines as a JSON object on stdout.
-    const why = lastLines(res.stderr.trim() === '' ? res.stdout : res.stderr);
-    throw new Error(`npm could not read ${spec} (exit ${res.code})\n${why}`);
+    return (await manifest)(command, spec, registries);
   };
+  const versions = async (name: string) => {
+    const spec = `${name}@${EVERY_RELEASE}`;
+    return answerOf(spec, await ask('view', spec), parsePublished);
+  };
+  const find = async (spec: string) => answerOf(spec, await ask('pack', spec), parseFound);
+  return { find, versions };
 };

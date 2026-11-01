@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, vi } from 'vitest';
 import { test, type ConfigDir } from '../../test/config-dir.js';
-import { disposeAll } from './dispose.js';
+import { disposeAll, holdSignals } from './dispose.js';
 
 // hello's own log, one parsed line per entry, without the timestamps.
 const logOf = (dir: ConfigDir): Record<string, unknown>[] =>
@@ -49,5 +49,47 @@ describe("disposing an extension's subscriptions", () => {
       { message: 'dispose', subscription: 0, result: 'stuck' },
       { message: 'dispose', subscription: 1, result: 'done' },
     ]);
+  });
+});
+
+describe('a signal while extensions are loaded', () => {
+  test.for(['SIGINT', 'SIGTERM'] as const)(
+    '%s waits for disposal, then is raised again with no handler of ours left: the exit it would have had (130, 143)',
+    async (signal) => {
+      const seen: string[] = [];
+      // Stands in for the default action, which would end this test process.
+      const exitWouldHappen = (): void => void seen.push(signal);
+      process.on(signal, exitWouldHappen);
+      const ours = process.listenerCount(signal);
+      const release = holdSignals(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        seen.push('disposed');
+      });
+      try {
+        process.kill(process.pid, signal);
+        await vi.waitFor(() => expect(seen).toHaveLength(3));
+        expect(seen).toEqual([signal, 'disposed', signal]);
+        expect(process.listenerCount(signal)).toBe(ours);
+      } finally {
+        release();
+        process.off(signal, exitWouldHappen);
+      }
+    }
+  );
+
+  test('released once the command finished, a signal disposes nothing', async () => {
+    const seen: string[] = [];
+    const exitWouldHappen = (): void => void seen.push('SIGTERM');
+    process.on('SIGTERM', exitWouldHappen);
+    const counts = () => [process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')];
+    const before = counts();
+    holdSignals(async () => void seen.push('disposed'))();
+    try {
+      expect(counts()).toEqual(before);
+      process.kill(process.pid, 'SIGTERM');
+      await vi.waitFor(() => expect(seen).toEqual(['SIGTERM']));
+    } finally {
+      process.off('SIGTERM', exitWouldHappen);
+    }
   });
 });

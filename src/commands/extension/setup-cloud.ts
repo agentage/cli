@@ -39,13 +39,15 @@ const localCopy = (): Profile | null => {
 const mirroredEtag = (machine: MachineFile): string | null =>
   machine.profileSource === 'cloud' && readProfile()?.ok === true ? machine.profileEtag : null;
 
+// Without the account: the local profile.json; with none, nothing to install, and setup goes on.
 const fromLocalCopy = async (reason: string, deps: EditDeps): Promise<void> => {
   const local = localCopy();
+  const unavailable = 'cloud profile unavailable';
   if (local === null)
-    throw new Error(
-      `cloud profile unavailable and there is no local profile.json (${reason}); nothing installed`
+    return console.error(
+      chalk.dim(`${unavailable} and no local profile.json, nothing installed (${reason})`)
     );
-  console.error(chalk.dim(`cloud profile unavailable, using local profile.json (${reason})`));
+  console.error(chalk.dim(`${unavailable}, using local profile.json (${reason})`));
   await installAndLoad(local, deps.npm);
 };
 

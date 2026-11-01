@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { type StatusReport } from '../../lib/status/status-info.js';
 import { type ExtensionsGather } from '../extension/rows.js';
 import { printStatus, registerStatus, runStatus, type StatusDeps } from './status.js';
@@ -57,16 +57,6 @@ const depsWith = (extensions: StatusDeps['extensions']): StatusDeps => ({
 });
 
 describe('runStatus', () => {
-  it("with the extensions flag off prints exactly today's report", async () => {
-    const human = await capture(depsWith(() => Promise.resolve(null)));
-    expect(human).toEqual({ stdout: captureLines(baseReport), stderr: '', error: null });
-    const json = await capture(
-      depsWith(() => Promise.resolve(null)),
-      true
-    );
-    expect(json.stdout).toBe(JSON.stringify(baseReport, null, 2));
-  });
-
   it("appends only machine, profile, the extension count and the plan after today's lines and keys", async () => {
     const human = await capture(depsWith(() => Promise.resolve(gathered)));
     expect(human.stdout).toBe(
@@ -119,17 +109,6 @@ describe('runStatus', () => {
 });
 
 describe('registerStatus help', () => {
-  let saved: string | undefined;
-
-  beforeEach(() => {
-    saved = process.env['AGENTAGE_EXTENSIONS'];
-  });
-
-  afterEach(() => {
-    if (saved === undefined) delete process.env['AGENTAGE_EXTENSIONS'];
-    else process.env['AGENTAGE_EXTENSIONS'] = saved;
-  });
-
   const helpOf = (): string => {
     let text = '';
     const program = new Command().configureOutput({ writeOut: (chunk) => void (text += chunk) });
@@ -138,16 +117,10 @@ describe('registerStatus help', () => {
     return text;
   };
 
-  it('is unchanged while the extensions flag is off', () => {
-    delete process.env['AGENTAGE_EXTENSIONS'];
-    expect(helpOf()).toContain('Show CLI, account, and endpoint status');
-    expect(helpOf()).not.toContain('Extensions:');
-  });
-
-  it('describes the extension lines with the flag on', () => {
-    process.env['AGENTAGE_EXTENSIONS'] = '1';
+  it('describes the machine, profile and extension lines, with no switch to turn them on', () => {
     const help = helpOf();
     expect(help).toContain('machine, profile, and extension status');
     expect(help).toContain('agentage extension list shows one row per extension');
+    expect(help).not.toContain('AGENTAGE_EXTENSIONS');
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect } from 'vitest';
 import { fakeAccount } from '../../test/account.js';
 import { output, test } from '../../test/config-dir.js';
+import { type CloudFetch } from './cloud.js';
 import { VERSION } from '../../utils/version.js';
 import { disconnectMachine, registerMachine, seenMachine } from './register.js';
 
@@ -41,6 +42,18 @@ describe('this machine in the account', () => {
     expect(await seenMachine(account.fetch, BOX.id)).toBe(true);
     account.fail('machines', 503);
     expect(await seenMachine(account.fetch, BOX.id)).toBeNull();
+  });
+
+  test('a 404 without the machines code is unknown, not false: an API without the route is as good as no answer', async () => {
+    const answering =
+      (body: string): CloudFetch =>
+      async () =>
+        new Response(body, { status: 404 });
+    const noRoute = JSON.stringify({ error: { code: 'NOT_FOUND', message: 'no such endpoint' } });
+    expect(await seenMachine(answering(noRoute), BOX.id)).toBeNull();
+    expect(await seenMachine(answering(''), BOX.id)).toBeNull();
+    const unknown = JSON.stringify({ success: false, error: { code: 'MACHINE_NOT_FOUND' } });
+    expect(await seenMachine(answering(unknown), BOX.id)).toBe(false);
   });
 
   test('setup --disconnect sends PATCH state disconnected', async () => {

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect } from 'vitest';
+import { afterEach, describe, expect } from 'vitest';
 import { run, type ProgramDeps } from '../../program.js';
 import { output, test, type ConfigDir } from '../../test/config-dir.js';
 
@@ -42,10 +42,6 @@ const contributing = (dir: ConfigDir, id: string, register: string): void =>
   });
 
 describe('agentage <extension command>', () => {
-  beforeEach(() => {
-    process.env['AGENTAGE_EXTENSIONS'] = '1';
-  });
-
   afterEach(() => {
     delete process.env['AGENTAGE_EXTENSIONS'];
   });
@@ -107,12 +103,9 @@ describe('agentage <extension command>', () => {
     expect(fails.err).toBe('nope\n');
   });
 
-  test('with AGENTAGE_EXTENSIONS unset, no extension command exists', async ({ dir }) => {
-    delete process.env['AGENTAGE_EXTENSIONS'];
+  test('AGENTAGE_EXTENSIONS is ignored: set to 0, agentage hello still runs', async ({ dir }) => {
+    process.env['AGENTAGE_EXTENSIONS'] = '0';
     helloAndWorld(dir);
-    const hello = await agentage('hello');
-    expect(hello.code).toBe(2);
-    expect(hello.err).toContain("error: unknown command 'hello'");
-    expect(hello.err).not.toContain('core:');
+    expect(await agentage('hello')).toMatchObject({ code: 0, lines: ['hello from hello'] });
   });
 });

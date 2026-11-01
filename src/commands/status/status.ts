@@ -1,6 +1,5 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
-import { extensionsEnabled } from '../../core/flag.js';
 import { resolveAuth } from '../../lib/auth/credentials.js';
 import { siteFqdn } from '../../lib/net/origins.js';
 import { gatherStatus, type StatusReport } from '../../lib/status/status-info.js';
@@ -65,17 +64,14 @@ export interface StatusOptions {
 
 export interface StatusDeps {
   gather: (opts: StatusOptions) => Promise<StatusReport>;
-  // null while the extensions flag is off, so today's output stays byte-identical.
-  extensions: (opts: StatusOptions) => Promise<ExtensionsGather | null>;
+  extensions: (opts: StatusOptions) => Promise<ExtensionsGather>;
 }
 
 // `account` false: the report that closes setup, which reached the account already.
 export const statusDeps = (account = true): StatusDeps => ({
   gather: (opts) => gatherStatus(resolveAuth({ token: opts.token }), siteFqdn()),
-  extensions: (opts) => {
-    if (!extensionsEnabled()) return Promise.resolve(null);
-    return account ? gatherWithAccount(signedInAccount({ token: opts.token })) : gatherExtensions();
-  },
+  extensions: (opts) =>
+    account ? gatherWithAccount(signedInAccount({ token: opts.token })) : gatherExtensions(),
 });
 
 type ExtensionsOutcome = { gathered: ExtensionsGather | null; error: unknown };
@@ -88,7 +84,8 @@ const settle = async (deps: StatusDeps, opts: StatusOptions): Promise<Extensions
   }
 };
 
-// With the extensions flag on, `--json` adds machine, profile, the extension count and the plan.
+// `--json` adds machine, profile, the extension count and the plan after the report's own keys;
+// when the extension side failed, the report alone.
 const jsonOf = (report: StatusReport, gathered: ExtensionsGather | null): object => {
   if (!gathered) return report;
   const { machine, profile, extensions, plan } = gathered.status;
@@ -127,18 +124,14 @@ export const registerStatus = (
   program: Command,
   action: (opts: StatusOptions) => Promise<void>
 ): void => {
-  const command = program
+  program
     .command('status')
-    .description(
-      extensionsEnabled()
-        ? 'Show CLI, account, endpoint, machine, profile, and extension status'
-        : 'Show CLI, account, and endpoint status'
-    )
+    .description('Show CLI, account, endpoint, machine, profile, and extension status')
     .option('--json', 'machine-readable output')
     .option(
       '--token <token>',
       'authenticate with a personal access token (aga_...); or set AGENTAGE_TOKEN'
     )
+    .addHelpText('after', EXTENSIONS_HELP)
     .action(action);
-  if (extensionsEnabled()) command.addHelpText('after', EXTENSIONS_HELP);
 };

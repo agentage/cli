@@ -6,13 +6,27 @@ export const DEFAULT_REGISTRY = 'https://registry.npmjs.org';
 const NPM_TIMEOUT_MS = 10 * 60_000;
 const LOOKUP_TIMEOUT_MS = 2 * 60_000;
 
-export type NpmCommand = 'ci' | 'install';
+export type NpmCommand = 'ci' | 'install' | 'update';
 
 // The installer's one seam: unit tests play npm, everything else runs on real files.
-export type Npm = (command: NpmCommand, tree: string) => Promise<NpmResult>;
+// `packages` limits an update to those packages.
+export type Npm = (command: NpmCommand, tree: string, packages?: string[]) => Promise<NpmResult>;
 
-// `extension install`'s seam: what one spec resolves to, read by npm without installing it.
-export type NpmManifest = (spec: string, registries: Record<string, string>) => Promise<NpmResult>;
+// pack: what one spec resolves to; view: every release of a name with its engines.
+export type LookupCommand = 'pack' | 'view';
+
+// `extension install`'s seam: what the registry has, read by npm without installing anything.
+export type NpmManifest = (
+  command: LookupCommand,
+  spec: string,
+  registries: Record<string, string>
+) => Promise<NpmResult>;
+
+// `name` keeps every version an object: npm view unwraps to bare values when the first has one field.
+const LOOKUP_FLAGS: Record<LookupCommand, string[]> = {
+  pack: ['--dry-run', '--json'],
+  view: ['name', 'version', 'engines', '--json'],
+};
 
 // npm reads its env config case-insensitively, so either spelling may carry these paths.
 const npmConfig = (env: NodeJS.ProcessEnv, key: string): string | null => {
@@ -32,8 +46,14 @@ const configFlags = (env: NodeJS.ProcessEnv): string[] => {
 };
 
 // Scoped registries come from the tree's own .npmrc; runNpm appends --no-audit --no-fund.
-export const npmArgs = (command: NpmCommand, tree: string, env = process.env): string[] => [
+export const npmArgs = (
+  command: NpmCommand,
+  tree: string,
+  env = process.env,
+  packages: string[] = []
+): string[] => [
   command,
+  ...packages,
   '--prefix',
   tree,
   '--registry',
@@ -45,15 +65,15 @@ export const npmArgs = (command: NpmCommand, tree: string, env = process.env): s
 
 // `--prefix` keeps a project .npmrc in the working directory out of it; scopes go as flags.
 export const manifestArgs = (
+  command: LookupCommand,
   spec: string,
   registries: Record<string, string>,
   prefix: string,
   env = process.env
 ): string[] => [
-  'pack',
+  command,
   spec,
-  '--dry-run',
-  '--json',
+  ...LOOKUP_FLAGS[command],
   '--ignore-scripts',
   '--prefix',
   prefix,
@@ -81,14 +101,18 @@ export const npmMajor = async (env = process.env): Promise<number> =>
 
 export const prepareNpm = async (env = process.env): Promise<Npm> => {
   const npmCli = await checkedNpmCli(env);
-  return (command, tree) =>
-    runNpm(npmArgs(command, tree, env), { cwd: tree, timeoutMs: NPM_TIMEOUT_MS, npmCli });
+  return (command, tree, packages = []) =>
+    runNpm(npmArgs(command, tree, env, packages), {
+      cwd: tree,
+      timeoutMs: NPM_TIMEOUT_MS,
+      npmCli,
+    });
 };
 
 export const prepareManifest = async (env = process.env): Promise<NpmManifest> => {
   const npmCli = await checkedNpmCli(env);
-  return (spec, registries) =>
-    runNpm(manifestArgs(spec, registries, extensionsDir(), env), {
+  return (command, spec, registries) =>
+    runNpm(manifestArgs(command, spec, registries, extensionsDir(), env), {
       timeoutMs: LOOKUP_TIMEOUT_MS,
       npmCli,
     });

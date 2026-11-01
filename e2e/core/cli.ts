@@ -1,10 +1,10 @@
 /**
  * The test kit for e2e/core. Every test starts on a new machine: `cli` has its own config dir,
- * HOME, npm cache and npm userconfig, AGENTAGE_EXTENSIONS=1, and its own loopback site, which is
- * also the account (`cli.site`). Shared, read-only: the loopback npm registry serving the
- * fixtures. `anotherMachine(env)` adds a machine of the same account.
+ * HOME, npm cache and npm userconfig, and its own loopback site, which is also the account
+ * (`cli.site`), and its own loopback npm registry serving the fixtures (`cli.registry`), packed
+ * once per worker. `anotherMachine(env)` adds a machine of the same account and registry.
  */
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test as base } from '@playwright/test';
@@ -15,13 +15,16 @@ import {
   type CliMachine,
   type SetupProcess,
 } from '../helpers.js';
-import { startFixtureRegistry } from '../registry/registry.js';
+import { packFixtures } from '../registry/registry.js';
 import { startStubSite, stubEnv, type StubSite } from '../stub/auth-server.js';
 import { signInVia, type SignInRun } from '../stub/client.js';
 import { configFiles, fixtureCopy, hashTree, type ConfigFiles } from './files.js';
+import { expand, profileDoc, profileWriter, type ProfileSpec } from './profiles.js';
+import { testRegistry, type TestRegistry } from './registry.js';
 import { siteOf, type Site } from './site.js';
 
 export { expect };
+export type { ProfileSpec };
 
 export interface Run {
   code: number;
@@ -31,21 +34,10 @@ export interface Run {
   lines: string[];
 }
 
-// Extensions by short fixture name (`hello` for `@agentage/fixture-hello`) or full package name.
-export interface ProfileSpec {
-  extensions: Record<string, string>;
-  // Turned off on this machine; machine.json is written first when absent.
-  off?: string[];
-  // Added to `@agentage` -> the loopback registry.
-  registries?: Record<string, string>;
-  // The shared `config`, by extension id.
-  config?: Record<string, Record<string, unknown>>;
-}
-
 // file, json, write, remove, exists, list: paths relative to the config dir (AGENTAGE_CONFIG_DIR).
 export interface Machine extends ConfigFiles {
-  // The loopback npm registry the profiles send `@agentage` to.
-  registry: string;
+  // The loopback npm registry the profiles send `@agentage` to: its `url`, and `publish`.
+  registry: TestRegistry;
   // One command line, split on spaces (no shell); `env` is added for this run, undefined unsets.
   run: (command: string, env?: NodeJS.ProcessEnv) => Promise<Run>;
   start: (command: string) => SetupProcess;
@@ -63,9 +55,6 @@ export interface Machine extends ConfigFiles {
   };
 }
 
-// `hello` -> `@agentage/fixture-hello`; a scoped name stays as written.
-const pkg = (name: string): string => (name.startsWith('@') ? name : `@agentage/fixture-${name}`);
-
 const words = (command: string): string[] => command.split(' ').filter((w) => w !== '');
 
 const toRun = (r: { code: number; stdout: string; stderr: string }): Run => ({
@@ -77,43 +66,6 @@ const toRun = (r: { code: number; stdout: string; stderr: string }): Run => ({
     .map((l) => l.trimEnd()),
 });
 
-const expand = (map: Record<string, string>): Record<string, string> =>
-  Object.fromEntries(Object.entries(map).map(([name, value]) => [pkg(name), value]));
-
-const E2E_MACHINE = {
-  id: 'm_0000beef',
-  name: 'e2e-box',
-  dev: {},
-  profileSource: 'default',
-  accountId: null,
-  profileEtag: null,
-};
-
-// A profile document: `@agentage` from the loopback registry, short names expanded.
-const profileDoc = (registry: string, files: ConfigFiles) => {
-  const machineId = (): string => {
-    if (!files.exists('machine.json')) files.write('machine.json', E2E_MACHINE);
-    return String(files.json('machine.json')['id']);
-  };
-  return ({ extensions, off, registries, config = {} }: ProfileSpec) => ({
-    version: 1,
-    extensions: expand(extensions),
-    registries: { '@agentage': registry, ...registries },
-    config,
-    machines: off ? { [machineId()]: { off: off.map(pkg) } } : {},
-  });
-};
-
-// Profile files sit beside the machine, outside its config dir and HOME.
-const profileWriter = (scratch: string, docOf: ReturnType<typeof profileDoc>) => {
-  let count = 0;
-  return (spec: ProfileSpec): string => {
-    const path = join(scratch, `profile-${++count}.json`);
-    writeFileSync(path, JSON.stringify(docOf(spec), null, 2));
-    return path;
-  };
-};
-
 const accountOf = (site: StubSite, docOf: ReturnType<typeof profileDoc>): Machine['site'] => {
   const view = siteOf(site);
   return {
@@ -123,9 +75,14 @@ const accountOf = (site: StubSite, docOf: ReturnType<typeof profileDoc>): Machin
   };
 };
 
-const machine = (host: CliMachine, scratch: string, registry: string, site: StubSite): Machine => {
+const machine = (
+  host: CliMachine,
+  scratch: string,
+  registry: TestRegistry,
+  site: StubSite
+): Machine => {
   const files = configFiles(host.configDir);
-  const docOf = profileDoc(registry, files);
+  const docOf = profileDoc(registry.url, files);
   return {
     registry,
     run: async (command, env = {}) => toRun(await host.exec(words(command), 90_000, env)),
@@ -142,11 +99,10 @@ const machine = (host: CliMachine, scratch: string, registry: string, site: Stub
 
 // A new machine: config dir and HOME from createCliMachine, plus its own npm cache and
 // userconfig outside HOME, so a spec can assert HOME stays empty.
-const newMachine = (site: StubSite, registry: string, env: NodeJS.ProcessEnv) => {
+const newMachine = (site: StubSite, registry: TestRegistry, env: NodeJS.ProcessEnv) => {
   const scratch = mkdtempSync(join(tmpdir(), 'agentage-e2e-npm-'));
   const host = createCliMachine({
     ...stubEnv(site),
-    AGENTAGE_EXTENSIONS: '1',
     AGENTAGE_EXTENSIONS_DIR: undefined,
     npm_config_cache: join(scratch, 'cache'),
     npm_config_userconfig: join(scratch, 'npmrc'),
@@ -160,16 +116,19 @@ const newMachine = (site: StubSite, registry: string, env: NodeJS.ProcessEnv) =>
 };
 
 export const test = base.extend<
-  { site: StubSite; anotherMachine: (env?: NodeJS.ProcessEnv) => Machine; cli: Machine },
-  { registry: string }
+  {
+    site: StubSite;
+    registry: TestRegistry;
+    anotherMachine: (env?: NodeJS.ProcessEnv) => Machine;
+    cli: Machine;
+  },
+  { packed: string }
 >({
-  registry: [
+  packed: [
     async ({}, use) => {
       assertCliBuilt();
       const root = mkdtempSync(join(tmpdir(), 'agentage-e2e-registry-'));
-      const registry = await startFixtureRegistry(root);
-      await use(registry.url);
-      await registry.close();
+      await use(await packFixtures(root));
       rmSync(root, { recursive: true, force: true });
     },
     { scope: 'worker' },
@@ -179,6 +138,11 @@ export const test = base.extend<
     const site = await startStubSite();
     await use(site);
     await site.close();
+  },
+  registry: async ({ packed }, use) => {
+    const { close, ...registry } = await testRegistry(packed);
+    await use(registry);
+    await close();
   },
   anotherMachine: async ({ site, registry }, use) => {
     const machines: { cleanup: () => void }[] = [];

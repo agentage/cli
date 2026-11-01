@@ -17,12 +17,13 @@ No passwords touch the terminal; tokens are stored in `~/.agentage/auth.json`
 (mode 0600). Running `setup` while signed in validates the session and prints status
 instead of starting a new sign-in; an expired session falls through to a fresh sign-in.
 
-With `AGENTAGE_EXTENSIONS=1`, `setup` also installs extensions:
+`setup` also installs extensions:
 
 ```bash
 agentage setup --profile ./profile.json            # install and load a profile file, no sign-in
 agentage setup --profile ./profile.json --dry-run  # print the plan, write nothing
 agentage setup --check                             # exit 1 when setup would change anything
+agentage setup --latest                            # newest versions the ranges allow (below)
 agentage setup                                     # sign in, then install your account's profile
 ```
 
@@ -39,12 +40,12 @@ Signed in, the profile lives in your account: one document, with npm's lock and 
 that wrote it, under one ETag. `profile.json` is this machine's copy. Plain `setup` pulls it
 and never pushes a change:
 
-| Your account answers                                   | `setup`                                                                                                                                                                                                           |
-| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `304`, the copy here is current (sent `If-None-Match`) | installs from `profile.json`                                                                                                                                                                                      |
-| `200`, a newer profile                                 | replaces `profile.json`, installs from the account's lock (`npm ci` when it matches) and prints `profile    pulled from your account (etag "...")`                                                                |
-| `404`, no profile yet                                  | installs this machine's `profile.json` (the built-in default when there is none), then creates it in your account with `If-None-Match: *`; when another machine created one first, takes that one and installs it |
-| `5xx`, no network or a timeout                         | prints `cloud profile unavailable, using local profile.json (<reason>)` on stderr and installs from it; with no `profile.json` it exits 1 and installs nothing                                                    |
+| Your account answers                                   | `setup`                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `304`, the copy here is current (sent `If-None-Match`) | installs from `profile.json`                                                                                                                                                                                                                                                             |
+| `200`, a newer profile                                 | replaces `profile.json`, installs from the account's lock (`npm ci` when it matches) and prints `profile    pulled from your account (etag "...")`                                                                                                                                       |
+| `404 PROFILE_NOT_FOUND`, no profile yet                | installs this machine's `profile.json` (the built-in default when there is none), then creates it in your account with `If-None-Match: *`; when another machine created one first, takes that one and installs it                                                                        |
+| `5xx`, another `404`, no network or a timeout          | prints `cloud profile unavailable, using local profile.json (<reason>)` on stderr and installs from it; with no `profile.json` it prints `cloud profile unavailable and no local profile.json, nothing installed (<reason>)`, installs nothing and goes on to the status report (exit 0) |
 
 `extension install`, `extension remove` and `extension install --off` change the profile in your
 account: they pull it whole, apply the change to it, install and load, and only then push the
@@ -76,6 +77,36 @@ This machine is also one of your account's machines: every signed-in `setup` reg
 seen, and `setup --disconnect` marks it `disconnected`. None of these calls takes longer than 2
 seconds, fails a command or prints anything; with `AGENTAGE_DEBUG=1` each prints one line on
 stderr. `setup --profile` registers nothing.
+
+### setup --latest
+
+```
+~ update @agentage/fixture-hello 1.0.0 -> 1.0.1
+latest: 1 updated, 1 unchanged in tree 9a3e5c0d1b7f2a64
+hello  ok         @agentage/fixture-hello 1.0.1 (wants ^1.0.0)  commands: hello
+world  ok         @agentage/fixture-world 1.0.0 (wants ^1)  commands: world
+```
+
+`--latest` runs `npm update --ignore-scripts` (the same npm, flags and registries as an install)
+in a staged copy of the installed tree: the profile's ranges as `package.json`, the current lock,
+the `.npmrc` of the profile's `registries`. Each extension moves to the newest version its range
+allows. It then compares the normalized lock before and after and prints one line per extension
+whose version changed (`~ update <name> <from> -> <to>`; `+ add` and `- remove` when the tree and
+the profile differed) and a summary. The new tree is loaded from where it was built, and becomes
+`extensions/current` only when no extension in it `failed` or is `invalid`; otherwise the command
+exits 1 with `not updated: <id> <state>; extensions/current is unchanged`, the new tree is
+deleted and the old one stays. With nothing newer it prints `latest: nothing to update`, builds
+no tree and loads nothing.
+
+When the newest version a range allows declares an `engines.agentage` this CLI's extension API
+does not satisfy, that extension stays at its installed version and
+`kept       <name> <version> (<newer> needs extension API <range>)` says why; the others still
+update (npm runs again without it). This never fails the run. On a machine whose profile is a
+copy of your account's, `--latest` pulls the profile first, updates from the lock the account
+holds, and once the new tree loaded pushes the profile with the new lock and the npm major
+(`If-Match`, one replay on a `412`, as `extension install` does); when nothing changed, nothing
+is pushed. `--latest` never signs in, and cannot be combined with `--profile`, `--dry-run`,
+`--check` or `--disconnect` (exit 2).
 
 ### The plan: desired against current
 
@@ -207,7 +238,9 @@ tree for the same lock is reused without npm, and an empty install set skips npm
 points `current` at an empty tree. Two machines with the same profile get the same tree
 name, because the name is a hash of the normalized lock. If npm fails, `current` is left as
 it was, the staged tree is removed and npm's last 20 lines are printed; `setup` still prints
-the extension rows, then exits 1.
+the extension rows, then exits 1. Once an install or `setup --latest` succeeded, every tree but
+the one `current` names is deleted: `extensions/package-lock.json` can rebuild any of them. A
+staged tree (`.staging-*`) is only ever removed by the next run that holds `install.lock`.
 
 ## status
 
@@ -219,8 +252,8 @@ agentage status --token aga_...   # check with a personal access token
 
 `status` also surfaces a passive hint when a newer version is available.
 
-With `AGENTAGE_EXTENSIONS=1`, `status` adds three lines after the ones above, and `--json` adds
-four keys after the existing ones:
+`status` adds three lines after the ones above, and `--json` adds four keys after the existing
+ones:
 
 | Line         | JSON key     | Meaning                                                                                    |
 | ------------ | ------------ | ------------------------------------------------------------------------------------------ |
@@ -235,7 +268,8 @@ version and ETag when another machine pushed since:
 (one conditional request, at most 2 seconds; when your account cannot be reached the line shows
 the local copy only). Signed in, `status` also marks this machine seen in your account, and
 `--json` adds `machine.registered`: `true` when your account knows this machine, `false` when it
-does not, `null` signed out or when it cannot tell.
+answers that it does not (`404 MACHINE_NOT_FOUND`), `null` signed out or when it cannot tell (no
+answer in time, or any other answer, such as a `404` from an API without the machines route).
 
 Extension code is never loaded and the only file written is `machine.json`. With no profile it
 prints `no profile` and exits 0; an invalid `profile.json` still prints the report, then
@@ -243,10 +277,8 @@ exits 1 naming each bad entry on stderr. The rows themselves are in `extension l
 
 ## extension install
 
-Needs `AGENTAGE_EXTENSIONS=1`.
-
 ```bash
-agentage extension install @agentage/example          # add it to profile.json at ^<latest>, install, load
+agentage extension install @agentage/example          # add it at ^<newest version that fits>, install, load
 agentage extension install @agentage/example@~1.2     # the same, with the range as typed
 agentage extension install example                    # short name: @agentage/extension-example, else agentage-extension-example
 agentage extension install @agentage/example --off    # install it, but do not load it on this machine
@@ -262,14 +294,19 @@ agentage extension install ./my-extension             # a dev extension from a l
 2. `http:`, `file:`, `npm:` and `github:` (and any other scheme but `https:`) are refused, naming
    the rule; nothing is written.
 3. An `https:` tarball URL is kept as written, under the package name the tarball declares.
-4. A scoped name, or one starting with `agentage-extension-`, is used as written. Without an
-   `@<range>` suffix it is pinned to `^<latest>`.
+4. A scoped name, or one starting with `agentage-extension-`, is used as written. With an
+   `@<range>` suffix the range is kept as typed. Without one it is pinned to `^<version>`, the
+   newest release whose `engines.agentage` (absent means `^1`) the extension API satisfies,
+   rather than the `latest` tag; each newer release that needs another API prints
+   `skipped    <version>: needs extension API <range>`. When no release fits, the command exits 1
+   naming the newest and what it needs. Prereleases are never picked.
 5. Any other name is a short name: `example` is `@agentage/extension-example`, else
    `agentage-extension-example`, whichever the registry has first; with neither, the command exits
    1 naming both.
 
 npm reads each name from the registry the local profile's `registries` names for its scope
-(`npm pack --dry-run`, nothing installed), so a missing package or a range nothing satisfies
+(`npm view` for a name without a range, `npm pack --dry-run` otherwise; nothing installed), so a
+missing package or a range nothing satisfies
 fails before anything is written. A package goes into `profile.json` `extensions` (created from
 the default profile when absent; installing a name again replaces its range); on a machine whose
 profile is a copy of your account's, the change goes to your account (see
@@ -281,8 +318,6 @@ an extension failed. An invalid `profile.json`, or one from a newer schema, is r
 overwritten. It never signs in.
 
 ## extension remove
-
-Needs `AGENTAGE_EXTENSIONS=1`.
 
 ```bash
 agentage extension remove @agentage/example        # by package name
@@ -306,8 +341,6 @@ changes); answering anything but `y` removes the extension and keeps its data. W
 a terminal too.
 
 ## extension list
-
-Needs `AGENTAGE_EXTENSIONS=1`.
 
 ```bash
 agentage extension list          # one row per extension
@@ -346,8 +379,6 @@ The JSON adds a top-level `plan`, the summary `{ add, update, remove, off, uncha
 
 ## extension check
 
-Needs `AGENTAGE_EXTENSIONS=1`.
-
 ```bash
 agentage extension check          # load every extension once, print ok or failed
 agentage extension check --json   # { machine, profile, extensions: [...] } on stdout
@@ -360,8 +391,6 @@ state for the rest. What an extension prints while loading goes to stderr, so `-
 valid JSON. Exits 1 when any extension failed, `profile.json` is invalid, or on integrity drift.
 
 ## Extension commands
-
-Needs `AGENTAGE_EXTENSIONS=1`.
 
 ```bash
 agentage hello          # a command the hello extension contributes
@@ -461,24 +490,24 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 | `1`  | A step failed: sign-in, install or update failed, a refused or invalid profile, or an invalid token |
 | `2`  | Usage error: an unknown command or flag, a missing flag value, or no command                        |
 
-With `AGENTAGE_EXTENSIONS=1`, `setup`, `extension install`, `extension remove` and `extension check`
-also exit 1 when an extension failed to load or on integrity drift, an extension command exits 1
-when its extension cannot load, and `setup --check` exits 1 when the machine is not converged.
-Signed in, `setup` also exits 1 when this machine is connected to another account, or when your
-account cannot be reached and there is no local `profile.json`; `extension install` and
-`extension remove` on a copy of your account's profile exit 1 when your account cannot be
-reached, a push fails, or a second push conflict shows both documents.
+`setup`, `extension install`, `extension remove` and `extension check` also exit 1 when an
+extension failed to load or on integrity drift, an extension command exits 1 when its extension
+cannot load, `setup --check` exits 1 when the machine is not converged, and `setup --latest`
+exits 1 when the new tree did not load clean. Signed in, `setup` also exits 1 when this machine
+is connected to another account; when your account cannot be reached it carries on (exit 0).
+`extension install`, `extension remove` and `setup --latest` on a copy of your account's profile
+exit 1 when your account cannot be reached, a push fails, or a second push conflict shows both
+documents.
 
 Errors go to stderr; stdout carries only command output (`status --json` stays parseable).
 
 ## Environment
 
-| Variable                  | Purpose                                                                           | Default                  |
-| ------------------------- | --------------------------------------------------------------------------------- | ------------------------ |
-| `AGENTAGE_SITE_FQDN`      | Target host                                                                       | `agentage.io`            |
-| `AGENTAGE_CONFIG_DIR`     | Config and credentials directory (`auth.json`)                                    | `~/.agentage`            |
-| `AGENTAGE_TOKEN`          | Personal access token for CI and headless machines                                | unset                    |
-| `NO_COLOR`                | Disable colored output (any non-empty value)                                      | unset                    |
-| `AGENTAGE_EXTENSIONS`     | `1` enables `setup --profile`, loading, the `extension` group, extension commands | unset                    |
-| `AGENTAGE_EXTENSIONS_DIR` | Extensions directory (trees, lock, `current`)                                     | `~/.agentage/extensions` |
-| `AGENTAGE_DEBUG`          | `1` prints one stderr line for each call that registers this machine              | unset                    |
+| Variable                  | Purpose                                                              | Default                  |
+| ------------------------- | -------------------------------------------------------------------- | ------------------------ |
+| `AGENTAGE_SITE_FQDN`      | Target host                                                          | `agentage.io`            |
+| `AGENTAGE_CONFIG_DIR`     | Config and credentials directory (`auth.json`)                       | `~/.agentage`            |
+| `AGENTAGE_TOKEN`          | Personal access token for CI and headless machines                   | unset                    |
+| `NO_COLOR`                | Disable colored output (any non-empty value)                         | unset                    |
+| `AGENTAGE_EXTENSIONS_DIR` | Extensions directory (trees, lock, `current`)                        | `~/.agentage/extensions` |
+| `AGENTAGE_DEBUG`          | `1` prints one stderr line for each call that registers this machine | unset                    |

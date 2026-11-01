@@ -136,3 +136,11 @@ export const satisfies = (version: string, range: string): boolean => {
   if (!v || !sets) return false;
   return sets.some((set) => set.every((c) => holds(c, v)));
 };
+
+// For sort(): newest version first; text that is not a version goes last.
+export const newestFirst = (a: string, b: string): number => {
+  const x = parseVersion(a);
+  const y = parseVersion(b);
+  if (x && y) return compareVersions(y, x);
+  return (x ? -1 : 0) + (y ? 1 : 0);
+};

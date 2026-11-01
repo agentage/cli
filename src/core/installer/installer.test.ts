@@ -99,14 +99,24 @@ describe('installing a profile', () => {
     expect(plan.lock?.trim()).toBe(dir.file('extensions/package-lock.json'));
   });
 
-  test('switched back to an earlier one lands on its existing tree, not a copy', async ({
+  test('switched back to an earlier one lands on the same tree name, and only that tree remains', async ({
     dir,
   }) => {
     const one = await install(ONE, npmFromFixtures);
     await install(TWO, npmFromFixtures);
     expect(await install(ONE, npmFromFixtures)).toMatchObject({ tree: one.tree, npm: 'install' });
-    expect(dir.list('extensions/trees')).toHaveLength(2);
+    expect(dir.list('extensions/trees')).toEqual([one.tree]);
     expect(dir.file('extensions/current')).toBe(one.tree);
+  });
+
+  test('that succeeded removes every tree but the one current names', async ({ dir }) => {
+    await install(ONE, npmFromFixtures);
+    dir.write('extensions/trees/hand-placed/.complete', '');
+    const two = await install(TWO, npmFromFixtures);
+    expect(dir.list('extensions/trees')).toEqual([two.tree]);
+    const reused = await install(TWO, npmNeverRuns);
+    expect(reused.reused).toBe(true);
+    expect(dir.list('extensions/trees')).toEqual([two.tree]);
   });
 
   test("that npm fails keeps current and the last good tree, quoting npm's last 20 lines", async ({

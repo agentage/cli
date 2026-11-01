@@ -2,7 +2,12 @@ import { realpathSync } from 'node:fs';
 import { describe, expect } from 'vitest';
 import { noAccount } from '../../test/account.js';
 import { fixture, MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
-import { manifestFromFixtures, npmFromFixtures } from '../../test/npm-fixtures.js';
+import {
+  manifestFromFixtures,
+  npmFromFixtures,
+  npmPublishing,
+  type Publishes,
+} from '../../test/npm-fixtures.js';
 import {
   runExtensionInstall,
   type ExtensionInstallDeps,
@@ -17,6 +22,13 @@ const deps: ExtensionInstallDeps = {
 
 const install = (name: string, opts: Omit<ExtensionInstallOptions, 'name'> = {}) =>
   output(() => runExtensionInstall({ name, ...opts }, deps));
+
+// The registry with `more` published: npm reads and installs from the same versions.
+const publishing = (more: Publishes): ExtensionInstallDeps => ({
+  ...deps,
+  npm: npmPublishing(more),
+  manifest: manifestFromFixtures(more),
+});
 
 const HELLO_OK = 'hello  ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello';
 const HELLO_DIR = realpathSync(fixture('hello'));
@@ -40,6 +52,21 @@ describe('agentage extension install', () => {
     });
     expect(dir.json('machine.json')['profileSource']).toBe('default');
     expect(dir.json('state/hello.json')).toMatchObject({ state: 'ok' });
+  });
+
+  test('without a range picks the newest version that fits the extension API, saying which newer ones it skipped', async ({
+    dir,
+  }) => {
+    const more = { [pkg('hello')]: { '1.0.1': {}, '2.0.0': { engines: { agentage: '^2' } } } };
+    const run = await output(() => runExtensionInstall({ name: pkg('hello') }, publishing(more)));
+    expect(run.error).toBeNull();
+    expect(run.lines).toEqual([
+      'skipped    2.0.0: needs extension API ^2',
+      'added      @agentage/fixture-hello ^1.0.1',
+      expect.stringMatching(/^install {4}1 extension in tree [0-9a-f]{16} \(npm install\)$/),
+      HELLO_OK.replace('1.0.0 (wants ^1.0.0)', '1.0.1 (wants ^1.0.1)'),
+    ]);
+    expect(dir.json('profile.json')['extensions']).toEqual({ [pkg('hello')]: '^1.0.1' });
   });
 
   test('keeps a file source, the registries and the other extensions; installing a name again updates its spec', async ({

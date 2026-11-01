@@ -1,7 +1,7 @@
 import { describe, expect } from 'vitest';
 import { fakeAccount } from '../../test/account.js';
 import { test } from '../../test/config-dir.js';
-import { pullProfile, pushProfile } from './cloud.js';
+import { pullProfile, pushProfile, type CloudFetch } from './cloud.js';
 
 const HELLO = { version: 1, extensions: { '@agentage/fixture-hello': '^1.0.0' } };
 const LOCK = { lockfileVersion: 3, packages: { '': {} } };
@@ -33,6 +33,22 @@ describe('pulling the profile from the account', () => {
     const account = fakeAccount();
     expect(await pullProfile(account.fetch, null)).toEqual({ kind: 'none' });
     expect(account.requests[0]?.headers).toEqual({});
+  });
+
+  test('a 404 other than PROFILE_NOT_FOUND, from an API without the profile route, is unavailable, not none', async () => {
+    const answering =
+      (body: string): CloudFetch =>
+      async () =>
+        new Response(body, { status: 404 });
+    const noRoute = JSON.stringify({ error: { code: 'NOT_FOUND', message: 'no such endpoint' } });
+    expect(await pullProfile(answering(noRoute), null)).toEqual({
+      kind: 'unavailable',
+      reason: '404 NOT_FOUND',
+    });
+    expect(await pullProfile(answering('<html>'), null)).toEqual({
+      kind: 'unavailable',
+      reason: '404',
+    });
   });
 
   test('a newer profile version comes back read-only', async () => {

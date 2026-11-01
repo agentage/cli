@@ -19,7 +19,14 @@ import {
   type MachineFile,
 } from '../../core/profile/machine.js';
 import { editableProfile, mutateProfile } from '../../core/profile/profile.js';
-import { pushBody, pushWithReplay, type Apply, type LockPair } from '../../core/profile/push.js';
+import {
+  pushBody,
+  pushWithReplay,
+  type Apply,
+  type LockPair,
+  type Pushed,
+  type ReplayOptions,
+} from '../../core/profile/push.js';
 import { type Profile } from '../../core/profile/schema.js';
 import { type AccountOf } from './account.js';
 import { installAndLoad, line } from './install-load.js';
@@ -65,7 +72,8 @@ export const pullForEdit = async (deps: EditDeps): Promise<Synced | null> => {
   return { fetch: account.fetch, base };
 };
 
-const localLock = async (deps: EditDeps): Promise<LockPair> => {
+// extensions/package-lock.json and the npm major that wrote it, pushed with the profile.
+export const localLock = async (deps: EditDeps): Promise<LockPair> => {
   const lock = parseLock(readText(join(extensionsDir(), LOCK_FILE)));
   return { lock, npmMajor: lock === null ? null : await deps.npmMajor() };
 };
@@ -94,6 +102,17 @@ const installedHere = (err: unknown): never => {
   throw new Error(`${err.message}; installed here only, run the command again to push it`);
 };
 
+// `apply` installs and loads before it returns the body: a failed load pushes nothing.
+export const pushApplied = async (
+  synced: Synced,
+  apply: Apply,
+  opts: ReplayOptions = {}
+): Promise<Pushed> => {
+  const done = await pushWithReplay(synced.fetch, synced.base, apply, opts).catch(installedHere);
+  await setCloud(done.etag);
+  return done;
+};
+
 // install, remove and --off end here; the account gets the change only after the tree loaded.
 export const finishEdit = async (
   synced: Synced | null,
@@ -102,9 +121,7 @@ export const finishEdit = async (
   note: string | null = null
 ): Promise<void> => {
   if (synced === null) return onThisMachine(change, deps, note);
-  const apply = applying(change, deps, note);
-  const done = await pushWithReplay(synced.fetch, synced.base, apply).catch(installedHere);
-  await setCloud(done.etag);
+  const done = await pushApplied(synced, applying(change, deps, note));
   const where = done.pushed ? 'pushed to' : 'already in';
   console.log(line('profile', `${where} your account (etag ${done.etag})`));
 };

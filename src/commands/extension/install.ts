@@ -1,3 +1,4 @@
+import { needs } from '../../core/installer/compat.js';
 import { type NpmManifest } from '../../core/installer/npm.js';
 import { registryLookup, resolveName, type Resolved } from '../../core/installer/resolve.js';
 import { addExtension } from '../../core/profile/edit.js';
@@ -21,6 +22,7 @@ type Package = Extract<Resolved, { kind: 'package' }>;
 type Dev = Extract<Resolved, { kind: 'dev' }>;
 
 const addPackage = async (target: Package, off: boolean, deps: ExtensionInstallDeps) => {
+  for (const newer of target.skipped) console.log(line('skipped', needs(newer)));
   const synced = await pullForEdit(deps);
   const { id } = await loadMachine();
   const note = line('added', `${target.name} ${target.spec}${off ? ' (off on this machine)' : ''}`);

@@ -78,11 +78,17 @@ const bodyOf = async (res: Response): Promise<unknown> => {
   }
 };
 
-// e.g. "503 AUTH_UNAVAILABLE": the status, and the code of the house error envelope.
-const failureOf = async (res: Response): Promise<string> => {
+// The code of the house error envelope, e.g. PROFILE_NOT_FOUND; null without one. Reads the body.
+export const errorCode = async (res: Response): Promise<string | null> => {
   const body = await bodyOf(res);
   const error = isRecord(body) && isRecord(body['error']) ? body['error'] : {};
-  return typeof error['code'] === 'string' ? `${res.status} ${error['code']}` : `${res.status}`;
+  return typeof error['code'] === 'string' ? error['code'] : null;
+};
+
+// e.g. "503 AUTH_UNAVAILABLE": the status, and the envelope's code when there is one.
+const failureOf = async (res: Response): Promise<string> => {
+  const code = await errorCode(res);
+  return code === null ? `${res.status}` : `${res.status} ${code}`;
 };
 
 const isMajor = (value: unknown): value is number | null =>
@@ -109,6 +115,8 @@ const served = (body: unknown, header: string | null) =>
 
 const unavailable = (reason: string): Pull => ({ kind: 'unavailable', reason });
 
+const NO_PROFILE = '404 PROFILE_NOT_FOUND';
+
 // GET, conditional on the local copy's etag: 304 keeps it, 200 replaces it, 404 means none yet.
 export const pullProfile = async (
   fetch: CloudFetch,
@@ -119,8 +127,11 @@ export const pullProfile = async (
   const res = await attempt(() => fetch(PROFILE_PATH, { headers, timeoutMs }));
   if (typeof res === 'string') return unavailable(res);
   if (res.status === 304) return { kind: 'current' };
-  if (res.status === 404) return { kind: 'none' };
-  if (res.status !== 200) return unavailable(await failureOf(res));
+  if (res.status !== 200) {
+    // Any other 404 is an API without the profile route, not an account without a profile.
+    const failure = await failureOf(res);
+    return failure === NO_PROFILE ? { kind: 'none' } : unavailable(failure);
+  }
   const doc = served(await bodyOf(res), res.headers.get('etag'));
   return typeof doc === 'string' ? unavailable(doc) : { kind: 'found', doc };
 };

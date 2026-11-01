@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRange, parseVersion, satisfies } from './semver-range.js';
+import { isRange, newestFirst, parseVersion, satisfies } from './semver-range.js';
 
 describe('version ranges, read the way npm reads them', () => {
   it('a version is major.minor.patch, with an optional prerelease and build', () => {
@@ -72,5 +72,13 @@ describe('version ranges, read the way npm reads them', () => {
 
   it('a version that does not parse matches nothing', () => {
     expect(satisfies('1.0', '^1')).toBe(false);
+  });
+});
+
+describe('versions sorted newest first', () => {
+  it('orders by major, minor, patch, a release above its prereleases, and anything else last', () => {
+    const sorted = ['1.0.0', 'nope', '2.0.0-beta', '1.10.0', '2.0.0', '1.2.0'].sort(newestFirst);
+    expect(sorted).toEqual(['2.0.0', '2.0.0-beta', '1.10.0', '1.2.0', '1.0.0', 'nope']);
+    expect(['x', 'y'].sort(newestFirst)).toEqual(['x', 'y']);
   });
 });
