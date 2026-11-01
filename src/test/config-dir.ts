@@ -1,9 +1,9 @@
 /**
  * The unit-test kit for src/core and src/commands/extension: `test` hands every test `dir`, a
  * brand-new config dir (AGENTAGE_CONFIG_DIR) that the real code reads and writes, removed
- * afterwards. Same words as the e2e kit: `write`, `file`, `json`, `profile`, `tree`.
+ * afterwards. Same words as the e2e kit: `write`, `file`, `json`, `profile`, `tree`; `extension`
+ * writes a dev extension from source. `npm-fixtures.ts` plays npm against fixtures/.
  */
-import { createHash } from 'node:crypto';
 import {
   cpSync,
   existsSync,
@@ -18,7 +18,6 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import chalk from 'chalk';
 import { test as base } from 'vitest';
-import { type Npm, type NpmCommand } from '../core/installer/npm.js';
 import { extensionsDir } from '../core/paths.js';
 
 const FIXTURES = join(import.meta.dirname, '..', '..', 'fixtures');
@@ -37,7 +36,7 @@ const expand = (map: Record<string, string>): Record<string, string> =>
   Object.fromEntries(Object.entries(map).map(([name, value]) => [pkg(name), value]));
 
 export interface ProfileSpec {
-  // Short fixture names (`hello`, `world`, `old-engine`, `dup-id`) or full package names.
+  // Short fixture names (`hello` for `@agentage/fixture-hello`) or full package names.
   extensions?: Record<string, string>;
   off?: string[];
   [key: string]: unknown;
@@ -67,6 +66,8 @@ export interface ConfigDir extends ConfigFiles {
   profile: (spec: ProfileSpec, path?: string) => string;
   // Fixtures copied into a complete tree that extensions/current names, as npm would leave them.
   tree: (...fixtures: string[]) => string;
+  // A dev extension `@test/<id>` written from source, listed in machine.json; returns its name.
+  extension: (id: string, source: string, manifest?: Record<string, unknown>) => string;
 }
 
 const writeMachine = (files: ConfigFiles, dev: Record<string, string> = {}): void =>
@@ -99,6 +100,22 @@ const writeTree = (files: ConfigFiles, fixtures: string[]): string => {
   return dir;
 };
 
+const writeExtension = (
+  files: ConfigFiles,
+  id: string,
+  source: string,
+  manifest: Record<string, unknown>
+): string => {
+  const name = `@test/${id}`;
+  const agentage = { id, ...(manifest['agentage'] as object | undefined) };
+  const base = { name, version: '1.0.0', type: 'module', main: 'index.js' };
+  files.write(`dev/${id}/package.json`, { ...base, ...manifest, agentage });
+  files.write(`dev/${id}/index.js`, source);
+  const dev = files.exists('machine.json') ? files.json('machine.json')['dev'] : {};
+  writeMachine(files, { ...(dev as Record<string, string>), [name]: files.at(`dev/${id}`) });
+  return name;
+};
+
 const configDir = (root: string): ConfigDir => {
   const files = configFiles(root);
   return {
@@ -106,6 +123,7 @@ const configDir = (root: string): ConfigDir => {
     machine: (dev) => writeMachine(files, dev),
     profile: (spec, path = 'profile.json') => writeProfile(files, spec, path),
     tree: (...fixtures) => writeTree(files, fixtures),
+    extension: (id, source, manifest = {}) => writeExtension(files, id, source, manifest),
   };
 };
 
@@ -158,39 +176,4 @@ export const output = async (fn: () => Promise<unknown>): Promise<Output> => {
   }
   const stdout = out.join('\n');
   return { stdout, stderr: err.join('\n'), lines: stdout === '' ? [] : stdout.split('\n'), error };
-};
-
-// What a registry would report for a fixture: its version, and an integrity from its bytes.
-const lockEntry = (name: string) => {
-  const manifest = readFileSync(join(fixture(name), 'package.json'));
-  const version = (JSON.parse(manifest.toString()) as { version: string }).version;
-  return { version, integrity: `sha512-${createHash('sha512').update(manifest).digest('base64')}` };
-};
-
-const lockFor = (dependencies: Record<string, string>): string => {
-  const entries = Object.keys(dependencies).map((n) => [`node_modules/${n}`, lockEntry(n)]);
-  return JSON.stringify({ packages: { '': { dependencies }, ...Object.fromEntries(entries) } });
-};
-
-interface Manifest {
-  dependencies: Record<string, string>;
-}
-
-const dependenciesOf = (command: NpmCommand, tree: string): Record<string, string> => {
-  const read = (file: string): unknown => JSON.parse(readFileSync(join(tree, file), 'utf-8'));
-  if (command === 'install') return (read('package.json') as Manifest).dependencies;
-  return (read('package-lock.json') as { packages: { '': Manifest } }).packages[''].dependencies;
-};
-
-// Plays npm against fixtures/: `install` unpacks each dependency's fixture and writes a lock,
-// `ci` unpacks what the lock names; a name with no fixture fails the way a registry 404 does.
-export const npmFromFixtures = async (): Promise<Npm> => async (command, tree) => {
-  const deps = dependenciesOf(command, tree);
-  const absent = Object.keys(deps).find((name) => !existsSync(fixture(name)));
-  if (absent)
-    return { code: 1, stdout: '', stderr: `npm error code E404\nnpm error 404 ${absent}` };
-  for (const name of Object.keys(deps))
-    cpSync(fixture(name), join(tree, 'node_modules', name), { recursive: true });
-  if (command === 'install') writeFileSync(join(tree, 'package-lock.json'), lockFor(deps));
-  return { code: 0, stdout: `added ${Object.keys(deps).length} packages`, stderr: '' };
 };

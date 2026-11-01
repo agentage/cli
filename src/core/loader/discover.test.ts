@@ -6,8 +6,8 @@ import { discover, type DiscoveredExtension } from './discover.js';
 
 const [HELLO, WORLD, DUP] = [pkg('hello'), pkg('world'), pkg('dup-id')];
 
-const find = (names: string[], dev: Record<string, string> = {}) =>
-  discover({ extensionsDir: extensionsDir(), names, dev });
+const find = (names: string[], dev: Record<string, string> = {}, config = {}) =>
+  discover({ extensionsDir: extensionsDir(), names, dev, config });
 
 const byPkg = (found: DiscoveredExtension[], name: string) => found.find((e) => e.pkg === name);
 
@@ -45,6 +45,17 @@ describe('finding extensions on disk', () => {
       }),
       expect.objectContaining({ pkg: WORLD, id: 'world', peers: [HELLO], problem: null }),
     ]);
+  });
+
+  test("the profile's config for an extension is checked against its manifest, defaults filled", ({
+    dir,
+  }) => {
+    dir.tree('hello', 'secret');
+    const [hello, secret] = find([HELLO, pkg('secret')]).extensions;
+    expect(hello).toMatchObject({ config: { greeting: 'hello' }, secrets: [], problem: null });
+    expect(secret).toMatchObject({ config: {}, secrets: ['token'] });
+    const wrong = find([HELLO], {}, { hello: { greeting: 3 } }).extensions[0];
+    expect(wrong?.problem).toBe('config.hello.greeting: must be of type string (got number)');
   });
 
   test('an extension whose engines.agentage does not match is invalid and never imported', ({

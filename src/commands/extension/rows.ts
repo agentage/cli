@@ -1,11 +1,14 @@
-import { discover, type DiscoveredExtension } from '../../core/loader/discover.js';
+import { type DiscoveredExtension } from '../../core/loader/discover.js';
+import { type LoadOutcome } from '../../core/loader/load.js';
+import { scan, type Scan } from '../../core/loader/scan.js';
 import { readRunState } from '../../core/loader/state.js';
-import { staticStates, type StaticResult, type StaticState } from '../../core/loader/states.js';
-import { extensionsDir } from '../../core/paths.js';
+import { type StaticResult, type StaticState } from '../../core/loader/states.js';
 import { loadMachine, type MachineFile, type ProfileSource } from '../../core/profile/machine.js';
-import { effective, type Effective } from '../../core/profile/merge.js';
-import { readProfile } from '../../core/profile/profile.js';
+import { type Effective } from '../../core/profile/merge.js';
 import { type ProfileParse } from '../../core/profile/schema.js';
+
+// `ok` and `failed` only after a load in this process; `blocked` also when a peer failed to load.
+export type RowState = StaticState | 'ok' | 'failed';
 
 export interface ExtensionRow {
   id: string | null;
@@ -13,7 +16,7 @@ export interface ExtensionRow {
   mode: 'installed' | 'dev';
   wanted: string | null;
   installed: string | null;
-  state: StaticState;
+  state: RowState;
   error: string | null;
   commands: string[];
   lastRun: { at: string; state: string; error: string | null } | null;
@@ -60,26 +63,31 @@ const toRow = (p: DiscoveredExtension, eff: Effective, s: StaticResult): Extensi
   lastRun: lastRunOf(p, s),
 });
 
+// A load in this process is the run itself: its state replaces the static one.
+const withRun = (row: ExtensionRow, run: LoadOutcome | undefined): ExtensionRow =>
+  run ? { ...row, state: run.state, error: run.error, lastRun: null } : row;
+
 const UNKNOWN: StaticResult = { state: 'invalid', error: null };
 
-// Reads manifests, profile and state files; writes only a missing machine.json.
-export const gatherExtensions = async (): Promise<ExtensionsGather> => {
-  const machine = await loadMachine();
-  const parsed = readProfile();
-  const eff = effective(parsed?.ok ? parsed.profile : null, machine);
-  const names = Object.keys(eff.install);
-  const found = discover({ extensionsDir: extensionsDir(), names, dev: eff.dev });
-  const states = staticStates(found.extensions, eff.off);
-  const extensions = found.extensions
-    .map((p) => toRow(p, eff, states.get(p.pkg) ?? UNKNOWN))
+export const gatherFrom = (
+  found: Scan,
+  runs: ReadonlyMap<string, LoadOutcome> = new Map()
+): ExtensionsGather => {
+  const { machine, parsed, eff, states } = found;
+  const extensions = found.found.extensions
+    .map((p) => withRun(toRow(p, eff, states.get(p.pkg) ?? UNKNOWN), runs.get(p.pkg)))
     .sort((a, b) => (a.package < b.package ? -1 : 1));
   const status = {
     machine: { id: machine.id, name: machine.name },
     profile: profileStatus(parsed, machine),
     extensions,
   };
-  return { status, warnings: [...(parsed?.ok ? parsed.warnings : []), ...found.warnings] };
+  return { status, warnings: [...(parsed?.ok ? parsed.warnings : []), ...found.found.warnings] };
 };
+
+// Reads manifests, profile and state files; writes only a missing machine.json.
+export const gatherExtensions = async (): Promise<ExtensionsGather> =>
+  gatherFrom(scan(await loadMachine()));
 
 // The report still prints first; an invalid profile.json then fails the step.
 export const invalidProfileError = (profile: ProfileStatus): Error | null =>

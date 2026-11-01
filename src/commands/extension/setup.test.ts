@@ -1,6 +1,7 @@
 import { rmSync } from 'node:fs';
 import { describe, expect } from 'vitest';
-import { MACHINE_ID, npmFromFixtures, output, pkg, test } from '../../test/config-dir.js';
+import { MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
+import { npmFromFixtures } from '../../test/npm-fixtures.js';
 import { type SetupOptions } from '../auth/setup.js';
 import { runExtensionSetup, type ExtensionSetupDeps } from './setup.js';
 
@@ -99,7 +100,53 @@ describe('agentage setup --profile', () => {
   });
 });
 
+describe('agentage setup --profile, after installing', () => {
+  test('loads the extensions, prints ok and failed rows, and fails naming each that failed', async ({
+    dir,
+  }) => {
+    const run = await setup({
+      profile: dir.profile({ extensions: { hello: '^1.0.0', throws: '^1' } }, 'p.json'),
+    });
+    expect(run.lines).toContain(
+      'hello   ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello'
+    );
+    expect(run.lines).toContain(
+      'throws  failed     @agentage/fixture-throws 1.0.0 (wants ^1)  "boom"'
+    );
+    expect(run.error).toBe('1 extension failed to load: throws');
+  });
+
+  test('lists the secrets to set before it loads', async ({ dir }) => {
+    const run = await setup({ profile: dir.profile({ extensions: { secret: '^1' } }, 'p.json') });
+    expect(run.lines.slice(1)).toEqual([
+      'secrets to set: secret.token',
+      'secret  ok         @agentage/fixture-secret 1.0.0 (wants ^1)',
+    ]);
+  });
+
+  test('loads nothing when npm fails: the rows show what is still current', async ({ dir }) => {
+    const run = await setup({ profile: dir.profile({ extensions: { absent: '^1' } }, 'p.json') });
+    expect(run.error).toMatch(/^npm install failed/);
+    expect(run.lines).toEqual([
+      '?  missing    @agentage/fixture-absent - (wants ^1)  not installed in the current tree',
+    ]);
+    expect(dir.exists('state')).toBe(false);
+  });
+});
+
 describe('agentage setup', () => {
+  test('reports status with AGENTAGE_TOKEN, which loading removed from the environment', async ({
+    dir,
+  }) => {
+    process.env['AGENTAGE_TOKEN'] = 'aga_unit';
+    dir.profile({ extensions: { hello: '^1.0.0' } });
+    const printStatus = async (opts: { token?: string } = {}) =>
+      console.log(`(status with ${opts.token})`);
+    const run = await output(() => runExtensionSetup({}, { ...deps, printStatus }));
+    expect(run.lines).toContain('(status with aga_unit)');
+    expect(process.env['AGENTAGE_TOKEN']).toBeUndefined();
+  });
+
   test('prints status after signing in, even when profile.json is invalid, then fails', async ({
     dir,
   }) => {

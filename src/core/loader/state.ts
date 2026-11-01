@@ -1,5 +1,6 @@
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { isRecord, readJson } from '../../lib/fs/json-file.js';
+import { isRecord, readJson, writeJsonAtomic } from '../../lib/fs/json-file.js';
 import { stateDir } from '../paths.js';
 import { ID_PATTERN } from './manifest.js';
 
@@ -30,4 +31,11 @@ export const readRunState = (id: string): RunState | null => {
   const found = readJson(join(stateDir(), `${id}.json`), isRunState);
   if (!found) return null;
   return { at: found.at, pid: found.pid, state: found.state, error: found.error ?? null };
+};
+
+// Written by the core after each load attempt, never by the extension itself.
+export const writeRunState = (id: string, run: Pick<RunState, 'state' | 'error'>): void => {
+  mkdirSync(stateDir(), { recursive: true, mode: 0o700 });
+  const state: RunState = { at: new Date().toISOString(), pid: process.pid, ...run };
+  writeJsonAtomic(join(stateDir(), `${id}.json`), state);
 };

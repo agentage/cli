@@ -1,11 +1,12 @@
 /**
  * @offline - `agentage setup` with AGENTAGE_EXTENSIONS=1: installing the extensions a profile
  * names from the loopback registry, and plain `setup` signing in at the loopback site first.
+ * Loading what was installed: setup-load.test.ts.
  */
 import { expect, test } from './cli.js';
 
-const HELLO = 'hello  installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello';
-const WORLD = 'world  installed  @agentage/fixture-world 1.0.0 (wants ^1)  commands: world';
+const HELLO = 'hello  ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello';
+const WORLD = 'world  ok         @agentage/fixture-world 1.0.0 (wants ^1)  commands: world';
 const TWO = { extensions: { hello: '^1.0.0', world: '^1' } };
 
 test.describe('agentage setup --profile @p0 @offline', () => {
@@ -42,9 +43,9 @@ test.describe('agentage setup --profile @p0 @offline', () => {
 
   test('agentage setup --profile with the same extensions on two machines installs the same tree', async ({
     cli,
-    launcherMachine,
+    anotherMachine,
   }) => {
-    const other = launcherMachine();
+    const other = anotherMachine();
     expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
     expect((await other.run(`setup --profile ${other.profile(TWO)}`)).code).toBe(0);
     expect(other.file('extensions/current')).toBe(cli.file('extensions/current'));
@@ -110,7 +111,9 @@ test.describe('agentage setup --profile @p0 @offline', () => {
     expect(failed.code).toBe(1);
     expect(failed.stderr).toContain('npm install failed');
     expect(failed.stderr).toContain('E404');
-    expect(failed.lines).toContain(HELLO);
+    expect(failed.lines).toContainEqual(
+      expect.stringMatching(/^hello  installed .* last run: ok /)
+    );
     expect(cli.file('extensions/current')).toBe(good);
     expect(cli.list('extensions/trees')).toEqual([good]);
     expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);

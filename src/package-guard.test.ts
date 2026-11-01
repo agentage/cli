@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EXTENSION_API_VERSION } from './extension.js';
+import { defineExtension, EXTENSION_API_VERSION } from './extension.js';
 
 const SRC = join(import.meta.dirname, '.');
 const PKG = join(import.meta.dirname, '..', 'package.json');
@@ -35,7 +35,7 @@ const CORE_FORBIDDEN: RegExp[] = [
   /['"]express['"]/,
 ];
 
-describe('package guard (launcher core)', () => {
+describe('package guard (the core)', () => {
   it('source contains no product or agent-runtime imports', () => {
     for (const file of sourceFiles(SRC)) {
       const content = readFileSync(file, 'utf-8');
@@ -62,9 +62,11 @@ describe('package guard (launcher core)', () => {
     };
     expect(pkg.exports['./extension']?.default).toBe('./dist/extension.js');
     expect(EXTENSION_API_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    const extension = { register: () => ({}) };
+    expect(defineExtension(extension)).toBe(extension);
   });
 
-  it('runtime dependencies are exactly the launcher core set', () => {
+  it('runtime dependencies are exactly the core set', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
       dependencies: Record<string, string>;
       bin: Record<string, string>;

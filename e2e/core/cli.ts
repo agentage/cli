@@ -1,8 +1,7 @@
 /**
  * The test kit for e2e/core. Every test starts on a new machine: `cli` has its own config dir,
- * HOME, npm cache and npm userconfig, AGENTAGE_EXTENSIONS=1, and its own loopback site; nothing
- * survives between tests. The one thing shared is the read-only loopback npm registry serving
- * the fixture extensions. `launcherMachine(env)` makes another machine in the same test.
+ * HOME, npm cache and npm userconfig, AGENTAGE_EXTENSIONS=1, and its own loopback site. Shared,
+ * read-only: the loopback npm registry serving the fixtures. `anotherMachine(env)` adds a machine.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -38,8 +37,8 @@ export interface Run {
   lines: string[];
 }
 
+// Extensions by short fixture name (`hello` for `@agentage/fixture-hello`) or full package name.
 export interface ProfileSpec {
-  // Short fixture names (`hello`, `world`, `old-engine`, `dup-id`) or full package names.
   extensions: Record<string, string>;
   // Turned off on this machine; machine.json is written first when absent.
   off?: string[];
@@ -47,12 +46,12 @@ export interface ProfileSpec {
   registries?: Record<string, string>;
 }
 
-// file, json, write, exists, list: paths relative to the config dir (AGENTAGE_CONFIG_DIR).
-export interface Launcher extends ConfigFiles {
+// file, json, write, remove, exists, list: paths relative to the config dir (AGENTAGE_CONFIG_DIR).
+export interface Machine extends ConfigFiles {
   // The loopback npm registry the profiles send `@agentage` to.
   registry: string;
-  // One command line, split on spaces (no shell), run from the repo root.
-  run: (command: string) => Promise<Run>;
+  // One command line, split on spaces (no shell); `env` is added for this run, undefined unsets.
+  run: (command: string, env?: NodeJS.ProcessEnv) => Promise<Run>;
   start: (command: string) => SetupProcess;
   signIn: () => Promise<SignInRun>;
   // Writes a profile file outside the config dir and returns its path, for `setup --profile`.
@@ -103,6 +102,7 @@ const configFiles = (configDir: string) => {
       mkdirSync(dirname(at(path)), { recursive: true });
       writeFileSync(at(path), JSON.stringify(value, null, 2));
     },
+    remove: (path: string): void => rmSync(at(path), { recursive: true, force: true }),
     exists: (path: string) => existsSync(at(path)),
     list: (path: string) => (existsSync(at(path)) ? readdirSync(at(path)).sort() : []),
   };
@@ -132,17 +132,17 @@ const profileWriter = (scratch: string, registry: string, files: ConfigFiles) =>
   };
 };
 
-const launcher = (machine: CliMachine, scratch: string, registry: string): Launcher => {
-  const files = configFiles(machine.configDir);
+const machine = (host: CliMachine, scratch: string, registry: string): Machine => {
+  const files = configFiles(host.configDir);
   return {
     registry,
-    run: async (command) => toRun(await machine.exec(words(command), 90_000)),
-    start: (command) => machine.startSetup(words(command)),
-    signIn: () => signInVia(machine),
+    run: async (command, env = {}) => toRun(await host.exec(words(command), 90_000, env)),
+    start: (command) => host.startSetup(words(command)),
+    signIn: () => signInVia(host),
     profile: profileWriter(scratch, registry, files),
     ...files,
-    snapshot: () => hashTree(machine.configDir),
-    homeFiles: () => readdirSync(machine.home),
+    snapshot: () => hashTree(host.configDir),
+    homeFiles: () => readdirSync(host.home),
   };
 };
 
@@ -150,7 +150,7 @@ const launcher = (machine: CliMachine, scratch: string, registry: string): Launc
 // userconfig outside HOME, so a spec can assert HOME stays empty.
 const newMachine = (site: StubSite, registry: string, env: NodeJS.ProcessEnv) => {
   const scratch = mkdtempSync(join(tmpdir(), 'agentage-e2e-npm-'));
-  const machine = createCliMachine({
+  const host = createCliMachine({
     ...stubEnv(site),
     AGENTAGE_EXTENSIONS: '1',
     AGENTAGE_EXTENSIONS_DIR: undefined,
@@ -159,14 +159,14 @@ const newMachine = (site: StubSite, registry: string, env: NodeJS.ProcessEnv) =>
     ...env,
   });
   const cleanup = (): void => {
-    machine.cleanup();
+    host.cleanup();
     rmSync(scratch, { recursive: true, force: true });
   };
-  return { cli: launcher(machine, scratch, registry), cleanup };
+  return { cli: machine(host, scratch, registry), cleanup };
 };
 
 export const test = base.extend<
-  { site: StubSite; launcherMachine: (env?: NodeJS.ProcessEnv) => Launcher; cli: Launcher },
+  { site: StubSite; anotherMachine: (env?: NodeJS.ProcessEnv) => Machine; cli: Machine },
   { registry: string }
 >({
   registry: [
@@ -186,14 +186,14 @@ export const test = base.extend<
     await use(site);
     await site.close();
   },
-  launcherMachine: async ({ site, registry }, use) => {
+  anotherMachine: async ({ site, registry }, use) => {
     const machines: { cleanup: () => void }[] = [];
     await use((env = {}) => {
       const made = newMachine(site, registry, env);
       machines.push(made);
       return made.cli;
     });
-    for (const machine of machines) machine.cleanup();
+    for (const made of machines) made.cleanup();
   },
-  cli: async ({ launcherMachine }, use) => use(launcherMachine()),
+  cli: async ({ anotherMachine }, use) => use(anotherMachine()),
 });

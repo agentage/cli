@@ -1,9 +1,16 @@
 // @ts-check
 
-/** @typedef {typeof import('@agentage/cli/extension').EXTENSION_API_VERSION} ApiVersion */
+/** @import { ExtensionContext } from '@agentage/cli/extension' */
 
-/** @type {(ctx: { use: (id: string) => { greet: () => string } }) => Promise<{ greeting: () => string }>} */
+/** @param {ExtensionContext} ctx */
 export const register = async (ctx) => {
-  const greeting = ctx.use('hello').greet();
-  return { greeting: () => greeting };
+  const hello = /** @type {{ greet: () => string }} */ (ctx.use('hello'));
+  const heard = hello.greet();
+  ctx.commands.add((program) =>
+    program
+      .command('world')
+      .description('Print what hello greeted')
+      .action(() => console.log(`world heard: ${heard}`))
+  );
+  return { heard: () => heard };
 };

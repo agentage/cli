@@ -1,6 +1,7 @@
 import { rmSync } from 'node:fs';
 import { describe, expect, vi } from 'vitest';
-import { npmFromFixtures, pkg, test } from '../../test/config-dir.js';
+import { pkg, test } from '../../test/config-dir.js';
+import { npmFromFixtures } from '../../test/npm-fixtures.js';
 import { install, planInstall, type InstallSet } from './installer.js';
 import { type Npm } from './npm.js';
 import { withInstallLock } from './tree.js';

@@ -6,6 +6,8 @@ import {
   type SetupDeps,
   type SetupOptions,
 } from './commands/auth/setup.js';
+import { runExtensionCheck, type ExtensionCheckOptions } from './commands/extension/check.js';
+import { registerDelegates } from './commands/extension/delegate.js';
 import {
   registerExtension,
   runExtensionList,
@@ -25,6 +27,7 @@ export interface ProgramDeps {
   status: (opts: StatusOptions) => Promise<void>;
   update: (opts: UpdateOptions) => Promise<void>;
   extensionList: (opts: ExtensionListOptions) => Promise<void>;
+  extensionCheck: (opts: ExtensionCheckOptions) => Promise<void>;
   updateHint: () => string | null;
   refreshUpdateCache: () => Promise<void>;
   writeOut: (text: string) => void;
@@ -34,7 +37,7 @@ export interface ProgramDeps {
 const setupDeps: SetupDeps = {
   ensureSignedIn: (signInOpts) => ensureSignedIn(signInOpts),
   signOut: () => signOut(),
-  printStatus: () => runStatus({}),
+  printStatus: (opts) => runStatus(opts),
 };
 
 const defaultDeps: ProgramDeps = {
@@ -45,6 +48,7 @@ const defaultDeps: ProgramDeps = {
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
   extensionList: (opts) => runExtensionList(opts),
+  extensionCheck: (opts) => runExtensionCheck(opts),
   updateHint,
   refreshUpdateCache: () => refreshUpdateCache(),
   writeOut: (text) => void process.stdout.write(text),
@@ -58,13 +62,14 @@ const ACTION_FAILED = 'agentage.actionFailed';
 
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-// One failure path for every command: a red stderr line, then exit 1 through run().
+// One failure path: a red stderr line, exit 1; an extension's --help or usage error keeps its code.
 const withAction =
   <T>(deps: ProgramDeps, fn: (opts: T) => Promise<void>, prefix = '') =>
   async (opts: T): Promise<void> => {
     try {
       await fn(opts);
     } catch (err) {
+      if (err instanceof CommanderError) throw err;
       deps.writeErr(`${chalk.red(`${prefix}${messageOf(err)}`)}\n`);
       throw new CommanderError(EXIT_FAILED, ACTION_FAILED, messageOf(err));
     }
@@ -80,7 +85,25 @@ const hintAfter =
     void deps.refreshUpdateCache();
   };
 
-export const createProgram = (deps: ProgramDeps = defaultDeps): Command => {
+// Extension manifests are read as data; whatever goes wrong there, today's commands still run.
+const addExtensions = (program: Command, deps: ProgramDeps, argv: string[]): void => {
+  registerExtension(
+    program,
+    withAction(deps, deps.extensionList),
+    withAction(deps, deps.extensionCheck)
+  );
+  try {
+    registerDelegates(program, argv, (fn) => withAction(deps, fn));
+  } catch (err) {
+    deps.writeErr(`${chalk.yellow(`warning: extension commands skipped: ${messageOf(err)}`)}\n`);
+  }
+};
+
+// `argv` reaches an extension's own Command unchanged, so it parses exactly what was typed.
+export const createProgram = (
+  deps: ProgramDeps = defaultDeps,
+  argv: string[] = process.argv
+): Command => {
   const program = new Command()
     .name('agentage')
     .description('Connect this machine to agentage from the terminal')
@@ -92,7 +115,7 @@ export const createProgram = (deps: ProgramDeps = defaultDeps): Command => {
   registerSetup(program, withAction(deps, deps.setup, 'Setup failed: '));
   registerStatus(program, withAction(deps, deps.status));
   registerUpdate(program, withAction(deps, deps.update));
-  if (extensionsEnabled()) registerExtension(program, withAction(deps, deps.extensionList));
+  if (extensionsEnabled()) addExtensions(program, deps, argv);
   return program;
 };
 
@@ -113,7 +136,7 @@ export const run = async (
 ): Promise<number> => {
   if (process.env['NO_COLOR']) chalk.level = 0; // chalk ignores NO_COLOR on its own
   try {
-    await createProgram(deps).parseAsync(argv);
+    await createProgram(deps, argv).parseAsync(argv);
     return EXIT_OK;
   } catch (err) {
     return exitCodeOf(err, deps);

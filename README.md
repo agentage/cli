@@ -70,6 +70,10 @@ agentage extension list                            # one row per extension: stat
 agentage status                                    # adds this machine, the profile and an extension count
 ```
 
+After installing, `setup` loads each extension once and prints whether it loaded (`ok`) or why
+not, and the commands extensions contribute run as `agentage <command>`. Extensions run in the CLI
+process with your privileges, so install only extensions you trust.
+
 A profile is a JSON file that maps package names to version ranges:
 
 ```json

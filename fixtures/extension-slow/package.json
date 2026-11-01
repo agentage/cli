@@ -1,0 +1,10 @@
+{
+  "name": "@agentage/fixture-slow",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "agentage": {
+    "id": "slow"
+  }
+}

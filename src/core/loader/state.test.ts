@@ -1,6 +1,7 @@
+import { statSync } from 'node:fs';
 import { describe, expect } from 'vitest';
 import { test } from '../../test/config-dir.js';
-import { readRunState } from './state.js';
+import { readRunState, writeRunState } from './state.js';
 
 const RUN = { at: '2026-10-29T10:00:00.000Z', pid: 42, state: 'failed', error: 'boom' };
 
@@ -26,5 +27,18 @@ describe("an extension's last run", () => {
   test('is never read from a path built from an id outside the id pattern', ({ dir }) => {
     dir.write('state/x.json', { at: 't', pid: 1, state: 'ok' });
     expect(readRunState('../state/x')).toBeNull();
+  });
+
+  test('is written by the core as { at, pid, state, error }, readable only by this user', ({
+    dir,
+  }) => {
+    writeRunState('hello', { state: 'failed', error: 'boom' });
+    expect(readRunState('hello')).toEqual({
+      at: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
+      pid: process.pid,
+      state: 'failed',
+      error: 'boom',
+    });
+    expect(statSync(dir.at('state/hello.json')).mode & 0o777).toBe(0o600);
   });
 });
