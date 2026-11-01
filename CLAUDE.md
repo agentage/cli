@@ -2,8 +2,9 @@
 
 The agentage CLI core. Commands: `setup` (OAuth sign-in), `status`, `update`.
 Extensions extend it through `src/core/`; with `AGENTAGE_EXTENSIONS=1`, `setup --profile`
-installs and loads them, `extension list` and `extension check` show them, and the commands they
-contribute run as `agentage <command>`. memory, vault, daemon, sync and MCP code lives in git
+installs and loads them, `extension install` and `extension remove` add or take out one at a time,
+`extension list` and `extension check` show them, and the commands they contribute run as
+`agentage <command>`. memory, vault, daemon, sync and MCP code lives in git
 history up to v0.37.2 and returns as extensions.
 
 ## Layout
@@ -15,9 +16,12 @@ history up to v0.37.2 and returns as extensions.
 - `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability:
   `auth/` (setup), `status/`, `update/`, `extension/` (`rows.ts` gathers the extension rows,
   `list.ts` prints them and registers the `extension` group, `check.ts` loads once and reports,
-  `setup.ts` is the extensions `setup` flow (its only deps are the network ones and npm),
-  `secrets-prompt.ts` asks for or lists missing secrets (`isTTY`/`prompt` are its only seam),
-  `delegate.ts` registers one stub per contributed command and hands it to the extension)
+  `install-load.ts` is the install, load, print rows, fail flow `setup`, `install` and `remove`
+  end with, `setup.ts` is the extensions `setup` flow (its only deps are the network ones and
+  npm), `install.ts` adds one extension (npm is its only seam), `remove.ts` takes one out
+  (`--purge` asks through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists
+  missing secrets (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per
+  contributed command and hands it to the extension)
 - `src/lib/` - shared library, grouped by domain:
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,
@@ -33,7 +37,8 @@ history up to v0.37.2 and returns as extensions.
 - `src/core/` - the core, gated by `AGENTAGE_EXTENSIONS=1`; imports nothing product-shaped
   (the package guard enforces it)
   - `profile/` (schema v1 validator incl. `registries`, `profile.json` reader and writer plus
-    the default profile, `machine.json`, install/load set merge)
+    the default profile, `machine.json` incl. dev paths, install/load set merge, `edit.ts`: one
+    extension in or out of the profile)
   - `loader/` - reading without running: `scan.ts` (profile + machine + manifests -> static
     states and the load set), `discover.ts`, `manifest.ts`, `config.ts` (config slice checked
     against `configuration`, defaults filled), `states.ts`; running: `load.ts` (a session: peer
@@ -46,14 +51,16 @@ history up to v0.37.2 and returns as extensions.
     seam), `tree.ts` (deterministic `package.json` and per-scope `.npmrc`, staged
     `extensions/trees/<hash>/` + `.complete` + `extensions/current`, `install.lock` with a
     heartbeat), `compare-lock.ts` (normalized lock compare), `installer.ts` (plan, install; npm
-    is the only injected dep)
+    is the only injected dep), `resolve.ts` (what `extension install <name>` means: dev path,
+    refused scheme, tarball URL, package or short name; looked up with `npm pack --dry-run`)
 - `src/extension.ts` - the `@agentage/cli/extension` subpath export: the contract types
   (`ExtensionContext`, `ExtensionManifest`, ...), identity `defineExtension`, versioned by
   `EXTENSION_API_VERSION`; type-only for extensions at runtime
 - `src/test/config-dir.ts` - the unit-test kit for `src/core` and `src/commands/extension`: a
   fresh config dir per test (`dir.write`, `dir.profile`, `dir.tree`, `dir.extension` for a dev
   extension written from source) and `output()` capture; `src/test/npm-fixtures.ts` has
-  `npmFromFixtures` playing npm; both excluded from the build and from coverage
+  `npmFromFixtures` playing npm installs and `manifestFromFixtures` playing `npm pack --dry-run`;
+  both excluded from the build and from coverage
 - `fixtures/` - test-only extension packages (`@agentage/fixture-*`), never published
 - `e2e/registry/` - in-process npm registry serving `npm pack` output to e2e on loopback
 - `scripts/bump-version.js` - release helper (`node scripts/bump-version.js patch|minor|major`)

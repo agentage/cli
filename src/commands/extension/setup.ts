@@ -1,13 +1,6 @@
 import chalk from 'chalk';
 import { readFileSync } from 'node:fs';
-import { type DiscoveredExtension } from '../../core/loader/discover.js';
-import { missingSecrets } from '../../core/loader/secrets.js';
-import {
-  install,
-  planInstall,
-  type InstallPlan,
-  type InstallResult,
-} from '../../core/installer/installer.js';
+import { planInstall, type InstallPlan } from '../../core/installer/installer.js';
 import { DEFAULT_REGISTRY, type Npm } from '../../core/installer/npm.js';
 import { loadMachine, setProfileSource } from '../../core/profile/machine.js';
 import { keepMachine } from '../../core/profile/merge.js';
@@ -19,10 +12,8 @@ import {
 } from '../../core/profile/profile.js';
 import { type Profile, type ProfileParse } from '../../core/profile/schema.js';
 import { type SetupDeps, type SetupOptions } from '../auth/setup.js';
-import { failedError, loadAndGather } from './check.js';
-import { rowLines } from './list.js';
-import { gatherExtensions } from './rows.js';
-import { askSecrets } from './secrets-prompt.js';
+import { counted, installAndLoad, line } from './install-load.js';
+import { printWarnings } from './list.js';
 
 // Sign-in and status reach the site; npm is the one other seam.
 export interface ExtensionSetupDeps extends SetupDeps {
@@ -62,11 +53,6 @@ const localSource = (): Source => {
   return { label: 'default profile', profile: defaultProfile(), warnings: [], fresh: true };
 };
 
-const line = (label: string, value: string): string => `${label.padEnd(10)} ${value}`;
-
-const counted = (n: number): string =>
-  n === 0 ? 'no extensions' : `${n} extension${n === 1 ? '' : 's'}`;
-
 const npmText = (plan: InstallPlan): string => {
   if (plan.npm === null) return plan.reuse ? 'skipped, tree already installed' : 'skipped';
   if (plan.npm === 'ci') return 'ci --ignore-scripts (the lock matches package.json)';
@@ -96,36 +82,9 @@ const planLines = (label: string, plan: InstallPlan): string[] => {
   ];
 };
 
-const installLine = (result: InstallResult): string => {
-  const how = result.reused ? 'reused' : result.npm ? `npm ${result.npm}` : 'npm skipped';
-  return line('install', `${counted(result.count)} in tree ${result.tree} (${how})`);
-};
-
-const warn = (warnings: string[]): void => {
-  for (const warning of warnings) console.error(chalk.yellow(`warning: ${warning}`));
-};
-
 const printPlan = (source: Source): void => {
-  warn(source.warnings);
+  printWarnings(source.warnings);
   for (const text of planLines(source.label, planInstall(source.profile))) console.log(text);
-};
-
-const listSecrets = (extensions: DiscoveredExtension[]): Promise<void> =>
-  askSecrets(missingSecrets(extensions));
-
-// Only a good install goes on to load; the rows print either way and show what is current.
-const installAndLoad = async (source: Source, deps: ExtensionSetupDeps): Promise<void> => {
-  const outcome = await install(source.profile, deps.npm).then(
-    (result) => ({ result, error: null }),
-    (error: unknown) => ({ result: null, error })
-  );
-  if (outcome.result) console.log(installLine(outcome.result));
-  const gathered = outcome.result ? await loadAndGather(listSecrets) : await gatherExtensions();
-  for (const text of rowLines(gathered.status.extensions)) console.log(text);
-  warn(gathered.warnings);
-  if (outcome.error) throw outcome.error;
-  const failed = failedError(gathered.status.extensions);
-  if (failed) throw failed;
 };
 
 // `--profile` never signs in; this machine's own entry in the local profile is kept.
@@ -133,7 +92,7 @@ const fromFile = async (source: Source, deps: ExtensionSetupDeps): Promise<void>
   const machine = await loadMachine();
   await mutateProfile((current) => keepMachine(source.profile, current, machine.id));
   await setProfileSource('file');
-  await installAndLoad(source, deps);
+  await installAndLoad(source.profile, deps.npm);
 };
 
 const UNAVAILABLE = 'cloud profile unavailable, using';
@@ -146,7 +105,7 @@ const fromLocal = async (deps: ExtensionSetupDeps): Promise<void> => {
     await mutateProfile(() => source.profile);
     await setProfileSource('default');
   }
-  await installAndLoad(source, deps);
+  await installAndLoad(source.profile, deps.npm);
 };
 
 export const runExtensionSetup = async (

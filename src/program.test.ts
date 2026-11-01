@@ -13,6 +13,8 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     setup: vi.fn(async () => undefined),
     status: vi.fn(async () => undefined),
     update: vi.fn(async () => undefined),
+    extensionInstall: vi.fn(async () => undefined),
+    extensionRemove: vi.fn(async () => undefined),
     extensionList: vi.fn(async () => undefined),
     extensionCheck: vi.fn(async () => undefined),
     updateHint: vi.fn(() => 'update available: 9.9.9'),
@@ -169,5 +171,19 @@ describe('createProgram', () => {
     expect(h.deps.extensionCheck).toHaveBeenCalledWith({ json: true });
     expect(await h.exec('extension', 'nope')).toBe(2);
     expect(h.stderr()).toContain("unknown command 'nope'");
+  });
+
+  test('extension install and remove pass the name and their flags; extension --help lists all four', async () => {
+    process.env['AGENTAGE_EXTENSIONS'] = '1';
+    const h = makeDeps();
+    expect(await h.exec('extension', 'install', 'hello', '--off')).toBe(0);
+    expect(h.deps.extensionInstall).toHaveBeenCalledWith({ name: 'hello', off: true });
+    expect(await h.exec('extension', 'remove', 'hello', '--purge', '--yes')).toBe(0);
+    expect(h.deps.extensionRemove).toHaveBeenCalledWith({ name: 'hello', purge: true, yes: true });
+    expect(await h.exec('extension', 'install')).toBe(2);
+    expect(h.stderr()).toContain("missing required argument 'name'");
+    expect(await h.exec('extension', '--help')).toBe(0);
+    const listed = h.stdout().match(/^ {2}(install|remove|list|check)\b/gm);
+    expect(listed).toEqual(['  install', '  remove', '  list', '  check']);
   });
 });

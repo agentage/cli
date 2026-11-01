@@ -49,6 +49,20 @@ export const readProfile = (): ProfileParse | null => {
   return raw === null ? null : parseProfileText(raw);
 };
 
+const listed = (errors: string[]): string => errors.map((e) => `  ${e}`).join('\n');
+
+// What `extension install` and `remove` change: the default when absent; never an invalid or newer file.
+export const editableProfile = (): Profile => {
+  const parsed = readProfile();
+  if (parsed === null) return defaultProfile();
+  if (!parsed.ok) throw new Error(`profile.json is invalid:\n${listed(parsed.errors)}`);
+  if (!parsed.readOnly) return parsed.profile;
+  const { version } = parsed.profile;
+  throw new Error(
+    `profile.json is version ${version}, newer than this CLI understands; it was not changed`
+  );
+};
+
 // Re-read under the lock: `fn` sees the newest local copy (null when absent or invalid).
 export const mutateProfile = async (fn: (current: Profile | null) => Profile): Promise<Profile> => {
   const path = profilePath();

@@ -32,7 +32,7 @@ interface Issues {
 
 const TOP_KEYS = ['version', 'extensions', 'registries', 'config', 'machines'];
 const MACHINE_KEYS = ['off', 'config'];
-const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
+export const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
 const SCOPE = /^@[a-z0-9][a-z0-9._~-]*$/;
 const LOOPBACK_HOST = /^(?:localhost|.+\.localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1?\])$/i;
 const REFUSED_PREFIX = /^(npm|github|file|http):/i;
@@ -62,7 +62,7 @@ const httpsProblem = (spec: string): string | null => {
   return LOOPBACK_HOST.test(url.hostname) ? 'loopback URLs are refused' : null;
 };
 
-const specProblem = (spec: string): string | null => {
+export const specProblem = (spec: string): string | null => {
   const refused = REFUSED_PREFIX.exec(spec)?.[1];
   if (refused) return `${refused.toLowerCase()}: specs are refused; ${USE_INSTEAD}`;
   if (/^https:/i.test(spec)) return httpsProblem(spec);

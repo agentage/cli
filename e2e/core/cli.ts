@@ -3,18 +3,9 @@
  * HOME, npm cache and npm userconfig, AGENTAGE_EXTENSIONS=1, and its own loopback site. Shared,
  * read-only: the loopback npm registry serving the fixtures. `anotherMachine(env)` adds a machine.
  */
-import { createHash } from 'node:crypto';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { expect, test as base } from '@playwright/test';
 import {
   assertCliBuilt,
@@ -26,6 +17,7 @@ import {
 import { startFixtureRegistry } from '../registry/registry.js';
 import { startStubSite, stubEnv, type StubSite } from '../stub/auth-server.js';
 import { signInVia, type SignInRun } from '../stub/client.js';
+import { configFiles, fixtureCopy, hashTree, type ConfigFiles } from './files.js';
 
 export { expect };
 
@@ -56,28 +48,14 @@ export interface Machine extends ConfigFiles {
   signIn: () => Promise<SignInRun>;
   // Writes a profile file outside the config dir and returns its path, for `setup --profile`.
   profile: (spec: ProfileSpec) => string;
+  // A copy of fixtures/extension-<name> outside the config dir, for `extension install <path>`.
+  fixture: (name: string, edits?: Record<string, string>) => string;
   snapshot: () => Record<string, string>;
   homeFiles: () => string[];
 }
 
 // `hello` -> `@agentage/fixture-hello`; a scoped name stays as written.
 const pkg = (name: string): string => (name.startsWith('@') ? name : `@agentage/fixture-${name}`);
-
-// update-check.json is the CLI's own update throttle, which any command may refresh.
-const hashTree = (dir: string, prefix = ''): Record<string, string> =>
-  Object.assign(
-    {},
-    ...readdirSync(dir, { withFileTypes: true }).map((e) => {
-      if (e.name === 'update-check.json') return {};
-      const rel = `${prefix}${e.name}`;
-      if (e.isDirectory()) return { [rel]: 'dir', ...hashTree(join(dir, e.name), `${rel}/`) };
-      return {
-        [rel]: createHash('sha256')
-          .update(readFileSync(join(dir, e.name)))
-          .digest('hex'),
-      };
-    })
-  );
 
 const words = (command: string): string[] => command.split(' ').filter((w) => w !== '');
 
@@ -92,23 +70,6 @@ const toRun = (r: { code: number; stdout: string; stderr: string }): Run => ({
 
 const expand = (map: Record<string, string>): Record<string, string> =>
   Object.fromEntries(Object.entries(map).map(([name, value]) => [pkg(name), value]));
-
-const configFiles = (configDir: string) => {
-  const at = (path: string): string => join(configDir, path);
-  return {
-    file: (path: string) => readFileSync(at(path), 'utf-8').trim(),
-    json: (path: string) => JSON.parse(readFileSync(at(path), 'utf-8')) as Record<string, unknown>,
-    write: (path: string, value: unknown): void => {
-      mkdirSync(dirname(at(path)), { recursive: true });
-      writeFileSync(at(path), JSON.stringify(value, null, 2));
-    },
-    remove: (path: string): void => rmSync(at(path), { recursive: true, force: true }),
-    exists: (path: string) => existsSync(at(path)),
-    list: (path: string) => (existsSync(at(path)) ? readdirSync(at(path)).sort() : []),
-  };
-};
-
-type ConfigFiles = ReturnType<typeof configFiles>;
 
 const E2E_MACHINE = { id: 'm_0000beef', name: 'e2e-box', dev: {}, profileSource: 'default' };
 
@@ -140,6 +101,7 @@ const machine = (host: CliMachine, scratch: string, registry: string): Machine =
     start: (command) => host.startSetup(words(command)),
     signIn: () => signInVia(host),
     profile: profileWriter(scratch, registry, files),
+    fixture: fixtureCopy(scratch),
     ...files,
     snapshot: () => hashTree(host.configDir),
     homeFiles: () => readdirSync(host.home),

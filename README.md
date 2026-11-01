@@ -66,6 +66,8 @@ as described above.
 export AGENTAGE_EXTENSIONS=1
 agentage setup --profile ./profile.json            # install the extensions a profile names, no sign-in
 agentage setup --profile ./profile.json --dry-run  # show what would be installed, write nothing
+agentage extension install @agentage/example       # add one extension to profile.json, install and load it
+agentage extension remove @agentage/example        # take it out again and reinstall the rest
 agentage extension list                            # one row per extension: state, version, commands
 agentage status                                    # adds this machine, the profile and an extension count
 ```
@@ -87,7 +89,7 @@ in the config directory:
 | Path                       | What                                                      |
 | -------------------------- | --------------------------------------------------------- |
 | `~/.agentage/profile.json` | the profile `setup` installs from                         |
-| `~/.agentage/machine.json` | this machine's id and name                                |
+| `~/.agentage/machine.json` | this machine's id, name and dev extensions                |
 | `~/.agentage/extensions/`  | installed extensions; `extensions/current` names the tree |
 
 Details, including every state an extension can be in, are in

@@ -1,7 +1,7 @@
 import { statSync } from 'node:fs';
 import { describe, expect } from 'vitest';
 import { pkg, test } from '../../test/config-dir.js';
-import { defaultProfile, mutateProfile, readProfile } from './profile.js';
+import { defaultProfile, editableProfile, mutateProfile, readProfile } from './profile.js';
 
 describe('profile.json', () => {
   test('when absent, there is no profile', () => {
@@ -44,5 +44,22 @@ describe('profile.json', () => {
       extensions: { [pkg('hello')]: '^1', [pkg('world')]: '^1' },
       teams: ['a'],
     });
+  });
+});
+
+describe('profile.json, as extension install and remove change it', () => {
+  test('is the default profile when absent', () => {
+    expect(editableProfile()).toEqual(defaultProfile());
+  });
+
+  test('is refused when invalid or from a newer schema, so neither is overwritten', ({ dir }) => {
+    dir.write('profile.json', { version: 0 });
+    expect(() => editableProfile()).toThrow(
+      'profile.json is invalid:\n  version: must be 1 (got 0)'
+    );
+    dir.profile({ version: 2 });
+    expect(() => editableProfile()).toThrow(
+      'profile.json is version 2, newer than this CLI understands; it was not changed'
+    );
   });
 });
