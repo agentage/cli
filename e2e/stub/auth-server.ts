@@ -1,7 +1,8 @@
 /**
  * The hermetic stand-in for the live stack: one plain-http loopback origin
  * (AGENTAGE_SITE_FQDN=127.0.0.1:<port>, so site, api and auth share it) serving
- * exactly what the CLI calls - health, DCR, authorize, token, get-session, revoke.
+ * exactly what the CLI calls - health, DCR, authorize, token, get-session, revoke,
+ * and the account routes /v1/profile and /v1/machines (account.ts).
  * No cookies, no HTML: the test plays "the browser" with a manual-redirect fetch.
  */
 import { type IncomingMessage, type ServerResponse } from 'node:http';
@@ -14,10 +15,18 @@ import {
   send,
   type Reply,
 } from './http.js';
+import { accountRoute } from './account.js';
 import { authorize, getSession, register, revoke, token } from './oauth.js';
 import { createState, type StubOptions, type StubRequest, type StubState } from './state.js';
 
-export { type StubOptions, type StubState, type StubToken } from './state.js';
+export {
+  type StubMachine,
+  type StubOptions,
+  type StubProfile,
+  type StubRequest,
+  type StubState,
+  type StubToken,
+} from './state.js';
 
 export interface StubSite {
   fqdn: string;
@@ -54,13 +63,21 @@ const ROUTES: Record<string, Route> = {
   'POST /api/auth/mcp/revoke': async ({ state, req }) => revoke(state, await readForm(req)),
 };
 
+const ACCOUNT = /^\/v1\/(profile$|machines(\/|$))/;
+
+const routeOf = (entry: StubRequest): Route | undefined =>
+  ACCOUNT.test(entry.path)
+    ? ({ state, req }) => accountRoute(state, req, entry)
+    : ROUTES[`${entry.method} ${entry.path}`];
+
+// Logged on arrival, so a request the site never answers still shows (status 0).
 const dispatch = async (state: StubState, req: IncomingMessage, res: ServerResponse) => {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1');
   const entry: StubRequest = { method: req.method ?? 'GET', path: url.pathname, status: 0 };
-  const route = ROUTES[`${entry.method} ${entry.path}`];
+  state.requests.push(entry);
+  const route = routeOf(entry);
   const reply = route ? await route({ state, req, url, entry }) : json(404, { error: 'not_found' });
   entry.status = reply.status;
-  state.requests.push(entry);
   send(res, reply);
 };
 

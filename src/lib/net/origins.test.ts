@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { environment, links, normalizeFqdn, siteFqdn } from './origins.js';
+import { apiOrigin, environment, links, normalizeFqdn, siteFqdn } from './origins.js';
 
 describe('normalizeFqdn', () => {
   it('defaults to agentage.io', () => {
@@ -51,6 +51,14 @@ describe('links', () => {
       api: 'http://127.0.0.1:8080/api',
       auth: 'http://127.0.0.1:8080',
     });
+  });
+});
+
+describe('apiOrigin', () => {
+  it('is the root of the API host, where the account routes live', () => {
+    expect(apiOrigin('agentage.io')).toBe('https://api.agentage.io');
+    expect(apiOrigin('localhost')).toBe('http://localhost:3001');
+    expect(apiOrigin('127.0.0.1:8080')).toBe('http://127.0.0.1:8080');
   });
 });
 

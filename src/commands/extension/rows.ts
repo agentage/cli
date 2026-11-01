@@ -27,10 +27,20 @@ export interface ExtensionRow {
 export type ProfileStatus =
   | { state: 'missing' }
   | { state: 'invalid'; errors: string[] }
-  | { state: 'ok'; version: number; source: ProfileSource; readOnly: boolean };
+  | {
+      state: 'ok';
+      version: number;
+      source: ProfileSource;
+      readOnly: boolean;
+      // The etag of the account's profile this copy mirrors; null when it mirrors none.
+      etag: string | null;
+      // `status` only: the account's profile, when it moved past this copy.
+      cloud?: { version: number; etag: string };
+    };
 
 export interface ExtensionsStatus {
-  machine: { id: string; name: string };
+  // `registered`, `status` only: whether the account knows this machine (null: not known).
+  machine: { id: string; name: string; registered?: boolean | null };
   profile: ProfileStatus;
   plan: PlanSummary;
   extensions: ExtensionRow[];
@@ -47,7 +57,9 @@ const profileStatus = (parsed: ProfileParse | null, machine: MachineFile): Profi
   if (parsed === null) return { state: 'missing' };
   if (!parsed.ok) return { state: 'invalid', errors: parsed.errors };
   const { version } = parsed.profile;
-  return { state: 'ok', version, source: machine.profileSource, readOnly: parsed.readOnly };
+  const source = machine.profileSource;
+  const etag = source === 'cloud' ? machine.profileEtag : null;
+  return { state: 'ok', version, source, readOnly: parsed.readOnly, etag };
 };
 
 // A row for an invalid manifest has no trustworthy id, so it never shows another extension's run.

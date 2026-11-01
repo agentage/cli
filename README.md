@@ -81,6 +81,10 @@ whether it loaded (`ok`) or why not. `extension install` and `extension remove` 
 profile and then do the same. Nothing installs itself on a timer; the state only changes when
 you run a command.
 
+Once you are signed in, the profile lives in your account, so every machine you set up gets the
+same extensions, and `extension install` and `extension remove` save the change there. Each
+machine you run `setup` on appears in your account as one of its machines.
+
 ```bash
 export AGENTAGE_EXTENSIONS=1
 agentage setup --profile ./profile.json            # install and load the extensions a profile names
@@ -117,7 +121,7 @@ any extension code loads. Everything lives in the config directory:
 | Path                       | What                                                           |
 | -------------------------- | -------------------------------------------------------------- |
 | `~/.agentage/profile.json` | the profile: what this account wants                           |
-| `~/.agentage/machine.json` | this machine's id, name and development extensions             |
+| `~/.agentage/machine.json` | this machine's id, name, development extensions and account    |
 | `~/.agentage/extensions/`  | installed extensions; `extensions/current` names the live tree |
 | `~/.agentage/state/`       | the last run of each extension                                 |
 | `~/.agentage/data/<id>/`   | what each extension keeps                                      |

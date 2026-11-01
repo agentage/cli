@@ -21,11 +21,16 @@ const STATE_WIDTH = Math.max(...Object.keys(COLOR).map((state) => state.length))
 
 const line = (label: string, value: string): string => `${label.padEnd(10)} ${value}`;
 
+const cloudText = ({ version, etag }: { version: number; etag: string }): string =>
+  chalk.yellow(`; account: version ${version}, etag ${etag} - run agentage setup`);
+
 const profileText = (profile: ProfileStatus): string => {
   if (profile.state === 'missing') return 'no profile';
   if (profile.state === 'invalid') return chalk.red('invalid');
+  const etag = profile.etag === null ? '' : `, etag ${profile.etag}`;
   const readOnly = profile.readOnly ? chalk.yellow(', read-only') : '';
-  return `version ${profile.version} (source: ${profile.source}${readOnly})`;
+  const cloud = profile.cloud ? cloudText(profile.cloud) : '';
+  return `version ${profile.version} (source: ${profile.source}${etag}${readOnly})${cloud}`;
 };
 
 const pendingText = (plan: PlanSummary): string => {

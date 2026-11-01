@@ -20,13 +20,18 @@ const installLine = (result: InstallResult): string => {
 const listSecrets = (extensions: DiscoveredExtension[]): Promise<void> =>
   askSecrets(missingSecrets(extensions));
 
-// setup, install and remove end here: rows print either way, only a good install loads.
-export const installAndLoad = async (set: InstallSet, npm: () => Promise<Npm>): Promise<void> => {
+// Rows print either way, only a good install loads; `installed` runs before anything loads.
+export const installAndLoad = async (
+  set: InstallSet,
+  npm: () => Promise<Npm>,
+  installed: () => Promise<unknown> = async () => undefined
+): Promise<void> => {
   const outcome = await install(set, npm).then(
     (result) => ({ result, error: null }),
     (error: unknown) => ({ result: null, error })
   );
   if (outcome.result) console.log(installLine(outcome.result));
+  if (outcome.result) await installed();
   const gathered = outcome.result ? await loadAndGather(listSecrets) : await gatherExtensions();
   for (const text of rowLines(gathered.status.extensions)) console.log(text);
   printWarnings(gathered.warnings);

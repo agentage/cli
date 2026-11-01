@@ -34,18 +34,18 @@ const stubOrigin = (fqdn: string): string | null => {
 export const environment = (fqdn: string): Env =>
   isLocal(fqdn) || fqdn.startsWith('dev.') ? 'development' : 'production';
 
+// The account routes (/v1/...) sit at the root of the API origin; `links().api` is its /api family.
+export const apiOrigin = (fqdn: string): string => {
+  const stub = stubOrigin(fqdn);
+  if (stub) return stub;
+  return isLocal(fqdn) ? 'http://localhost:3001' : `https://api.${fqdn}`;
+};
+
 export const links = (fqdn: string): Links => {
   const stub = stubOrigin(fqdn);
-  if (stub) return { site: stub, api: `${stub}/api`, auth: stub };
+  const api = `${apiOrigin(fqdn)}/api`;
+  if (stub) return { site: stub, api, auth: stub };
   return isLocal(fqdn)
-    ? {
-        site: 'http://localhost:3000',
-        api: 'http://localhost:3001/api',
-        auth: 'http://localhost:3010',
-      }
-    : {
-        site: `https://${fqdn}`,
-        api: `https://api.${fqdn}/api`,
-        auth: `https://auth.${fqdn}`,
-      };
+    ? { site: 'http://localhost:3000', api, auth: 'http://localhost:3010' }
+    : { site: `https://${fqdn}`, api, auth: `https://auth.${fqdn}` };
 };

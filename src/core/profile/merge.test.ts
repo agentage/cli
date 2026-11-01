@@ -11,6 +11,8 @@ const machine: MachineFile = {
   name: 'box',
   dev: { [DEV]: '/home/me/dev' },
   profileSource: 'file',
+  accountId: null,
+  profileEtag: null,
 };
 
 const profile: Profile = {

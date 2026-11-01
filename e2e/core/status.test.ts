@@ -1,6 +1,7 @@
 /**
  * @offline - `agentage status` with AGENTAGE_EXTENSIONS=1 adds three lines (machine, profile,
- * extensions), and with the flag off every command behaves exactly as before.
+ * extensions), the profile line comparing the copy here with your account's; with the flag off
+ * every command behaves exactly as before.
  */
 import { expect, test } from './cli.js';
 
@@ -42,6 +43,22 @@ test.describe('agentage status @offline', () => {
     expect(run.code).toBe(1);
     expect(run.lines).toContain('profile    invalid');
     expect(run.stderr).toContain('extensions["@agentage/fixture-hello"]: file: specs are refused');
+  });
+});
+
+test.describe('agentage status and the profile in your account @p0 @offline', () => {
+  test("agentage status shows the local etag, and your account's version and etag once another machine pushed", async ({
+    cli,
+  }) => {
+    const etag = cli.site.store({ extensions: {} });
+    expect((await cli.signIn()).code).toBe(0);
+    expect((await cli.run('status')).lines).toContain(
+      `profile    version 1 (source: cloud, etag ${etag})`
+    );
+    const newer = cli.site.store({ extensions: { hello: '^1.0.0' } });
+    expect((await cli.run('status')).lines).toContain(
+      `profile    version 1 (source: cloud, etag ${etag}); account: version 1, etag ${newer} - run agentage setup`
+    );
   });
 });
 

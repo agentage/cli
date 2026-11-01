@@ -15,6 +15,10 @@ const deps: ExtensionSetupDeps = {
   signOut: never,
   printStatus: never,
   npm: npmFromFixtures,
+  npmMajor: never,
+  account: () => {
+    throw new Error('reached the account');
+  },
 };
 
 const setup = (opts: SetupOptions) => output(() => runExtensionSetup(opts, deps));

@@ -1,4 +1,5 @@
 import { describe, expect } from 'vitest';
+import { noAccount } from '../../test/account.js';
 import { fixture, MACHINE_ID, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
 import { runExtensionRemove, type ConfirmIo, type ExtensionRemoveOptions } from './remove.js';
@@ -23,7 +24,7 @@ const terminal = (answer: string) => {
 };
 
 const remove = (name: string, opts: Omit<ExtensionRemoveOptions, 'name'> = {}, io = noTerminal) =>
-  output(() => runExtensionRemove({ name, ...opts }, { npm: npmFromFixtures, io }));
+  output(() => runExtensionRemove({ name, ...opts }, { npm: npmFromFixtures, io, ...noAccount }));
 
 // hello installed, with something in its data folder.
 const installedHello = (dir: ConfigDir): void => {

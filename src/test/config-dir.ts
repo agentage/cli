@@ -62,7 +62,8 @@ const configFiles = (root: string) => {
 type ConfigFiles = ReturnType<typeof configFiles>;
 
 export interface ConfigDir extends ConfigFiles {
-  machine: (dev?: Record<string, string>) => void;
+  // machine.json with these dev paths; `fields` replace others, e.g. { profileSource: 'cloud' }.
+  machine: (dev?: Record<string, string>, fields?: Record<string, unknown>) => void;
   profile: (spec: ProfileSpec, path?: string) => string;
   // Fixtures in a complete tree extensions/current names, as npm leaves it for profile.json.
   tree: (...fixtures: string[]) => string;
@@ -70,12 +71,15 @@ export interface ConfigDir extends ConfigFiles {
   extension: (id: string, source: string, manifest?: Record<string, unknown>) => string;
 }
 
-const writeMachine = (files: ConfigFiles, dev: Record<string, string> = {}): void =>
+const writeMachine = (files: ConfigFiles, dev: Record<string, string> = {}, fields = {}): void =>
   files.write('machine.json', {
     id: MACHINE_ID,
     name: 'box',
     dev: expand(dev),
     profileSource: 'default',
+    accountId: null,
+    profileEtag: null,
+    ...fields,
   });
 
 // This machine's entry turning `off` off; machine.json is written first when absent.
@@ -127,7 +131,7 @@ const configDir = (root: string): ConfigDir => {
   const files = configFiles(root);
   return {
     ...files,
-    machine: (dev) => writeMachine(files, dev),
+    machine: (dev, fields) => writeMachine(files, dev, fields),
     profile: (spec, path = 'profile.json') => writeProfile(files, spec, path),
     tree: (...fixtures) => writeTree(files, fixtures),
     extension: (id, source, manifest = {}) => writeExtension(files, id, source, manifest),

@@ -33,13 +33,17 @@ package name are used as written (a name without @<range> is pinned to ^ its lat
 a short name like memory is @agentage/extension-memory, else agentage-extension-memory. A
 package goes into profile.json (created from the default profile when absent), from the
 registry the profile names for its scope; --off keeps it from loading on this machine. Then
-installs and loads like setup, and exits 1 when an extension failed. Never signs in.`;
+installs and loads like setup, and exits 1 when an extension failed. Never signs in. On a
+machine whose profile comes from your account, the change applies to the account's newest
+profile and is pushed (with npm's lock) once everything loaded; if another machine pushed in
+between, it is replayed once on that profile.`;
 
 const REMOVE_HELP = `
 <name> is a package name, a short name or an extension id. Refused while another extension
 peer-depends on it. Takes it out of profile.json and this machine's off list, or out of
 machine.json for a dev extension, deletes state/<id>.json, then installs and loads the rest like
-setup. --purge also deletes data/<id>/ after asking; without a terminal it needs --yes.`;
+setup, and pushes the profile to your account like install. --purge also deletes data/<id>/
+after asking; without a terminal it needs --yes.`;
 
 const LIST_HELP = `
 One row per extension in the profile, a dev path or the installed tree: id, state (installed,

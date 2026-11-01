@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { manifestArgs, npmArgs } from './npm.js';
+import { manifestArgs, npmArgs, npmMajor } from './npm.js';
 
 describe('npm, as the installer runs it', () => {
   it('installs into the staged tree without scripts, unlisted scopes from the public registry', () => {
@@ -43,5 +43,9 @@ describe('npm, as the installer runs it', () => {
       '--cache',
       '/c',
     ]);
+  });
+
+  it('reports the major of the npm it runs, 10 or newer', async () => {
+    expect(await npmMajor()).toBeGreaterThanOrEqual(10);
   });
 });

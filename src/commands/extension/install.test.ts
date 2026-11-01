@@ -1,5 +1,6 @@
 import { realpathSync } from 'node:fs';
 import { describe, expect } from 'vitest';
+import { noAccount } from '../../test/account.js';
 import { fixture, MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
 import { manifestFromFixtures, npmFromFixtures } from '../../test/npm-fixtures.js';
 import {
@@ -8,7 +9,11 @@ import {
   type ExtensionInstallOptions,
 } from './install.js';
 
-const deps: ExtensionInstallDeps = { npm: npmFromFixtures, manifest: manifestFromFixtures() };
+const deps: ExtensionInstallDeps = {
+  npm: npmFromFixtures,
+  manifest: manifestFromFixtures(),
+  ...noAccount,
+};
 
 const install = (name: string, opts: Omit<ExtensionInstallOptions, 'name'> = {}) =>
   output(() => runExtensionInstall({ name, ...opts }, deps));
@@ -40,7 +45,8 @@ describe('agentage extension install', () => {
   test('keeps a file source, the registries and the other extensions; installing a name again updates its spec', async ({
     dir,
   }) => {
-    dir.write('machine.json', { id: MACHINE_ID, name: 'box', dev: {}, profileSource: 'file' });
+    dir.machine();
+    dir.write('machine.json', { ...dir.json('machine.json'), profileSource: 'file' });
     dir.profile({
       extensions: { hello: '^1.0.0' },
       registries: { '@agentage': 'http://127.0.0.1:9' },

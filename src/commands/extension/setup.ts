@@ -1,6 +1,4 @@
-import chalk from 'chalk';
 import { readFileSync } from 'node:fs';
-import { type Npm } from '../../core/installer/npm.js';
 import { loadMachine, setProfileSource } from '../../core/profile/machine.js';
 import { keepMachine } from '../../core/profile/merge.js';
 import {
@@ -14,23 +12,21 @@ import { type SetupDeps, type SetupOptions } from '../auth/setup.js';
 import { installAndLoad } from './install-load.js';
 import { printDryRun, runSetupCheck } from './plan.js';
 import { printWarnings } from './row-lines.js';
+import { accountSetup, disconnect } from './setup-cloud.js';
+import { type EditDeps } from './sync.js';
 
-// Sign-in and status reach the site; npm is the one other seam.
-export interface ExtensionSetupDeps extends SetupDeps {
-  npm: () => Promise<Npm>;
-}
+// Sign-in and status reach the site; npm and the account are the other seams.
+export interface ExtensionSetupDeps extends SetupDeps, EditDeps {}
 
 interface Source {
   profile: Profile;
   warnings: string[];
-  // No local copy existed: the built-in default stands in for the cloud document.
-  fresh: boolean;
 }
 
 const sourceOf = (label: string, parsed: ProfileParse): Source => {
   if (!parsed.ok)
     throw new Error(`${label} is invalid:\n${parsed.errors.map((e) => `  ${e}`).join('\n')}`);
-  return { profile: parsed.profile, warnings: parsed.warnings, fresh: false };
+  return { profile: parsed.profile, warnings: parsed.warnings };
 };
 
 const fileSource = (file: string): Source => {
@@ -45,11 +41,11 @@ const fileSource = (file: string): Source => {
   return sourceOf(file, parseProfileText(raw));
 };
 
-// Without a cloud profile: the local profile.json, else the built-in default.
+// For --check and --dry-run: the local profile.json, else the built-in default.
 const localSource = (): Source => {
   const parsed = readProfile();
   if (parsed !== null) return sourceOf('profile.json', parsed);
-  return { profile: defaultProfile(), warnings: [], fresh: true };
+  return { profile: defaultProfile(), warnings: [] };
 };
 
 // --check and --dry-run read only and never sign in.
@@ -59,7 +55,7 @@ const readOnly = (source: Source, opts: SetupOptions): void => {
   else printDryRun(source.profile, opts);
 };
 
-// `--profile` never signs in; this machine's own entry in the local profile is kept.
+// `--profile` never signs in nor calls the account; this machine's own entry is kept.
 const fromFile = async (source: Source, deps: ExtensionSetupDeps): Promise<void> => {
   const machine = await loadMachine();
   await mutateProfile((current) => keepMachine(source.profile, current, machine.id));
@@ -67,30 +63,17 @@ const fromFile = async (source: Source, deps: ExtensionSetupDeps): Promise<void>
   await installAndLoad(source.profile, deps.npm);
 };
 
-const UNAVAILABLE = 'cloud profile unavailable, using';
-
-const fromLocal = async (deps: ExtensionSetupDeps): Promise<void> => {
-  const source = localSource();
-  if (!source.fresh) console.error(chalk.dim(`${UNAVAILABLE} local profile.json`));
-  else {
-    console.error(chalk.dim(`${UNAVAILABLE} the default profile (saved locally, not synced)`));
-    await mutateProfile(() => source.profile);
-    await setProfileSource('default');
-  }
-  await installAndLoad(source.profile, deps.npm);
-};
-
 export const runExtensionSetup = async (
   opts: SetupOptions,
   deps: ExtensionSetupDeps
 ): Promise<void> => {
-  if (opts.disconnect) return deps.signOut();
+  if (opts.disconnect) return disconnect(deps);
   const file = opts.profile === undefined ? null : fileSource(opts.profile);
   if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts);
   if (file) return fromFile(file, deps);
   await deps.ensureSignedIn({ reauth: opts.reauth, browser: opts.browser });
   const token = process.env['AGENTAGE_TOKEN'];
-  const failure = await fromLocal(deps).then(
+  const failure = await accountSetup(deps).then(
     () => null,
     (error: unknown) => error
   );

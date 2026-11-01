@@ -1,5 +1,5 @@
 import { mutateAuth, type AuthState, type StoredTokens } from '../fs/config.js';
-import { cliFetch, isRedirect, type CliRequestInit } from '../net/fetch.js';
+import { cliFetch, isRedirect, type CliFetchOptions, type CliRequestInit } from '../net/fetch.js';
 import { type Links } from '../net/origins.js';
 import { AuthRequiredError, isTerminalRefresh, TransientAuthError } from './auth-errors.js';
 import { refreshTokens, TokenRequestError, tokensFrom } from './oauth.js';
@@ -76,12 +76,13 @@ export const authedFetch = async (
   auth: AuthState,
   links: Links,
   url: string,
-  init: CliRequestInit = {}
+  init: CliRequestInit = {},
+  opts: CliFetchOptions = {}
 ): Promise<Response> => {
-  const res = await cliFetch(url, withBearer(auth, init));
+  const res = await cliFetch(url, withBearer(auth, init), opts);
   if (res.status !== 401 || !(await tryRefresh(auth, links))) return res;
   await res.body?.cancel();
-  return cliFetch(url, withBearer(auth, init));
+  return cliFetch(url, withBearer(auth, init), opts);
 };
 
 export const authedJson = async <T>(
