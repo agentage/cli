@@ -61,6 +61,8 @@ history up to v0.37.2 and returns as extensions.
   extension written from source) and `output()` capture; `src/test/npm-fixtures.ts` has
   `npmFromFixtures` playing npm installs and `manifestFromFixtures` playing `npm pack --dry-run`;
   both excluded from the build and from coverage
+- `docs/extensions.md` - "Writing an extension": the author guide (manifest, lifecycle, `ctx`);
+  keep it true to `src/extension.ts` and `src/core/loader/`
 - `fixtures/` - test-only extension packages (`@agentage/fixture-*`), never published
 - `e2e/registry/` - in-process npm registry serving `npm pack` output to e2e on loopback
 - `scripts/bump-version.js` - release helper (`node scripts/bump-version.js patch|minor|major`)

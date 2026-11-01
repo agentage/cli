@@ -95,6 +95,8 @@ in the config directory:
 Details, including every state an extension can be in, are in
 [`docs/reference.md`](docs/reference.md).
 
+To write one, see [`docs/extensions.md`](docs/extensions.md).
+
 ## How it works
 
 This is the **terminal client for an agentage account**. `setup` registers a one-off OAuth
