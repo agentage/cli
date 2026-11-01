@@ -10,6 +10,7 @@ type SecretsFile = Record<string, Record<string, string>>;
 export interface SecretKey {
   id: string;
   key: string;
+  description: string | null;
 }
 
 const isStrings = (value: unknown): boolean =>
@@ -41,6 +42,8 @@ export const missingSecrets = (extensions: DiscoveredExtension[]): SecretKey[] =
   const stored = readSecrets();
   return extensions.flatMap((ext) => {
     const id = ext.id ?? '';
-    return ext.secrets.filter((key) => stored[id]?.[key] === undefined).map((key) => ({ id, key }));
+    return ext.secrets
+      .filter((key) => stored[id]?.[key] === undefined)
+      .map((key) => ({ id, key, description: ext.descriptions[key] ?? null }));
   });
 };

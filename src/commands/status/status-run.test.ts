@@ -28,9 +28,11 @@ const gathered: ExtensionsGather = {
   status: {
     machine: { id: 'm_0000beef', name: 'box' },
     profile: { state: 'ok', version: 1, source: 'default', readOnly: false },
+    plan: { add: 0, update: 0, remove: 0, off: 0, unchanged: 0 },
     extensions: [],
   },
   warnings: ['profile.json: unknown key "x" kept'],
+  drift: [],
 };
 
 const capture = async (deps: StatusDeps, json = false) => {
@@ -65,7 +67,7 @@ describe('runStatus', () => {
     expect(json.stdout).toBe(JSON.stringify(baseReport, null, 2));
   });
 
-  it("appends only machine, profile and the extension count after today's lines and keys", async () => {
+  it("appends only machine, profile, the extension count and the plan after today's lines and keys", async () => {
     const human = await capture(depsWith(() => Promise.resolve(gathered)));
     expect(human.stdout).toBe(
       [
@@ -86,8 +88,10 @@ describe('runStatus', () => {
       'machine',
       'profile',
       'extensions',
+      'plan',
     ]);
     expect(parsed['extensions']).toBe(0);
+    expect(parsed['plan']).toEqual(gathered.status.plan);
   });
 
   it('prints the report, then fails the step on an invalid profile', async () => {
@@ -97,6 +101,7 @@ describe('runStatus', () => {
         profile: { state: 'invalid', errors: ['extensions["x"]: bad'] },
       },
       warnings: [],
+      drift: [],
     };
     const result = await capture(
       depsWith(() => Promise.resolve(invalid)),

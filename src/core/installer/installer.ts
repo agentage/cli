@@ -4,6 +4,7 @@ import { extensionsDir } from '../paths.js';
 import { type Profile } from '../profile/schema.js';
 import { lockAgrees, lockEntries, parseLock } from './compare-lock.js';
 import { prepareNpm, type Npm, type NpmCommand } from './npm.js';
+import { driftLines, lockDrift } from './plan.js';
 import {
   clearStaging,
   commitTree,
@@ -107,7 +108,14 @@ const build = async (plan: InstallPlan, prepare: () => Promise<Npm>) => {
   }
 };
 
+// A lock that disagrees with its own tree on a package's bytes is never built on.
+const refuseDrift = (dir: string): void => {
+  const { integrity } = lockDrift(dir);
+  if (integrity.length > 0) throw new Error(driftLines(integrity).join('\n'));
+};
+
 const execute = async (plan: InstallPlan, prepare: () => Promise<Npm>): Promise<InstallResult> => {
+  refuseDrift(plan.extensionsDir);
   clearStaging(plan.extensionsDir);
   const built =
     plan.reuse && plan.tree !== null

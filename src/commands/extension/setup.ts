@@ -1,7 +1,6 @@
 import chalk from 'chalk';
 import { readFileSync } from 'node:fs';
-import { planInstall, type InstallPlan } from '../../core/installer/installer.js';
-import { DEFAULT_REGISTRY, type Npm } from '../../core/installer/npm.js';
+import { type Npm } from '../../core/installer/npm.js';
 import { loadMachine, setProfileSource } from '../../core/profile/machine.js';
 import { keepMachine } from '../../core/profile/merge.js';
 import {
@@ -12,8 +11,9 @@ import {
 } from '../../core/profile/profile.js';
 import { type Profile, type ProfileParse } from '../../core/profile/schema.js';
 import { type SetupDeps, type SetupOptions } from '../auth/setup.js';
-import { counted, installAndLoad, line } from './install-load.js';
-import { printWarnings } from './list.js';
+import { installAndLoad } from './install-load.js';
+import { printDryRun, runSetupCheck } from './plan.js';
+import { printWarnings } from './row-lines.js';
 
 // Sign-in and status reach the site; npm is the one other seam.
 export interface ExtensionSetupDeps extends SetupDeps {
@@ -21,7 +21,6 @@ export interface ExtensionSetupDeps extends SetupDeps {
 }
 
 interface Source {
-  label: string;
   profile: Profile;
   warnings: string[];
   // No local copy existed: the built-in default stands in for the cloud document.
@@ -31,7 +30,7 @@ interface Source {
 const sourceOf = (label: string, parsed: ProfileParse): Source => {
   if (!parsed.ok)
     throw new Error(`${label} is invalid:\n${parsed.errors.map((e) => `  ${e}`).join('\n')}`);
-  return { label, profile: parsed.profile, warnings: parsed.warnings, fresh: false };
+  return { profile: parsed.profile, warnings: parsed.warnings, fresh: false };
 };
 
 const fileSource = (file: string): Source => {
@@ -50,41 +49,14 @@ const fileSource = (file: string): Source => {
 const localSource = (): Source => {
   const parsed = readProfile();
   if (parsed !== null) return sourceOf('profile.json', parsed);
-  return { label: 'default profile', profile: defaultProfile(), warnings: [], fresh: true };
+  return { profile: defaultProfile(), warnings: [], fresh: true };
 };
 
-const npmText = (plan: InstallPlan): string => {
-  if (plan.npm === null) return plan.reuse ? 'skipped, tree already installed' : 'skipped';
-  if (plan.npm === 'ci') return 'ci --ignore-scripts (the lock matches package.json)';
-  const why = plan.lock === null ? 'no lock yet' : 'the lock does not match package.json';
-  return `install --ignore-scripts (${why})`;
-};
-
-// One line per scope the profile routes, then the registry for everything else.
-const registryLines = (registries: Record<string, string>): string[] => {
-  const all: [string, string][] = [...Object.entries(registries), ['default', DEFAULT_REGISTRY]];
-  const width = Math.max(...all.map(([scope]) => scope.length));
-  return all.map(([scope, url]) => line('registry', `${scope.padEnd(width)}  ${url}`));
-};
-
-const planLines = (label: string, plan: InstallPlan): string[] => {
-  const names = Object.keys(plan.install);
-  const width = Math.max(0, ...names.map((name) => name.length));
-  return [
-    line('dry run', 'nothing written'),
-    line('profile', label),
-    ...registryLines(plan.registries),
-    line('extensions', plan.extensionsDir),
-    line('install', counted(names.length)),
-    ...names.map((name) => `  ${name.padEnd(width)}  ${plan.install[name] ?? ''}`),
-    line('npm', npmText(plan)),
-    line('tree', plan.tree ?? 'named from the lock npm writes'),
-  ];
-};
-
-const printPlan = (source: Source): void => {
+// --check and --dry-run read only and never sign in.
+const readOnly = (source: Source, opts: SetupOptions): void => {
   printWarnings(source.warnings);
-  for (const text of planLines(source.label, planInstall(source.profile))) console.log(text);
+  if (opts.check) runSetupCheck(source.profile, opts);
+  else printDryRun(source.profile, opts);
 };
 
 // `--profile` never signs in; this machine's own entry in the local profile is kept.
@@ -114,7 +86,7 @@ export const runExtensionSetup = async (
 ): Promise<void> => {
   if (opts.disconnect) return deps.signOut();
   const file = opts.profile === undefined ? null : fileSource(opts.profile);
-  if (opts.dryRun) return printPlan(file ?? localSource());
+  if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts);
   if (file) return fromFile(file, deps);
   await deps.ensureSignedIn({ reauth: opts.reauth, browser: opts.browser });
   const token = process.env['AGENTAGE_TOKEN'];

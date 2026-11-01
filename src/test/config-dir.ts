@@ -64,7 +64,7 @@ type ConfigFiles = ReturnType<typeof configFiles>;
 export interface ConfigDir extends ConfigFiles {
   machine: (dev?: Record<string, string>) => void;
   profile: (spec: ProfileSpec, path?: string) => string;
-  // Fixtures copied into a complete tree that extensions/current names, as npm would leave them.
+  // Fixtures in a complete tree extensions/current names, as npm leaves it for profile.json.
   tree: (...fixtures: string[]) => string;
   // A dev extension `@test/<id>` written from source, listed in machine.json; returns its name.
   extension: (id: string, source: string, manifest?: Record<string, unknown>) => string;
@@ -91,11 +91,18 @@ const writeProfile = (files: ConfigFiles, spec: ProfileSpec, path: string): stri
   return files.at(path);
 };
 
+// The lock an install of profile.json leaves: its extensions as root dependencies.
+const installedLock = (files: ConfigFiles) => {
+  const profile = files.exists('profile.json') ? files.json('profile.json') : {};
+  return { packages: { '': { dependencies: profile['extensions'] ?? {} } } };
+};
+
 const writeTree = (files: ConfigFiles, fixtures: string[]): string => {
   const dir = join(extensionsDir(), 'trees', HAND_PLACED);
   for (const name of fixtures)
     cpSync(fixture(name), join(dir, 'node_modules', pkg(name)), { recursive: true });
   files.write(join(dir, '.complete'), '');
+  files.write(join(extensionsDir(), 'package-lock.json'), installedLock(files));
   files.write(join(extensionsDir(), 'current'), `${HAND_PLACED}\n`);
   return dir;
 };

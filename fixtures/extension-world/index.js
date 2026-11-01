@@ -4,8 +4,8 @@
 
 /** @param {ExtensionContext} ctx */
 export const register = async (ctx) => {
-  const hello = /** @type {{ greet: () => string }} */ (ctx.use('hello'));
-  const heard = hello.greet();
+  // Typed by ExtensionApis in apis.d.ts: no cast.
+  const heard = ctx.use('hello').greet();
   ctx.commands.add((program) =>
     program
       .command('world')

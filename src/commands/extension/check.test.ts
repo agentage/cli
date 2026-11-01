@@ -1,5 +1,7 @@
 import { describe, expect } from 'vitest';
-import { output, test, type ConfigDir } from '../../test/config-dir.js';
+import { install } from '../../core/installer/installer.js';
+import { output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
+import { npmFromFixtures } from '../../test/npm-fixtures.js';
 import { runExtensionCheck } from './check.js';
 
 const check = (json = false) => output(() => runExtensionCheck({ json }));
@@ -45,6 +47,23 @@ describe('agentage extension check', () => {
       'hello  failed     @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello  "gone"',
       'world  blocked    @agentage/fixture-world 1.0.0 (wants ^1)  commands: world  peer @agentage/fixture-hello is failed',
     ]);
+  });
+
+  test('fails on integrity drift, loading nothing whose bytes the two locks disagree on', async ({
+    dir,
+  }) => {
+    const hello = { [pkg('hello')]: '^1.0.0' };
+    dir.profile({ extensions: hello });
+    await install({ extensions: hello, registries: {} }, npmFromFixtures);
+    const lock = dir.json('extensions/package-lock.json') as { packages: Record<string, object> };
+    lock.packages[`node_modules/${pkg('hello')}`] = { version: '1.0.0', integrity: 'sha512-x' };
+    dir.write('extensions/package-lock.json', lock);
+    const run = await check();
+    expect(run.lines).toEqual([
+      'hello  invalid    @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello  integrity drift: @agentage/fixture-hello@1.0.0',
+    ]);
+    expect(run.error).toBe('integrity drift: @agentage/fixture-hello@1.0.0');
+    expect(dir.exists('state/hello.json')).toBe(false);
   });
 
   test('with no extensions says so and passes', async () => {

@@ -9,7 +9,17 @@
     "configuration": {
       "token": {
         "type": "string",
-        "secret": true
+        "secret": true,
+        "description": "API token the secret fixture reads"
+      },
+      "access": {
+        "type": "string",
+        "enum": [
+          "read",
+          "write"
+        ],
+        "default": "read",
+        "description": "What the token may do"
       }
     }
   }

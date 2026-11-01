@@ -55,6 +55,21 @@ test.describe('agentage extension install @p0 @offline', () => {
     expect(cli.exists('state/secret.json')).toBe(false);
   });
 
+  test('agentage extension install @agentage/fixture-hello twice: the second load gets previousVersion 1.0.0, and so does agentage hello', async ({
+    cli,
+  }) => {
+    await routed(cli);
+    expect((await cli.run('extension install @agentage/fixture-hello')).code).toBe(0);
+    expect((await cli.run('extension install @agentage/fixture-hello')).code).toBe(0);
+    const run = await cli.run('hello --previous');
+    expect(run.lines).toContain('previous version: 1.0.0');
+    const logged = cli
+      .file('logs/hello.log')
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(logged.map((entry) => entry.previousVersion)).toEqual([null, '1.0.0', '1.0.0']);
+  });
+
   test('agentage extension install ./fixtures/extension-hello with hello installed puts its real path in machine.json and lists hello as dev', async ({
     cli,
   }) => {

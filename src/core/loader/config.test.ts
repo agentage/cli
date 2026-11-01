@@ -4,7 +4,7 @@ import { checkConfig } from './config.js';
 const configuration = {
   greeting: { type: 'string', default: 'hello', scope: 'shared' },
   retries: { type: 'number', default: 3, scope: 'machine' },
-  token: { type: 'string', secret: true },
+  token: { type: 'string', secret: true, description: 'API token' },
 };
 
 describe("an extension's config", () => {
@@ -12,6 +12,7 @@ describe("an extension's config", () => {
     expect(checkConfig('hello', configuration, { retries: 5, extra: true })).toEqual({
       config: { greeting: 'hello', retries: 5, extra: true },
       secrets: ['token'],
+      descriptions: { token: 'API token' },
       problem: null,
     });
   });
@@ -37,6 +38,21 @@ describe("an extension's config", () => {
   ])('checks %s as %j', (key, declared, value, problem) => {
     expect(checkConfig('x', { [key]: declared }, { [key]: value }).problem).toBe(
       `config.x.${key}: ${problem}`
+    );
+  });
+
+  it('takes only a value its enum lists, naming the key and the allowed values otherwise', () => {
+    const mode = { mode: { type: 'string', enum: ['fast', 'safe'], default: 'safe' } };
+    expect(checkConfig('x', mode, {})).toMatchObject({ config: { mode: 'safe' }, problem: null });
+    expect(checkConfig('x', mode, { mode: 'fast' }).problem).toBeNull();
+    expect(checkConfig('x', mode, { mode: 'wild' }).problem).toBe(
+      'config.x.mode: must be one of "fast", "safe" (got "wild")'
+    );
+  });
+
+  it('refuses an enum that is not a list, naming it', () => {
+    expect(checkConfig('x', { a: { type: 'string', enum: 'a' } }, {}).problem).toBe(
+      'agentage.configuration.a.enum must be an array'
     );
   });
 

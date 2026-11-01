@@ -1,3 +1,4 @@
+import { driftLines } from '../../core/installer/plan.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { loadExtensions } from '../../core/loader/load.js';
 import { loadSet, scan } from '../../core/loader/scan.js';
@@ -35,11 +36,16 @@ export const failedError = (rows: ExtensionRow[]): Error | null => {
   return new Error(`${count} failed to load: ${failed.join(', ')}`);
 };
 
-// The rows always print; an invalid profile.json or a failed extension then fails the step.
+// Integrity drift: the extensions it names were not loaded, and setup refuses to build on it.
+const driftError = (drift: string[]): Error | null =>
+  drift.length === 0 ? null : new Error(driftLines(drift).join('\n'));
+
+// The rows always print; an invalid profile.json, integrity drift or a failed load fails the step.
 export const runExtensionCheck = async (opts: ExtensionCheckOptions = {}): Promise<void> => {
   const gathered = await loadAndGather();
   printReport(gathered, opts.json);
   const { profile, extensions } = gathered.status;
-  const failure = invalidProfileError(profile) ?? failedError(extensions);
+  const failure =
+    invalidProfileError(profile) ?? driftError(gathered.drift) ?? failedError(extensions);
   if (failure) throw failure;
 };

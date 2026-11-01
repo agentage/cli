@@ -15,6 +15,9 @@ export interface MachineFile {
   profileSource: ProfileSource;
 }
 
+// Without machine.json: no dev paths and no `off` list; reading never creates it.
+export const NO_MACHINE: MachineFile = { id: '', name: '', dev: {}, profileSource: 'default' };
+
 const MACHINE_ID = /^m_[0-9a-f]{8}$/;
 const SOURCES: readonly string[] = ['cloud', 'file', 'default'];
 

@@ -1,10 +1,10 @@
+import { type PlanSummary, type PlanVerb } from '../../core/installer/plan.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { type LoadOutcome } from '../../core/loader/load.js';
 import { scan, type Scan } from '../../core/loader/scan.js';
 import { readRunState } from '../../core/loader/state.js';
 import { type StaticResult, type StaticState } from '../../core/loader/states.js';
 import { loadMachine, type MachineFile, type ProfileSource } from '../../core/profile/machine.js';
-import { type Effective } from '../../core/profile/merge.js';
 import { type ProfileParse } from '../../core/profile/schema.js';
 
 // `ok` and `failed` only after a load in this process; `blocked` also when a peer failed to load.
@@ -17,6 +17,8 @@ export interface ExtensionRow {
   wanted: string | null;
   installed: string | null;
   state: RowState;
+  // What setup would do to it; null for a dev extension, which npm never installs.
+  plan: PlanVerb | null;
   error: string | null;
   commands: string[];
   lastRun: { at: string; state: string; error: string | null } | null;
@@ -30,12 +32,15 @@ export type ProfileStatus =
 export interface ExtensionsStatus {
   machine: { id: string; name: string };
   profile: ProfileStatus;
+  plan: PlanSummary;
   extensions: ExtensionRow[];
 }
 
 export interface ExtensionsGather {
   status: ExtensionsStatus;
   warnings: string[];
+  // name@version whose integrity the two locks disagree on.
+  drift: string[];
 }
 
 const profileStatus = (parsed: ProfileParse | null, machine: MachineFile): ProfileStatus => {
@@ -51,38 +56,48 @@ const lastRunOf = (p: DiscoveredExtension, s: StaticResult): ExtensionRow['lastR
   return run && { at: run.at, state: run.state, error: run.error };
 };
 
-const toRow = (p: DiscoveredExtension, eff: Effective, s: StaticResult): ExtensionRow => ({
+const toRow = (p: DiscoveredExtension, found: Scan, s: StaticResult): ExtensionRow => ({
   id: p.id,
   package: p.pkg,
   mode: p.source === 'dev' ? 'dev' : 'installed',
-  wanted: eff.install[p.pkg] ?? null,
+  wanted: found.eff.install[p.pkg] ?? null,
   installed: p.version,
   state: s.state,
+  plan: p.source === 'dev' ? null : verbOf(found, p.pkg),
   error: s.error,
   commands: p.commands,
   lastRun: lastRunOf(p, s),
 });
+
+const verbOf = (found: Scan, pkg: string): PlanVerb | null =>
+  found.plan.extensions.find((entry) => entry.name === pkg)?.verb ?? null;
 
 // A load in this process is the run itself: its state replaces the static one.
 const withRun = (row: ExtensionRow, run: LoadOutcome | undefined): ExtensionRow =>
   run ? { ...row, state: run.state, error: run.error, lastRun: null } : row;
 
 const UNKNOWN: StaticResult = { state: 'invalid', error: null };
+const STILL_INSTALLED: StaticResult = { state: 'installed', error: null };
 
 export const gatherFrom = (
   found: Scan,
   runs: ReadonlyMap<string, LoadOutcome> = new Map()
 ): ExtensionsGather => {
-  const { machine, parsed, eff, states } = found;
-  const extensions = found.found.extensions
-    .map((p) => withRun(toRow(p, eff, states.get(p.pkg) ?? UNKNOWN), runs.get(p.pkg)))
-    .sort((a, b) => (a.package < b.package ? -1 : 1));
+  const { machine, parsed, states } = found;
+  const extensions = [
+    ...found.found.extensions.map((p) =>
+      withRun(toRow(p, found, states.get(p.pkg) ?? UNKNOWN), runs.get(p.pkg))
+    ),
+    ...found.removed.map((p) => toRow(p, found, STILL_INSTALLED)),
+  ].sort((a, b) => (a.package < b.package ? -1 : 1));
   const status = {
     machine: { id: machine.id, name: machine.name },
     profile: profileStatus(parsed, machine),
+    plan: found.plan.summary,
     extensions,
   };
-  return { status, warnings: [...(parsed?.ok ? parsed.warnings : []), ...found.found.warnings] };
+  const warnings = [...(parsed?.ok ? parsed.warnings : []), ...found.found.warnings];
+  return { status, warnings, drift: found.drift };
 };
 
 // Reads manifests, profile and state files; writes only a missing machine.json.

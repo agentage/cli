@@ -4,8 +4,8 @@ import { output, test } from '../../test/config-dir.js';
 import { askSecrets } from './secrets-prompt.js';
 
 const MISSING = [
-  { id: 'secret', key: 'token' },
-  { id: 'secret', key: 'other' },
+  { id: 'secret', key: 'token', description: 'API token' },
+  { id: 'secret', key: 'other', description: null },
 ];
 
 const never = async (): Promise<string> => {
@@ -13,16 +13,16 @@ const never = async (): Promise<string> => {
 };
 
 describe('the secrets setup asks for before loading', () => {
-  test('on a terminal each is asked for, and an answer is saved in secrets.json for this user only', async ({
+  test('on a terminal each is asked for, its description after the key, and an answer is saved in secrets.json for this user only', async ({
     dir,
   }) => {
     const asked: string[] = [];
     const prompt = async (question: string): Promise<string> => {
       asked.push(question);
-      return question === 'secret.token: ' ? 't0ken' : '';
+      return question.startsWith('secret.token') ? 't0ken' : '';
     };
     await askSecrets(MISSING, { isTTY: true, prompt });
-    expect(asked).toEqual(['secret.token: ', 'secret.other: ']);
+    expect(asked).toEqual(['secret.token (API token): ', 'secret.other: ']);
     expect(dir.json('secrets.json')).toEqual({ secret: { token: 't0ken' } });
     expect(statSync(dir.at('secrets.json')).mode & 0o777).toBe(0o600);
   });

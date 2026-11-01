@@ -24,6 +24,7 @@ describe("an extension's context", () => {
     expect(Object.keys(ctx)).toEqual([
       'id',
       'version',
+      'previousVersion',
       'mode',
       'config',
       'secrets',
@@ -41,11 +42,44 @@ describe("an extension's context", () => {
     dir,
   }) => {
     const { ctx } = await stage(dir);
-    expect(ctx).toMatchObject({ id: 'hello', version: '1.0.0', mode: 'installed' });
+    expect(ctx).toMatchObject({
+      id: 'hello',
+      version: '1.0.0',
+      previousVersion: null,
+      mode: 'installed',
+    });
     expect(ctx.config).toEqual({ greeting: 'hello' });
     expect(ctx.data).toBe(dir.at('data/hello'));
     expect(ctx.cache).toBe(dir.at('cache/hello'));
     expect((await stage(dir, true)).ctx.mode).toBe('dev');
+  });
+
+  test('previousVersion is the version that last loaded ok here, from state/<id>.json', async ({
+    dir,
+  }) => {
+    dir.write('state/hello.json', {
+      at: 't',
+      pid: 1,
+      state: 'failed',
+      version: '1.1.0',
+      lastOk: '0.9.0',
+    });
+    expect((await stage(dir)).ctx.previousVersion).toBe('0.9.0');
+  });
+
+  test('once closed, commands.add and subscriptions.push throw; log, secrets and use still work', async ({
+    dir,
+  }) => {
+    const { ctx, close } = await stage(dir);
+    close();
+    expect(() => ctx.commands.add(() => undefined)).toThrow('registration closed');
+    expect(() => ctx.subscriptions.push({ dispose: () => undefined })).toThrow(
+      'registration closed'
+    );
+    ctx.log('after register');
+    await ctx.secrets.set('token', 'x');
+    expect(await ctx.secrets.get('token')).toBe('x');
+    expect(ctx.use('world', { optional: true })).toBeUndefined();
   });
 
   test('once revoked, every method throws', async ({ dir }) => {

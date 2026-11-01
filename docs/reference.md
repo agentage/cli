@@ -21,7 +21,8 @@ With `AGENTAGE_EXTENSIONS=1`, `setup` also installs extensions:
 
 ```bash
 agentage setup --profile ./profile.json            # install and load a profile file, no sign-in
-agentage setup --profile ./profile.json --dry-run  # print the install plan, write nothing
+agentage setup --profile ./profile.json --dry-run  # print the plan, write nothing
+agentage setup --check                             # exit 1 when setup would change anything
 agentage setup                                     # sign in, then install and load profile.json
 ```
 
@@ -31,9 +32,61 @@ keeping this machine's own `machines[<id>]` entry), records `profileSource: "fil
 `https:` tarball URL (`npm:`, `github:`, `file:`, `http:` and local paths are refused); a refused
 profile names each entry and the rule and writes nothing. Plain `setup` signs in, then installs
 from the local `profile.json`; with none it saves the built-in default profile (no extensions)
-locally and says the cloud profile is unavailable. `--dry-run` prints the plan (registries,
-install set, npm command, tree) and stops before npm; it never signs in. `--disconnect` skips the
-extension steps.
+locally and says the cloud profile is unavailable. `--disconnect` skips the extension steps.
+
+### The plan: desired against current
+
+The profile is the desired state; the installed tree (`extensions/current` and the lock it was
+installed from) is the current state. `setup` converges the two, and `extension install` and
+`extension remove` change the profile, then converge. The plan says what converging would do,
+one verb per extension the profile or the tree names:
+
+| Verb        | Line                                    | Meaning                                               |
+| ----------- | --------------------------------------- | ----------------------------------------------------- |
+| `add`       | `+ add <name> <range>`                  | in the profile, not in the tree                       |
+| `update`    | `~ update <name> <range> (was <range>)` | in both, with another range than the lock recorded    |
+| `remove`    | `- remove <name>`                       | in the tree, no longer in the profile                 |
+| `off`       | `o off <name>`                          | installed, turned off on this machine; never a change |
+| `unchanged` | (not printed)                           | in both with the same range                           |
+
+`--dry-run` prints the registries, then one line per extension that is not unchanged, then one
+summary line, and writes nothing; with nothing to change the summary is `plan: nothing to
+change`:
+
+```
+dry run    nothing written
+registry   @acme      https://npm.acme.example
+registry   default    https://registry.npmjs.org
++ add @acme/notes ^1
+- remove @acme/todo
+plan: 1 to add, 0 to update, 1 to remove, 0 off, 2 unchanged
+```
+
+`--check` verifies instead of converging: it prints the same plan lines (without the header) and
+exits 1 when anything would be added, updated or removed, when `extensions/package-lock.json`
+does not name the same `name@version+integrity` set as the lock inside the tree `current` names
+(`lock mismatch`), on integrity drift (below), or when `machine.json` is missing (it is read,
+never created). It exits 0 on a converged machine, and writes nothing. With `--json`, both print
+the plan object, `--check` adding `problems`:
+
+```json
+{
+  "extensions": [
+    { "verb": "add", "name": "@agentage/example", "wanted": "^1.0.0", "current": null }
+  ],
+  "summary": { "add": 1, "update": 0, "remove": 0, "off": 0, "unchanged": 0 },
+  "problems": []
+}
+```
+
+Without `--profile` both plan against the local `profile.json`. Neither signs in.
+
+**Integrity drift**: the same `name@version` with another `integrity` in
+`extensions/package-lock.json` than in the lock inside the current tree means one of them was
+changed by hand. It is a hard error: `setup`, `extension install`, `extension remove`, `extension
+check` and `setup --check` exit 1 with `integrity drift: <name@version>` before npm runs, and
+`extension list` shows that extension `invalid` with the same reason. Restore the lock, or delete
+`extensions/package-lock.json` to install again from the profile.
 
 A profile names its extensions and, optionally, the npm-compatible registry each scope comes
 from:
@@ -83,13 +136,13 @@ Extension authors: see [`extensions.md`](extensions.md).
 Extensions run in the CLI process with your privileges: installing one is an act of trust.
 What they keep, and what the CLI keeps about them, lives in the config directory:
 
-| Path              | What                                                                        |
-| ----------------- | --------------------------------------------------------------------------- |
-| `state/<id>.json` | the last load, written by the CLI: `{ at, pid, state, error }`              |
-| `secrets.json`    | secrets per extension id (mode 0600, never synced)                          |
-| `logs/<id>.log`   | the extension's own log, one JSON line per entry (0600, kept under 1 MB)    |
-| `data/<id>/`      | the extension's durable data (`ctx.data`); only `remove --purge` deletes it |
-| `cache/<id>/`     | the extension's disposable cache (`ctx.cache`), created by the extension    |
+| Path              | What                                                                            |
+| ----------------- | ------------------------------------------------------------------------------- |
+| `state/<id>.json` | the last load, written by the CLI: `{ at, pid, state, error, version, lastOk }` |
+| `secrets.json`    | secrets per extension id (mode 0600, never synced)                              |
+| `logs/<id>.log`   | the extension's own log, one JSON line per entry (0600, kept under 1 MB)        |
+| `data/<id>/`      | the extension's durable data (`ctx.data`); only `remove --purge` deletes it     |
+| `cache/<id>/`     | the extension's disposable cache (`ctx.cache`), created by the extension        |
 
 The installer runs npm 10 or newer as `node npm-cli.js` (no shell, `--ignore-scripts`,
 `npm_config_*` and `NODE_OPTIONS` removed from its environment, at most 10 minutes per run) into
@@ -124,13 +177,14 @@ agentage status --token aga_...   # check with a personal access token
 `status` also surfaces a passive hint when a newer version is available.
 
 With `AGENTAGE_EXTENSIONS=1`, `status` adds three lines after the ones above, and `--json` adds
-the same three keys after the existing ones:
+four keys after the existing ones:
 
-| Line         | JSON key     | Meaning                                                                       |
-| ------------ | ------------ | ----------------------------------------------------------------------------- |
-| `machine`    | `machine`    | this machine's id and name from `machine.json` (created on first use)         |
-| `profile`    | `profile`    | `version <n> (source: file or default)`, `no profile` or `invalid`            |
-| `extensions` | `extensions` | how many extensions the profile and the dev paths name (a number in `--json`) |
+| Line         | JSON key     | Meaning                                                                                    |
+| ------------ | ------------ | ------------------------------------------------------------------------------------------ |
+| `machine`    | `machine`    | this machine's id and name from `machine.json` (created on first use)                      |
+| `profile`    | `profile`    | `version <n> (source: file or default)`, `no profile` or `invalid`                         |
+| `extensions` | `extensions` | extensions the profile, dev paths and tree name, then the pending changes: `(1 to remove)` |
+|              | `plan`       | the plan summary: `{ add, update, remove, off, unchanged }`                                |
 
 Extension code is never loaded and the only file written is `machine.json`. With no profile it
 prints `no profile` and exits 0; an invalid `profile.json` still prints the report, then
@@ -203,31 +257,38 @@ Needs `AGENTAGE_EXTENSIONS=1`.
 
 ```bash
 agentage extension list          # one row per extension
-agentage extension list --json   # { machine, profile, extensions: [...] } on stdout
+agentage extension list --json   # { machine, profile, plan, extensions: [...] } on stdout
 agentage extension               # the extension command help
 ```
 
-One row per extension in the profile or a dev path, read from the installed tree, the profile
-and the state files; extension code is never loaded and the only file written is `machine.json`.
-An invalid `profile.json` still prints the rows, then exits 1.
+One row per extension in the profile, a dev path or the installed tree, read from the installed
+tree, the profile and the state files; extension code is never loaded and the only file written
+is `machine.json`. An invalid `profile.json` still prints the rows, then exits 1. An extension
+the tree holds but the profile no longer names is listed `installed` with `remove` and `(not in
+profile)` until `setup` removes it; it is never loaded. The drift
+column is left out when every row is blank.
 
-| Column   | JSON field  | Meaning                                                          |
-| -------- | ----------- | ---------------------------------------------------------------- |
-| id       | `id`        | `agentage.id` from the extension's `package.json`                |
-| state    | `state`     | `installed`, `off`, `blocked`, `invalid` or `missing`            |
-| package  | `package`   | package name; `mode` is `dev` for a local path in `machine.json` |
-| version  | `installed` | version found in the installed tree                              |
-| wants    | `wanted`    | range or `https:` URL from the profile's `extensions`            |
-| commands | `commands`  | `agentage.contributes.commands`                                  |
-| last run | `lastRun`   | `state/<id>.json`: `at`, `state` (`ok` or `failed`), `error`     |
-| reason   | `error`     | why the extension is `invalid`, `blocked` or `missing`           |
+| Column   | JSON field  | Meaning                                                                                                         |
+| -------- | ----------- | --------------------------------------------------------------------------------------------------------------- |
+| id       | `id`        | `agentage.id` from the extension's `package.json`                                                               |
+| state    | `state`     | `installed`, `off`, `blocked`, `invalid` or `missing`                                                           |
+| drift    | `plan`      | `add`, `update` or `remove`; blank otherwise (`plan` is also `off`, `unchanged`, or `null` for a dev extension) |
+| package  | `package`   | package name; `mode` is `dev` for a local path in `machine.json`                                                |
+| version  | `installed` | version found in the installed tree                                                                             |
+| wants    | `wanted`    | range or `https:` URL from the profile's `extensions`                                                           |
+| commands | `commands`  | `agentage.contributes.commands`                                                                                 |
+| last run | `lastRun`   | `state/<id>.json`: `at`, `state` (`ok` or `failed`), `error`                                                    |
+| reason   | `error`     | why the extension is `invalid`, `blocked` or `missing`                                                          |
 
 An extension is `off` when this machine's `machines[<id>].off` in the profile lists it, `blocked`
 when an extension it peer-depends on is not `installed`, `invalid` when its manifest is wrong (a
 duplicate `agentage.id`, an `engines.agentage` range the extension API does not satisfy, no entry
-point, a contributed command not named after the id) or the profile's `config.<id>` holds a value of
-the wrong type for a key the extension declares, and `missing` when it is not in the installed
-tree. Declared defaults fill the keys the profile leaves out.
+point, a contributed command not named after the id), the profile's `config.<id>` holds a value of
+the wrong type or outside the declared `enum` for a key the extension declares, its locked
+integrity drifted, or it is a dev extension whose folder anyone can write to or another user owns
+(root may own it; not checked on Windows), and `missing` when it is not in the installed tree.
+Declared defaults fill the keys the profile leaves out. `invalid` extensions are never imported.
+The JSON adds a top-level `plan`, the summary `{ add, update, remove, off, unchanged }`.
 
 ## extension check
 
@@ -242,7 +303,7 @@ Loads every extension this machine can run once, the way `setup` does, rewrites
 `state/<id>.json` for each and prints the rows: `state` is `ok` or `failed` (with the extension's
 message) for what it loaded, `blocked` for a dependent of a failed extension, and the static
 state for the rest. What an extension prints while loading goes to stderr, so `--json` stays
-valid JSON. Exits 1 when any extension failed or `profile.json` is invalid.
+valid JSON. Exits 1 when any extension failed, `profile.json` is invalid, or on integrity drift.
 
 ## Extension commands
 
@@ -271,6 +332,58 @@ world: world
 Reading the manifests never stops `setup`, `status` or `update`: an extension with a broken
 manifest contributes no commands.
 
+## Extension context
+
+For extension authors. `register(ctx)` gets one frozen object; its types come from
+`@agentage/cli/extension`:
+
+| Member            | What                                                                                           |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| `id`, `version`   | `agentage.id` and the package version                                                          |
+| `previousVersion` | the version that last loaded ok here (`lastOk` in `state/<id>.json`); `null` on the first load |
+| `mode`            | `installed`, `dev` (a local path) or `test` (`createTestContext`)                              |
+| `config`          | the profile's `config.<id>`, checked against `agentage.configuration`, defaults filled         |
+| `secrets`         | `get`, `set`, `delete` over `secrets.json`                                                     |
+| `data`, `cache`   | the extension's own folders                                                                    |
+| `log`             | one JSON line per call in `logs/<id>.log`                                                      |
+| `commands`        | `add(registrar)`: commands named `<id>` or `<id>:<name>`                                       |
+| `use`             | `use(id)`: the API a peer's `register` returned                                                |
+| `subscriptions`   | `push(disposable)`: disposed when the CLI is done                                              |
+
+Registration closes when `register` resolves: from then on `commands.add` and
+`subscriptions.push` throw `registration closed`, while `log`, `secrets` and `use` keep working.
+A `configuration` key may declare `description` (shown after the key when `setup` asks for a
+secret) and `enum` (the only values allowed; any other makes the extension `invalid`, naming the
+key). `use` is typed through `ExtensionApis`, an empty interface an extension fills by declaration
+merging; without an entry `use(id)` returns the untyped `ExtensionApi`:
+
+```ts
+declare module '@agentage/cli/extension' {
+  interface ExtensionApis {
+    hello: { greet: () => string };
+  }
+}
+// ctx.use('hello').greet() is now typed
+```
+
+To unit-test an extension without the CLI, `@agentage/cli/extension/test` exports
+`createTestContext(overrides)`. It returns a frozen `ctx` with the same members and `mode` set to
+`test`: `data` and `cache` in a fresh temp dir, secrets kept in memory, and a silent `log`; any
+other member can be replaced through `overrides`. Its `use` option maps peer ids to fakes, and
+`ctx.use` throws for any other id unless asked with `{ optional: true }`. Its `program` option is
+the commander `Command` that `ctx.commands.add` registers on, so a test runs a command by parsing
+it:
+
+```js
+import { Command } from 'commander';
+import { createTestContext } from '@agentage/cli/extension/test';
+import { register } from './index.js';
+
+const program = new Command('agentage').exitOverride();
+await register(createTestContext({ id: 'world', program, use: { hello: { greet: () => 'hi' } } }));
+await program.parseAsync(['world'], { from: 'user' }); // prints "world heard: hi"
+```
+
 ## update
 
 ```bash
@@ -295,8 +408,8 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 | `2`  | Usage error: an unknown command or flag, a missing flag value, or no command                        |
 
 With `AGENTAGE_EXTENSIONS=1`, `setup`, `extension install`, `extension remove` and `extension check`
-also exit 1 when an extension failed to load, and an extension command exits 1 when its extension
-cannot load.
+also exit 1 when an extension failed to load or on integrity drift, an extension command exits 1
+when its extension cannot load, and `setup --check` exits 1 when the machine is not converged.
 
 Errors go to stderr; stdout carries only command output (`status --json` stays parseable).
 

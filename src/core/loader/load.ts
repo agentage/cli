@@ -79,7 +79,7 @@ export const loadExtensions = async (
     for (const ext of loadOrder(extensions)) {
       const outcome = await attempt(ext, session, template);
       session.outcomes.set(ext.pkg, outcome);
-      writeRunState(ext.id ?? '', outcome);
+      writeRunState(ext.id ?? '', { ...outcome, version: ext.version });
     }
   });
   return session;

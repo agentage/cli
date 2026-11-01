@@ -3,7 +3,7 @@ import { type Npm } from '../../core/installer/npm.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { missingSecrets } from '../../core/loader/secrets.js';
 import { failedError, loadAndGather } from './check.js';
-import { printWarnings, rowLines } from './list.js';
+import { printWarnings, rowLines } from './row-lines.js';
 import { gatherExtensions } from './rows.js';
 import { askSecrets } from './secrets-prompt.js';
 

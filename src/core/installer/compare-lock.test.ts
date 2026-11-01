@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { pkg } from '../../test/config-dir.js';
-import { lockAgrees, lockEntries, parseLock } from './compare-lock.js';
+import {
+  integrityDrift,
+  lockAgrees,
+  lockEntries,
+  parseLock,
+  rootDependencies,
+} from './compare-lock.js';
 
 const [HELLO, WORLD] = [pkg('hello'), pkg('world')];
 
@@ -66,6 +72,17 @@ describe('the lock npm writes', () => {
     expect(lockAgrees(lock, { [HELLO]: '^1.0.0', [WORLD]: '^2' })).toBe(false);
     expect(lockAgrees({ packages: { '': 'x' } }, { [HELLO]: '^1' })).toBe(false);
     expect(lockAgrees({}, {})).toBe(true);
+  });
+
+  it('records the ranges package.json asked for as its root dependencies', () => {
+    expect(rootDependencies(lock)).toEqual({ [HELLO]: '^1.0.0', [WORLD]: '^1' });
+    expect(rootDependencies({ packages: {} })).toEqual({});
+  });
+
+  it('has integrity drift where the same name@version carries another integrity', () => {
+    expect(integrityDrift(lock, lock)).toEqual([]);
+    expect(integrityDrift(lock, withHello(entry('1.0.0', 'sha512-x')))).toEqual([`${HELLO}@1.0.0`]);
+    expect(integrityDrift(lock, withHello(entry('1.0.1', 'sha512-x')))).toEqual([]);
   });
 
   it('counts only as JSON with a packages map', () => {

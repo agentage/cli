@@ -1,3 +1,4 @@
+import { chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect } from 'vitest';
 import { fixture, pkg, test, type ConfigDir } from '../../test/config-dir.js';
@@ -53,7 +54,14 @@ describe('finding extensions on disk', () => {
     dir.tree('hello', 'secret');
     const [hello, secret] = find([HELLO, pkg('secret')]).extensions;
     expect(hello).toMatchObject({ config: { greeting: 'hello' }, secrets: [], problem: null });
-    expect(secret).toMatchObject({ config: {}, secrets: ['token'] });
+    expect(secret).toMatchObject({
+      config: { access: 'read' },
+      secrets: ['token'],
+      descriptions: {
+        token: 'API token the secret fixture reads',
+        access: 'What the token may do',
+      },
+    });
     const wrong = find([HELLO], {}, { hello: { greeting: 3 } }).extensions[0];
     expect(wrong?.problem).toBe('config.hello.greeting: must be of type string (got number)');
   });
@@ -86,6 +94,13 @@ describe('finding extensions on disk', () => {
       `duplicate id "hello" (also ${DUP})`,
       `duplicate id "hello" (also ${HELLO})`,
     ]);
+  });
+
+  test('a dev path anyone can write to is invalid, naming why', ({ dir }) => {
+    const name = dir.extension('open', 'export const register = () => {};');
+    chmodSync(dir.at('dev/open'), 0o777);
+    const [open] = find([], { [name]: dir.at('dev/open') }).extensions;
+    expect(open?.problem).toBe(`dev path ${dir.at('dev/open')} is world-writable`);
   });
 
   test('a dev path must be absolute, and one with no package.json is missing', () => {

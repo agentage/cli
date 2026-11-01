@@ -2,6 +2,7 @@
  * @offline - `agentage extension list` with AGENTAGE_EXTENSIONS=1: one row per extension, read
  * from the installed tree, the profile and the state files; extension code is never loaded.
  */
+import { chmodSync, realpathSync } from 'node:fs';
 import { expect, test } from './cli.js';
 
 const LAST_RUN = { at: '2026-10-29T10:00:00.000Z', pid: 4242, state: 'ok', error: null };
@@ -22,7 +23,7 @@ test.describe('agentage extension list @p0 @offline', () => {
       '',
     ]);
     const json = JSON.parse((await cli.run('extension list --json')).stdout);
-    expect(Object.keys(json)).toEqual(['machine', 'profile', 'extensions']);
+    expect(Object.keys(json)).toEqual(['machine', 'profile', 'plan', 'extensions']);
     expect(json.extensions.map((m: { id: string }) => m.id)).toEqual(['hello', 'world']);
   });
 
@@ -53,6 +54,32 @@ test.describe('agentage extension list @p0 @offline', () => {
     );
     expect(list.lines).toContain(
       'world  blocked    @agentage/fixture-world 1.0.0 (wants ^1)  commands: world  peer @agentage/fixture-hello is off'
+    );
+    expect(cli.list('state')).toEqual([]);
+  });
+
+  test('agentage extension list shows a dev extension in a world-writable folder invalid, naming why, and agentage hello does not run it', async ({
+    cli,
+  }) => {
+    const copy = cli.fixture('hello');
+    expect((await cli.run(`extension install ${copy}`)).code).toBe(0);
+    chmodSync(copy, 0o777);
+    const list = await cli.run('extension list');
+    expect(list.lines).toContain(
+      `hello  invalid    @agentage/fixture-hello 1.0.0 (dev)  commands: hello  dev path ${realpathSync(copy)} is world-writable`
+    );
+    const hello = await cli.run('hello');
+    expect(hello.code).toBe(2);
+    expect(hello.stderr).toContain("error: unknown command 'hello'");
+  });
+
+  test('agentage extension list shows secret invalid when the profile sets config.secret.access outside its enum, naming the key', async ({
+    cli,
+  }) => {
+    const config = { secret: { access: 'admin' } };
+    await cli.run(`setup --profile ${cli.profile({ extensions: { secret: '^1' }, config })}`);
+    expect((await cli.run('extension list')).lines).toContain(
+      'secret  invalid    @agentage/fixture-secret 1.0.0 (wants ^1)  config.secret.access: must be one of "read", "write" (got "admin")'
     );
     expect(cli.list('state')).toEqual([]);
   });

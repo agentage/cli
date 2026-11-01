@@ -1,11 +1,14 @@
 # CLAUDE.md - @agentage/cli
 
 The agentage CLI core. Commands: `setup` (OAuth sign-in), `status`, `update`.
-Extensions extend it through `src/core/`; with `AGENTAGE_EXTENSIONS=1`, `setup --profile`
-installs and loads them, `extension install` and `extension remove` add or take out one at a time,
+Extensions extend it through `src/core/`; with `AGENTAGE_EXTENSIONS=1`, `setup --profile` installs
+and loads them, `extension install` and `extension remove` add or take out one at a time,
 `extension list` and `extension check` show them, and the commands they contribute run as
-`agentage <command>`. memory, vault, daemon, sync and MCP code lives in git
-history up to v0.37.2 and returns as extensions.
+`agentage <command>`. The model: the profile is the desired state, the installed tree (plus
+`state/<id>.json`) the current one; `setup` converges them, the plan (`setup --dry-run`,
+`setup --check`, the `extension list` drift column, the `status` count) says what it would change.
+memory, vault, daemon, sync and MCP code lives in git history up to v0.37.2 and returns as
+extensions.
 
 ## Layout
 - `src/cli.ts` - the bin: Node version guard, then a dynamic import of `program.ts` (excluded
@@ -13,15 +16,16 @@ history up to v0.37.2 and returns as extensions.
 - `src/program.ts` - `createProgram(deps)` factory + `run(argv): Promise<number>` (exit code,
   never `process.exit`); one `withAction` error path for every command, the update hint,
   `NO_COLOR`
-- `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability:
-  `auth/` (setup), `status/`, `update/`, `extension/` (`rows.ts` gathers the extension rows,
-  `list.ts` prints them and registers the `extension` group, `check.ts` loads once and reports,
-  `install-load.ts` is the install, load, print rows, fail flow `setup`, `install` and `remove`
-  end with, `setup.ts` is the extensions `setup` flow (its only deps are the network ones and
-  npm), `install.ts` adds one extension (npm is its only seam), `remove.ts` takes one out
-  (`--purge` asks through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists
-  missing secrets (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per
-  contributed command and hands it to the extension)
+- `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability: `auth/`
+  (setup), `status/`, `update/`, `extension/` (`rows.ts` gathers the extension rows, `list.ts`
+  prints them and registers the `extension` group, `check.ts` loads once and reports, `row-lines.ts`
+  renders the rows and the `status` lines, `install-load.ts` is the install, load, print rows, fail
+  flow `setup`, `install` and `remove` end with, `setup.ts` is the extensions `setup` flow (its only
+  deps are the network ones and npm), `plan.ts` is `setup --dry-run` and `setup --check`,
+  `install.ts` adds one extension (npm is its only seam), `remove.ts` takes one out (`--purge` asks
+  through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists missing secrets
+  (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per contributed command and
+  hands it to the extension)
 - `src/lib/` - shared library, grouped by domain:
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,
@@ -39,23 +43,31 @@ history up to v0.37.2 and returns as extensions.
   - `profile/` (schema v1 validator incl. `registries`, `profile.json` reader and writer plus
     the default profile, `machine.json` incl. dev paths, install/load set merge, `edit.ts`: one
     extension in or out of the profile)
-  - `loader/` - reading without running: `scan.ts` (profile + machine + manifests -> static
-    states and the load set), `discover.ts`, `manifest.ts`, `config.ts` (config slice checked
-    against `configuration`, defaults filled), `states.ts`; running: `load.ts` (a session: peer
-    order via `order.ts`, `AGENTAGE_TOKEN` removed, console to stderr, `state/<id>.json` via
-    `state.ts`), `register.ts` (`pathToFileURL` import + `register(ctx)` under a 10 s
-    `timeout.ts`), `ctx.ts` (one revocable `ctx` per attempt, staged commands and
-    subscriptions), `use.ts` (frozen facade), `dispose.ts` (5 s, SIGINT/SIGTERM), `secrets.ts`
-    (`secrets.json` 0600), `log.ts` (`logs/<id>.log`)
-  - `installer/` - `npm.ts` (`node npm-cli.js`, scrubbed env, `--registry` default; the `Npm`
-    seam), `tree.ts` (deterministic `package.json` and per-scope `.npmrc`, staged
+  - `loader/` - reading without running: `scan.ts` (profile + machine + manifests -> static states,
+    the plan, rows to remove, integrity drift and the load set), `discover.ts`, `dev-path.ts` (a dev
+    folder another user can write is invalid), `manifest.ts`, `config.ts` (config slice checked
+    against `configuration`: type, `enum`, defaults filled), `states.ts`; running: `load.ts` (a
+    session: peer order via `order.ts`, `AGENTAGE_TOKEN` removed, console to stderr,
+    `state/<id>.json` via `state.ts`, which keeps `lastOk` for `ctx.previousVersion`), `register.ts`
+    (`pathToFileURL` import + `register(ctx)` under a 10 s `timeout.ts`, then closes registration),
+    `ctx.ts` (one revocable `ctx` per attempt, staged commands and subscriptions), `use.ts` (frozen
+    facade), `dispose.ts` (5 s, SIGINT/SIGTERM), `secrets.ts` (`secrets.json` 0600), `log.ts`
+    (`logs/<id>.log`)
+  - `installer/` - `npm.ts` (`node npm-cli.js`, scrubbed env, `--registry` default; the `Npm` seam),
+    `tree.ts` (deterministic `package.json` and per-scope `.npmrc`, staged
     `extensions/trees/<hash>/` + `.complete` + `extensions/current`, `install.lock` with a
-    heartbeat), `compare-lock.ts` (normalized lock compare), `installer.ts` (plan, install; npm
-    is the only injected dep), `resolve.ts` (what `extension install <name>` means: dev path,
-    refused scheme, tarball URL, package or short name; looked up with `npm pack --dry-run`)
+    heartbeat), `compare-lock.ts` (normalized lock compare, root dependencies, integrity drift),
+    `plan.ts` (desired vs current: `add`, `update`, `remove`, `off`, `unchanged` per package, from
+    the lock's root dependencies; lock drift), `installer.ts` (install plan, install, refuses
+    integrity drift; npm is the only injected dep), `resolve.ts` (what `extension install <name>`
+    means: dev path, refused scheme, tarball URL, package or short name; looked up with
+    `npm pack --dry-run`)
 - `src/extension.ts` - the `@agentage/cli/extension` subpath export: the contract types
-  (`ExtensionContext`, `ExtensionManifest`, ...), identity `defineExtension`, versioned by
-  `EXTENSION_API_VERSION`; type-only for extensions at runtime
+  (`ExtensionContext`, `ExtensionManifest`, `ExtensionApis` for a typed `use`, ...), identity
+  `defineExtension`, versioned by `EXTENSION_API_VERSION`; type-only for extensions at runtime
+- `src/extension-test.ts` - the `@agentage/cli/extension/test` subpath export:
+  `createTestContext(overrides)`, a `mode: 'test'` ctx over a temp dir for extension authors'
+  own unit tests; the CLI never imports it
 - `src/test/config-dir.ts` - the unit-test kit for `src/core` and `src/commands/extension`: a
   fresh config dir per test (`dir.write`, `dir.profile`, `dir.tree`, `dir.extension` for a dev
   extension written from source) and `output()` capture; `src/test/npm-fixtures.ts` has

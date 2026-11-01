@@ -4,6 +4,8 @@ export interface CheckedConfig {
   // Defaults filled, unknown keys kept, secret keys left out.
   config: Record<string, unknown>;
   secrets: string[];
+  // Declared `description` by key.
+  descriptions: Record<string, string>;
   problem: string | null;
 }
 
@@ -20,12 +22,26 @@ const typeOf = (value: unknown): string => {
   return Array.isArray(value) ? 'array' : typeof value;
 };
 
-const keyProblem = (id: string, key: string, type: unknown, value: unknown): string | null => {
-  const check = typeof type === 'string' ? TYPES[type] : undefined;
-  if (!check)
+const quoted = (value: unknown): string => JSON.stringify(value);
+
+const declarationProblem = (key: string, declared: Record<string, unknown>): string | null => {
+  const type = declared['type'];
+  if (typeof type !== 'string' || !TYPES[type])
     return `agentage.configuration.${key}.type must be one of ${Object.keys(TYPES).join(', ')}`;
-  if (value === undefined || check(value)) return null;
-  return `config.${id}.${key}: must be of type ${String(type)} (got ${typeOf(value)})`;
+  const allowed = declared['enum'];
+  if (allowed !== undefined && !Array.isArray(allowed))
+    return `agentage.configuration.${key}.enum must be an array`;
+  return null;
+};
+
+// Compared as JSON, so an enum of arrays or objects works too.
+const valueProblem = (name: string, declared: Record<string, unknown>, value: unknown) => {
+  const type = String(declared['type']);
+  if (value === undefined) return null;
+  if (!TYPES[type]?.(value)) return `${name}: must be of type ${type} (got ${typeOf(value)})`;
+  const allowed = declared['enum'];
+  if (!Array.isArray(allowed) || allowed.some((v) => quoted(v) === quoted(value))) return null;
+  return `${name}: must be one of ${allowed.map(quoted).join(', ')} (got ${quoted(value)})`;
 };
 
 const declarations = (configuration: Record<string, unknown>) =>
@@ -33,6 +49,14 @@ const declarations = (configuration: Record<string, unknown>) =>
     key,
     declared: isRecord(entry) ? entry : {},
   }));
+
+const descriptionsOf = (all: ReturnType<typeof declarations>): Record<string, string> =>
+  Object.fromEntries(
+    all.flatMap(({ key, declared }) => {
+      const text = declared['description'];
+      return typeof text === 'string' ? [[key, text]] : [];
+    })
+  );
 
 // The profile's slice for one extension, checked against what its manifest declares.
 export const checkConfig = (
@@ -43,11 +67,13 @@ export const checkConfig = (
   const all = declarations(configuration);
   const secrets = all.filter((d) => d.declared['secret'] === true).map((d) => d.key);
   const config = Object.fromEntries(Object.entries(slice).filter(([k]) => !secrets.includes(k)));
+  const descriptions = descriptionsOf(all);
   for (const { key, declared } of all.filter((d) => !secrets.includes(d.key))) {
     const value = key in slice ? slice[key] : declared['default'];
-    const problem = keyProblem(id, key, declared['type'], value);
-    if (problem) return { config: {}, secrets: [], problem };
+    const problem =
+      declarationProblem(key, declared) ?? valueProblem(`config.${id}.${key}`, declared, value);
+    if (problem) return { config: {}, secrets: [], descriptions: {}, problem };
     if (value !== undefined) config[key] = value;
   }
-  return { config, secrets, problem: null };
+  return { config, secrets, descriptions, problem: null };
 };

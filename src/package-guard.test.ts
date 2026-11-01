@@ -56,11 +56,12 @@ describe('package guard (the core)', () => {
     }
   });
 
-  it('exposes the extension contract as a subpath export', () => {
+  it('exposes the extension contract and its test context as subpath exports', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
-      exports: { './extension'?: { default?: string } };
+      exports: Record<string, { default?: string } | undefined>;
     };
     expect(pkg.exports['./extension']?.default).toBe('./dist/extension.js');
+    expect(pkg.exports['./extension/test']?.default).toBe('./dist/extension-test.js');
     expect(EXTENSION_API_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
     const extension = { register: () => ({}) };
     expect(defineExtension(extension)).toBe(extension);
