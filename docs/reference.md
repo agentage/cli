@@ -78,6 +78,8 @@ set are asked for before loading, without echo, when `setup` runs on a terminal;
 they are listed as `secrets to set: <id>.<key>`. A failed install loads nothing: the rows show
 what is still current.
 
+Extension authors: see [`extensions.md`](extensions.md).
+
 Extensions run in the CLI process with your privileges: installing one is an act of trust.
 What they keep, and what the CLI keeps about them, lives in the config directory:
 
