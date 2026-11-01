@@ -1,8 +1,8 @@
 # Writing an extension
 
 An extension is an npm package that adds to the `agentage` CLI, for example new commands. This
-page is for people who write them. Extension support is behind `AGENTAGE_EXTENSIONS=1`; every
-command here assumes it is set. Flags and exit codes are in [`reference.md`](reference.md).
+page is for people who write them. Extensions are part of every `agentage` install; there is
+nothing to turn on. Flags and exit codes are in [`reference.md`](reference.md).
 
 ## What an extension is
 
@@ -73,8 +73,8 @@ runtime, and `defineExtension` is an identity helper.
 An extension is installed from a profile:
 
 ```bash
-export AGENTAGE_EXTENSIONS=1
 agentage setup --profile ./profile.json   # install a whole profile, then load each once
+agentage setup --latest                   # move each extension to the newest version it allows
 agentage extension install <name> [--off] # add one extension, install, load
 agentage extension remove <name>          # drop one, then install and load the rest
 agentage extension list                   # states, no extension code runs
@@ -83,9 +83,11 @@ agentage extension check                  # load everything once, refresh the ru
 
 `extension install` takes a package name with an optional range (`@acme/example@~1.2`), an
 `https:` tarball URL, or a short name such as `example`, which stands for
-`@agentage/extension-example`, else `agentage-extension-example`. Without a range it pins
-`^<latest>`. It writes the profile, then installs and loads like `setup`. `--off` installs the
-package but leaves it `off` on this machine. A `./path` is a dev extension, see Developing locally.
+`@agentage/extension-example`, else `agentage-extension-example`. Without a range it pins `^` the
+newest published version whose `engines.agentage` the extension API satisfies, and prints a
+`skipped` line for each newer version that needs another API. It writes the profile, then
+installs and loads like `setup`. `--off` installs the package but leaves it `off` on this
+machine. A `./path` is a dev extension, see Developing locally.
 
 A profile maps package names to version ranges: `{ "version": 1, "extensions": { "<pkg>": "^1" } }`.
 
@@ -119,22 +121,28 @@ prints while loading goes to stderr. npm runs with `--ignore-scripts` at install
 
 `register(ctx)` gets one frozen `ctx`. It is the only surface the core gives you.
 
-| Member          | Type                                | Meaning                                 |
-| --------------- | ----------------------------------- | --------------------------------------- |
-| `id`            | `string`                            | The `agentage.id`.                      |
-| `version`       | `string`                            | The package version.                    |
-| `mode`          | `'installed' \| 'dev'`              | `'dev'` for a local development path.   |
-| `config`        | `Readonly<Record<string, unknown>>` | Settings, defaults filled, no secrets.  |
-| `secrets`       | `{ get, set, delete }` (async)      | Per-machine secret values.              |
-| `data`          | `string`                            | Path of the durable data directory.     |
-| `cache`         | `string`                            | Path of the disposable cache directory. |
-| `log`           | `(message, fields?) => void`        | Append one line to the extension's log. |
-| `commands`      | `{ add(...registrars) }`            | Add CLI commands.                       |
-| `use`           | `(id, { optional? }) => api`        | Call a peer extension.                  |
-| `subscriptions` | `{ push(...disposables) }`          | Things to dispose on exit.              |
+| Member            | Type                                | Meaning                                 |
+| ----------------- | ----------------------------------- | --------------------------------------- |
+| `id`              | `string`                            | The `agentage.id`.                      |
+| `version`         | `string`                            | The package version.                    |
+| `previousVersion` | `string \| null`                    | Last version that loaded ok here.       |
+| `mode`            | `'installed' \| 'dev' \| 'test'`    | `'dev'` for a local development path.   |
+| `config`          | `Readonly<Record<string, unknown>>` | Settings, defaults filled, no secrets.  |
+| `secrets`         | `{ get, set, delete }` (async)      | Per-machine secret values.              |
+| `data`            | `string`                            | Path of the durable data directory.     |
+| `cache`           | `string`                            | Path of the disposable cache directory. |
+| `log`             | `(message, fields?) => void`        | Append one line to the extension's log. |
+| `commands`        | `{ add(...registrars) }`            | Add CLI commands.                       |
+| `use`             | `(id, { optional? }) => api`        | Call a peer extension.                  |
+| `subscriptions`   | `{ push(...disposables) }`          | Things to dispose on exit.              |
 
 `register` may return a plain object of functions for dependents, or nothing. It may be async.
 After a failed or timed-out load, every `ctx` method throws.
+
+`ctx.previousVersion` is the `version` of the last load that ended `ok` on this machine (`lastOk`
+in `state/<id>.json`), `null` the first time. Compare it with `ctx.version` to migrate your data
+once after an update, for example after `agentage setup --latest`. A failed load does not change
+it.
 
 ### Configuration
 
@@ -252,7 +260,9 @@ registry URL; other packages come from the public npm registry.
 1. `agentage.id` is lowercase, unique, and not a core command name.
 2. `name` in `package.json` is the name users put in their profile.
 3. The entry (`exports` or `main`) exists in the published package and exports `register`.
-4. `engines.agentage` matches the extension API (`^1`).
+4. `engines.agentage` matches the extension API (`^1`). Raise it only with a new major of your
+   package: `extension install` and `setup --latest` skip a version whose range the user's CLI
+   does not satisfy, and keep the version they have.
 5. Every command is in `contributes.commands` and named `<id>` or `<id>:<name>`.
 6. Every setting has a `type`; secrets are marked `secret: true` and read from `ctx.secrets`.
 7. Other extensions you call are in `peerDependencies` (optional ones marked).

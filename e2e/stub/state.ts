@@ -61,8 +61,9 @@ export interface StubMachine {
   lastSeenAt: string;
 }
 
-// '503' answers every request to the route with 503; 'hang' never answers.
-export type StubMode = 'ok' | '503' | 'hang';
+// '503' answers every request to the route with 503; 'hang' never answers; 'missing' answers
+// 404 NOT_FOUND, as an API that does not have the route yet.
+export type StubMode = 'ok' | '503' | 'hang' | 'missing';
 
 // The one account every stub token belongs to: its profile and its machines.
 export interface StubAccount {

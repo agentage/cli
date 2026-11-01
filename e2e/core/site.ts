@@ -21,8 +21,8 @@ export interface Site {
   store: (doc: Doc) => string;
   // Each next push first meets another machine's push adding these extensions (package names).
   conflict: (...pushes: Record<string, string>[]) => void;
-  // From now on the route answers 503, or never answers ('hang').
-  fail: (route: 'profile' | 'machines', how?: '503' | 'hang') => void;
+  // From now on the route answers 503, never answers ('hang'), or is not there ('missing': 404).
+  fail: (route: 'profile' | 'machines', how?: '503' | 'hang' | 'missing') => void;
   machines: () => StubMachine[];
 }
 

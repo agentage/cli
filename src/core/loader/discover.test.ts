@@ -27,6 +27,23 @@ const tripwire = (dir: ConfigDir, entry: string): string => {
 };
 
 describe('finding extensions on disk', () => {
+  test('a tree given by path is read instead of the one extensions/current names', ({ dir }) => {
+    dir.tree('hello');
+    const other = dir.at('extensions/trees/other');
+    dir.write(join(other, 'node_modules', HELLO, 'package.json'), {
+      ...dir.json(join(fixture('hello'), 'package.json')),
+      version: '1.0.1',
+    });
+    dir.write(join(other, 'node_modules', HELLO, 'index.js'), '');
+    const input = { extensionsDir: extensionsDir(), names: [HELLO], dev: {}, config: {} };
+    expect(discover({ ...input, tree: other }).extensions[0]).toMatchObject({
+      version: '1.0.1',
+      dir: join(other, 'node_modules', HELLO),
+      problem: null,
+    });
+    expect(discover(input).extensions[0]).toMatchObject({ version: '1.0.0' });
+  });
+
   test('an installed extension is read from its package.json: version, id, commands, peers, entry', ({
     dir,
   }) => {

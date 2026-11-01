@@ -7,6 +7,7 @@ import { prepareNpm, type Npm, type NpmCommand } from './npm.js';
 import { driftLines, lockDrift } from './plan.js';
 import {
   clearStaging,
+  collectTrees,
   commitTree,
   discardTree,
   isComplete,
@@ -87,12 +88,19 @@ const npmFailure = (command: NpmCommand, res: NpmResult): Error =>
       lastLines(`${res.stdout}\n${res.stderr}`)
   );
 
-const runNpmInto = async (staging: string, command: NpmCommand, npm: Npm) => {
-  const res = await npm(command, staging);
+// The staged tree's name and lock text, once npm succeeded in it; `packages` limits an update.
+export const runNpmInto = async (
+  staging: string,
+  command: NpmCommand,
+  npm: Npm,
+  packages: string[] = []
+) => {
+  const res = await npm(command, staging, packages);
   if (res.code !== 0) throw npmFailure(command, res);
   const lock = readText(join(staging, LOCK_FILE));
   const parsed = parseLock(lock);
-  if (parsed === null) throw new Error(`npm ${command} wrote no usable ${LOCK_FILE}`);
+  if (lock === null || parsed === null)
+    throw new Error(`npm ${command} wrote no usable ${LOCK_FILE}`);
   return { tree: treeName(lockEntries(parsed)), lock };
 };
 
@@ -113,7 +121,7 @@ const build = async (plan: InstallPlan, prepare: () => Promise<Npm>) => {
 };
 
 // A lock that disagrees with its own tree on a package's bytes is never built on.
-const refuseDrift = (dir: string): void => {
+export const refuseDrift = (dir: string): void => {
   const { integrity } = lockDrift(dir);
   if (integrity.length > 0) throw new Error(driftLines(integrity).join('\n'));
 };
@@ -127,6 +135,7 @@ const execute = async (plan: InstallPlan, prepare: () => Promise<Npm>): Promise<
       : await build(plan, prepare);
   pointCurrent(plan.extensionsDir, built.tree);
   promoteFiles(plan.extensionsDir, { manifest: plan.manifest, lock: built.lock });
+  collectTrees(plan.extensionsDir, built.tree);
   const count = Object.keys(plan.install).length;
   return { tree: built.tree, npm: plan.npm, reused: plan.reuse, count };
 };

@@ -1,8 +1,8 @@
 /**
- * @offline - this machine in your account with AGENTAGE_EXTENSIONS=1: a signed-in `setup`
- * registers it, `setup` and `status` mark it seen, `setup --disconnect` marks it disconnected. All
- * of it is fire and forget: an account that fails or never answers changes nothing on the screen
- * and no exit code. `setup --profile` registers nothing.
+ * @offline - this machine in your account: a signed-in `setup` registers it, `setup` and `status`
+ * mark it seen, `setup --disconnect` marks it disconnected. All of it is fire and forget: an
+ * account that fails or never answers changes nothing on the screen and no exit code. `setup
+ * --profile` registers nothing.
  */
 import { readFileSync } from 'node:fs';
 import { expect, test, type Machine } from './cli.js';

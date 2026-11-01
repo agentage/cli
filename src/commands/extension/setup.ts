@@ -10,6 +10,7 @@ import {
 import { type Profile, type ProfileParse } from '../../core/profile/schema.js';
 import { type SetupDeps, type SetupOptions } from '../auth/setup.js';
 import { installAndLoad } from './install-load.js';
+import { runSetupLatest } from './latest.js';
 import { printDryRun, runSetupCheck } from './plan.js';
 import { printWarnings } from './row-lines.js';
 import { accountSetup, disconnect } from './setup-cloud.js';
@@ -71,6 +72,7 @@ export const runExtensionSetup = async (
   const file = opts.profile === undefined ? null : fileSource(opts.profile);
   if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts);
   if (file) return fromFile(file, deps);
+  if (opts.latest) return runSetupLatest(deps);
   await deps.ensureSignedIn({ reauth: opts.reauth, browser: opts.browser });
   const token = process.env['AGENTAGE_TOKEN'];
   const failure = await accountSetup(deps).then(

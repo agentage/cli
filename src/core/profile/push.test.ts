@@ -78,6 +78,28 @@ describe('pushing a change, replaying it once on a 412', () => {
     expect(done).toEqual({ etag: '"etag-0002"', pushed: false });
   });
 
+  test('the same profile with another lock is pushed only when the lock counts (setup --latest)', async () => {
+    const account = fakeAccount();
+    account.store(toDocument(defaultProfile()), OTHER_LOCK, 10);
+    const sameProfile = async (base: CloudProfile) =>
+      pushBody(base.profile, base, { lock: LOCK, npmMajor: 10 });
+    const base = { ...pulled(account), lock: OTHER_LOCK };
+    expect(await pushWithReplay(account.fetch, base, sameProfile)).toEqual({
+      etag: '"etag-0001"',
+      pushed: false,
+    });
+    const lockCounts = { lockCounts: true };
+    expect(await pushWithReplay(account.fetch, base, sameProfile, lockCounts)).toEqual({
+      etag: '"etag-0002"',
+      pushed: true,
+    });
+    expect(account.stored?.lock).toEqual(LOCK);
+    const now = { ...pulled(account), lock: LOCK };
+    expect(await pushWithReplay(account.fetch, now, sameProfile, lockCounts)).toMatchObject({
+      pushed: false,
+    });
+  });
+
   test('without an etag it creates the profile; one created meanwhile by another machine is adopted', async () => {
     const account = fakeAccount();
     const created = await pushWithReplay(account.fetch, localProfile(defaultProfile()), async (b) =>

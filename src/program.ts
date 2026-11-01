@@ -1,11 +1,6 @@
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
-import {
-  registerSetup,
-  runSetup,
-  type SetupDeps,
-  type SetupOptions,
-} from './commands/auth/setup.js';
+import { registerSetup, type SetupDeps, type SetupOptions } from './commands/auth/setup.js';
 import { runExtensionCheck, type ExtensionCheckOptions } from './commands/extension/check.js';
 import { registerDelegates } from './commands/extension/delegate.js';
 import { runExtensionInstall, type ExtensionInstallOptions } from './commands/extension/install.js';
@@ -28,7 +23,6 @@ import {
   type StatusOptions,
 } from './commands/status/status.js';
 import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
-import { extensionsEnabled } from './core/flag.js';
 import { npmMajor, prepareManifest, prepareNpm } from './core/installer/npm.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
@@ -58,10 +52,7 @@ const setupDeps: SetupDeps = {
 const editDeps = { npm: () => prepareNpm(), npmMajor: () => npmMajor(), account: signedInAccount };
 
 const defaultDeps: ProgramDeps = {
-  setup: (opts) =>
-    extensionsEnabled()
-      ? runExtensionSetup(opts, { ...setupDeps, ...editDeps })
-      : runSetup(opts, setupDeps),
+  setup: (opts) => runExtensionSetup(opts, { ...setupDeps, ...editDeps }),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
   extensionInstall: (opts) =>
@@ -136,7 +127,7 @@ export const createProgram = (
   registerSetup(program, withAction(deps, deps.setup, 'Setup failed: '));
   registerStatus(program, withAction(deps, deps.status));
   registerUpdate(program, withAction(deps, deps.update));
-  if (extensionsEnabled()) addExtensions(program, deps, argv);
+  addExtensions(program, deps, argv);
   return program;
 };
 

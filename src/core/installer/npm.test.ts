@@ -24,10 +24,20 @@ describe('npm, as the installer runs it', () => {
     ]);
   });
 
+  it('updates only the packages it names, when it names any', () => {
+    expect(npmArgs('update', '/t', {}, ['@agentage/fixture-world']).slice(0, 4)).toEqual([
+      'update',
+      '@agentage/fixture-world',
+      '--prefix',
+      '/t',
+    ]);
+    expect(npmArgs('update', '/t', {}).slice(0, 2)).toEqual(['update', '--prefix']);
+  });
+
   it('reads what a spec resolves to with pack --dry-run, each profile scope sent to its registry', () => {
     const registries = { '@agentage': 'http://127.0.0.1:9' };
     expect(
-      manifestArgs('@agentage/x', registries, '/x/extensions', { NPM_CONFIG_CACHE: '/c' })
+      manifestArgs('pack', '@agentage/x', registries, '/x/extensions', { NPM_CONFIG_CACHE: '/c' })
     ).toEqual([
       'pack',
       '@agentage/x',
@@ -42,6 +52,25 @@ describe('npm, as the installer runs it', () => {
       '--no-update-notifier',
       '--cache',
       '/c',
+    ]);
+  });
+
+  it('reads every release and its engines with view, through the same registries', () => {
+    const registries = { '@agentage': 'http://127.0.0.1:9' };
+    expect(manifestArgs('view', '@agentage/x@>=0.0.0', registries, '/x/extensions', {})).toEqual([
+      'view',
+      '@agentage/x@>=0.0.0',
+      'name',
+      'version',
+      'engines',
+      '--json',
+      '--ignore-scripts',
+      '--prefix',
+      '/x/extensions',
+      '--registry',
+      'https://registry.npmjs.org',
+      '--@agentage:registry=http://127.0.0.1:9',
+      '--no-update-notifier',
     ]);
   });
 

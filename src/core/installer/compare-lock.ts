@@ -44,6 +44,12 @@ export const rootDependencies = (lock: Doc): Record<string, string> => {
   return Object.fromEntries(Object.entries(deps).map(([name, spec]) => [name, text(spec)]));
 };
 
+// The version the lock installed for a root dependency; null when it has none.
+export const lockedVersion = (lock: Doc | null, name: string): string | null => {
+  const entry = lock === null ? null : packagesOf(lock)[`${NODE_MODULES}${name}`];
+  return isRecord(entry) && typeof entry['version'] === 'string' ? entry['version'] : null;
+};
+
 // npm ci refuses a lock whose root dependencies differ from package.json.
 export const lockAgrees = (lock: Doc, dependencies: Record<string, string>): boolean => {
   const locked = rootDependencies(lock);

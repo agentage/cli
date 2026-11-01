@@ -52,7 +52,8 @@ export const npmrcText = (registries: Record<string, string>): string =>
 export const treeName = (entries: string[]): string =>
   createHash('sha256').update(entries.join('\n')).digest('hex').slice(0, 16);
 
-const treePath = (extensionsDir: string, name: string): string => join(extensionsDir, TREES, name);
+export const treePath = (extensionsDir: string, name: string): string =>
+  join(extensionsDir, TREES, name);
 
 export const isComplete = (extensionsDir: string, name: string): boolean =>
   existsSync(join(treePath(extensionsDir, name), COMPLETE));
@@ -94,6 +95,15 @@ export const commitTree = (extensionsDir: string, staging: string, name: string)
   remove(target);
   writeFileSync(join(staging, COMPLETE), '');
   renameSync(staging, target);
+};
+
+// Only `keep` stays: the lock in the extensions root can rebuild any other tree. Staging dirs are
+// left to clearStaging, so a run never removes another's.
+export const collectTrees = (extensionsDir: string, keep: string): void => {
+  const trees = join(extensionsDir, TREES);
+  if (!existsSync(trees)) return;
+  for (const name of readdirSync(trees))
+    if (name !== keep && !name.startsWith(STAGING_PREFIX)) remove(join(trees, name));
 };
 
 export const pointCurrent = (extensionsDir: string, name: string): void =>

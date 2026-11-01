@@ -31,13 +31,14 @@ const withDrift = (found: Discovery, drift: string[]): Discovery => ({
   }),
 });
 
-// Everything known about this machine's extensions without running any of them.
-export const scan = (machine: MachineFile): Scan => {
+// Everything known about this machine's extensions without running any of them; `tree` reads
+// that tree instead of the current one.
+export const scan = (machine: MachineFile, tree?: string): Scan => {
   const parsed = readProfile();
   const eff = effective(parsed?.ok ? parsed.profile : null, machine);
   const dir = extensionsDir();
   const drift = lockDrift(dir).integrity;
-  const input = { extensionsDir: dir, dev: eff.dev, config: eff.config };
+  const input = { extensionsDir: dir, dev: eff.dev, config: eff.config, tree };
   const found = withDrift(discover({ ...input, names: Object.keys(eff.install) }), drift);
   const plan = planChanges(eff, currentDependencies(dir));
   const gone = plan.extensions.filter((e) => e.verb === 'remove' && !(e.name in eff.dev));

@@ -22,6 +22,13 @@ export interface LockPair {
   npmMajor: number | null;
 }
 
+type Etagged = CloudProfile & { etag: string };
+
+// `lockCounts`: a new lock alone is worth a push (setup --latest); for an edit only the profile is.
+export interface ReplayOptions {
+  lockCounts?: boolean;
+}
+
 type Attempt =
   | ({ kind: 'done' } & Pushed)
   | { kind: 'conflict'; body: ProfileWrite; current: CloudProfile | null };
@@ -40,11 +47,21 @@ const refuseNewer = (base: CloudProfile): void => {
   throw new Error(`the profile in your account is ${newer}; it was not changed`);
 };
 
-const attemptOn = async (fetch: CloudFetch, base: CloudProfile, apply: Apply): Promise<Attempt> => {
+// The account holds this already: the same profile and, when the lock counts, the same lock.
+const held = (body: ProfileWrite, base: CloudProfile, lockCounts: boolean): base is Etagged =>
+  base.etag !== null &&
+  isDeepStrictEqual(body.profile, toDocument(base.profile)) &&
+  (!lockCounts || isDeepStrictEqual(body.lock, base.lock));
+
+const attemptOn = async (
+  fetch: CloudFetch,
+  base: CloudProfile,
+  apply: Apply,
+  lockCounts: boolean
+): Promise<Attempt> => {
   refuseNewer(base);
   const body = await apply(base);
-  const same = base.etag !== null && isDeepStrictEqual(body.profile, toDocument(base.profile));
-  if (same && base.etag !== null) return { kind: 'done', etag: base.etag, pushed: false };
+  if (held(body, base, lockCounts)) return { kind: 'done', etag: base.etag, pushed: false };
   const res = await pushProfile(fetch, body, base.etag);
   if (res.kind === 'stored') return { kind: 'done', etag: res.etag, pushed: true };
   return { kind: 'conflict', body, current: res.current };
@@ -66,11 +83,13 @@ const conflictError = (body: ProfileWrite, current: CloudProfile | null): Error 
 export const pushWithReplay = async (
   fetch: CloudFetch,
   base: CloudProfile,
-  apply: Apply
+  apply: Apply,
+  { lockCounts = false }: ReplayOptions = {}
 ): Promise<Pushed> => {
-  const first = await attemptOn(fetch, base, apply);
+  const first = await attemptOn(fetch, base, apply, lockCounts);
   if (first.kind === 'done') return { etag: first.etag, pushed: first.pushed };
-  const second = await attemptOn(fetch, first.current ?? { ...base, etag: null }, apply);
+  const retry = first.current ?? { ...base, etag: null };
+  const second = await attemptOn(fetch, retry, apply, lockCounts);
   if (second.kind === 'done') return { etag: second.etag, pushed: second.pushed };
   throw conflictError(second.body, second.current);
 };

@@ -118,13 +118,15 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     expect(run.lines).toContain(HELLO_OK);
   });
 
-  test('with the account unavailable and no local profile.json, fails having installed nothing', async ({
+  test('with the account unavailable and no local profile.json, installs nothing, says so on one line and succeeds', async ({
     dir,
   }) => {
     const account = fakeAccount();
     account.fail('profile', 'network');
-    expect((await setup(account)).error).toBe(
-      'cloud profile unavailable and there is no local profile.json (fetch failed); nothing installed'
+    const run = await setup(account);
+    expect(run).toMatchObject({ lines: [], error: null });
+    expect(run.stderr).toBe(
+      'cloud profile unavailable and no local profile.json, nothing installed (fetch failed)'
     );
     expect(dir.exists('profile.json')).toBe(false);
     expect(dir.exists('extensions')).toBe(false);

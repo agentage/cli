@@ -2,37 +2,43 @@ import { realpathSync, symlinkSync } from 'node:fs';
 import { relative } from 'node:path';
 import { describe, expect } from 'vitest';
 import { fixture, test } from '../../test/config-dir.js';
-import { manifestFromFixtures } from '../../test/npm-fixtures.js';
+import { manifestFromFixtures, type Publishes } from '../../test/npm-fixtures.js';
 import { type NpmManifest } from './npm.js';
-import { candidatesFor, registryLookup, resolveName, type Lookup } from './resolve.js';
+import { candidatesFor, registryLookup, resolveName, type Registry } from './resolve.js';
 
 // npm answers from the fixtures, plus whatever else a test publishes.
-const published = (more: Record<string, string> = {}): Lookup =>
+const published = (more: Publishes = {}): Registry =>
   registryLookup(manifestFromFixtures(more), {});
 
-const neverAsked: Lookup = async (spec) => {
+const asked = async (spec: string): Promise<never> => {
   throw new Error(`npm asked about ${spec}`);
 };
+const neverAsked: Registry = { find: asked, versions: asked };
+
+const HELLO = '@agentage/fixture-hello';
+const NEEDS_2 = { engines: { agentage: '^2' } };
 
 const HELLO_URL = 'https://registry.example/@agentage/fixture-hello/-/fixture-hello-1.0.0.tgz';
 
 describe('extension install <name>: what a name resolves to', () => {
   test('a short name is @agentage/extension-<name> first, then agentage-extension-<name>', async () => {
     const both = published({
-      '@agentage/extension-memory': '1.2.0',
-      'agentage-extension-memory': '3.0.0',
+      '@agentage/extension-memory': { '1.2.0': {} },
+      'agentage-extension-memory': { '3.0.0': {} },
     });
     expect(await resolveName('memory', both)).toEqual({
       kind: 'package',
       name: '@agentage/extension-memory',
       spec: '^1.2.0',
+      skipped: [],
     });
     expect(
-      await resolveName('memory', published({ 'agentage-extension-memory': '3.0.0' }))
+      await resolveName('memory', published({ 'agentage-extension-memory': { '3.0.0': {} } }))
     ).toEqual({
       kind: 'package',
       name: 'agentage-extension-memory',
       spec: '^3.0.0',
+      skipped: [],
     });
   });
 
@@ -47,6 +53,7 @@ describe('extension install <name>: what a name resolves to', () => {
       kind: 'package',
       name: '@agentage/fixture-hello',
       spec: '^1.0.0',
+      skipped: [],
     });
     expect(await resolveName('@agentage/fixture-hello@~1.0', published())).toMatchObject({
       spec: '~1.0',
@@ -65,7 +72,33 @@ describe('extension install <name>: what a name resolves to', () => {
       kind: 'package',
       name: '@agentage/fixture-hello',
       spec: HELLO_URL,
+      skipped: [],
     });
+  });
+
+  test('without a range: the newest version whose engines.agentage fits the extension API, naming each newer one skipped', async () => {
+    const newer = published({ [HELLO]: { '1.0.1': {}, '2.0.0': NEEDS_2, '1.5.0': NEEDS_2 } });
+    expect(await resolveName(HELLO, newer)).toEqual({
+      kind: 'package',
+      name: HELLO,
+      spec: '^1.0.1',
+      skipped: [
+        { version: '2.0.0', engine: '^2' },
+        { version: '1.5.0', engine: '^2' },
+      ],
+    });
+  });
+
+  test('with a range: the range as typed, whatever the engines of the versions in it', async () => {
+    const newer = published({ [HELLO]: { '1.5.0': NEEDS_2 } });
+    expect(await resolveName(`${HELLO}@^1`, newer)).toMatchObject({ spec: '^1', skipped: [] });
+  });
+
+  test('when no published version fits the extension API, it fails naming the newest and what it needs', async () => {
+    const only = published({ '@agentage/extension-memory': { '2.0.0': NEEDS_2 } });
+    await expect(resolveName('memory', only)).rejects.toThrow(
+      'memory: no published version works with extension API 1.0.0 (2.0.0: needs extension API ^2)'
+    );
   });
 
   test('a local path is a dev extension: its real path and the name its package.json declares', async ({
@@ -122,23 +155,25 @@ describe('extension install <name>: what a name resolves to', () => {
 
 describe('the registry lookup', () => {
   test('asks npm once it is first needed, sending each profile scope to its registry', async () => {
-    const asked: string[] = [];
+    const questions: string[] = [];
     let prepared = 0;
     const manifest = async (): Promise<NpmManifest> => {
       prepared += 1;
       const npm = await manifestFromFixtures()();
-      return async (spec, registries) => {
-        asked.push(`${spec} via ${JSON.stringify(registries)}`);
-        return npm(spec, registries);
+      return async (command, spec, registries) => {
+        questions.push(`${command} ${spec} via ${JSON.stringify(registries)}`);
+        return npm(command, spec, registries);
       };
     };
     const look = registryLookup(manifest, { '@agentage': 'http://127.0.0.1:9' });
     expect(prepared).toBe(0);
     await resolveName('memory', look).catch(() => undefined);
+    await resolveName(`${HELLO}@^1`, look);
     expect(prepared).toBe(1);
-    expect(asked).toEqual([
-      '@agentage/extension-memory via {"@agentage":"http://127.0.0.1:9"}',
-      'agentage-extension-memory via {"@agentage":"http://127.0.0.1:9"}',
+    expect(questions).toEqual([
+      'view @agentage/extension-memory@>=0.0.0 via {"@agentage":"http://127.0.0.1:9"}',
+      'view agentage-extension-memory@>=0.0.0 via {"@agentage":"http://127.0.0.1:9"}',
+      `pack ${HELLO}@^1 via {"@agentage":"http://127.0.0.1:9"}`,
     ]);
   });
 
@@ -148,8 +183,11 @@ describe('the registry lookup', () => {
       stdout: 'nope',
       stderr: '',
     });
-    await expect(registryLookup(odd, {})('x')).rejects.toThrow(
+    await expect(registryLookup(odd, {}).find('x')).rejects.toThrow(
       'npm could not read x (exit 0)\nnope'
+    );
+    await expect(registryLookup(odd, {}).versions('x')).rejects.toThrow(
+      'npm could not read x@>=0.0.0 (exit 0)\nnope'
     );
   });
 });

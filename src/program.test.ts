@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, vi } from 'vitest';
 import { createProgram, run, type ProgramDeps } from './program.js';
 import { test } from './test/config-dir.js';
 import { VERSION } from './utils/version.js';
@@ -43,14 +43,14 @@ describe('run', () => {
     delete process.env['NO_COLOR'];
   });
 
-  it('exits 2 on an unknown command, reporting it on stderr', async () => {
+  test('exits 2 on an unknown command, reporting it on stderr', async () => {
     const h = makeDeps();
     expect(await h.exec('nope')).toBe(2);
     expect(h.stderr()).toContain("unknown command 'nope'");
     expect(h.stdout()).toBe('');
   });
 
-  it('exits 2 on an unknown option or a missing option argument', async () => {
+  test('exits 2 on an unknown option or a missing option argument', async () => {
     const h = makeDeps();
     expect(await h.exec('status', '--nope')).toBe(2);
     expect(h.stderr()).toContain("unknown option '--nope'");
@@ -58,14 +58,14 @@ describe('run', () => {
     expect(h.deps.status).not.toHaveBeenCalled();
   });
 
-  it('exits 2 when no command is given, with help on stderr', async () => {
+  test('exits 2 when no command is given, with help on stderr', async () => {
     const h = makeDeps();
     expect(await h.exec()).toBe(2);
     expect(h.stderr()).toContain('Usage: agentage');
     expect(h.stdout()).toBe('');
   });
 
-  it('exits 0 for --help and help, printing to stdout', async () => {
+  test('exits 0 for --help and help, printing to stdout', async () => {
     for (const args of [['--help'], ['help'], ['setup', '--help']]) {
       const h = makeDeps();
       expect(await h.exec(...args), args.join(' ')).toBe(0);
@@ -74,24 +74,26 @@ describe('run', () => {
     }
   });
 
-  it('exits 0 for --version, printing only the version to stdout', async () => {
+  test('exits 0 for --version, printing only the version to stdout', async () => {
     const h = makeDeps();
     expect(await h.exec('--version')).toBe(0);
     expect(h.stdout()).toBe(`${VERSION}\n`);
     expect(h.stderr()).toBe('');
   });
 
-  it('exits 0 and passes the parsed options to the command', async () => {
+  test('exits 0 and passes the parsed options to the command', async () => {
     const h = makeDeps();
     expect(await h.exec('status', '--json', '--token', 'aga_x')).toBe(0);
     expect(h.deps.status).toHaveBeenCalledWith({ json: true, token: 'aga_x' });
     expect(await h.exec('setup', '--no-browser', '--reauth')).toBe(0);
     expect(h.deps.setup).toHaveBeenCalledWith({ browser: false, reauth: true });
+    expect(await h.exec('setup', '--latest')).toBe(0);
+    expect(h.deps.setup).toHaveBeenLastCalledWith({ browser: true, latest: true });
     expect(await h.exec('update', '--check')).toBe(0);
     expect(h.deps.update).toHaveBeenCalledWith({ check: true });
   });
 
-  it('exits 1 when a command throws, with the message on stderr only', async () => {
+  test('exits 1 when a command throws, with the message on stderr only', async () => {
     const h = makeDeps({ status: boom, update: boom });
     expect(await h.exec('status')).toBe(1);
     expect(await h.exec('update')).toBe(1);
@@ -100,14 +102,14 @@ describe('run', () => {
     expect(h.stdout()).toBe('');
   });
 
-  it('keeps the "Setup failed:" prefix and skips the update hint after a failure', async () => {
+  test('keeps the "Setup failed:" prefix and skips the update hint after a failure', async () => {
     const h = makeDeps({ setup: boom });
     expect(await h.exec('setup')).toBe(1);
     expect(h.stderr()).toContain('Setup failed: boom');
     expect(h.stderr()).not.toContain('update available');
   });
 
-  it('exits 1 for a failure outside any command action', async () => {
+  test('exits 1 for a failure outside any command action', async () => {
     const h = makeDeps({
       updateHint: () => {
         throw new Error('hint broke');
@@ -117,7 +119,7 @@ describe('run', () => {
     expect(h.stderr()).toContain('hint broke');
   });
 
-  it('prints the update hint to stderr after setup and refreshes the cache', async () => {
+  test('prints the update hint to stderr after setup and refreshes the cache', async () => {
     const h = makeDeps();
     expect(await h.exec('setup')).toBe(0);
     expect(h.stderr()).toContain('update available: 9.9.9');
@@ -125,7 +127,7 @@ describe('run', () => {
     expect(h.deps.refreshUpdateCache).toHaveBeenCalledOnce();
   });
 
-  it('leaves the update hint to status and update themselves', async () => {
+  test('leaves the update hint to status and update themselves', async () => {
     const h = makeDeps();
     await h.exec('status', '--json');
     await h.exec('update');
@@ -133,7 +135,7 @@ describe('run', () => {
     expect(h.deps.refreshUpdateCache).not.toHaveBeenCalled();
   });
 
-  it('honours NO_COLOR, which chalk alone ignores', async () => {
+  test('honours NO_COLOR, which chalk alone ignores', async () => {
     chalk.level = 3;
     const colored = makeDeps({ status: boom });
     await colored.exec('status');
@@ -150,18 +152,16 @@ describe('createProgram', () => {
     delete process.env['AGENTAGE_EXTENSIONS'];
   });
 
-  test('registers exactly the core commands while the extensions flag is off', async () => {
-    const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
-    expect(names).toEqual(['setup', 'status', 'update']);
-    const h = makeDeps();
-    expect(await h.exec('extension', 'list')).toBe(2);
-    expect(h.stderr()).toContain("unknown command 'extension'");
+  test('registers the core commands and the extension group, whatever AGENTAGE_EXTENSIONS says', async () => {
+    for (const value of [undefined, '0', '1']) {
+      if (value === undefined) delete process.env['AGENTAGE_EXTENSIONS'];
+      else process.env['AGENTAGE_EXTENSIONS'] = value;
+      const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
+      expect(names, String(value)).toEqual(['setup', 'status', 'update', 'extension']);
+    }
   });
 
-  test('adds the extension group behind AGENTAGE_EXTENSIONS=1', async () => {
-    process.env['AGENTAGE_EXTENSIONS'] = '1';
-    const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
-    expect(names).toEqual(['setup', 'status', 'update', 'extension']);
+  test('extension alone prints its help; list and check pass --json; an unknown subcommand is usage', async () => {
     const h = makeDeps();
     expect(await h.exec('extension')).toBe(0);
     expect(h.stdout()).toContain('Usage: agentage extension');
@@ -174,7 +174,6 @@ describe('createProgram', () => {
   });
 
   test('extension install and remove pass the name and their flags; extension --help lists all four', async () => {
-    process.env['AGENTAGE_EXTENSIONS'] = '1';
     const h = makeDeps();
     expect(await h.exec('extension', 'install', 'hello', '--off')).toBe(0);
     expect(h.deps.extensionInstall).toHaveBeenCalledWith({ name: 'hello', off: true });
@@ -186,4 +185,14 @@ describe('createProgram', () => {
     const listed = h.stdout().match(/^ {2}(install|remove|list|check)\b/gm);
     expect(listed).toEqual(['  install', '  remove', '  list', '  check']);
   });
+
+  test.for(['--profile=x', '--dry-run', '--check', '--disconnect'])(
+    'setup --latest with %s is a usage error',
+    async (other) => {
+      const h = makeDeps();
+      expect(await h.exec('setup', '--latest', other)).toBe(2);
+      expect(h.stderr()).toContain("option '--latest' cannot be used with option");
+      expect(h.deps.setup).not.toHaveBeenCalled();
+    }
+  );
 });

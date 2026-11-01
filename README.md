@@ -45,21 +45,22 @@ AGENTAGE_TOKEN=aga_... agentage status   # or use a personal access token
 
 ## Commands
 
-| Command                       | What it does                                                            |
-| ----------------------------- | ----------------------------------------------------------------------- |
-| `agentage setup`              | Sign in through your browser, then show status                          |
-| `agentage setup --no-browser` | Print the sign-in URL instead of opening a browser                      |
-| `agentage setup --reauth`     | Force a fresh sign-in                                                   |
-| `agentage setup --disconnect` | Sign out and remove local credentials                                   |
-| `agentage status`             | Version, update, target, sign-in state, endpoint (`--json` for scripts) |
-| `agentage update`             | Install the latest published version (`--check` only reports)           |
+| Command                       | What it does                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| `agentage setup`              | Sign in through your browser, install your account's profile, show status     |
+| `agentage setup --no-browser` | Print the sign-in URL instead of opening a browser                            |
+| `agentage setup --reauth`     | Force a fresh sign-in                                                         |
+| `agentage setup --disconnect` | Sign out and remove local credentials                                         |
+| `agentage status`             | Version, update, target, sign-in, endpoint, then machine, profile, extensions |
+| `agentage update`             | Install the latest published version (`--check` only reports)                 |
 
-With `AGENTAGE_EXTENSIONS=1` (see below):
+For extensions (see below):
 
 | Command                                      | What it does                                                     |
 | -------------------------------------------- | ---------------------------------------------------------------- |
 | `agentage setup --profile <file>`            | Install and load the extensions a profile file names, no sign-in |
 | `agentage setup --profile <file> --dry-run`  | Show what would be installed, write nothing                      |
+| `agentage setup --latest`                    | Update each extension to the newest version its range allows     |
 | `agentage extension install <name> [--off]`  | Add an extension to the profile, install and load it             |
 | `agentage extension remove <name> [--purge]` | Take it out of the profile and reinstall the rest                |
 | `agentage extension list`                    | One row per extension: state, version, commands, last run        |
@@ -70,9 +71,10 @@ Flags, exit codes and token auth are in [`docs/reference.md`](docs/reference.md)
 
 ## Extensions
 
-An extension is an npm package that adds to the CLI: commands today, more later. Extension
-support is experimental and off unless you set `AGENTAGE_EXTENSIONS=1`; without it the CLI
-behaves exactly as described above.
+An extension is an npm package that adds to the CLI: commands today, more later. Extensions are
+on by default. A machine whose profile names no extensions has none, and `setup`, `status` and
+`update` work as described above, with three more `status` lines: `machine`, `profile` and
+`extensions`.
 
 The model is simple. A **profile** says what this account wants: which extensions, at which
 version ranges, and which ones are switched off on which machine. The CLI brings the machine
@@ -81,15 +83,16 @@ whether it loaded (`ok`) or why not. `extension install` and `extension remove` 
 profile and then do the same. Nothing installs itself on a timer; the state only changes when
 you run a command.
 
-Once you are signed in, the profile lives in your account, so every machine you set up gets the
-same extensions, and `extension install` and `extension remove` save the change there. Each
-machine you run `setup` on appears in your account as one of its machines.
+Once you are signed in, `setup` reads the profile your account holds, when it has one, so every
+machine you set up gets the same extensions, and `extension install` and `extension remove` save
+the change there. When your account has no profile to give, `setup` says so on one line and
+carries on. Each machine you run `setup` on appears in your account as one of its machines.
 
 ```bash
-export AGENTAGE_EXTENSIONS=1
 agentage setup --profile ./profile.json            # install and load the extensions a profile names
 agentage setup --profile ./profile.json --dry-run  # show the plan, write nothing
 agentage setup --check                             # exit 1 when this machine differs from its profile
+agentage setup --latest                            # newest versions the ranges allow, diff printed
 agentage extension install @agentage/example       # add one extension, install and load it
 agentage extension install ./my-extension          # a local folder, for development
 agentage extension remove @agentage/example        # take it out again
@@ -101,6 +104,11 @@ The plan is what `setup` would change, one line per extension (`+ add`, `~ updat
 `o off`) and a summary such as `plan: 1 to add, 0 to update, 0 to remove, 0 off, 2 unchanged`.
 `setup --dry-run` prints it, `setup --check` exits 1 when anything would change, `extension list`
 shows it per extension and `status` sums it up, for example `extensions 2 (1 to add)`.
+
+`setup --latest` moves each extension to the newest version its range allows and prints one line
+per change, such as `~ update @agentage/example 1.0.0 -> 1.0.1`. The new versions take over only
+after every extension loaded from them cleanly; until then the installed ones stay. A version
+that needs a newer extension API than this CLI has is skipped, here and by `extension install`.
 
 A profile is a JSON file that maps package names to version ranges. `registries` is optional
 and routes a scope to another npm-compatible registry; everything else comes from npm's public
@@ -136,7 +144,7 @@ client, opens the authorization page in your browser and waits on a localhost ca
 tokens land in `~/.agentage/auth.json` with owner-only permissions and are refreshed
 automatically. `status` validates the session against the account's introspection endpoint
 and reports version, update, target host and connectivity. Nothing runs in the background, and
-nothing is installed beyond this package unless you turn extensions on.
+nothing is installed beyond this package unless your profile names extensions.
 
 ## Configuration
 
@@ -145,7 +153,6 @@ nothing is installed beyond this package unless you turn extensions on.
 | `AGENTAGE_SITE_FQDN`      | `agentage.io`         | Target host                                        |
 | `AGENTAGE_CONFIG_DIR`     | `~/.agentage`         | Config and credentials directory                   |
 | `AGENTAGE_TOKEN`          | -                     | Personal access token for CI and headless machines |
-| `AGENTAGE_EXTENSIONS`     | -                     | `1` turns on extension support (experimental)      |
 | `AGENTAGE_EXTENSIONS_DIR` | `<config>/extensions` | Where extensions are installed                     |
 | `NO_COLOR`                | -                     | Disable colored output                             |
 

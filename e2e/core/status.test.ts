@@ -1,7 +1,7 @@
 /**
- * @offline - `agentage status` with AGENTAGE_EXTENSIONS=1 adds three lines (machine, profile,
- * extensions), the profile line comparing the copy here with your account's; with the flag off
- * every command behaves exactly as before.
+ * @offline - `agentage status` adds three lines (machine, profile, extensions) after the ones it
+ * always printed, the profile line comparing the copy here with your account's; and a machine
+ * upgraded from 0.39 runs setup and status as before, plus those lines.
  */
 import { expect, test } from './cli.js';
 
@@ -62,34 +62,79 @@ test.describe('agentage status and the profile in your account @p0 @offline', ()
   });
 });
 
-test.describe('without AGENTAGE_EXTENSIONS=1 @p0 @offline', () => {
-  test('agentage status, setup --profile and extension behave exactly as before', async ({
-    anotherMachine,
+test.describe('a machine upgraded from 0.39 @p0 @offline', () => {
+  const UNSET = { AGENTAGE_EXTENSIONS: undefined };
+
+  test('agentage setup --help keeps the 0.39 usage and flags, then lists --profile, --dry-run, --check, --latest and --json', async ({
+    cli,
   }) => {
-    const cli = anotherMachine({ AGENTAGE_EXTENSIONS: undefined });
-    const status = await cli.run('status --json');
-    const keys = ['version', 'fqdn', 'env', 'target', 'auth', 'endpoint', 'update'];
-    expect(Object.keys(JSON.parse(status.stdout))).toEqual(keys);
-    const setup = await cli.run(`setup --profile ${cli.profile(TWO)}`);
-    expect(setup.code).toBe(2);
-    expect(setup.stderr).toContain("error: unknown option '--profile'");
-    const group = await cli.run('extension list');
-    expect(group.code).toBe(2);
-    expect(group.stderr).toContain("error: unknown command 'extension'");
-    expect(cli.list('')).toEqual([]);
+    const help = await cli.run('setup --help', UNSET);
+    expect(help.code).toBe(0);
+    expect(help.lines.slice(0, 3)).toEqual([
+      'Usage: agentage setup [options]',
+      '',
+      'Sign in and connect this machine to your agentage account',
+    ]);
+    const flags = help.lines.filter((l) => l.startsWith('  --')).map((l) => l.trim().split(' ')[0]);
+    expect(flags).toEqual([
+      '--disconnect',
+      '--reauth',
+      '--no-browser',
+      '--profile',
+      '--dry-run',
+      '--check',
+      '--latest',
+      '--json',
+    ]);
   });
 
-  test('with hello installed, agentage hello is an unknown command and --help is unchanged', async ({
+  test('agentage status on a fresh machine prints the 0.39 lines, then machine, profile and extensions, and exits 0; --json keeps the 0.39 keys first', async ({
     cli,
-    anotherMachine,
   }) => {
-    await cli.run(`setup --profile ${cli.profile(TWO)}`);
-    const off = { AGENTAGE_EXTENSIONS: undefined };
-    const hello = await cli.run('hello', off);
-    expect(hello.code).toBe(2);
-    expect(hello.stderr).toContain("error: unknown command 'hello'");
-    expect(hello.stderr).not.toContain('core:');
-    const fresh = anotherMachine(off);
-    expect((await cli.run('--help', off)).stdout).toBe((await fresh.run('--help')).stdout);
+    const run = await cli.run('status', UNSET);
+    expect(run.code).toBe(0);
+    const at = (label: string) => run.lines.findIndex((l) => l.startsWith(`${label} `));
+    const labels = ['version', 'update', 'target', 'auth', 'endpoint', 'machine', 'profile'];
+    expect(labels.map(at)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(run.lines.slice(6, 8)).toEqual(['profile    no profile', 'extensions 0']);
+    const json = JSON.parse((await cli.run('status --json', UNSET)).stdout);
+    expect(Object.keys(json)).toEqual([
+      ...['version', 'fqdn', 'env', 'target', 'auth', 'endpoint', 'update'],
+      ...['machine', 'profile', 'extensions', 'plan'],
+    ]);
+  });
+
+  test('without AGENTAGE_EXTENSIONS, or with it set to 0, agentage setup --profile, extension list and agentage hello work', async ({
+    cli,
+  }) => {
+    const install = await cli.run(`setup --profile ${cli.profile(TWO)}`, UNSET);
+    expect(install.code).toBe(0);
+    const list = await cli.run('extension list', { AGENTAGE_EXTENSIONS: '0' });
+    expect(list.code).toBe(0);
+    expect(list.lines).toContainEqual(expect.stringMatching(/^hello {2}installed /));
+    const hello = await cli.run('hello', { AGENTAGE_EXTENSIONS: '0' });
+    expect(hello.code).toBe(0);
+    expect(hello.lines).toContain('hello from hello');
+  });
+
+  test('with only auth.json, against an account without the profile and machines routes, agentage setup prints one dim line, installs nothing, shows the status and exits 0', async ({
+    cli,
+  }) => {
+    expect((await cli.signIn()).code).toBe(0);
+    for (const name of cli.list('').filter((n) => n !== 'auth.json')) cli.remove(name);
+    cli.site.fail('profile', 'missing');
+    cli.site.fail('machines', 'missing');
+    const run = await cli.run('setup --no-browser', UNSET);
+    expect(run.code).toBe(0);
+    expect(run.stdout).toContain('Already signed in');
+    expect(run.stderr.split('\n').filter((l) => l.includes('profile'))).toEqual([
+      'cloud profile unavailable and no local profile.json, nothing installed (404 NOT_FOUND)',
+    ]);
+    expect(run.lines).toContain('profile    no profile');
+    expect(run.lines).toContain('extensions 0');
+    expect(cli.exists('profile.json')).toBe(false);
+    expect(cli.exists('extensions')).toBe(false);
+    const status = JSON.parse((await cli.run('status --json', UNSET)).stdout);
+    expect(status.machine.registered).toBeNull();
   });
 });

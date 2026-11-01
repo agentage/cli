@@ -1,7 +1,7 @@
 /**
- * @offline - `agentage extension remove` with AGENTAGE_EXTENSIONS=1: by package name, short name
- * or extension id; refused while another extension peer-depends on it; `--purge` also deletes
- * data/<id>/; then the rest is installed again and loaded the way setup does.
+ * @offline - `agentage extension remove`: by package name, short name or extension id; refused
+ * while another extension peer-depends on it; `--purge` also deletes data/<id>/; then the rest is
+ * installed again and loaded the way setup does.
  */
 import { expect, test } from './cli.js';
 

@@ -1,7 +1,6 @@
 /**
- * @offline - `agentage extension check` with AGENTAGE_EXTENSIONS=1: load every extension this
- * machine can run once, rewrite state/<id>.json, print the rows with ok or failed, exit 1 when
- * any failed.
+ * @offline - `agentage extension check`: load every extension this machine can run once, rewrite
+ * state/<id>.json, print the rows with ok or failed, exit 1 when any failed.
  */
 import { expect, test } from './cli.js';
 

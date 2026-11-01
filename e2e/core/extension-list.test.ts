@@ -1,6 +1,6 @@
 /**
- * @offline - `agentage extension list` with AGENTAGE_EXTENSIONS=1: one row per extension, read
- * from the installed tree, the profile and the state files; extension code is never loaded.
+ * @offline - `agentage extension list`: one row per extension, read from the installed tree, the
+ * profile and the state files; extension code is never loaded.
  */
 import { chmodSync, realpathSync } from 'node:fs';
 import { expect, test } from './cli.js';

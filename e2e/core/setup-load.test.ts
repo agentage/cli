@@ -1,6 +1,6 @@
 /**
- * @offline - `agentage setup` with AGENTAGE_EXTENSIONS=1, after installing: secrets to set are
- * listed, every extension is loaded once, and the rows show ok, failed, invalid or blocked.
+ * @offline - `agentage setup`, after installing: secrets to set are listed, every extension is
+ * loaded once, and the rows show ok, failed, invalid or blocked.
  */
 import { expect, test } from './cli.js';
 

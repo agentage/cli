@@ -17,7 +17,8 @@ const installLine = (result: InstallResult): string => {
   return line('install', `${counted(result.count)} in tree ${result.tree} (${how})`);
 };
 
-const listSecrets = (extensions: DiscoveredExtension[]): Promise<void> =>
+// Asks for, or lists, the secrets the extensions about to load declare and this machine lacks.
+export const listSecrets = (extensions: DiscoveredExtension[]): Promise<void> =>
   askSecrets(missingSecrets(extensions));
 
 // Rows print either way, only a good install loads; `installed` runs before anything loads.

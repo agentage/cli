@@ -89,6 +89,27 @@ describe('agentage setup --profile, after installing', () => {
 });
 
 describe('agentage setup', () => {
+  test('signs in with --reauth and --no-browser as given, then prints status', async () => {
+    const ensureSignedIn: ExtensionSetupDeps['ensureSignedIn'] = async (opts) => {
+      console.log(`(signed in ${JSON.stringify(opts)})`);
+      return 'signed-in';
+    };
+    const run = await output(() =>
+      runExtensionSetup({ reauth: true, browser: false }, { ...deps, ensureSignedIn })
+    );
+    expect(run.lines[0]).toBe('(signed in {"reauth":true,"browser":false})');
+    expect(run.lines.at(-1)).toBe('(status)');
+  });
+
+  test('a failed sign-in stops setup before the account or the status report', async ({ dir }) => {
+    const ensureSignedIn = async (): Promise<never> => {
+      throw new Error('authorization failed: access_denied');
+    };
+    const run = await output(() => runExtensionSetup({}, { ...deps, ensureSignedIn }));
+    expect(run).toMatchObject({ lines: [], error: 'authorization failed: access_denied' });
+    expect(dir.list('')).toEqual([]);
+  });
+
   test('reports status with AGENTAGE_TOKEN, which loading removed from the environment', async ({
     dir,
   }) => {
