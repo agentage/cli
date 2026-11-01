@@ -5,8 +5,10 @@ import { resolveAuth } from '../../lib/auth/credentials.js';
 import { siteFqdn } from '../../lib/net/origins.js';
 import { gatherStatus, type StatusReport } from '../../lib/status/status-info.js';
 import { INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
+import { signedInAccount } from '../extension/account.js';
 import { printWarnings, summaryLines } from '../extension/row-lines.js';
 import { gatherExtensions, invalidProfileError, type ExtensionsGather } from '../extension/rows.js';
+import { gatherWithAccount } from './account-status.js';
 
 const mark = (good: boolean): string => (good ? chalk.green('✓') : chalk.red('✗'));
 
@@ -64,19 +66,23 @@ export interface StatusOptions {
 export interface StatusDeps {
   gather: (opts: StatusOptions) => Promise<StatusReport>;
   // null while the extensions flag is off, so today's output stays byte-identical.
-  extensions: () => Promise<ExtensionsGather | null>;
+  extensions: (opts: StatusOptions) => Promise<ExtensionsGather | null>;
 }
 
-const defaultDeps: StatusDeps = {
+// `account` false: the report that closes setup, which reached the account already.
+export const statusDeps = (account = true): StatusDeps => ({
   gather: (opts) => gatherStatus(resolveAuth({ token: opts.token }), siteFqdn()),
-  extensions: () => (extensionsEnabled() ? gatherExtensions() : Promise.resolve(null)),
-};
+  extensions: (opts) => {
+    if (!extensionsEnabled()) return Promise.resolve(null);
+    return account ? gatherWithAccount(signedInAccount({ token: opts.token })) : gatherExtensions();
+  },
+});
 
 type ExtensionsOutcome = { gathered: ExtensionsGather | null; error: unknown };
 
-const settle = async (deps: StatusDeps): Promise<ExtensionsOutcome> => {
+const settle = async (deps: StatusDeps, opts: StatusOptions): Promise<ExtensionsOutcome> => {
   try {
-    return { gathered: await deps.extensions(), error: null };
+    return { gathered: await deps.extensions(opts), error: null };
   } catch (error) {
     return { gathered: null, error };
   }
@@ -98,10 +104,10 @@ const emit = (report: StatusReport, gathered: ExtensionsGather | null, json?: bo
 // The report always prints; an extension-side failure then fails the step (exit 1) on stderr.
 export const runStatus = async (
   opts: StatusOptions = {},
-  deps: StatusDeps = defaultDeps
+  deps: StatusDeps = statusDeps()
 ): Promise<void> => {
   const report = await deps.gather(opts);
-  const { gathered, error } = await settle(deps);
+  const { gathered, error } = await settle(deps, opts);
   emit(report, gathered, opts.json);
   printWarnings(gathered?.warnings ?? []);
   if (error) throw error;
@@ -111,9 +117,11 @@ export const runStatus = async (
 
 const EXTENSIONS_HELP = `
 Extensions: adds this machine's id and name (machine.json), the local profile version
-(profile.json) and the number of extensions, with what setup would change, e.g. (1 to add);
-agentage extension list shows one row per extension. Extension code is never loaded; the only
-file written is machine.json.`;
+(profile.json) with its source and, for a profile from your account, its etag and the
+account's when that moved on, and the number of extensions, with what setup would change, e.g.
+(1 to add); agentage extension list shows one row per extension. Signed in, it also marks this
+machine seen in your account (--json: machine.registered). Extension code is never loaded; the
+only file written is machine.json.`;
 
 export const registerStatus = (
   program: Command,

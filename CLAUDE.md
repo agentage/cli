@@ -7,6 +7,10 @@ and loads them, `extension install` and `extension remove` add or take out one a
 `agentage <command>`. The model: the profile is the desired state, the installed tree (plus
 `state/<id>.json`) the current one; `setup` converges them, the plan (`setup --dry-run`,
 `setup --check`, the `extension list` drift column, the `status` count) says what it would change.
+Signed in, the profile lives in the account (`/v1/profile`, one ETag over profile, lock and npm
+major): plain `setup` pulls it (creating it on a 404) and never pushes; `extension install`,
+`remove` and `--off` push after the new tree loaded, replaying once on a 412; `setup`, `status` and
+`setup --disconnect` register the machine at `/v1/machines` (fire and forget).
 memory, vault, daemon, sync and MCP code lives in git history up to v0.37.2 and returns as
 extensions.
 
@@ -21,11 +25,16 @@ extensions.
   prints them and registers the `extension` group, `check.ts` loads once and reports, `row-lines.ts`
   renders the rows and the `status` lines, `install-load.ts` is the install, load, print rows, fail
   flow `setup`, `install` and `remove` end with, `setup.ts` is the extensions `setup` flow (its only
-  deps are the network ones and npm), `plan.ts` is `setup --dry-run` and `setup --check`,
+  deps are the network ones, npm and the account), `setup-cloud.ts` its signed-in half (account
+  check, machine registration, pull or create, `--disconnect`), `sync.ts` the edit path of
+  `install`, `remove` and `--off` (pull whole, change, install, load, push with one replay),
+  `account.ts` the account seam (`signedInAccount`: bearer fetch to the API origin plus the account
+  id from introspection; null when signed out), `plan.ts` is `setup --dry-run` and `setup --check`,
   `install.ts` adds one extension (npm is its only seam), `remove.ts` takes one out (`--purge` asks
   through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists missing secrets
   (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per contributed command and
-  hands it to the extension)
+  hands it to the extension); `status/account-status.ts` is what `status` asks the account (seen,
+  the profile's etag)
 - `src/lib/` - shared library, grouped by domain:
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,
@@ -33,7 +42,7 @@ extensions.
   - `fs/` - config (`~/.agentage`, guarded 0600 auth.json), json-file (`readJson` with a type
     guard, `writeJsonAtomic`), file-lock (`withFileLock` around sync or async work; options:
     ttl, hard-stale, max wait, onWait; `refreshFileLock` heartbeat)
-  - `net/` - origins (one FQDN -> site, api, auth URLs), fetch (`cliFetch`: pinned fetch,
+  - `net/` - origins (one FQDN -> site, api, auth URLs; `apiOrigin` for the `/v1` routes), fetch (`cliFetch`: pinned fetch,
     timeout, CLI headers, no redirects), http (unref'd node:http/https GET), user-agent
   - `npm/` - npm-cli (`resolveNpmCli`, `runNpm` as `node npm-cli.js`, `requireNpm10`)
   - `status/` - status-info (the `status` report)
@@ -41,8 +50,11 @@ extensions.
 - `src/core/` - the core, gated by `AGENTAGE_EXTENSIONS=1`; imports nothing product-shaped
   (the package guard enforces it)
   - `profile/` (schema v1 validator incl. `registries`, `profile.json` reader and writer plus
-    the default profile, `machine.json` incl. dev paths, install/load set merge, `edit.ts`: one
-    extension in or out of the profile)
+    the default profile, `machine.json` incl. dev paths, `accountId` and `profileEtag`,
+    install/load set merge, `edit.ts`: one extension in or out of the profile, `cloud.ts`: the
+    `/v1/profile` wire (conditional GET, PUT with `If-Match` or `If-None-Match: *`; the `CloudFetch`
+    seam), `push.ts`: push with one replay on 412 and the npm-major lock rule, `register.ts`: the
+    `/v1/machines` calls, 2 s, never throwing, `AGENTAGE_DEBUG=1` prints one line each)
   - `loader/` - reading without running: `scan.ts` (profile + machine + manifests -> static states,
     the plan, rows to remove, integrity drift and the load set), `discover.ts`, `dev-path.ts` (a dev
     folder another user can write is invalid), `manifest.ts`, `config.ts` (config slice checked
@@ -72,7 +84,9 @@ extensions.
   fresh config dir per test (`dir.write`, `dir.profile`, `dir.tree`, `dir.extension` for a dev
   extension written from source) and `output()` capture; `src/test/npm-fixtures.ts` has
   `npmFromFixtures` playing npm installs and `manifestFromFixtures` playing `npm pack --dry-run`;
-  both excluded from the build and from coverage
+  `src/test/account.ts` is an account in memory (`fakeAccount`: `/v1/profile` with ETags, 304, 404,
+  412 and creation, `/v1/machines`, a request log, `fail` per route) for the `account` seam; all
+  excluded from the build and from coverage
 - `docs/extensions.md` - "Writing an extension": the author guide (manifest, lifecycle, `ctx`);
   keep it true to `src/extension.ts` and `src/core/loader/`
 - `fixtures/` - test-only extension packages (`@agentage/fixture-*`), never published
@@ -91,7 +105,8 @@ only, not OAuth bearers.
 ## E2E (`./e2e`, Playwright)
 Drives the built `dist/cli.js` as a subprocess. Tiers are tags in the test titles:
 - `@offline` - the PR tier (`e2e.yml` on every PR): hermetic, no live stack, no secrets; the
-  CLI talks only to loopback stubs (`e2e/stub/` site + auth server, `e2e/registry/` npm)
+  CLI talks only to loopback stubs (`e2e/stub/` site + auth server + the account routes
+  `/v1/profile` and `/v1/machines`, `e2e/registry/` npm)
 - `@p0` - the hermetic `setup --no-browser` sign-in round trip against the loopback stub
   (`e2e/stub/`, `AGENTAGE_SITE_FQDN=127.0.0.1:<port>`): DCR, PKCE authorize, code exchange,
   get-session, refresh rotation, revoke. The test plays "the browser" with a manual-redirect

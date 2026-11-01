@@ -31,12 +31,17 @@ installs its extensions with npm, without signing in. --dry-run prints the plan,
 would change (+ add, ~ update, - remove, o off, then one summary line), and writes nothing;
 --check prints the plan and exits 1 when anything would change, the lock in the extensions
 directory does not match the installed tree, or machine.json is missing; it writes nothing.
-Neither signs in. Plain setup signs in, then installs from the local profile.json (or the
-default profile when there is none). Each package comes from the registry the profile's
+Neither signs in. Plain setup signs in, then pulls the profile from your account (creating it
+from this machine's profile.json, or the default, when the account has none), registers this
+machine in the account and installs; it never pushes a change. When the account cannot be
+reached it installs from the local profile.json. A profile from --profile stays local: setup
+neither pulls nor pushes it. Each package comes from the registry the profile's
 registries map names for its scope (default https://registry.npmjs.org) into
 AGENTAGE_EXTENSIONS_DIR (default ~/.agentage/extensions). After installing, setup lists the
 secrets extensions declare and this machine has not set (asking for them on a terminal), then
-loads every extension once and prints ok or failed for each; it exits 1 when any failed.`;
+loads every extension once and prints ok or failed for each; it exits 1 when any failed.
+Signed in to another account than the one this machine is connected to, setup exits 1; run
+setup --disconnect first, which also marks this machine disconnected in your account.`;
 
 export const registerSetup = (
   program: Command,

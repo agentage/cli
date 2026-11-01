@@ -19,11 +19,17 @@ import {
   terminalIo,
   type ExtensionRemoveOptions,
 } from './commands/extension/remove.js';
+import { signedInAccount } from './commands/extension/account.js';
 import { runExtensionSetup } from './commands/extension/setup.js';
-import { registerStatus, runStatus, type StatusOptions } from './commands/status/status.js';
+import {
+  registerStatus,
+  runStatus,
+  statusDeps,
+  type StatusOptions,
+} from './commands/status/status.js';
 import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
 import { extensionsEnabled } from './core/flag.js';
-import { prepareManifest, prepareNpm } from './core/installer/npm.js';
+import { npmMajor, prepareManifest, prepareNpm } from './core/installer/npm.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
@@ -45,19 +51,22 @@ export interface ProgramDeps {
 const setupDeps: SetupDeps = {
   ensureSignedIn: (signInOpts) => ensureSignedIn(signInOpts),
   signOut: () => signOut(),
-  printStatus: (opts) => runStatus(opts),
+  printStatus: (opts) => runStatus(opts, statusDeps(false)),
 };
+
+// What a profile edit reaches: npm, and the account it syncs with when signed in.
+const editDeps = { npm: () => prepareNpm(), npmMajor: () => npmMajor(), account: signedInAccount };
 
 const defaultDeps: ProgramDeps = {
   setup: (opts) =>
     extensionsEnabled()
-      ? runExtensionSetup(opts, { ...setupDeps, npm: prepareNpm })
+      ? runExtensionSetup(opts, { ...setupDeps, ...editDeps })
       : runSetup(opts, setupDeps),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
   extensionInstall: (opts) =>
-    runExtensionInstall(opts, { npm: prepareNpm, manifest: prepareManifest }),
-  extensionRemove: (opts) => runExtensionRemove(opts, { npm: prepareNpm, io: terminalIo() }),
+    runExtensionInstall(opts, { ...editDeps, manifest: () => prepareManifest() }),
+  extensionRemove: (opts) => runExtensionRemove(opts, { ...editDeps, io: terminalIo() }),
   extensionList: (opts) => runExtensionList(opts),
   extensionCheck: (opts) => runExtensionCheck(opts),
   updateHint,

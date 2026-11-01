@@ -1,4 +1,5 @@
 import { describe, expect } from 'vitest';
+import { noAccount } from '../../test/account.js';
 import { MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
 import { type SetupOptions } from '../auth/setup.js';
@@ -13,6 +14,7 @@ const deps: ExtensionSetupDeps = {
   signOut: async () => console.log('(signed out)'),
   printStatus: async () => console.log('(status)'),
   npm: npmFromFixtures,
+  ...noAccount,
 };
 
 const setup = (opts: SetupOptions) => output(() => runExtensionSetup(opts, deps));

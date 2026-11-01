@@ -23,7 +23,10 @@ import {
   type TreeFiles,
 } from './tree.js';
 
-export type InstallSet = Pick<Profile, 'extensions' | 'registries'>;
+// `lock`: the lock pulled with the profile, installed from instead of the local one.
+export type InstallSet = Pick<Profile, 'extensions' | 'registries'> & {
+  lock?: Record<string, unknown> | null;
+};
 
 export interface InstallPlan extends TreeFiles {
   extensionsDir: string;
@@ -65,7 +68,8 @@ export const planInstall = (set: InstallSet): InstallPlan => {
   const install = sortedSet(set.extensions);
   const registries = sortedSet(set.registries);
   const files = { manifest: manifestText(install), npmrc: npmrcText(registries) };
-  const lock = lockPlan(dir, install, readText(join(dir, LOCK_FILE)));
+  const raw = set.lock ? `${JSON.stringify(set.lock, null, 2)}\n` : readText(join(dir, LOCK_FILE));
+  const lock = lockPlan(dir, install, raw);
   return { extensionsDir: dir, install, registries, ...files, ...lock };
 };
 

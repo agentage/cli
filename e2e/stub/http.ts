@@ -6,6 +6,7 @@ export interface Reply {
   status: number;
   body?: unknown;
   location?: string;
+  headers?: Record<string, string>;
 }
 
 export const json = (status: number, body: unknown): Reply => ({ status, body });
@@ -24,10 +25,11 @@ export const send = (res: ServerResponse, reply: Reply): void => {
     return;
   }
   if (reply.body === undefined) {
-    res.writeHead(reply.status).end();
+    res.writeHead(reply.status, reply.headers).end();
     return;
   }
-  res.writeHead(reply.status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  const headers = { 'content-type': 'application/json', 'cache-control': 'no-store' };
+  res.writeHead(reply.status, { ...headers, ...reply.headers });
   res.end(JSON.stringify(reply.body));
 };
 

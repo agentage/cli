@@ -57,11 +57,12 @@ describe('extension install and remove, as a change to the profile', () => {
   test('a change saves profile.json, keeps a file source as file and makes any other source default', async ({
     dir,
   }) => {
-    dir.write('machine.json', { id: MACHINE_ID, name: 'box', dev: {}, profileSource: 'file' });
+    dir.machine();
+    dir.write('machine.json', { ...dir.json('machine.json'), profileSource: 'file' });
     await changeProfile((p) => addExtension(p, HELLO, '^1.0.0', MACHINE_ID, false));
     expect(dir.json('machine.json')['profileSource']).toBe('file');
     expect(dir.json('profile.json')['extensions']).toEqual({ [HELLO]: '^1.0.0' });
-    dir.write('machine.json', { id: MACHINE_ID, name: 'box', dev: {}, profileSource: 'cloud' });
+    dir.write('machine.json', { ...dir.json('machine.json'), profileSource: 'cloud' });
     await changeProfile((p) => dropExtension(p, HELLO, MACHINE_ID));
     expect(dir.json('machine.json')['profileSource']).toBe('default');
   });

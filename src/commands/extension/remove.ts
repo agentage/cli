@@ -1,15 +1,15 @@
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
-import { type Npm } from '../../core/installer/npm.js';
 import { candidatesFor } from '../../core/installer/resolve.js';
 import { ID_PATTERN } from '../../core/loader/manifest.js';
 import { scan, type Scan } from '../../core/loader/scan.js';
 import { dataDir, stateDir } from '../../core/paths.js';
-import { changeProfile, dropExtension } from '../../core/profile/edit.js';
+import { dropExtension } from '../../core/profile/edit.js';
 import { loadMachine, setDev } from '../../core/profile/machine.js';
 import { editableProfile } from '../../core/profile/profile.js';
 import { installAndLoad, line } from './install-load.js';
+import { finishEdit, pullForEdit, type EditDeps } from './sync.js';
 
 export interface ExtensionRemoveOptions {
   name: string;
@@ -23,8 +23,7 @@ export interface ConfirmIo {
   prompt: (question: string) => Promise<string>;
 }
 
-export interface ExtensionRemoveDeps {
-  npm: () => Promise<Npm>;
+export interface ExtensionRemoveDeps extends EditDeps {
   io: ConfirmIo;
 }
 
@@ -83,12 +82,14 @@ const purgeConfirmed = async (opts: ExtensionRemoveOptions, target: Target, io: 
   return /^y(es)?$/i.test((await io.prompt(`delete ${data} and everything in it? [y/N] `)).trim());
 };
 
-const drop = async ({ pkg, id }: Target, found: Scan): Promise<void> => {
-  if (pkg in found.eff.install)
-    await changeProfile((profile) => dropExtension(profile, pkg, found.machine.id));
+// This machine's traces of it: the dev path, the state file and, with --purge, its data.
+const dropHere = async ({ pkg, id }: Target, found: Scan, purge: boolean): Promise<void> => {
   if (pkg in found.eff.dev) await setDev(pkg, null);
   if (id !== null) rmSync(join(stateDir(), `${id}.json`), { force: true });
   console.log(line('removed', pkg));
+  if (!purge || id === null) return;
+  rmSync(dataDir(id), { recursive: true, force: true });
+  console.log(line('purged', dataDir(id)));
 };
 
 // Nothing stays loaded to dispose: the CLI process loads extensions only for one command.
@@ -98,13 +99,12 @@ export const runExtensionRemove = async (
 ): Promise<void> => {
   editableProfile(); // an invalid or newer profile.json stops here, before anything changes
   const found = scan(await loadMachine());
-  const target = targetOf(opts.name, found);
-  refuseDependents(target.pkg, found);
-  const purge = await purgeConfirmed(opts, target, deps.io);
-  await drop(target, found);
-  if (purge && target.id !== null) {
-    rmSync(dataDir(target.id), { recursive: true, force: true });
-    console.log(line('purged', dataDir(target.id)));
-  }
-  await installAndLoad(editableProfile(), deps.npm);
+  const { pkg, id } = targetOf(opts.name, found);
+  refuseDependents(pkg, found);
+  const purge = await purgeConfirmed(opts, { pkg, id }, deps.io);
+  const inProfile = pkg in found.eff.install;
+  const synced = inProfile ? await pullForEdit(deps) : null;
+  await dropHere({ pkg, id }, found, purge);
+  if (!inProfile) return installAndLoad(editableProfile(), deps.npm);
+  await finishEdit(synced, (profile) => dropExtension(profile, pkg, found.machine.id), deps);
 };

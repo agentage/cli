@@ -27,7 +27,7 @@ const captureLines = (report: StatusReport): string => {
 const gathered: ExtensionsGather = {
   status: {
     machine: { id: 'm_0000beef', name: 'box' },
-    profile: { state: 'ok', version: 1, source: 'default', readOnly: false },
+    profile: { state: 'ok', version: 1, source: 'default', readOnly: false, etag: null },
     plan: { add: 0, update: 0, remove: 0, off: 0, unchanged: 0 },
     extensions: [],
   },

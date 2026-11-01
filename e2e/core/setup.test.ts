@@ -121,12 +121,12 @@ test.describe('agentage setup --profile @p0 @offline', () => {
 });
 
 test.describe('agentage setup (signs in) @p0 @offline', () => {
-  test('agentage setup signs in, then saves the default profile and installs no extensions', async ({
+  test('agentage setup signs in, then creates the default profile in your account and installs no extensions', async ({
     cli,
   }) => {
     const run = await cli.signIn();
     expect(run.code).toBe(0);
-    expect(run.stderr).toContain('cloud profile unavailable, using the default profile');
+    expect(run.output).toMatch(/^profile {4}created in your account \(etag "\S+"\)$/m);
     expect(run.output).toMatch(/^install {4}no extensions in tree \S+ \(npm skipped\)$/m);
     expect(cli.json('profile.json')).toEqual({
       version: 1,
@@ -137,14 +137,16 @@ test.describe('agentage setup (signs in) @p0 @offline', () => {
     expect(cli.exists('auth.json')).toBe(true);
   });
 
-  test('agentage setup after setup --profile installs from the saved profile.json', async ({
+  test('agentage setup after setup --profile installs from the saved profile.json, not from your account', async ({
     cli,
   }) => {
     expect((await cli.signIn()).code).toBe(0);
     expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
     const again = await cli.run('setup --no-browser');
     expect(again.code).toBe(0);
-    expect(again.stderr).toContain('cloud profile unavailable, using local profile.json');
+    expect(again.lines).toContain(
+      'profile    from a file (setup --profile), not synced with your account'
+    );
     expect(again.lines).toContain(HELLO);
     expect(again.lines).toContain('extensions 2');
   });

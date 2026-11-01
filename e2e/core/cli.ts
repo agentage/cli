@@ -1,7 +1,8 @@
 /**
  * The test kit for e2e/core. Every test starts on a new machine: `cli` has its own config dir,
- * HOME, npm cache and npm userconfig, AGENTAGE_EXTENSIONS=1, and its own loopback site. Shared,
- * read-only: the loopback npm registry serving the fixtures. `anotherMachine(env)` adds a machine.
+ * HOME, npm cache and npm userconfig, AGENTAGE_EXTENSIONS=1, and its own loopback site, which is
+ * also the account (`cli.site`). Shared, read-only: the loopback npm registry serving the
+ * fixtures. `anotherMachine(env)` adds a machine of the same account.
  */
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,6 +19,7 @@ import { startFixtureRegistry } from '../registry/registry.js';
 import { startStubSite, stubEnv, type StubSite } from '../stub/auth-server.js';
 import { signInVia, type SignInRun } from '../stub/client.js';
 import { configFiles, fixtureCopy, hashTree, type ConfigFiles } from './files.js';
+import { siteOf, type Site } from './site.js';
 
 export { expect };
 
@@ -54,6 +56,11 @@ export interface Machine extends ConfigFiles {
   fixture: (name: string, edits?: Record<string, string>) => string;
   snapshot: () => Record<string, string>;
   homeFiles: () => string[];
+  // The account this machine signs in to: what the CLI sent it, and what it holds.
+  site: Omit<Site, 'store'> & {
+    // Stores a profile in the account as `profile()` writes one to a file; returns its etag.
+    store: (spec: ProfileSpec) => string;
+  };
 }
 
 // `hello` -> `@agentage/fixture-hello`; a scoped name stays as written.
@@ -73,41 +80,63 @@ const toRun = (r: { code: number; stdout: string; stderr: string }): Run => ({
 const expand = (map: Record<string, string>): Record<string, string> =>
   Object.fromEntries(Object.entries(map).map(([name, value]) => [pkg(name), value]));
 
-const E2E_MACHINE = { id: 'm_0000beef', name: 'e2e-box', dev: {}, profileSource: 'default' };
+const E2E_MACHINE = {
+  id: 'm_0000beef',
+  name: 'e2e-box',
+  dev: {},
+  profileSource: 'default',
+  accountId: null,
+  profileEtag: null,
+};
 
-// Profile files sit beside the machine, outside its config dir and HOME.
-const profileWriter = (scratch: string, registry: string, files: ConfigFiles) => {
-  let count = 0;
+// A profile document: `@agentage` from the loopback registry, short names expanded.
+const profileDoc = (registry: string, files: ConfigFiles) => {
   const machineId = (): string => {
     if (!files.exists('machine.json')) files.write('machine.json', E2E_MACHINE);
     return String(files.json('machine.json')['id']);
   };
-  return ({ extensions, off, registries, config = {} }: ProfileSpec): string => {
+  return ({ extensions, off, registries, config = {} }: ProfileSpec) => ({
+    version: 1,
+    extensions: expand(extensions),
+    registries: { '@agentage': registry, ...registries },
+    config,
+    machines: off ? { [machineId()]: { off: off.map(pkg) } } : {},
+  });
+};
+
+// Profile files sit beside the machine, outside its config dir and HOME.
+const profileWriter = (scratch: string, docOf: ReturnType<typeof profileDoc>) => {
+  let count = 0;
+  return (spec: ProfileSpec): string => {
     const path = join(scratch, `profile-${++count}.json`);
-    const doc = {
-      version: 1,
-      extensions: expand(extensions),
-      registries: { '@agentage': registry, ...registries },
-      config,
-      machines: off ? { [machineId()]: { off: off.map(pkg) } } : {},
-    };
-    writeFileSync(path, JSON.stringify(doc, null, 2));
+    writeFileSync(path, JSON.stringify(docOf(spec), null, 2));
     return path;
   };
 };
 
-const machine = (host: CliMachine, scratch: string, registry: string): Machine => {
+const accountOf = (site: StubSite, docOf: ReturnType<typeof profileDoc>): Machine['site'] => {
+  const view = siteOf(site);
+  return {
+    ...view,
+    store: (spec) => view.store(docOf(spec)),
+    conflict: (...pushes) => view.conflict(...pushes.map(expand)),
+  };
+};
+
+const machine = (host: CliMachine, scratch: string, registry: string, site: StubSite): Machine => {
   const files = configFiles(host.configDir);
+  const docOf = profileDoc(registry, files);
   return {
     registry,
     run: async (command, env = {}) => toRun(await host.exec(words(command), 90_000, env)),
     start: (command) => host.startSetup(words(command)),
     signIn: () => signInVia(host),
-    profile: profileWriter(scratch, registry, files),
+    profile: profileWriter(scratch, docOf),
     fixture: fixtureCopy(scratch),
     ...files,
     snapshot: () => hashTree(host.configDir),
     homeFiles: () => readdirSync(host.home),
+    site: accountOf(site, docOf),
   };
 };
 
@@ -127,7 +156,7 @@ const newMachine = (site: StubSite, registry: string, env: NodeJS.ProcessEnv) =>
     host.cleanup();
     rmSync(scratch, { recursive: true, force: true });
   };
-  return { cli: machine(host, scratch, registry), cleanup };
+  return { cli: machine(host, scratch, registry, site), cleanup };
 };
 
 export const test = base.extend<

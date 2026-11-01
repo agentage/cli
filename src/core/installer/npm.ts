@@ -65,11 +65,19 @@ export const manifestArgs = (
 ];
 
 // Resolves npm-cli.js once and refuses npm below 10 before anything runs.
-const checkedNpmCli = async (env: NodeJS.ProcessEnv): Promise<string> => {
+const checkedNpm = async (env: NodeJS.ProcessEnv) => {
   const npmCli = resolveNpmCli({ env });
-  await requireNpm10((args, opts) => runNpm([...args, ...configFlags(env)], { ...opts, npmCli }));
-  return npmCli;
+  const run: typeof runNpm = (args, opts) =>
+    runNpm([...args, ...configFlags(env)], { ...opts, npmCli });
+  return { npmCli, version: await requireNpm10(run) };
 };
+
+const checkedNpmCli = async (env: NodeJS.ProcessEnv): Promise<string> =>
+  (await checkedNpm(env)).npmCli;
+
+// The npm major that writes the lock, pushed next to it.
+export const npmMajor = async (env = process.env): Promise<number> =>
+  Number.parseInt((await checkedNpm(env)).version, 10);
 
 export const prepareNpm = async (env = process.env): Promise<Npm> => {
   const npmCli = await checkedNpmCli(env);
