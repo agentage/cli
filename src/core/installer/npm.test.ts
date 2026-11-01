@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { npmArgs } from './npm.js';
+import { manifestArgs, npmArgs } from './npm.js';
 
 describe('npm, as the installer runs it', () => {
   it('installs into the staged tree without scripts, unlisted scopes from the public registry', () => {
@@ -19,6 +19,27 @@ describe('npm, as the installer runs it', () => {
     expect(npmArgs('install', '/t', env).slice(-4)).toEqual([
       '--userconfig',
       '/h/.npmrc',
+      '--cache',
+      '/c',
+    ]);
+  });
+
+  it('reads what a spec resolves to with pack --dry-run, each profile scope sent to its registry', () => {
+    const registries = { '@agentage': 'http://127.0.0.1:9' };
+    expect(
+      manifestArgs('@agentage/x', registries, '/x/extensions', { NPM_CONFIG_CACHE: '/c' })
+    ).toEqual([
+      'pack',
+      '@agentage/x',
+      '--dry-run',
+      '--json',
+      '--ignore-scripts',
+      '--prefix',
+      '/x/extensions',
+      '--registry',
+      'https://registry.npmjs.org',
+      '--@agentage:registry=http://127.0.0.1:9',
+      '--no-update-notifier',
       '--cache',
       '/c',
     ]);

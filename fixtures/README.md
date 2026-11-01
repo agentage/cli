@@ -17,4 +17,6 @@ kit (`src/test/config-dir.ts`) copies them into hand-placed trees.
 
 Each entry is plain ESM, type-checked against `@agentage/cli/extension` by `tsc -p fixtures`.
 Profiles are written per test: `cli.profile()` in `e2e/core/cli.ts` and `dir.profile()` in the
-unit kit take the short names (`hello` for `@agentage/fixture-hello`).
+unit kit take the short names (`hello` for `@agentage/fixture-hello`). A folder is also a dev
+extension as it is: `extension install ./fixtures/extension-hello`, or `cli.fixture('hello')` for
+an edited copy.

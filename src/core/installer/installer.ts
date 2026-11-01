@@ -68,7 +68,8 @@ export const planInstall = (set: InstallSet): InstallPlan => {
   return { extensionsDir: dir, install, registries, ...files, ...lock };
 };
 
-const lastLines = (output: string, count = 20): string =>
+// npm's last lines, enough to see why it failed.
+export const lastLines = (output: string, count = 20): string =>
   output
     .split(/\r?\n/)
     .filter((line) => line.trim() !== '')

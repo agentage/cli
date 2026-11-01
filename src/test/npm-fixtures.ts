@@ -1,18 +1,24 @@
 /**
- * npm played against fixtures/ for the unit tests of the installer and `setup`: what a registry
- * serving the fixture extensions would install.
+ * npm played against fixtures/ for the unit tests of the installer, `setup` and `extension
+ * install`: what a registry serving the fixture extensions would install or report.
  */
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Npm, type NpmCommand } from '../core/installer/npm.js';
+import { type Npm, type NpmCommand, type NpmManifest } from '../core/installer/npm.js';
+import { satisfies } from '../core/semver-range.js';
 import { fixture } from './config-dir.js';
+
+const versionOf = (manifest: Buffer): string =>
+  (JSON.parse(manifest.toString()) as { version: string }).version;
 
 // What a registry would report for a fixture: its version, and an integrity from its bytes.
 const lockEntry = (name: string) => {
   const manifest = readFileSync(join(fixture(name), 'package.json'));
-  const version = (JSON.parse(manifest.toString()) as { version: string }).version;
-  return { version, integrity: `sha512-${createHash('sha512').update(manifest).digest('base64')}` };
+  return {
+    version: versionOf(manifest),
+    integrity: `sha512-${createHash('sha512').update(manifest).digest('base64')}`,
+  };
 };
 
 const lockFor = (dependencies: Record<string, string>): string => {
@@ -42,3 +48,33 @@ export const npmFromFixtures = async (): Promise<Npm> => async (command, tree) =
   if (command === 'install') writeFileSync(join(tree, 'package-lock.json'), lockFor(deps));
   return { code: 0, stdout: `added ${Object.keys(deps).length} packages`, stderr: '' };
 };
+
+// `name@range`, or a tarball URL laid out as registries serve them: `<registry>/<name>/-/<file>`.
+const specParts = (spec: string): { name: string; range: string | null } => {
+  if (spec.startsWith('https:'))
+    return { name: new URL(spec).pathname.slice(1).split('/-/')[0] ?? '', range: null };
+  const at = spec.indexOf('@', 1);
+  return at === -1
+    ? { name: spec, range: null }
+    : { name: spec.slice(0, at), range: spec.slice(at + 1) };
+};
+
+const failed = (code: string, text: string) => ({
+  code: 1,
+  stdout: '',
+  stderr: `npm error code ${code}\nnpm error ${text}`,
+});
+
+// Plays `npm pack <spec> --dry-run --json`: the fixtures and `more` (name -> version) are published.
+export const manifestFromFixtures =
+  (more: Record<string, string> = {}) =>
+  async (): Promise<NpmManifest> =>
+  async (spec) => {
+    const { name, range } = specParts(spec);
+    const found = existsSync(fixture(name)) ? join(fixture(name), 'package.json') : null;
+    const version = more[name] ?? (found && versionOf(readFileSync(found)));
+    if (!version) return failed('E404', `404 Not Found - ${name}`);
+    if (range !== null && !satisfies(version, range))
+      return failed('ETARGET', `notarget No matching version found for ${spec}.`);
+    return { code: 0, stdout: JSON.stringify([{ name, version }], null, 2), stderr: '' };
+  };

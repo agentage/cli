@@ -1,6 +1,8 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
 import { type ExtensionCheckOptions } from './check.js';
+import { type ExtensionInstallOptions } from './install.js';
+import { type ExtensionRemoveOptions } from './remove.js';
 import {
   gatherExtensions,
   invalidProfileError,
@@ -86,6 +88,22 @@ export const runExtensionList = async (opts: ExtensionListOptions = {}): Promise
   if (failure) throw failure;
 };
 
+const INSTALL_HELP = `
+<name> is resolved in this order: a local path (./path or /path) is a dev extension, kept in
+machine.json by its real path and loaded on this machine only, in place of an installed copy of
+the same package; http:, file:, npm: and github: are refused; an https: tarball URL and a
+package name are used as written (a name without @<range> is pinned to ^ its latest version);
+a short name like memory is @agentage/extension-memory, else agentage-extension-memory. A
+package goes into profile.json (created from the default profile when absent), from the
+registry the profile names for its scope; --off keeps it from loading on this machine. Then
+installs and loads like setup, and exits 1 when an extension failed. Never signs in.`;
+
+const REMOVE_HELP = `
+<name> is a package name, a short name or an extension id. Refused while another extension
+peer-depends on it. Takes it out of profile.json and this machine's off list, or out of
+machine.json for a dev extension, deletes state/<id>.json, then installs and loads the rest like
+setup. --purge also deletes data/<id>/ after asking; without a terminal it needs --yes.`;
+
 const LIST_HELP = `
 One row per extension in the profile or a dev path: id, state (installed, off, blocked,
 invalid, missing), package, installed version, wanted range, contributed commands, the
@@ -105,16 +123,32 @@ const helpOrUnknown = (_opts: unknown, group: Command): void => {
   group.error(`error: unknown command '${name}'`, { code: 'commander.unknownCommand' });
 };
 
-export const registerExtension = (
-  program: Command,
-  list: (opts: ExtensionListOptions) => Promise<void>,
-  check: (opts: ExtensionCheckOptions) => Promise<void>
-): void => {
-  const group = program
-    .command('extension')
-    .description('Work with the extensions on this machine')
-    .allowExcessArguments()
-    .action(helpOrUnknown);
+export interface ExtensionActions {
+  install: (opts: ExtensionInstallOptions) => Promise<void>;
+  remove: (opts: ExtensionRemoveOptions) => Promise<void>;
+  list: (opts: ExtensionListOptions) => Promise<void>;
+  check: (opts: ExtensionCheckOptions) => Promise<void>;
+}
+
+const addChanges = (group: Command, { install, remove }: ExtensionActions): void => {
+  group
+    .command('install')
+    .description('Add an extension to the profile, then install and load it')
+    .argument('<name>', 'package name[@range], short name, https: tarball URL or local path')
+    .option('--off', 'install it, but do not load it on this machine')
+    .addHelpText('after', INSTALL_HELP)
+    .action((name: string, opts: { off?: boolean }) => install({ name, ...opts }));
+  group
+    .command('remove')
+    .description('Remove an extension from the profile, then install and load the rest')
+    .argument('<name>', 'package name, short name or extension id')
+    .option('--purge', "also delete the extension's data, data/<id>/")
+    .option('--yes', 'do not ask before --purge deletes (needed without a terminal)')
+    .addHelpText('after', REMOVE_HELP)
+    .action((name: string, opts: { purge?: boolean; yes?: boolean }) => remove({ name, ...opts }));
+};
+
+const addReports = (group: Command, { list, check }: ExtensionActions): void => {
   group
     .command('list')
     .description('Show one row per extension: state, versions, commands, last run')
@@ -127,4 +161,15 @@ export const registerExtension = (
     .option('--json', 'machine-readable output')
     .addHelpText('after', CHECK_HELP)
     .action(check);
+};
+
+// Help lists the subcommands in this order: install, remove, list, check.
+export const registerExtension = (program: Command, actions: ExtensionActions): void => {
+  const group = program
+    .command('extension')
+    .description('Work with the extensions on this machine')
+    .allowExcessArguments()
+    .action(helpOrUnknown);
+  addChanges(group, actions);
+  addReports(group, actions);
 };

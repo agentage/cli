@@ -81,13 +81,13 @@ what is still current.
 Extensions run in the CLI process with your privileges: installing one is an act of trust.
 What they keep, and what the CLI keeps about them, lives in the config directory:
 
-| Path              | What                                                                     |
-| ----------------- | ------------------------------------------------------------------------ |
-| `state/<id>.json` | the last load, written by the CLI: `{ at, pid, state, error }`           |
-| `secrets.json`    | secrets per extension id (mode 0600, never synced)                       |
-| `logs/<id>.log`   | the extension's own log, one JSON line per entry (0600, kept under 1 MB) |
-| `data/<id>/`      | the extension's durable data (`ctx.data`), created by the extension      |
-| `cache/<id>/`     | the extension's disposable cache (`ctx.cache`), created by the extension |
+| Path              | What                                                                        |
+| ----------------- | --------------------------------------------------------------------------- |
+| `state/<id>.json` | the last load, written by the CLI: `{ at, pid, state, error }`              |
+| `secrets.json`    | secrets per extension id (mode 0600, never synced)                          |
+| `logs/<id>.log`   | the extension's own log, one JSON line per entry (0600, kept under 1 MB)    |
+| `data/<id>/`      | the extension's durable data (`ctx.data`); only `remove --purge` deletes it |
+| `cache/<id>/`     | the extension's disposable cache (`ctx.cache`), created by the extension    |
 
 The installer runs npm 10 or newer as `node npm-cli.js` (no shell, `--ignore-scripts`,
 `npm_config_*` and `NODE_OPTIONS` removed from its environment, at most 10 minutes per run) into
@@ -133,6 +133,67 @@ the same three keys after the existing ones:
 Extension code is never loaded and the only file written is `machine.json`. With no profile it
 prints `no profile` and exits 0; an invalid `profile.json` still prints the report, then
 exits 1 naming each bad entry on stderr. The rows themselves are in `extension list`.
+
+## extension install
+
+Needs `AGENTAGE_EXTENSIONS=1`.
+
+```bash
+agentage extension install @agentage/example          # add it to profile.json at ^<latest>, install, load
+agentage extension install @agentage/example@~1.2     # the same, with the range as typed
+agentage extension install example                    # short name: @agentage/extension-example, else agentage-extension-example
+agentage extension install @agentage/example --off    # install it, but do not load it on this machine
+agentage extension install ./my-extension             # a dev extension from a local folder
+```
+
+`<name>` is resolved in this order:
+
+1. `./path`, `../path` or `/path`: a dev extension. The folder needs a `package.json` with a
+   `name` and `agentage.id`; its real path goes into `machine.json` under `dev`, keyed by package
+   name, and the profile is not changed. It loads on this machine only, in place of an installed
+   copy of the same package. `--off` is refused for it: a dev extension always loads.
+2. `http:`, `file:`, `npm:` and `github:` (and any other scheme but `https:`) are refused, naming
+   the rule; nothing is written.
+3. An `https:` tarball URL is kept as written, under the package name the tarball declares.
+4. A scoped name, or one starting with `agentage-extension-`, is used as written. Without an
+   `@<range>` suffix it is pinned to `^<latest>`.
+5. Any other name is a short name: `example` is `@agentage/extension-example`, else
+   `agentage-extension-example`, whichever the registry has first; with neither, the command exits
+   1 naming both.
+
+npm reads each name from the registry the local profile's `registries` names for its scope
+(`npm pack --dry-run`, nothing installed), so a missing package or a range nothing satisfies
+fails before anything is written. A package goes into `profile.json` `extensions` (created from
+the default profile when absent; installing a name again replaces its range); `profileSource`
+stays `file` for a file profile and is `default` otherwise. `--off` adds the package name to this
+machine's `machines[<id>].off`; installing without `--off` takes it out again. Then the command
+installs and loads the way `setup` does and prints the same rows; it exits 1 when the install or
+an extension failed. An invalid `profile.json`, or one from a newer schema, is refused and never
+overwritten. It never signs in.
+
+## extension remove
+
+Needs `AGENTAGE_EXTENSIONS=1`.
+
+```bash
+agentage extension remove @agentage/example        # by package name
+agentage extension remove example                  # by short name or extension id
+agentage extension remove example --purge          # also delete data/<id>/, after asking
+agentage extension remove example --purge --yes    # the same without asking (needed off a terminal)
+```
+
+`<name>` is a package name, a short name (matched against the profile and the dev paths as
+`extension install` resolves it) or an extension id. The command exits 1 when nothing matches,
+and while any other extension in the profile or a dev path peer-depends on it, naming those
+extensions; remove them first. Otherwise it takes the package out of `profile.json` `extensions`
+and this machine's `off` list, out of `machine.json` `dev` when it was a dev extension, deletes
+`state/<id>.json`, then installs and loads the rest the way `setup` does (npm installs a tree
+without it). `logs/<id>.log`, `secrets.json` and `config.<id>` in the profile are kept.
+
+`--purge` also deletes `data/<id>/`. On a terminal it asks first (`[y/N]`, before anything
+changes); answering anything but `y` removes the extension and keeps its data. Without a terminal
+`--purge` needs `--yes` and otherwise exits 1 with nothing changed; `--yes` skips the question on
+a terminal too.
 
 ## extension list
 
@@ -231,8 +292,9 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 | `1`  | A step failed: sign-in, install or update failed, a refused or invalid profile, or an invalid token |
 | `2`  | Usage error: an unknown command or flag, a missing flag value, or no command                        |
 
-With `AGENTAGE_EXTENSIONS=1`, `setup` and `extension check` also exit 1 when an extension failed to
-load, and an extension command exits 1 when its extension cannot load.
+With `AGENTAGE_EXTENSIONS=1`, `setup`, `extension install`, `extension remove` and `extension check`
+also exit 1 when an extension failed to load, and an extension command exits 1 when its extension
+cannot load.
 
 Errors go to stderr; stdout carries only command output (`status --json` stays parseable).
 

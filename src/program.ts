@@ -8,16 +8,22 @@ import {
 } from './commands/auth/setup.js';
 import { runExtensionCheck, type ExtensionCheckOptions } from './commands/extension/check.js';
 import { registerDelegates } from './commands/extension/delegate.js';
+import { runExtensionInstall, type ExtensionInstallOptions } from './commands/extension/install.js';
 import {
   registerExtension,
   runExtensionList,
   type ExtensionListOptions,
 } from './commands/extension/list.js';
+import {
+  runExtensionRemove,
+  terminalIo,
+  type ExtensionRemoveOptions,
+} from './commands/extension/remove.js';
 import { runExtensionSetup } from './commands/extension/setup.js';
 import { registerStatus, runStatus, type StatusOptions } from './commands/status/status.js';
 import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
 import { extensionsEnabled } from './core/flag.js';
-import { prepareNpm } from './core/installer/npm.js';
+import { prepareManifest, prepareNpm } from './core/installer/npm.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
@@ -26,6 +32,8 @@ export interface ProgramDeps {
   setup: (opts: SetupOptions) => Promise<void>;
   status: (opts: StatusOptions) => Promise<void>;
   update: (opts: UpdateOptions) => Promise<void>;
+  extensionInstall: (opts: ExtensionInstallOptions) => Promise<void>;
+  extensionRemove: (opts: ExtensionRemoveOptions) => Promise<void>;
   extensionList: (opts: ExtensionListOptions) => Promise<void>;
   extensionCheck: (opts: ExtensionCheckOptions) => Promise<void>;
   updateHint: () => string | null;
@@ -47,6 +55,9 @@ const defaultDeps: ProgramDeps = {
       : runSetup(opts, setupDeps),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
+  extensionInstall: (opts) =>
+    runExtensionInstall(opts, { npm: prepareNpm, manifest: prepareManifest }),
+  extensionRemove: (opts) => runExtensionRemove(opts, { npm: prepareNpm, io: terminalIo() }),
   extensionList: (opts) => runExtensionList(opts),
   extensionCheck: (opts) => runExtensionCheck(opts),
   updateHint,
@@ -87,11 +98,12 @@ const hintAfter =
 
 // Extension manifests are read as data; whatever goes wrong there, today's commands still run.
 const addExtensions = (program: Command, deps: ProgramDeps, argv: string[]): void => {
-  registerExtension(
-    program,
-    withAction(deps, deps.extensionList),
-    withAction(deps, deps.extensionCheck)
-  );
+  registerExtension(program, {
+    install: withAction(deps, deps.extensionInstall),
+    remove: withAction(deps, deps.extensionRemove),
+    list: withAction(deps, deps.extensionList),
+    check: withAction(deps, deps.extensionCheck),
+  });
   try {
     registerDelegates(program, argv, (fn) => withAction(deps, fn));
   } catch (err) {

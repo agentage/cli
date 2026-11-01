@@ -65,3 +65,11 @@ export const setProfileSource = async (source: ProfileSource): Promise<MachineFi
     const machine = readOrCreate();
     return machine.profileSource === source ? machine : save({ ...machine, profileSource: source });
   });
+
+// One dev entry by package name: a real path adds or replaces it, null removes it.
+export const setDev = async (name: string, path: string | null): Promise<MachineFile> =>
+  withFileLock(machinePath(), () => {
+    const machine = readOrCreate();
+    const dev = Object.fromEntries(Object.entries(machine.dev).filter(([pkg]) => pkg !== name));
+    return save({ ...machine, dev: path === null ? dev : { ...dev, [name]: path } });
+  });
