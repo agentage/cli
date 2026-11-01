@@ -14,6 +14,10 @@
       "types": "./dist/extension.d.ts",
       "default": "./dist/extension.js"
     },
+    "./extension/test": {
+      "types": "./dist/extension-test.d.ts",
+      "default": "./dist/extension-test.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

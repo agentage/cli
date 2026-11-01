@@ -9,6 +9,10 @@ export type ConfigType = 'string' | 'number' | 'boolean' | 'array' | 'object';
 export interface ConfigurationEntry {
   type: ConfigType;
   default?: unknown;
+  // Shown after the key when setup asks for a secret.
+  description?: string;
+  // The only values allowed; any other makes the extension invalid, naming the key.
+  enum?: unknown[];
   // Never in the profile: set on each machine, read through ctx.secrets.
   secret?: boolean;
   scope?: 'shared' | 'machine';
@@ -36,7 +40,12 @@ export interface Disposable {
 // What `register` returns for its dependents: a plain object of functions.
 export type ExtensionApi = Readonly<Record<string, (...args: never[]) => unknown>>;
 
+// Empty here; an extension adds its peers' APIs by id (declaration merging), and `use` types them.
+export interface ExtensionApis {}
+
 export interface ExtensionUse {
+  <K extends keyof ExtensionApis>(id: K, options?: { optional?: false }): ExtensionApis[K];
+  <K extends keyof ExtensionApis>(id: K, options: { optional: true }): ExtensionApis[K] | undefined;
   (id: string, options?: { optional?: false }): ExtensionApi;
   (id: string, options: { optional: true }): ExtensionApi | undefined;
 }
@@ -53,19 +62,26 @@ export type ExtensionLog = (message: string, fields?: Record<string, unknown>) =
 // Adds commands named `<id>` or `<id>:<name>` that agentage.contributes.commands lists.
 export type CommandRegistrar = (program: Command) => void;
 
+// Only while register runs: afterwards add throws "registration closed".
 export interface ExtensionCommands {
   add: (...registrars: CommandRegistrar[]) => void;
 }
 
+// Only while register runs, like commands.add.
 export interface ExtensionSubscriptions {
   push: (...disposables: Disposable[]) => void;
 }
+
+// `test` only from createTestContext in @agentage/cli/extension/test.
+export type ExtensionMode = 'installed' | 'dev' | 'test';
 
 // The only core surface. Not a sandbox: an extension runs in the CLI process with your privileges.
 export interface ExtensionContext {
   readonly id: string;
   readonly version: string;
-  readonly mode: 'installed' | 'dev';
+  // The version that last loaded ok on this machine; null on the first load.
+  readonly previousVersion: string | null;
+  readonly mode: ExtensionMode;
   readonly config: Readonly<Record<string, unknown>>;
   readonly secrets: ExtensionSecrets;
   readonly data: string;

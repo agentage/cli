@@ -1,6 +1,7 @@
 import { describe, expect } from 'vitest';
 import { fixture, output, pkg, plain, test } from '../../test/config-dir.js';
-import { runExtensionList, summaryLines } from './list.js';
+import { runExtensionList } from './list.js';
+import { summaryLines } from './row-lines.js';
 import { gatherExtensions } from './rows.js';
 
 const AT = '2026-10-29T10:00:00.000Z';
@@ -27,6 +28,52 @@ describe('agentage extension list', () => {
     expect((await list()).lines).toEqual([
       'hello  invalid    @agentage/fixture-dup-id 1.0.0 (wants ^1)  duplicate id "hello" (also @agentage/fixture-hello)',
       'hello  invalid    @agentage/fixture-hello 1.0.0 (wants ^1)  commands: hello  duplicate id "hello" (also @agentage/fixture-dup-id)',
+    ]);
+  });
+
+  test('adds a drift column after state when the tree differs from the profile: remove for what only the tree has', async ({
+    dir,
+  }) => {
+    dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } });
+    dir.tree('hello', 'world');
+    dir.profile({ extensions: { hello: '^1.0.0' } });
+    expect((await list()).lines).toEqual([
+      'hello  installed          @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello',
+      'world  installed  remove  @agentage/fixture-world 1.0.0 (not in profile)  commands: world',
+    ]);
+  });
+
+  test('shows update for a changed range and add for what the tree lacks; --json has plan per row and in total', async ({
+    dir,
+  }) => {
+    dir.profile({ extensions: { hello: '^1.0.0' } });
+    dir.tree('hello');
+    dir.profile({ extensions: { hello: '~1.0.0', world: '^1' } });
+    expect((await list()).lines).toEqual([
+      'hello  installed  update  @agentage/fixture-hello 1.0.0 (wants ~1.0.0)  commands: hello',
+      '?      missing    add     @agentage/fixture-world - (wants ^1)  not installed in the current tree',
+    ]);
+    const json = JSON.parse((await output(() => runExtensionList({ json: true }))).stdout);
+    expect(json.plan).toEqual({ add: 1, update: 1, remove: 0, off: 0, unchanged: 0 });
+    expect(json.extensions.map((row: { plan: string }) => row.plan)).toEqual(['update', 'add']);
+  });
+
+  test('leaves the drift column out for an extension turned off here and a dev row; --json keeps plan off', async ({
+    dir,
+  }) => {
+    dir.profile({ extensions: { hello: '^1.0.0', world: '^1' }, off: ['world'] });
+    dir.tree('hello', 'world');
+    dir.machine({ secret: fixture('secret') });
+    expect((await list()).lines).toEqual([
+      'hello   installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello',
+      'secret  installed  @agentage/fixture-secret 1.0.0 (dev)',
+      'world   off        @agentage/fixture-world 1.0.0 (wants ^1)  commands: world',
+    ]);
+    const json = JSON.parse((await output(() => runExtensionList({ json: true }))).stdout);
+    expect(json.extensions.map((row: { plan: string | null }) => row.plan)).toEqual([
+      'unchanged',
+      null,
+      'off',
     ]);
   });
 
@@ -69,7 +116,17 @@ describe('agentage status', () => {
     expect(summaryLines((await gatherExtensions()).status).map(plain)).toEqual([
       'machine    m_0000beef (box)',
       'profile    version 2 (source: default, read-only)',
-      'extensions 1',
+      'extensions 1 (1 to add)',
     ]);
+  });
+
+  test('names on the extensions line only what setup would change, never what is off', async ({
+    dir,
+  }) => {
+    dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } });
+    dir.tree('hello', 'world');
+    dir.profile({ extensions: { hello: '^1.0.0', secret: '^1' }, off: ['hello'] });
+    const [, , extensions] = summaryLines((await gatherExtensions()).status);
+    expect(extensions).toBe('extensions 3 (1 to add, 1 to remove)');
   });
 });

@@ -36,6 +36,8 @@ export interface ProfileSpec {
   off?: string[];
   // Added to `@agentage` -> the loopback registry.
   registries?: Record<string, string>;
+  // The shared `config`, by extension id.
+  config?: Record<string, Record<string, unknown>>;
 }
 
 // file, json, write, remove, exists, list: paths relative to the config dir (AGENTAGE_CONFIG_DIR).
@@ -80,12 +82,13 @@ const profileWriter = (scratch: string, registry: string, files: ConfigFiles) =>
     if (!files.exists('machine.json')) files.write('machine.json', E2E_MACHINE);
     return String(files.json('machine.json')['id']);
   };
-  return ({ extensions, off, registries }: ProfileSpec): string => {
+  return ({ extensions, off, registries, config = {} }: ProfileSpec): string => {
     const path = join(scratch, `profile-${++count}.json`);
     const doc = {
       version: 1,
       extensions: expand(extensions),
       registries: { '@agentage': registry, ...registries },
+      config,
       machines: off ? { [machineId()]: { off: off.map(pkg) } } : {},
     };
     writeFileSync(path, JSON.stringify(doc, null, 2));

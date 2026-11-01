@@ -10,5 +10,5 @@
     "sourceMap": false,
     "paths": { "@agentage/cli/extension": ["../src/extension.ts"] }
   },
-  "include": ["**/*.js"]
+  "include": ["**/*.js", "**/*.d.ts"]
 }

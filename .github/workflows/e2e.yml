@@ -75,7 +75,7 @@ jobs:
           mkdir -p /tmp/pack
           npm pack --pack-destination /tmp/pack
 
-      - name: 🔌 Import @agentage/cli/extension from a consumer
+      - name: 🔌 Import @agentage/cli/extension and extension/test from a consumer
         run: |
           set -euo pipefail
           tarball=$(ls /tmp/pack/*.tgz)
@@ -84,6 +84,7 @@ jobs:
           npm init -y > /dev/null
           npm i "$tarball" --no-audit --no-fund
           node --input-type=module -e "const m = await import('@agentage/cli/extension'); if (m.EXTENSION_API_VERSION !== '1.0.0') process.exit(1); console.log('extension subpath ok')"
+          node --input-type=module -e "const { createTestContext } = await import('@agentage/cli/extension/test'); if (createTestContext().mode !== 'test') process.exit(1); console.log('extension/test subpath ok')"
 
   e2e-live:
     name: 🧪 E2E vs ${{ inputs.target }}

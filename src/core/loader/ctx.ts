@@ -12,6 +12,7 @@ import { cacheDir, dataDir } from '../paths.js';
 import { type DiscoveredExtension } from './discover.js';
 import { extensionLog } from './log.js';
 import { secretsFor } from './secrets.js';
+import { readRunState } from './state.js';
 
 export interface StagedContext {
   ctx: ExtensionContext;
@@ -19,6 +20,8 @@ export interface StagedContext {
   program: Command;
   subscriptions: Disposable[];
   revoke: () => void;
+  // Called once register resolved: commands.add and subscriptions.push throw from then on.
+  close: () => void;
 }
 
 export interface ContextInput {
@@ -36,15 +39,36 @@ interface Staged {
   subscriptions: ExtensionSubscriptions;
 }
 
-const revocable = (id: string): { live: Live; revoke: () => void } => {
-  let revoked = false;
-  const live: Live =
+interface Gates {
+  live: Live;
+  // Live, and only until registration closes.
+  staging: Live;
+  revoke: () => void;
+  close: () => void;
+}
+
+const gate = (fail: () => string): { pass: Live; shut: () => void } => {
+  let shut = false;
+  const pass: Live =
     (fn) =>
     (...args) => {
-      if (revoked) throw new Error(`the context of extension ${id} was revoked`);
+      if (shut) throw new Error(fail());
       return fn(...args);
     };
-  return { live, revoke: () => void (revoked = true) };
+  return { pass, shut: () => void (shut = true) };
+};
+
+const gates = (id: string): Gates => {
+  const revoked = gate(() => `the context of extension ${id} was revoked`);
+  const closed = gate(
+    () => `registration closed: ${id} adds commands and subscriptions in register`
+  );
+  return {
+    live: revoked.pass,
+    staging: (fn) => revoked.pass(closed.pass(fn)),
+    revoke: revoked.shut,
+    close: closed.shut,
+  };
 };
 
 // Run at once on the extension's Command, so a name it may not claim fails its register.
@@ -72,6 +96,7 @@ const contextOf = (ext: DiscoveredExtension, live: Live, staged: Staged): Extens
   return Object.freeze({
     id,
     version: ext.version ?? '0.0.0',
+    previousVersion: readRunState(id)?.lastOk ?? null,
     mode: ext.source === 'dev' ? 'dev' : 'installed',
     config: Object.freeze({ ...ext.config }),
     secrets: liveSecrets(id, live),
@@ -86,15 +111,15 @@ const contextOf = (ext: DiscoveredExtension, live: Live, staged: Staged): Extens
 
 // One per load attempt: on a throw or a timeout the loader revokes it, and every method throws.
 export const createContext = ({ ext, use, template }: ContextInput): StagedContext => {
-  const { live, revoke } = revocable(ext.id ?? '');
+  const { live, staging, revoke, close } = gates(ext.id ?? '');
   const program = new Command(template.name()).copyInheritedSettings(template);
   const subscriptions: Disposable[] = [];
   const add = (...fns: CommandRegistrar[]) => addCommands(ext, program, fns);
   const push = (...items: Disposable[]) => void subscriptions.push(...items);
   const ctx = contextOf(ext, live, {
-    commands: Object.freeze({ add: live(add) }),
+    commands: Object.freeze({ add: staging(add) }),
     use: live(use) as ExtensionUse,
-    subscriptions: Object.freeze({ push: live(push) }),
+    subscriptions: Object.freeze({ push: staging(push) }),
   });
-  return { ctx, program, subscriptions, revoke };
+  return { ctx, program, subscriptions, revoke, close };
 };

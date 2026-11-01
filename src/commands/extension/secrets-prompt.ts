@@ -51,7 +51,8 @@ export const askSecrets = async (
   if (missing.length === 0) return;
   if (!io.isTTY) return void console.log(`secrets to set: ${missing.map(nameOf).join(', ')}`);
   for (const secret of missing) {
-    const value = await io.prompt(`${nameOf(secret)}: `);
+    const described = secret.description === null ? '' : ` (${secret.description})`;
+    const value = await io.prompt(`${nameOf(secret)}${described}: `);
     if (value !== '') await secretsFor(secret.id).set(secret.key, value);
   }
 };

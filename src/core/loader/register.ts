@@ -55,6 +55,7 @@ export const registerExtension = async (
       importAndRegister(ext.entry ?? '', staged.ctx),
       registerTimeoutMs()
     );
+    staged.close();
     const { program, subscriptions } = staged;
     return { ok: true, loaded: { ext, program, subscriptions, facade: facadeOf(api) } };
   } catch (err) {

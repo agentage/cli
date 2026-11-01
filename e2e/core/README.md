@@ -11,7 +11,8 @@ the one file that proves it.
   read-only loopback npm registry serving `fixtures/extension-*`.
   `cli.profile({ extensions: { hello: '^1.0.0', world: '^1' } })` writes a profile file that sends
   `@agentage` to that registry and returns its path (short names expand to
-  `@agentage/fixture-*`; `off` turns extensions off on this machine).
+  `@agentage/fixture-*`; `off` turns extensions off on this machine; `config` is the shared
+  config by extension id).
   `cli.run(`setup --profile ${path}`)` gives `{ code, stdout, stderr, lines }`, and
   `cli.run('hello', { AGENTAGE_TOKEN: 'aga_x' })` adds to the environment for that run (an
   undefined value unsets a variable); `cli.file()`, `cli.exists()` and `cli.list()` read the
@@ -22,7 +23,8 @@ the one file that proves it.
 - `setup.test.ts` (install), `setup-load.test.ts` (load), `extension-install.test.ts`,
   `extension-remove.test.ts`, `extension-list.test.ts`, `extension-check.test.ts`,
   `delegate.test.ts` (`agentage <extension command>`), `status.test.ts` - one `test.describe` per
-  command.
+  command; `plan.test.ts` - the plan: `setup --dry-run`, `setup --check`, the drift in
+  `extension list` and `status`, integrity drift.
 
 Run: `npm run build && npx playwright test e2e/core`. Every spec is `@offline`: loopback only, no
 secrets.

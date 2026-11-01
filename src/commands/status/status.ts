@@ -5,7 +5,7 @@ import { resolveAuth } from '../../lib/auth/credentials.js';
 import { siteFqdn } from '../../lib/net/origins.js';
 import { gatherStatus, type StatusReport } from '../../lib/status/status-info.js';
 import { INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
-import { printWarnings, summaryLines } from '../extension/list.js';
+import { printWarnings, summaryLines } from '../extension/row-lines.js';
 import { gatherExtensions, invalidProfileError, type ExtensionsGather } from '../extension/rows.js';
 
 const mark = (good: boolean): string => (good ? chalk.green('✓') : chalk.red('✗'));
@@ -82,11 +82,11 @@ const settle = async (deps: StatusDeps): Promise<ExtensionsOutcome> => {
   }
 };
 
-// With the extensions flag on, `--json` adds machine, profile and the extension count.
+// With the extensions flag on, `--json` adds machine, profile, the extension count and the plan.
 const jsonOf = (report: StatusReport, gathered: ExtensionsGather | null): object => {
   if (!gathered) return report;
-  const { machine, profile, extensions } = gathered.status;
-  return { ...report, machine, profile, extensions: extensions.length };
+  const { machine, profile, extensions, plan } = gathered.status;
+  return { ...report, machine, profile, extensions: extensions.length, plan };
 };
 
 const emit = (report: StatusReport, gathered: ExtensionsGather | null, json?: boolean): void => {
@@ -111,8 +111,9 @@ export const runStatus = async (
 
 const EXTENSIONS_HELP = `
 Extensions: adds this machine's id and name (machine.json), the local profile version
-(profile.json) and the number of extensions; agentage extension list shows one row per extension.
-Extension code is never loaded; the only file written is machine.json.`;
+(profile.json) and the number of extensions, with what setup would change, e.g. (1 to add);
+agentage extension list shows one row per extension. Extension code is never loaded; the only
+file written is machine.json.`;
 
 export const registerStatus = (
   program: Command,

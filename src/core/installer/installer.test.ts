@@ -135,6 +135,17 @@ describe('installing a profile', () => {
     expect(dir.list('extensions/trees')).toEqual([]);
   });
 
+  test('refuses to build on a lock whose integrity drifted from its tree, running no npm', async ({
+    dir,
+  }) => {
+    const good = await install(TWO, npmFromFixtures);
+    const lock = dir.json('extensions/package-lock.json') as { packages: Record<string, object> };
+    lock.packages[`node_modules/${HELLO}`] = { version: '1.0.0', integrity: 'sha512-x' };
+    dir.write('extensions/package-lock.json', lock);
+    await expect(install(ONE, npmNeverRuns)).rejects.toThrow(`integrity drift: ${HELLO}@1.0.0`);
+    expect(dir.file('extensions/current')).toBe(good.tree);
+  });
+
   test('clears a staging dir a crashed run left behind', async ({ dir }) => {
     dir.write('extensions/trees/.staging-crashed/package.json', '{}');
     const result = await install(TWO, npmFromFixtures);

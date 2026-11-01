@@ -85,12 +85,18 @@ you run a command.
 export AGENTAGE_EXTENSIONS=1
 agentage setup --profile ./profile.json            # install and load the extensions a profile names
 agentage setup --profile ./profile.json --dry-run  # show the plan, write nothing
+agentage setup --check                             # exit 1 when this machine differs from its profile
 agentage extension install @agentage/example       # add one extension, install and load it
 agentage extension install ./my-extension          # a local folder, for development
 agentage extension remove @agentage/example        # take it out again
-agentage extension list                            # state per extension
+agentage extension list                            # state per extension, with what setup would change
 agentage hello                                     # a command the hello extension contributes
 ```
+
+The plan is what `setup` would change, one line per extension (`+ add`, `~ update`, `- remove`,
+`o off`) and a summary such as `plan: 1 to add, 0 to update, 0 to remove, 0 off, 2 unchanged`.
+`setup --dry-run` prints it, `setup --check` exits 1 when anything would change, `extension list`
+shows it per extension and `status` sums it up, for example `extensions 2 (1 to add)`.
 
 A profile is a JSON file that maps package names to version ranges. `registries` is optional
 and routes a scope to another npm-compatible registry; everything else comes from npm's public

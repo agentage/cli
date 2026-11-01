@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { isRecord } from '../../lib/fs/json-file.js';
 import { type ConfigMap } from '../profile/schema.js';
 import { checkConfig } from './config.js';
+import { unsafeDevPath } from './dev-path.js';
 import { manifestInfo, manifestProblem, type ManifestInfo } from './manifest.js';
 
 export type ExtensionSource = 'tree' | 'dev';
@@ -22,6 +23,8 @@ export interface DiscoveredExtension {
   config: Record<string, unknown>;
   // Keys declared `secret: true`, read through ctx.secrets.
   secrets: string[];
+  // Declared `description` by key, shown when setup asks for a secret.
+  descriptions: Record<string, string>;
   problem: string | null;
   missing: boolean;
 }
@@ -99,6 +102,7 @@ const blank = (pkg: string, source: ExtensionSource, dir: string): DiscoveredExt
   optionalPeers: [],
   config: {},
   secrets: [],
+  descriptions: {},
   problem: null,
   missing: false,
 });
@@ -118,10 +122,11 @@ const inspect = ({ pkg, source, dir }: Candidate, configs: ConfigMap): Discovere
   const info = manifestInfo(manifest);
   const entry = info.entry === null ? null : inside(dir, info.entry);
   const { version, id, commands, peers, optionalPeers } = info;
-  const checked = checkConfig(id ?? '', info.configuration, configs[id ?? ''] ?? {});
-  const problem = manifestProblem(pkg, info) ?? entryProblem(info, entry) ?? checked.problem;
-  const { config, secrets } = checked;
-  return { ...base, version, id, entry, commands, peers, optionalPeers, config, secrets, problem };
+  const slice = configs[id ?? ''] ?? {};
+  const { problem: badConfig, ...declared } = checkConfig(id ?? '', info.configuration, slice);
+  const unsafe = source === 'dev' ? unsafeDevPath(dir, process.getuid?.()) : null;
+  const problem = unsafe ?? manifestProblem(pkg, info) ?? entryProblem(info, entry) ?? badConfig;
+  return { ...base, version, id, entry, commands, peers, optionalPeers, ...declared, problem };
 };
 
 // Every claimant of a shared id is invalid; a dev copy of the same package never reaches here.

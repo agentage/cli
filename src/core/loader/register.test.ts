@@ -1,4 +1,4 @@
-import { afterEach, describe, expect } from 'vitest';
+import { afterEach, describe, expect, vi } from 'vitest';
 import { test } from '../../test/config-dir.js';
 import { loadMachine } from '../profile/machine.js';
 import { loadExtensions } from './load.js';
@@ -9,11 +9,14 @@ const TIMEOUT = 'AGENTAGE_REGISTER_TIMEOUT_MS';
 
 const loadAll = async () => loadExtensions(loadSet(scan(await loadMachine())));
 
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// How a dev extension's register hands the test a function to call later.
+const signal = globalThis as Record<string, unknown>;
 
 describe('registering an extension', () => {
   afterEach(() => {
+    vi.useRealTimers();
     delete process.env[TIMEOUT];
+    delete signal['lateRegistered'];
   });
 
   test('one that throws is failed with its message, and what it subscribed is disposed', async ({
@@ -50,20 +53,43 @@ export const register = (ctx) => {
 
   test('a command added after the timeout is refused: its context was revoked', async ({ dir }) => {
     process.env[TIMEOUT] = '50';
-    const marker = JSON.stringify(dir.at('late'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const registered = new Promise<() => void>(
+      (resolve) => void (signal['lateRegistered'] = resolve)
+    );
     dir.extension(
       'late',
-      `import { writeFileSync } from 'node:fs';
-export const register = (ctx) => new Promise(() => setTimeout(() => {
-  try { ctx.commands.add((program) => program.command('late')); }
-  catch (err) { writeFileSync(${marker}, err.message); }
-}, 100));`,
+      `export const register = (ctx) => {
+  globalThis.lateRegistered(() => ctx.commands.add((program) => program.command('late')));
+  return new Promise(() => {});
+};`,
       { agentage: { contributes: { commands: ['late'] } } }
     );
-    const session = await loadAll();
-    await pause(150);
+    const loading = loadAll();
+    const addLate = await registered;
+    await vi.advanceTimersByTimeAsync(50);
+    const session = await loading;
+    expect(session.outcomes.get('@test/late')).toEqual({ state: 'failed', error: 'timeout' });
+    expect(addLate).toThrow('the context of extension late was revoked');
     expect(session.loaded.has('late')).toBe(false);
-    expect(dir.file('late')).toBe('the context of extension late was revoked');
+    await session.dispose();
+  });
+
+  test('after register resolves, registration is closed: commands.add throws "registration closed"', async ({
+    dir,
+  }) => {
+    dir.extension(
+      'later',
+      `export const register = (ctx) => ({
+  addLater: () => ctx.commands.add((program) => program.command('later')),
+  logLater: () => ctx.log('still here'),
+});`,
+      { agentage: { contributes: { commands: ['later'] } } }
+    );
+    const session = await loadAll();
+    const facade = session.loaded.get('later')?.facade ?? {};
+    expect(() => facade['addLater']?.()).toThrow('registration closed');
+    expect(() => facade['logLater']?.()).not.toThrow();
     await session.dispose();
   });
 

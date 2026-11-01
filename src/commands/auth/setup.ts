@@ -7,6 +7,8 @@ export interface SetupOptions extends SignInOptions {
   // Registered only with AGENTAGE_EXTENSIONS=1.
   profile?: string;
   dryRun?: boolean;
+  check?: boolean;
+  json?: boolean;
 }
 
 // printStatus comes from the program root, so this command never imports the status command.
@@ -25,8 +27,11 @@ export const runSetup = async (opts: SetupOptions, deps: SetupDeps): Promise<voi
 
 const EXTENSIONS_HELP = `
 Extensions: --profile <file> validates a profile (schema v1), saves it as profile.json and
-installs its extensions with npm, without signing in; --dry-run prints the install plan and
-writes nothing. Plain setup signs in, then installs from the local profile.json (or the
+installs its extensions with npm, without signing in. --dry-run prints the plan, what setup
+would change (+ add, ~ update, - remove, o off, then one summary line), and writes nothing;
+--check prints the plan and exits 1 when anything would change, the lock in the extensions
+directory does not match the installed tree, or machine.json is missing; it writes nothing.
+Neither signs in. Plain setup signs in, then installs from the local profile.json (or the
 default profile when there is none). Each package comes from the registry the profile's
 registries map names for its scope (default https://registry.npmjs.org) into
 AGENTAGE_EXTENSIONS_DIR (default ~/.agentage/extensions). After installing, setup lists the
@@ -47,6 +52,8 @@ export const registerSetup = (
   if (!extensionsEnabled()) return;
   command
     .option('--profile <file>', 'install the extensions a profile file names; never signs in')
-    .option('--dry-run', 'print the install plan and write nothing')
+    .option('--dry-run', 'print what setup would change and write nothing')
+    .option('--check', 'exit 1 when setup would change anything; write nothing')
+    .option('--json', 'with --dry-run or --check: the plan as JSON')
     .addHelpText('after', EXTENSIONS_HELP);
 };

@@ -3,10 +3,7 @@ import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { loadExtensions } from '../../core/loader/load.js';
 import { loadOrder } from '../../core/loader/order.js';
 import { loadSet, scan } from '../../core/loader/scan.js';
-import { readMachine, type MachineFile } from '../../core/profile/machine.js';
-
-// Without machine.json there are no dev paths and no `off` list; discovery never creates it.
-const NO_MACHINE: MachineFile = { id: '', name: '', dev: {}, profileSource: 'default' };
+import { NO_MACHINE, readMachine } from '../../core/profile/machine.js';
 
 // The CLI's own error handling around a stub's action.
 type Wrap = (fn: () => Promise<void>) => (opts: unknown) => Promise<void>;
