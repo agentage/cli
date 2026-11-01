@@ -13,11 +13,12 @@ test.describe('agentage extension list @p0 @offline', () => {
   }) => {
     await cli.run(`setup --profile ${cli.profile(TWO)}`);
     cli.write('state/hello.json', LAST_RUN);
+    const worldRun = cli.json('state/world.json')['at'];
     const list = await cli.run('extension list');
     expect(list.code).toBe(0);
     expect(list.lines).toEqual([
       'hello  installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello  last run: ok at 2026-10-29T10:00:00.000Z',
-      'world  installed  @agentage/fixture-world 1.0.0 (wants ^1)  commands: world',
+      `world  installed  @agentage/fixture-world 1.0.0 (wants ^1)  commands: world  last run: ok at ${worldRun}`,
       '',
     ]);
     const json = JSON.parse((await cli.run('extension list --json')).stdout);
@@ -25,7 +26,7 @@ test.describe('agentage extension list @p0 @offline', () => {
     expect(json.extensions.map((m: { id: string }) => m.id)).toEqual(['hello', 'world']);
   });
 
-  test('agentage extension list marks a duplicate id and an old engine invalid, and blocks world', async ({
+  test('agentage extension list marks a duplicate id and an old engine invalid and blocks world; setup loaded none of them', async ({
     cli,
   }) => {
     const all = { 'dup-id': '^1.0.0', hello: '^1.0.0', 'old-engine': '^1.0.0', world: '^1' };
@@ -39,9 +40,10 @@ test.describe('agentage extension list @p0 @offline', () => {
       'world      blocked    @agentage/fixture-world 1.0.0 (wants ^1)  commands: world  peer @agentage/fixture-hello is invalid',
       '',
     ]);
+    expect(cli.list('state')).toEqual([]);
   });
 
-  test('agentage extension list shows hello off and world blocked when this machine turns hello off', async ({
+  test('agentage extension list shows hello off and world blocked when this machine turns hello off; setup loaded neither', async ({
     cli,
   }) => {
     await cli.run(`setup --profile ${cli.profile({ ...TWO, off: ['hello'] })}`);
@@ -52,6 +54,7 @@ test.describe('agentage extension list @p0 @offline', () => {
     expect(list.lines).toContain(
       'world  blocked    @agentage/fixture-world 1.0.0 (wants ^1)  commands: world  peer @agentage/fixture-hello is off'
     );
+    expect(cli.list('state')).toEqual([]);
   });
 
   test('agentage extension list and agentage status write nothing over an installed config dir', async ({

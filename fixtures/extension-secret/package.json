@@ -1,0 +1,16 @@
+{
+  "name": "@agentage/fixture-secret",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "agentage": {
+    "id": "secret",
+    "configuration": {
+      "token": {
+        "type": "string",
+        "secret": true
+      }
+    }
+  }
+}

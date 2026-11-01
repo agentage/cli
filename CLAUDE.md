@@ -1,9 +1,10 @@
 # CLAUDE.md - @agentage/cli
 
-The agentage CLI launcher core. Commands: `setup` (OAuth sign-in), `status`, `update`.
+The agentage CLI core. Commands: `setup` (OAuth sign-in), `status`, `update`.
 Extensions extend it through `src/core/`; with `AGENTAGE_EXTENSIONS=1`, `setup --profile`
-installs them and `extension list` shows them. memory, vault, daemon, sync and MCP code lives in
-git history up to v0.37.2 and returns as extensions.
+installs and loads them, `extension list` and `extension check` show them, and the commands they
+contribute run as `agentage <command>`. memory, vault, daemon, sync and MCP code lives in git
+history up to v0.37.2 and returns as extensions.
 
 ## Layout
 - `src/cli.ts` - the bin: Node version guard, then a dynamic import of `program.ts` (excluded
@@ -13,8 +14,10 @@ git history up to v0.37.2 and returns as extensions.
   `NO_COLOR`
 - `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability:
   `auth/` (setup), `status/`, `update/`, `extension/` (`rows.ts` gathers the extension rows,
-  `list.ts` prints them and registers the `extension` group, `setup.ts` is the extensions
-  `setup` flow; its only deps are the network ones and npm)
+  `list.ts` prints them and registers the `extension` group, `check.ts` loads once and reports,
+  `setup.ts` is the extensions `setup` flow (its only deps are the network ones and npm),
+  `secrets-prompt.ts` asks for or lists missing secrets (`isTTY`/`prompt` are its only seam),
+  `delegate.ts` registers one stub per contributed command and hands it to the extension)
 - `src/lib/` - shared library, grouped by domain:
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,
@@ -27,22 +30,30 @@ git history up to v0.37.2 and returns as extensions.
   - `npm/` - npm-cli (`resolveNpmCli`, `runNpm` as `node npm-cli.js`, `requireNpm10`)
   - `status/` - status-info (the `status` report)
   - `update/` - update-check, update-cache
-- `src/core/` - launcher core, gated by `AGENTAGE_EXTENSIONS=1`; imports nothing product-shaped
+- `src/core/` - the core, gated by `AGENTAGE_EXTENSIONS=1`; imports nothing product-shaped
   (the package guard enforces it)
   - `profile/` (schema v1 validator incl. `registries`, `profile.json` reader and writer plus
-    the default profile, `machine.json`, install/load set merge) and `loader/` (manifests from
-    `extensions/current` and dev paths, static states, `state/<id>.json` reader; never imports
-    extension code)
+    the default profile, `machine.json`, install/load set merge)
+  - `loader/` - reading without running: `scan.ts` (profile + machine + manifests -> static
+    states and the load set), `discover.ts`, `manifest.ts`, `config.ts` (config slice checked
+    against `configuration`, defaults filled), `states.ts`; running: `load.ts` (a session: peer
+    order via `order.ts`, `AGENTAGE_TOKEN` removed, console to stderr, `state/<id>.json` via
+    `state.ts`), `register.ts` (`pathToFileURL` import + `register(ctx)` under a 10 s
+    `timeout.ts`), `ctx.ts` (one revocable `ctx` per attempt, staged commands and
+    subscriptions), `use.ts` (frozen facade), `dispose.ts` (5 s, SIGINT/SIGTERM), `secrets.ts`
+    (`secrets.json` 0600), `log.ts` (`logs/<id>.log`)
   - `installer/` - `npm.ts` (`node npm-cli.js`, scrubbed env, `--registry` default; the `Npm`
     seam), `tree.ts` (deterministic `package.json` and per-scope `.npmrc`, staged
     `extensions/trees/<hash>/` + `.complete` + `extensions/current`, `install.lock` with a
     heartbeat), `compare-lock.ts` (normalized lock compare), `installer.ts` (plan, install; npm
     is the only injected dep)
-- `src/extension.ts` - the `@agentage/cli/extension` subpath export, versioned by
-  `EXTENSION_API_VERSION`
+- `src/extension.ts` - the `@agentage/cli/extension` subpath export: the contract types
+  (`ExtensionContext`, `ExtensionManifest`, ...), identity `defineExtension`, versioned by
+  `EXTENSION_API_VERSION`; type-only for extensions at runtime
 - `src/test/config-dir.ts` - the unit-test kit for `src/core` and `src/commands/extension`: a
-  fresh config dir per test (`dir.write`, `dir.profile`, `dir.tree`), `output()` capture, and
-  `npmFromFixtures` playing npm; excluded from the build and from coverage
+  fresh config dir per test (`dir.write`, `dir.profile`, `dir.tree`, `dir.extension` for a dev
+  extension written from source) and `output()` capture; `src/test/npm-fixtures.ts` has
+  `npmFromFixtures` playing npm; both excluded from the build and from coverage
 - `fixtures/` - test-only extension packages (`@agentage/fixture-*`), never published
 - `e2e/registry/` - in-process npm registry serving `npm pack` output to e2e on loopback
 - `scripts/bump-version.js` - release helper (`node scripts/bump-version.js patch|minor|major`)

@@ -16,6 +16,8 @@ const found = (name: string, extra: Partial<DiscoveredExtension> = {}): Discover
   commands: [],
   peers: [],
   optionalPeers: [],
+  config: {},
+  secrets: [],
   problem: null,
   missing: false,
   ...extra,

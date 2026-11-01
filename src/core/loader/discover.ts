@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { isRecord } from '../../lib/fs/json-file.js';
+import { type ConfigMap } from '../profile/schema.js';
+import { checkConfig } from './config.js';
 import { manifestInfo, manifestProblem, type ManifestInfo } from './manifest.js';
 
 export type ExtensionSource = 'tree' | 'dev';
@@ -16,6 +18,10 @@ export interface DiscoveredExtension {
   commands: string[];
   peers: string[];
   optionalPeers: string[];
+  // The profile's config checked against the manifest, defaults filled; what ctx.config holds.
+  config: Record<string, unknown>;
+  // Keys declared `secret: true`, read through ctx.secrets.
+  secrets: string[];
   problem: string | null;
   missing: boolean;
 }
@@ -24,6 +30,8 @@ export interface DiscoverInput {
   extensionsDir: string;
   names: string[];
   dev: Record<string, string>;
+  // Effective config per extension id.
+  config: ConfigMap;
 }
 
 export interface Discovery {
@@ -89,11 +97,19 @@ const blank = (pkg: string, source: ExtensionSource, dir: string): DiscoveredExt
   commands: [],
   peers: [],
   optionalPeers: [],
+  config: {},
+  secrets: [],
   problem: null,
   missing: false,
 });
 
-const inspect = (pkg: string, source: ExtensionSource, dir: string | null): DiscoveredExtension => {
+interface Candidate {
+  pkg: string;
+  source: ExtensionSource;
+  dir: string | null;
+}
+
+const inspect = ({ pkg, source, dir }: Candidate, configs: ConfigMap): DiscoveredExtension => {
   const base = blank(pkg, source, dir ?? '');
   if (source === 'dev' && !isAbsolute(base.dir))
     return { ...base, problem: 'dev path not absolute' };
@@ -101,9 +117,11 @@ const inspect = (pkg: string, source: ExtensionSource, dir: string | null): Disc
   if (dir === null || manifest === null) return { ...base, missing: true };
   const info = manifestInfo(manifest);
   const entry = info.entry === null ? null : inside(dir, info.entry);
-  const problem = manifestProblem(pkg, info) ?? entryProblem(info, entry);
   const { version, id, commands, peers, optionalPeers } = info;
-  return { ...base, version, id, entry, commands, peers, optionalPeers, problem };
+  const checked = checkConfig(id ?? '', info.configuration, configs[id ?? ''] ?? {});
+  const problem = manifestProblem(pkg, info) ?? entryProblem(info, entry) ?? checked.problem;
+  const { config, secrets } = checked;
+  return { ...base, version, id, entry, commands, peers, optionalPeers, config, secrets, problem };
 };
 
 // Every claimant of a shared id is invalid; a dev copy of the same package never reaches here.
@@ -133,10 +151,16 @@ export const discover = (input: DiscoverInput): Discovery => {
   const tree = currentTree(input.extensionsDir);
   const nodeModules = tree.dir === null ? null : join(tree.dir, 'node_modules');
   const installed = input.names.filter((name) => !(name in input.dev));
-  const found = markDuplicates([
-    ...installed.map((name) => inspect(name, 'tree', nodeModules && join(nodeModules, name))),
-    ...Object.entries(input.dev).map(([name, path]) => inspect(name, 'dev', path)),
-  ]);
+  const found = markDuplicates(
+    [
+      ...installed.map((pkg): Candidate => ({
+        pkg,
+        source: 'tree',
+        dir: nodeModules && join(nodeModules, pkg),
+      })),
+      ...Object.entries(input.dev).map(([pkg, dir]): Candidate => ({ pkg, source: 'dev', dir })),
+    ].map((candidate) => inspect(candidate, input.config))
+  );
   const known = new Set(found.map((p) => p.pkg));
   const extensions = found.map((p) => ({
     ...p,

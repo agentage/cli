@@ -33,6 +33,7 @@ describe("an extension's package.json", () => {
       commands: ['x', 'x:sub'],
       peers: ['@agentage/fixture-hello', 'express'],
       optionalPeers: ['express'],
+      configuration: {},
     });
   });
 
@@ -78,11 +79,19 @@ describe("an extension's package.json", () => {
     ],
     [{ engines: { agentage: 'latest' } }, 'engines.agentage "latest" is not a supported range'],
     [{ main: null }, 'no entry point (exports or main)'],
+    [
+      { agentage: { id: 'x', contributes: { commands: ['x', 'setup'] } } },
+      'agentage.contributes.commands: "setup" must be "x" or "x:<name>"',
+    ],
+    [
+      { agentage: { id: 'x', contributes: { commands: ['x:Sub'] } } },
+      'agentage.contributes.commands: "x:Sub" must be "x" or "x:<name>"',
+    ],
   ])('is invalid with %j: %s', (fields, message) => {
     expect(problemOf(fields)).toBe(message);
   });
 
-  it.each(['setup', 'status', 'update', 'add', 'remove', 'help', 'con', 'nul', 'com1', 'lpt9'])(
+  it.each(['setup', 'status', 'update', 'extension', 'add', 'help', 'con', 'nul', 'com1', 'lpt9'])(
     'cannot claim the id %j: core commands and Windows device names are reserved',
     (id) => {
       expect(problemOf({ agentage: { id } })).toBe(`agentage.id "${id}" is reserved`);

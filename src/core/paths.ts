@@ -9,3 +9,11 @@ export const stateDir = (): string => join(getConfigDir(), 'state');
 
 export const extensionsDir = (): string =>
   process.env['AGENTAGE_EXTENSIONS_DIR'] || join(getConfigDir(), 'extensions');
+
+export const secretsPath = (): string => join(getConfigDir(), 'secrets.json');
+
+export const dataDir = (id: string): string => join(getConfigDir(), 'data', id);
+
+export const cacheDir = (id: string): string => join(getConfigDir(), 'cache', id);
+
+export const logsDir = (): string => join(getConfigDir(), 'logs');

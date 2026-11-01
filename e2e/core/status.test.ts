@@ -47,9 +47,9 @@ test.describe('agentage status @offline', () => {
 
 test.describe('without AGENTAGE_EXTENSIONS=1 @p0 @offline', () => {
   test('agentage status, setup --profile and extension behave exactly as before', async ({
-    launcherMachine,
+    anotherMachine,
   }) => {
-    const cli = launcherMachine({ AGENTAGE_EXTENSIONS: undefined });
+    const cli = anotherMachine({ AGENTAGE_EXTENSIONS: undefined });
     const status = await cli.run('status --json');
     const keys = ['version', 'fqdn', 'env', 'target', 'auth', 'endpoint', 'update'];
     expect(Object.keys(JSON.parse(status.stdout))).toEqual(keys);
@@ -60,5 +60,19 @@ test.describe('without AGENTAGE_EXTENSIONS=1 @p0 @offline', () => {
     expect(group.code).toBe(2);
     expect(group.stderr).toContain("error: unknown command 'extension'");
     expect(cli.list('')).toEqual([]);
+  });
+
+  test('with hello installed, agentage hello is an unknown command and --help is unchanged', async ({
+    cli,
+    anotherMachine,
+  }) => {
+    await cli.run(`setup --profile ${cli.profile(TWO)}`);
+    const off = { AGENTAGE_EXTENSIONS: undefined };
+    const hello = await cli.run('hello', off);
+    expect(hello.code).toBe(2);
+    expect(hello.stderr).toContain("error: unknown command 'hello'");
+    expect(hello.stderr).not.toContain('core:');
+    const fresh = anotherMachine(off);
+    expect((await cli.run('--help', off)).stdout).toBe((await fresh.run('--help')).stdout);
   });
 });

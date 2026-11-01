@@ -13,7 +13,8 @@ export interface SetupOptions extends SignInOptions {
 export interface SetupDeps {
   ensureSignedIn: (opts: SignInOptions) => Promise<SignInResult>;
   signOut: () => Promise<void>;
-  printStatus: () => Promise<void>;
+  // `token` stands in for AGENTAGE_TOKEN once loading extensions removed it from the environment.
+  printStatus: (opts?: { token?: string }) => Promise<void>;
 }
 
 export const runSetup = async (opts: SetupOptions, deps: SetupDeps): Promise<void> => {
@@ -28,7 +29,9 @@ installs its extensions with npm, without signing in; --dry-run prints the insta
 writes nothing. Plain setup signs in, then installs from the local profile.json (or the
 default profile when there is none). Each package comes from the registry the profile's
 registries map names for its scope (default https://registry.npmjs.org) into
-AGENTAGE_EXTENSIONS_DIR (default ~/.agentage/extensions).`;
+AGENTAGE_EXTENSIONS_DIR (default ~/.agentage/extensions). After installing, setup lists the
+secrets extensions declare and this machine has not set (asking for them on a terminal), then
+loads every extension once and prints ok or failed for each; it exits 1 when any failed.`;
 
 export const registerSetup = (
   program: Command,

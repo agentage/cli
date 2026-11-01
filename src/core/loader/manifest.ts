@@ -5,11 +5,12 @@ import { isRange, satisfies } from '../semver-range.js';
 export const ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const DEFAULT_ENGINE = '^1';
 
-const CORE_COMMANDS = ['setup', 'status', 'update', 'add', 'remove', 'help'];
+const CORE_COMMANDS = ['setup', 'status', 'update', 'extension', 'add', 'remove', 'help'];
 const DEVICE_NAMES = ['con', 'prn', 'aux', 'nul'].concat(
   ...Array.from({ length: 10 }, (_, n) => [`com${n}`, `lpt${n}`])
 );
 const RESERVED_IDS: ReadonlySet<string> = new Set([...CORE_COMMANDS, ...DEVICE_NAMES]);
+const SUBCOMMAND = /^[a-z0-9][a-z0-9-]*$/;
 
 export interface ManifestInfo {
   name: string | null;
@@ -20,6 +21,8 @@ export interface ManifestInfo {
   commands: string[];
   peers: string[];
   optionalPeers: string[];
+  // Read as data; checked against the profile's config by checkConfig.
+  configuration: Record<string, unknown>;
 }
 
 const str = (value: unknown): string | null => (typeof value === 'string' ? value : null);
@@ -57,9 +60,10 @@ export const manifestInfo = (pkg: Record<string, unknown>): ManifestInfo => {
     id: str(agentage['id']),
     engine: str(record(pkg['engines'])['agentage']) ?? DEFAULT_ENGINE,
     entry: entryOf(pkg),
-    commands: strings(record(agentage['contributes'])['commands']),
+    commands: [...new Set(strings(record(agentage['contributes'])['commands']))],
     peers: Object.keys(record(pkg['peerDependencies'])),
     optionalPeers: optionalPeersOf(record(pkg['peerDependenciesMeta'])),
+    configuration: record(agentage['configuration']),
   };
 };
 
@@ -75,6 +79,15 @@ const engineProblem = (engine: string, api: string): string | null => {
   return `engines.agentage "${engine}" does not match extension API ${api}`;
 };
 
+// Commands are named after the id, so no two extensions, nor the core, can claim one.
+const commandsProblem = (id: string, commands: string[]): string | null => {
+  const ownSub = (name: string) =>
+    name.startsWith(`${id}:`) && SUBCOMMAND.test(name.slice(id.length + 1));
+  const bad = commands.find((name) => name !== id && !ownSub(name));
+  if (bad === undefined) return null;
+  return `agentage.contributes.commands: "${bad}" must be "${id}" or "${id}:<name>"`;
+};
+
 // Static checks only: the manifest is read as data and the entry is never imported.
 export const manifestProblem = (
   pkg: string,
@@ -85,6 +98,7 @@ export const manifestProblem = (
   return (
     idProblem(info.id) ??
     engineProblem(info.engine, api) ??
-    (info.entry === null ? 'no entry point (exports or main)' : null)
+    (info.entry === null ? 'no entry point (exports or main)' : null) ??
+    commandsProblem(info.id ?? '', info.commands)
   );
 };

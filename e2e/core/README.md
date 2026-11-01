@@ -12,10 +12,14 @@ the one file that proves it.
   `cli.profile({ extensions: { hello: '^1.0.0', world: '^1' } })` writes a profile file that sends
   `@agentage` to that registry and returns its path (short names expand to
   `@agentage/fixture-*`; `off` turns extensions off on this machine).
-  `cli.run(`setup --profile ${path}`)` gives `{ code, stdout, stderr, lines }`; `cli.file()`,
-  `cli.exists()` and `cli.list()` read the config dir; `launcherMachine(env)` makes another
+  `cli.run(`setup --profile ${path}`)` gives `{ code, stdout, stderr, lines }`, and
+  `cli.run('hello', { AGENTAGE_TOKEN: 'aga_x' })` adds to the environment for that run (an
+  undefined value unsets a variable); `cli.file()`, `cli.exists()` and `cli.list()` read the
+  config dir, `cli.write()` and `cli.remove()` change it; `anotherMachine(env)` makes another
   machine in the same test.
-- `setup.test.ts`, `extension-list.test.ts`, `status.test.ts` - one `test.describe` per command.
+- `setup.test.ts` (install), `setup-load.test.ts` (load), `extension-list.test.ts`,
+  `extension-check.test.ts`, `delegate.test.ts` (`agentage <extension command>`),
+  `status.test.ts` - one `test.describe` per command.
 
 Run: `npm run build && npx playwright test e2e/core`. Every spec is `@offline`: loopback only, no
 secrets.

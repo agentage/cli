@@ -32,7 +32,8 @@ const parseMachine = (raw: unknown): MachineFile | null => {
   return { id, name, dev, profileSource: profileSource as ProfileSource };
 };
 
-const readMachine = (): MachineFile | null => {
+// Read only: null when absent or not exactly v1, and nothing is written.
+export const readMachine = (): MachineFile | null => {
   try {
     return parseMachine(JSON.parse(readFileSync(machinePath(), 'utf-8')));
   } catch {

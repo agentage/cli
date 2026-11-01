@@ -1,19 +1,23 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
-import { type StaticState } from '../../core/loader/states.js';
+import { type ExtensionCheckOptions } from './check.js';
 import {
   gatherExtensions,
   invalidProfileError,
   type ExtensionRow,
+  type ExtensionsGather,
   type ExtensionsStatus,
   type ProfileStatus,
+  type RowState,
 } from './rows.js';
 
-const COLOR: Record<StaticState, (text: string) => string> = {
+const COLOR: Record<RowState, (text: string) => string> = {
   installed: chalk.green,
+  ok: chalk.green,
   off: chalk.dim,
   blocked: chalk.yellow,
   invalid: chalk.red,
+  failed: chalk.red,
   missing: chalk.yellow,
 };
 
@@ -47,7 +51,9 @@ const rowLine = (row: ExtensionRow, idWidth: number): string => {
   const wanted = row.mode === 'dev' ? 'dev' : `wants ${row.wanted ?? '?'}`;
   const pkg = `${row.package} ${row.installed ?? '-'} (${wanted})`;
   const commands = row.commands.length > 0 ? `  commands: ${row.commands.join(', ')}` : '';
-  const error = row.error === null ? '' : chalk.dim(`  ${row.error}`);
+  // A failed load quotes the extension's own message; the core's reasons print as they are.
+  const reason = row.state === 'failed' ? `"${row.error}"` : row.error;
+  const error = row.error === null ? '' : chalk.dim(`  ${reason}`);
   return `${id}  ${state}  ${pkg}${commands}${lastRunText(row.lastRun)}${error}`;
 };
 
@@ -64,14 +70,19 @@ export interface ExtensionListOptions {
   json?: boolean;
 }
 
-// The rows always print; an invalid profile.json then fails the step (exit 1).
-export const runExtensionList = async (opts: ExtensionListOptions = {}): Promise<void> => {
-  const { status, warnings } = await gatherExtensions();
+// The rows, or the whole report as JSON, on stdout; warnings on stderr.
+export const printReport = ({ status, warnings }: ExtensionsGather, json?: boolean): void => {
   const rows = status.extensions.length > 0 ? rowLines(status.extensions) : ['no extensions'];
-  if (opts.json) console.log(JSON.stringify(status, null, 2));
+  if (json) console.log(JSON.stringify(status, null, 2));
   else for (const text of rows) console.log(text);
   printWarnings(warnings);
-  const failure = invalidProfileError(status.profile);
+};
+
+// The rows always print; an invalid profile.json then fails the step (exit 1).
+export const runExtensionList = async (opts: ExtensionListOptions = {}): Promise<void> => {
+  const gathered = await gatherExtensions();
+  printReport(gathered, opts.json);
+  const failure = invalidProfileError(gathered.status.profile);
   if (failure) throw failure;
 };
 
@@ -80,6 +91,12 @@ One row per extension in the profile or a dev path: id, state (installed, off, b
 invalid, missing), package, installed version, wanted range, contributed commands, the
 last run from state/<id>.json, and the reason when it cannot load. Extension code is never
 loaded; the only file written is machine.json.`;
+
+const CHECK_HELP = `
+Loads every extension this machine can run, once, the way setup does: what an extension prints
+while loading goes to stderr, state/<id>.json is rewritten for each, and the rows show ok or
+failed with the reason (a dependent of a failed extension is blocked). Exits 1 when any
+extension failed.`;
 
 // Bare `extension` prints its help (exit 0); an unknown subcommand stays a usage error (exit 2).
 const helpOrUnknown = (_opts: unknown, group: Command): void => {
@@ -90,7 +107,8 @@ const helpOrUnknown = (_opts: unknown, group: Command): void => {
 
 export const registerExtension = (
   program: Command,
-  list: (opts: ExtensionListOptions) => Promise<void>
+  list: (opts: ExtensionListOptions) => Promise<void>,
+  check: (opts: ExtensionCheckOptions) => Promise<void>
 ): void => {
   const group = program
     .command('extension')
@@ -103,4 +121,10 @@ export const registerExtension = (
     .option('--json', 'machine-readable output')
     .addHelpText('after', LIST_HELP)
     .action(list);
+  group
+    .command('check')
+    .description('Load every extension once and refresh its state: ok or failed')
+    .option('--json', 'machine-readable output')
+    .addHelpText('after', CHECK_HELP)
+    .action(check);
 };

@@ -1,5 +1,7 @@
 import chalk from 'chalk';
 import { readFileSync } from 'node:fs';
+import { type DiscoveredExtension } from '../../core/loader/discover.js';
+import { missingSecrets } from '../../core/loader/secrets.js';
 import {
   install,
   planInstall,
@@ -17,8 +19,10 @@ import {
 } from '../../core/profile/profile.js';
 import { type Profile, type ProfileParse } from '../../core/profile/schema.js';
 import { type SetupDeps, type SetupOptions } from '../auth/setup.js';
+import { failedError, loadAndGather } from './check.js';
 import { rowLines } from './list.js';
 import { gatherExtensions } from './rows.js';
+import { askSecrets } from './secrets-prompt.js';
 
 // Sign-in and status reach the site; npm is the one other seam.
 export interface ExtensionSetupDeps extends SetupDeps {
@@ -106,17 +110,22 @@ const printPlan = (source: Source): void => {
   for (const text of planLines(source.label, planInstall(source.profile))) console.log(text);
 };
 
-// The rows print even after a failed install: they show what is still current.
-const installAndList = async (source: Source, deps: ExtensionSetupDeps): Promise<void> => {
+const listSecrets = (extensions: DiscoveredExtension[]): Promise<void> =>
+  askSecrets(missingSecrets(extensions));
+
+// Only a good install goes on to load; the rows print either way and show what is current.
+const installAndLoad = async (source: Source, deps: ExtensionSetupDeps): Promise<void> => {
   const outcome = await install(source.profile, deps.npm).then(
     (result) => ({ result, error: null }),
     (error: unknown) => ({ result: null, error })
   );
   if (outcome.result) console.log(installLine(outcome.result));
-  const { status, warnings } = await gatherExtensions();
-  for (const text of rowLines(status.extensions)) console.log(text);
-  warn(warnings);
+  const gathered = outcome.result ? await loadAndGather(listSecrets) : await gatherExtensions();
+  for (const text of rowLines(gathered.status.extensions)) console.log(text);
+  warn(gathered.warnings);
   if (outcome.error) throw outcome.error;
+  const failed = failedError(gathered.status.extensions);
+  if (failed) throw failed;
 };
 
 // `--profile` never signs in; this machine's own entry in the local profile is kept.
@@ -124,7 +133,7 @@ const fromFile = async (source: Source, deps: ExtensionSetupDeps): Promise<void>
   const machine = await loadMachine();
   await mutateProfile((current) => keepMachine(source.profile, current, machine.id));
   await setProfileSource('file');
-  await installAndList(source, deps);
+  await installAndLoad(source, deps);
 };
 
 const UNAVAILABLE = 'cloud profile unavailable, using';
@@ -137,7 +146,7 @@ const fromLocal = async (deps: ExtensionSetupDeps): Promise<void> => {
     await mutateProfile(() => source.profile);
     await setProfileSource('default');
   }
-  await installAndList(source, deps);
+  await installAndLoad(source, deps);
 };
 
 export const runExtensionSetup = async (
@@ -149,10 +158,11 @@ export const runExtensionSetup = async (
   if (opts.dryRun) return printPlan(file ?? localSource());
   if (file) return fromFile(file, deps);
   await deps.ensureSignedIn({ reauth: opts.reauth, browser: opts.browser });
+  const token = process.env['AGENTAGE_TOKEN'];
   const failure = await fromLocal(deps).then(
     () => null,
     (error: unknown) => error
   );
-  await deps.printStatus();
+  await deps.printStatus({ token });
   if (failure) throw failure;
 };

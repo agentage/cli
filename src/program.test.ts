@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProgram, run, type ProgramDeps } from './program.js';
+import { test } from './test/config-dir.js';
 import { VERSION } from './utils/version.js';
 
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[`);
@@ -13,6 +14,7 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     status: vi.fn(async () => undefined),
     update: vi.fn(async () => undefined),
     extensionList: vi.fn(async () => undefined),
+    extensionCheck: vi.fn(async () => undefined),
     updateHint: vi.fn(() => 'update available: 9.9.9'),
     refreshUpdateCache: vi.fn(async () => undefined),
     writeOut: (text) => void out.push(text),
@@ -146,7 +148,7 @@ describe('createProgram', () => {
     delete process.env['AGENTAGE_EXTENSIONS'];
   });
 
-  it('registers exactly the launcher commands while the extensions flag is off', async () => {
+  test('registers exactly the core commands while the extensions flag is off', async () => {
     const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
     expect(names).toEqual(['setup', 'status', 'update']);
     const h = makeDeps();
@@ -154,7 +156,7 @@ describe('createProgram', () => {
     expect(h.stderr()).toContain("unknown command 'extension'");
   });
 
-  it('adds the extension group behind AGENTAGE_EXTENSIONS=1', async () => {
+  test('adds the extension group behind AGENTAGE_EXTENSIONS=1', async () => {
     process.env['AGENTAGE_EXTENSIONS'] = '1';
     const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
     expect(names).toEqual(['setup', 'status', 'update', 'extension']);
@@ -163,6 +165,8 @@ describe('createProgram', () => {
     expect(h.stdout()).toContain('Usage: agentage extension');
     expect(await h.exec('extension', 'list', '--json')).toBe(0);
     expect(h.deps.extensionList).toHaveBeenCalledWith({ json: true });
+    expect(await h.exec('extension', 'check', '--json')).toBe(0);
+    expect(h.deps.extensionCheck).toHaveBeenCalledWith({ json: true });
     expect(await h.exec('extension', 'nope')).toBe(2);
     expect(h.stderr()).toContain("unknown command 'nope'");
   });
