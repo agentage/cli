@@ -39,7 +39,7 @@ describe('runSetup', () => {
 
 describe('registerSetup', () => {
   afterEach(() => {
-    delete process.env['AGENTAGE_PLUGINS'];
+    delete process.env['AGENTAGE_MODULES'];
   });
 
   const flags = (): string[] => {
@@ -48,12 +48,12 @@ describe('registerSetup', () => {
     return program.commands[0]?.options.map((o) => o.long ?? '') ?? [];
   };
 
-  it("keeps today's flags while the plugins flag is off", () => {
+  it("keeps today's flags while the modules flag is off", () => {
     expect(flags()).toEqual(['--disconnect', '--reauth', '--no-browser']);
   });
 
-  it('adds --profile and --dry-run behind AGENTAGE_PLUGINS=1', () => {
-    process.env['AGENTAGE_PLUGINS'] = '1';
+  it('adds --profile and --dry-run behind AGENTAGE_MODULES=1', () => {
+    process.env['AGENTAGE_MODULES'] = '1';
     expect(flags()).toEqual(['--disconnect', '--reauth', '--no-browser', '--profile', '--dry-run']);
   });
 });

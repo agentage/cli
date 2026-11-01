@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "plugins": {
+  "modules": {
     "@agentage/fixture-hello": "^1.0.0",
     "@acme/fixture-hello": "^1.0.0"
   }

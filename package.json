@@ -10,9 +10,9 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./plugin": {
-      "types": "./dist/plugin.d.ts",
-      "default": "./dist/plugin.js"
+    "./module": {
+      "types": "./dist/module.d.ts",
+      "default": "./dist/module.js"
     },
     "./package.json": "./package.json"
   },

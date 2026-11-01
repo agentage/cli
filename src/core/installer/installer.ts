@@ -1,9 +1,8 @@
 import { join } from 'node:path';
 import { type NpmResult } from '../../lib/npm/npm-cli.js';
-import { pluginsDir } from '../paths.js';
+import { modulesDir } from '../paths.js';
+import { specProblem } from '../profile/schema.js';
 import { lockAgrees, lockEntries, parseLock } from './compare-lock.js';
-import { withInstallLock } from './lock.js';
-import { manifestText, sortedSet } from './manifest-writer.js';
 import {
   npmSettings,
   prepareNpm,
@@ -11,22 +10,24 @@ import {
   type NpmCommand,
   type NpmSettings,
 } from './npm.js';
-import { allowedScopes, installSetProblems } from './scope.js';
 import {
   clearStaging,
   commitTree,
   discardTree,
   isComplete,
   LOCK_FILE,
+  manifestText,
   pointCurrent,
   promoteFiles,
   readText,
+  sortedSet,
   stageTree,
   treeName,
+  withInstallLock,
 } from './tree.js';
 
 export interface InstallPlan {
-  pluginsDir: string;
+  modulesDir: string;
   registry: string;
   install: Record<string, string>;
   manifest: string;
@@ -47,26 +48,47 @@ export interface InstallResult {
 }
 
 export interface InstallerDeps {
-  pluginsDir: () => string;
+  modulesDir: () => string;
   settings: () => NpmSettings;
-  scopes: () => string[];
   prepareNpm: (settings: NpmSettings) => Promise<InstallerNpm>;
-  lock: <T>(pluginsDir: string, fn: () => Promise<T>) => Promise<T>;
+  lock: <T>(modulesDir: string, fn: () => Promise<T>) => Promise<T>;
 }
 
 export const defaultInstallerDeps: InstallerDeps = {
-  pluginsDir,
+  modulesDir,
   settings: () => npmSettings(),
-  scopes: () => allowedScopes(),
   prepareNpm: (settings) => prepareNpm(settings),
   lock: (dir, fn) => withInstallLock(dir, fn),
 };
 
-interface Built {
-  tree: string;
-  lock: string | null;
-  npmMajor: number | null;
-}
+// Not profile data: a stolen token cannot widen what this machine installs.
+const CORE_SCOPES = ['@agentage'];
+
+export const allowedScopes = (env: NodeJS.ProcessEnv = process.env): string[] => {
+  const extra = (env['AGENTAGE_MODULE_SCOPES'] ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s !== '')
+    .map((s) => (s.startsWith('@') ? s : `@${s}`));
+  return [...new Set([...CORE_SCOPES, ...extra])];
+};
+
+const scopeProblem = (name: string, scopes: string[]): string | null => {
+  const scope = name.startsWith('@') && name.includes('/') ? name.split('/')[0] : null;
+  if (scope && scopes.includes(scope)) return null;
+  const only = `only ${scopes.join(', ')} packages are installed`;
+  return `refused by the scope rule: ${only} (AGENTAGE_MODULE_SCOPES widens it)`;
+};
+
+// The schema refuses bad specs on read; checked again because an install set can come from code.
+export const installSetProblems = (
+  install: Record<string, string>,
+  scopes: string[] = allowedScopes()
+): string[] =>
+  Object.entries(install).flatMap(([name, spec]) => {
+    const problem = scopeProblem(name, scopes) ?? specProblem(spec);
+    return problem === null ? [] : [`modules[${JSON.stringify(name)}]: ${problem}`];
+  });
 
 type LockPlan = Pick<InstallPlan, 'lock' | 'npm' | 'tree' | 'reuse'>;
 
@@ -88,10 +110,10 @@ export const planInstall = (
   install: Record<string, string>,
   deps: InstallerDeps = defaultInstallerDeps
 ): InstallPlan => {
-  const dir = deps.pluginsDir();
+  const dir = deps.modulesDir();
   const sorted = sortedSet(install);
   const raw = readText(join(dir, LOCK_FILE));
-  const base = { pluginsDir: dir, registry: deps.settings().registry, install: sorted };
+  const base = { modulesDir: dir, registry: deps.settings().registry, install: sorted };
   return { ...base, manifest: manifestText(sorted), ...lockPlan(dir, sorted, raw) };
 };
 
@@ -104,7 +126,7 @@ export const lastLines = (output: string, count = 20): string =>
 
 const npmFailure = (command: NpmCommand, res: NpmResult): Error =>
   new Error(
-    `npm ${command} failed (exit ${res.code}); plugins/current is unchanged\n` +
+    `npm ${command} failed (exit ${res.code}); modules/current is unchanged\n` +
       lastLines(`${res.stdout}\n${res.stderr}`)
   );
 
@@ -114,19 +136,18 @@ const runNpmInto = async (staging: string, command: NpmCommand, npm: InstallerNp
   const lock = readText(join(staging, LOCK_FILE));
   const parsed = parseLock(lock);
   if (parsed === null) throw new Error(`npm ${command} wrote no usable ${LOCK_FILE}`);
-  const npmMajor = command === 'install' ? npm.major : null;
-  return { tree: treeName(lockEntries(parsed)), lock, npmMajor };
+  return { tree: treeName(lockEntries(parsed)), lock };
 };
 
-const build = async (plan: InstallPlan, deps: InstallerDeps): Promise<Built> => {
+const build = async (plan: InstallPlan, deps: InstallerDeps) => {
   const npm = plan.npm === null ? null : await deps.prepareNpm(deps.settings());
-  const staging = stageTree(plan.pluginsDir, { manifest: plan.manifest, lock: plan.lock });
+  const staging = stageTree(plan.modulesDir, { manifest: plan.manifest, lock: plan.lock });
   try {
-    const built: Built =
+    const built =
       npm === null || plan.npm === null
-        ? { tree: treeName([]), lock: null, npmMajor: null }
+        ? { tree: treeName([]), lock: null }
         : await runNpmInto(staging, plan.npm, npm);
-    commitTree(plan.pluginsDir, staging, built.tree);
+    commitTree(plan.modulesDir, staging, built.tree);
     return built;
   } catch (err) {
     discardTree(staging);
@@ -135,23 +156,15 @@ const build = async (plan: InstallPlan, deps: InstallerDeps): Promise<Built> => 
 };
 
 const execute = async (plan: InstallPlan, deps: InstallerDeps): Promise<InstallResult> => {
-  clearStaging(plan.pluginsDir);
-  const built: Built =
+  clearStaging(plan.modulesDir);
+  const built =
     plan.reuse && plan.tree !== null
-      ? { tree: plan.tree, lock: plan.lock, npmMajor: null }
+      ? { tree: plan.tree, lock: plan.lock }
       : await build(plan, deps);
-  pointCurrent(plan.pluginsDir, built.tree);
-  promoteFiles(plan.pluginsDir, { manifest: plan.manifest, ...built });
+  pointCurrent(plan.modulesDir, built.tree);
+  promoteFiles(plan.modulesDir, { manifest: plan.manifest, lock: built.lock });
   const count = Object.keys(plan.install).length;
   return { tree: built.tree, npm: plan.npm, reused: plan.reuse, count };
-};
-
-export const checkInstallSet = (
-  install: Record<string, string>,
-  deps: InstallerDeps = defaultInstallerDeps
-): void => {
-  const problems = installSetProblems(install, deps.scopes());
-  if (problems.length > 0) throw new Error(problems.join('\n'));
 };
 
 // Plans again under the lock: a run that waited sees the tree the first one built.
@@ -159,6 +172,7 @@ export const install = async (
   installSet: Record<string, string>,
   deps: InstallerDeps = defaultInstallerDeps
 ): Promise<InstallResult> => {
-  checkInstallSet(installSet, deps);
-  return deps.lock(deps.pluginsDir(), () => execute(planInstall(installSet, deps), deps));
+  const problems = installSetProblems(installSet);
+  if (problems.length > 0) throw new Error(problems.join('\n'));
+  return deps.lock(deps.modulesDir(), () => execute(planInstall(installSet, deps), deps));
 };

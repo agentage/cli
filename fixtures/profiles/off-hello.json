@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "modules": {
+    "@agentage/fixture-hello": "^1.0.0",
+    "@agentage/fixture-world": "^1"
+  },
+  "machines": {
+    "m_0000beef": { "off": ["@agentage/fixture-hello"] }
+  }
+}

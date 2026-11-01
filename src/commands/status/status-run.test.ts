@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type StatusReport } from '../../lib/status/status-info.js';
-import { type PluginsGather } from '../plugins/status-rows.js';
+import { type ModulesGather } from '../module/rows.js';
 import { printStatus, registerStatus, runStatus, type StatusDeps } from './status.js';
 
 const baseReport: StatusReport = {
@@ -24,11 +24,11 @@ const captureLines = (report: StatusReport): string => {
   }
 };
 
-const gathered: PluginsGather = {
+const gathered: ModulesGather = {
   status: {
     machine: { id: 'm_0000beef', name: 'box' },
     profile: { state: 'ok', version: 1, source: 'default', readOnly: false },
-    plugins: [],
+    modules: [],
   },
   warnings: ['profile.json: unknown key "x" kept'],
 };
@@ -49,13 +49,13 @@ const capture = async (deps: StatusDeps, json = false) => {
   }
 };
 
-const depsWith = (plugins: StatusDeps['plugins']): StatusDeps => ({
+const depsWith = (modules: StatusDeps['modules']): StatusDeps => ({
   gather: () => Promise.resolve(baseReport),
-  plugins,
+  modules,
 });
 
 describe('runStatus', () => {
-  it("with the plugins flag off prints exactly today's report", async () => {
+  it("with the modules flag off prints exactly today's report", async () => {
     const human = await capture(depsWith(() => Promise.resolve(null)));
     expect(human).toEqual({ stdout: captureLines(baseReport), stderr: '', error: null });
     const json = await capture(
@@ -65,10 +65,16 @@ describe('runStatus', () => {
     expect(json.stdout).toBe(JSON.stringify(baseReport, null, 2));
   });
 
-  it("appends machine, profile and plugins after today's lines and keys", async () => {
+  it("appends only machine, profile and the module count after today's lines and keys", async () => {
     const human = await capture(depsWith(() => Promise.resolve(gathered)));
-    expect(human.stdout.startsWith(captureLines(baseReport))).toBe(true);
-    expect(human.stdout).toContain('machine    m_0000beef (box)');
+    expect(human.stdout).toBe(
+      [
+        captureLines(baseReport),
+        'machine    m_0000beef (box)',
+        'profile    version 1 (source: default)',
+        'modules    0',
+      ].join('\n')
+    );
     expect(human.stderr).toContain('warning: profile.json: unknown key "x" kept');
     const json = await capture(
       depsWith(() => Promise.resolve(gathered)),
@@ -79,14 +85,14 @@ describe('runStatus', () => {
       ...Object.keys(baseReport),
       'machine',
       'profile',
-      'plugins',
+      'modules',
     ]);
-    expect(parsed['plugins']).toEqual([]);
+    expect(parsed['modules']).toBe(0);
   });
 
   it('prints the report, then fails the step on an invalid profile', async () => {
-    const invalid: PluginsGather = {
-      status: { ...gathered.status, profile: { state: 'invalid', errors: ['plugins["x"]: bad'] } },
+    const invalid: ModulesGather = {
+      status: { ...gathered.status, profile: { state: 'invalid', errors: ['modules["x"]: bad'] } },
       warnings: [],
     };
     const result = await capture(
@@ -94,10 +100,10 @@ describe('runStatus', () => {
       true
     );
     expect(JSON.parse(result.stdout)).toMatchObject({ profile: { state: 'invalid' } });
-    expect(String(result.error)).toContain('profile.json is invalid:\n  plugins["x"]: bad');
+    expect(String(result.error)).toContain('profile.json is invalid:\n  modules["x"]: bad');
   });
 
-  it("prints today's report even when the plugin side throws", async () => {
+  it("prints today's report even when the module side throws", async () => {
     const result = await capture(depsWith(() => Promise.reject(new Error('EACCES machine.json'))));
     expect(result.stdout).toBe(captureLines(baseReport));
     expect(String(result.error)).toContain('EACCES machine.json');
@@ -108,12 +114,12 @@ describe('registerStatus help', () => {
   let saved: string | undefined;
 
   beforeEach(() => {
-    saved = process.env['AGENTAGE_PLUGINS'];
+    saved = process.env['AGENTAGE_MODULES'];
   });
 
   afterEach(() => {
-    if (saved === undefined) delete process.env['AGENTAGE_PLUGINS'];
-    else process.env['AGENTAGE_PLUGINS'] = saved;
+    if (saved === undefined) delete process.env['AGENTAGE_MODULES'];
+    else process.env['AGENTAGE_MODULES'] = saved;
   });
 
   const helpOf = (): string => {
@@ -124,16 +130,16 @@ describe('registerStatus help', () => {
     return text;
   };
 
-  it('is unchanged while the plugins flag is off', () => {
-    delete process.env['AGENTAGE_PLUGINS'];
+  it('is unchanged while the modules flag is off', () => {
+    delete process.env['AGENTAGE_MODULES'];
     expect(helpOf()).toContain('Show CLI, account, and endpoint status');
-    expect(helpOf()).not.toContain('Plugins:');
+    expect(helpOf()).not.toContain('Modules:');
   });
 
-  it('describes the plugin rows with the flag on', () => {
-    process.env['AGENTAGE_PLUGINS'] = '1';
+  it('describes the module lines with the flag on', () => {
+    process.env['AGENTAGE_MODULES'] = '1';
     const help = helpOf();
-    expect(help).toContain('machine, profile, and plugin status');
-    expect(help).toContain('Plugins: one row per plugin');
+    expect(help).toContain('machine, profile, and module status');
+    expect(help).toContain('agentage module list shows one row per module');
   });
 });

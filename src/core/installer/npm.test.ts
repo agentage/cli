@@ -104,7 +104,6 @@ describe('prepareNpm (T36)', () => {
   it('resolves npm-cli.js once and runs every call through it', async () => {
     const { deps, calls } = fakeDeps('10.9.0');
     const npm = await prepareNpm(SETTINGS, deps);
-    expect(npm.major).toBe(10);
     await npm.run('install', '/t');
     expect(deps.resolveCli).toHaveBeenCalledTimes(1);
     expect(deps.resolveCli).toHaveBeenCalledWith({ execPath: '/opt/node/bin/node', env: {} });
@@ -118,7 +117,7 @@ describe('prepareNpm (T36)', () => {
 
   it('probes the version with the carried userconfig and cache', async () => {
     const { deps, calls } = fakeDeps('11.7.0');
-    expect((await prepareNpm(SETTINGS, deps)).major).toBe(11);
+    await prepareNpm(SETTINGS, deps);
     expect(calls[0]?.args).toEqual([
       '--version',
       '--userconfig',

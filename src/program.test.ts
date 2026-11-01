@@ -12,6 +12,7 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     setup: vi.fn(async () => undefined),
     status: vi.fn(async () => undefined),
     update: vi.fn(async () => undefined),
+    moduleList: vi.fn(async () => undefined),
     updateHint: vi.fn(() => 'update available: 9.9.9'),
     refreshUpdateCache: vi.fn(async () => undefined),
     writeOut: (text) => void out.push(text),
@@ -141,8 +142,28 @@ describe('run', () => {
 });
 
 describe('createProgram', () => {
-  it('registers exactly the launcher commands', () => {
+  afterEach(() => {
+    delete process.env['AGENTAGE_MODULES'];
+  });
+
+  it('registers exactly the launcher commands while the modules flag is off', async () => {
     const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
     expect(names).toEqual(['setup', 'status', 'update']);
+    const h = makeDeps();
+    expect(await h.exec('module', 'list')).toBe(2);
+    expect(h.stderr()).toContain("unknown command 'module'");
+  });
+
+  it('adds the module group behind AGENTAGE_MODULES=1', async () => {
+    process.env['AGENTAGE_MODULES'] = '1';
+    const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
+    expect(names).toEqual(['setup', 'status', 'update', 'module']);
+    const h = makeDeps();
+    expect(await h.exec('module')).toBe(0);
+    expect(h.stdout()).toContain('Usage: agentage module');
+    expect(await h.exec('module', 'list', '--json')).toBe(0);
+    expect(h.deps.moduleList).toHaveBeenCalledWith({ json: true });
+    expect(await h.exec('module', 'nope')).toBe(2);
+    expect(h.stderr()).toContain("unknown command 'nope'");
   });
 });

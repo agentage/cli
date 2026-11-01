@@ -7,7 +7,7 @@ import { loadNpmCli } from './registry/npm-cli.js';
 import { startRegistry, type Registry } from './registry/registry.js';
 
 // Serves `npm pack` output on loopback so e2e installs never touch the public registry. @p0
-const FIXTURE = join(process.cwd(), 'fixtures', 'plugin-hello');
+const FIXTURE = join(process.cwd(), 'fixtures', 'module-hello');
 const NAME = '@agentage/fixture-hello';
 
 interface Packument {

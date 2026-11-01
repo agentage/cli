@@ -21,7 +21,6 @@ export interface NpmSettings {
 }
 
 export interface InstallerNpm {
-  major: number;
   run: (command: NpmCommand, tree: string) => Promise<NpmResult>;
 }
 
@@ -89,9 +88,8 @@ export const prepareNpm = async (
   const npmCli = deps.resolveCli({ execPath: deps.execPath, env: deps.env });
   const run = (args: string[], opts: RunNpmOptions): Promise<NpmResult> =>
     deps.run(args, { ...opts, npmCli });
-  const version = await requireNpm10((args, opts) => run([...args, ...configFlags(s)], opts));
+  await requireNpm10((args, opts) => run([...args, ...configFlags(s)], opts));
   return {
-    major: Number.parseInt(version, 10),
     run: (command, tree) => run(npmArgs(command, tree, s), { cwd: tree, timeoutMs: s.timeoutMs }),
   };
 };

@@ -4,9 +4,10 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type NpmResult } from '../../lib/npm/npm-cli.js';
 import {
-  checkInstallSet,
+  allowedScopes,
   defaultInstallerDeps,
   install,
+  installSetProblems,
   lastLines,
   planInstall,
   type InstallerDeps,
@@ -22,7 +23,6 @@ const TWO = { [WORLD]: '^1', [HELLO]: '^1.0.0' };
 const fakeNpm = (result: Partial<NpmResult> = {}) => {
   const runs: NpmCommand[] = [];
   const npm: InstallerNpm = {
-    major: 10,
     run: async (command, tree) => {
       runs.push(command);
       if (result.code) return { code: result.code, stdout: '', stderr: '', ...result };
@@ -53,9 +53,8 @@ describe('installer', () => {
     dir = mkdtempSync(join(tmpdir(), 'agentage-installer-'));
     npm = fakeNpm();
     deps = {
-      pluginsDir: () => dir,
+      modulesDir: () => dir,
       settings: () => ({ registry: 'http://r', timeoutMs: 1, userconfig: null, cache: null }),
-      scopes: () => ['@agentage'],
       prepareNpm: vi.fn(async () => npm.npm),
       lock: vi.fn((_dir: string, fn: () => Promise<unknown>) => fn()) as InstallerDeps['lock'],
     };
@@ -83,7 +82,6 @@ describe('installer', () => {
     expect(read('current')).toBe(`${result.tree}\n`);
     expect(existsSync(join(dir, 'trees', result.tree, '.complete'))).toBe(true);
     expect(read('package-lock.json')).toBe(read('trees', result.tree, 'package-lock.json'));
-    expect(read('npm-major')).toBe('10\n');
     expect(deps.lock).toHaveBeenCalledWith(dir, expect.any(Function));
   });
 
@@ -96,14 +94,11 @@ describe('installer', () => {
     expect(deps.prepareNpm).toHaveBeenCalledTimes(1);
   });
 
-  it('runs npm ci from a matching lock when its tree is gone, keeping the npm major', async () => {
+  it('runs npm ci from a matching lock when its tree is gone', async () => {
     const first = await install(TWO, deps);
     rmSync(join(dir, 'trees'), { recursive: true });
-    writeFileSync(join(dir, 'npm-major'), '11\n');
     expect(planInstall(TWO, deps)).toMatchObject({ npm: 'ci', tree: first.tree, reuse: false });
-    const again = await install(TWO, deps);
-    expect(again).toMatchObject({ tree: first.tree, npm: 'ci' });
-    expect(read('npm-major')).toBe('11\n');
+    expect(await install(TWO, deps)).toMatchObject({ tree: first.tree, npm: 'ci' });
   });
 
   it('carries a lock that no longer matches into npm install', async () => {
@@ -131,7 +126,7 @@ describe('installer', () => {
     npm = fakeNpm({ code: 1, stderr: lines });
     const failing = install({ ...TWO, '@agentage/fixture-missing': '^1' }, deps);
     await expect(failing).rejects.toThrow(
-      /^npm install failed \(exit 1\); plugins\/current is unchanged\nnpm error line 10\n/
+      /^npm install failed \(exit 1\); modules\/current is unchanged\nnpm error line 10\n/
     );
     await failing.catch((err: Error) => {
       expect(err.message.split('\n')).toHaveLength(21);
@@ -151,10 +146,25 @@ describe('installer', () => {
 
   it('refuses a name outside the scopes or a bad spec before taking the lock (R10)', async () => {
     await expect(install({ '@acme/x': '^1', [HELLO]: 'file:../x' }, deps)).rejects.toThrow(
-      /plugins\["@acme\/x"\]: refused by the scope rule.*\nplugins\["@agentage\/fixture-hello"\]: file:/
+      /modules\["@acme\/x"\]: refused by the scope rule.*\nmodules\["@agentage\/fixture-hello"\]: file:/
     );
     expect(deps.lock).not.toHaveBeenCalled();
-    expect(() => checkInstallSet({ [HELLO]: '^1' }, deps)).not.toThrow();
+  });
+
+  it('allows only @agentage unless AGENTAGE_MODULE_SCOPES widens it', () => {
+    expect(allowedScopes({})).toEqual(['@agentage']);
+    const env = { AGENTAGE_MODULE_SCOPES: ' acme, @beta ,,@agentage' };
+    expect(allowedScopes(env)).toEqual(['@agentage', '@acme', '@beta']);
+    const names = ['left-pad', '@acme/x', '@agentage', '@agentagex/x', '@agentage/ok'];
+    const problems = installSetProblems(Object.fromEntries(names.map((n) => [n, '^1'])));
+    expect(problems).toHaveLength(4);
+    expect(problems[0]).toBe(
+      'modules["left-pad"]: refused by the scope rule: only @agentage packages are installed ' +
+        '(AGENTAGE_MODULE_SCOPES widens it)'
+    );
+    expect(installSetProblems({ '@acme/x': 'npm:y@1' }, ['@acme'])).toEqual([
+      'modules["@acme/x"]: npm: specs are refused; use a semver range or an https: tarball URL',
+    ]);
   });
 
   it('keeps the last lines of npm output, skipping blanks', () => {
@@ -162,17 +172,16 @@ describe('installer', () => {
     expect(lastLines('')).toBe('');
   });
 
-  it('default deps read the plugins dir and the npm env', () => {
-    process.env['AGENTAGE_PLUGINS_DIR'] = dir;
+  it('default deps read the modules dir and the npm env', () => {
+    process.env['AGENTAGE_MODULES_DIR'] = dir;
     process.env['AGENTAGE_NPM_REGISTRY'] = 'http://127.0.0.1:1';
     try {
       expect(planInstall({}, defaultInstallerDeps)).toMatchObject({
-        pluginsDir: dir,
+        modulesDir: dir,
         registry: 'http://127.0.0.1:1',
       });
-      expect(defaultInstallerDeps.scopes()).toEqual(['@agentage']);
     } finally {
-      delete process.env['AGENTAGE_PLUGINS_DIR'];
+      delete process.env['AGENTAGE_MODULES_DIR'];
       delete process.env['AGENTAGE_NPM_REGISTRY'];
     }
   });

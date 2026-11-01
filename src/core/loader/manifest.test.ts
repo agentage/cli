@@ -15,7 +15,7 @@ const problemOf = (extra: Record<string, unknown>, api = '1.0.0'): string | null
   manifestProblem(NAME, manifestInfo(pkg(extra)), api);
 
 describe('manifest', () => {
-  it('reads id, engine, commands and plugin peers as data', () => {
+  it('reads id, engine, commands and module peers as data', () => {
     const info = manifestInfo(
       pkg({
         engines: { agentage: '^1.0' },
@@ -68,7 +68,7 @@ describe('manifest', () => {
     [{ agentage: { id: '1x' } }, 'must match'],
     [{ agentage: { id: 'status' } }, 'agentage.id "status" is reserved'],
     [{ agentage: { id: 'com1' } }, 'is reserved'],
-    [{ engines: { agentage: '^0.1' } }, 'engines.agentage "^0.1" does not match plugin API 1.0.0'],
+    [{ engines: { agentage: '^0.1' } }, 'engines.agentage "^0.1" does not match module API 1.0.0'],
     [{ engines: { agentage: 'latest' } }, 'engines.agentage "latest" is not a supported range'],
     [{ main: undefined }, 'no entry point (exports or main)'],
   ])('marks %j invalid', (fields, message) => {
@@ -77,7 +77,7 @@ describe('manifest', () => {
 
   it('matches the engine against the given API version', () => {
     expect(problemOf({ engines: { agentage: '^2' } }, '2.1.0')).toBeNull();
-    expect(problemOf({}, '2.0.0')).toContain('does not match plugin API 2.0.0');
+    expect(problemOf({}, '2.0.0')).toContain('does not match module API 2.0.0');
   });
 
   it('reserves core commands and Windows device names', () => {

@@ -2,7 +2,7 @@ import { isRecord } from '../../lib/fs/json-file.js';
 
 type Doc = Record<string, unknown>;
 
-const MODULES = 'node_modules/';
+const NODE_MODULES = 'node_modules/';
 
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
@@ -20,7 +20,8 @@ const packagesOf = (lock: Doc): Doc => (isRecord(lock['packages']) ? lock['packa
 
 // Nested and hoisted copies are the same package: only the name after the last node_modules/.
 const entryKey = (path: string, entry: Doc): string => {
-  const name = text(entry['name']) || path.slice(path.lastIndexOf(MODULES) + MODULES.length);
+  const name =
+    text(entry['name']) || path.slice(path.lastIndexOf(NODE_MODULES) + NODE_MODULES.length);
   return `${name}@${text(entry['version'])}+${text(entry['integrity'])}`;
 };
 

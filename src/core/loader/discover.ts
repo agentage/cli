@@ -3,11 +3,11 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { isRecord } from '../../lib/fs/json-file.js';
 import { manifestInfo, manifestProblem, type ManifestInfo } from './manifest.js';
 
-export type PluginSource = 'tree' | 'dev';
+export type ModuleSource = 'tree' | 'dev';
 
-export interface DiscoveredPlugin {
+export interface DiscoveredModule {
   pkg: string;
-  source: PluginSource;
+  source: ModuleSource;
   dir: string;
   version: string | null;
   id: string | null;
@@ -21,13 +21,13 @@ export interface DiscoveredPlugin {
 }
 
 export interface DiscoverInput {
-  pluginsDir: string;
+  modulesDir: string;
   names: string[];
   dev: Record<string, string>;
 }
 
 export interface Discovery {
-  plugins: DiscoveredPlugin[];
+  modules: DiscoveredModule[];
   warnings: string[];
 }
 
@@ -63,14 +63,14 @@ const readManifest = (dir: string, deps: DiscoverDeps): Record<string, unknown> 
   }
 };
 
-// `plugins/current` names the tree; one without its `.complete` marker was never finished.
-export const currentTree = (pluginsDir: string, deps: DiscoverDeps = defaultDeps): CurrentTree => {
-  const name = deps.readText(join(pluginsDir, 'current'))?.trim() ?? '';
+// `modules/current` names the tree; one without its `.complete` marker was never finished.
+export const currentTree = (modulesDir: string, deps: DiscoverDeps = defaultDeps): CurrentTree => {
+  const name = deps.readText(join(modulesDir, 'current'))?.trim() ?? '';
   if (name === '') return { dir: null, warning: null };
-  if (!TREE_NAME.test(name)) return { dir: null, warning: `plugins/current: bad tree "${name}"` };
-  const dir = join(pluginsDir, 'trees', name);
+  if (!TREE_NAME.test(name)) return { dir: null, warning: `modules/current: bad tree "${name}"` };
+  const dir = join(modulesDir, 'trees', name);
   if (deps.exists(join(dir, '.complete'))) return { dir, warning: null };
-  return { dir: null, warning: `plugins tree "${name}" is incomplete and was ignored` };
+  return { dir: null, warning: `modules tree "${name}" is incomplete and was ignored` };
 };
 
 const inside = (dir: string, entry: string): string | null => {
@@ -89,7 +89,7 @@ const entryProblem = (
   return deps.exists(path) ? null : `entry ${info.entry} not found`;
 };
 
-const blank = (pkg: string, source: PluginSource, dir: string): DiscoveredPlugin => ({
+const blank = (pkg: string, source: ModuleSource, dir: string): DiscoveredModule => ({
   pkg,
   source,
   dir,
@@ -105,10 +105,10 @@ const blank = (pkg: string, source: PluginSource, dir: string): DiscoveredPlugin
 
 const inspect = (
   pkg: string,
-  source: PluginSource,
+  source: ModuleSource,
   dir: string | null,
   deps: DiscoverDeps
-): DiscoveredPlugin => {
+): DiscoveredModule => {
   const base = blank(pkg, source, dir ?? '');
   if (source === 'dev' && !isAbsolute(base.dir))
     return { ...base, problem: 'dev path not absolute' };
@@ -122,9 +122,9 @@ const inspect = (
 };
 
 // Every claimant of a shared id is invalid; a dev copy of the same package never reaches here.
-const markDuplicates = (plugins: DiscoveredPlugin[]): DiscoveredPlugin[] =>
-  plugins.map((p) => {
-    const others = plugins.filter((o) => o !== p && p.id !== null && o.id === p.id);
+const markDuplicates = (modules: DiscoveredModule[]): DiscoveredModule[] =>
+  modules.map((p) => {
+    const others = modules.filter((o) => o !== p && p.id !== null && o.id === p.id);
     if (others.length === 0 || p.problem) return p;
     return {
       ...p,
@@ -132,28 +132,28 @@ const markDuplicates = (plugins: DiscoveredPlugin[]): DiscoveredPlugin[] =>
     };
   });
 
-// A peer counts as a plugin unless the tree holds it as a plain library without `agentage`.
-const pluginPeers = (
-  p: DiscoveredPlugin,
+// A peer counts as a module unless the tree holds it as a plain library without `agentage`.
+const modulePeers = (
+  p: DiscoveredModule,
   known: Set<string>,
-  modules: string | null,
+  nodeModules: string | null,
   deps: DiscoverDeps
 ): string[] =>
   p.peers.filter((peer) => {
-    if (known.has(peer) || modules === null) return true;
-    const manifest = readManifest(join(modules, peer), deps);
+    if (known.has(peer) || nodeModules === null) return true;
+    const manifest = readManifest(join(nodeModules, peer), deps);
     return manifest === null || isRecord(manifest['agentage']);
   });
 
 export const discover = (input: DiscoverInput, deps: DiscoverDeps = defaultDeps): Discovery => {
-  const tree = currentTree(input.pluginsDir, deps);
-  const modules = tree.dir === null ? null : join(tree.dir, 'node_modules');
+  const tree = currentTree(input.modulesDir, deps);
+  const nodeModules = tree.dir === null ? null : join(tree.dir, 'node_modules');
   const installed = input.names.filter((name) => !(name in input.dev));
   const found = markDuplicates([
-    ...installed.map((name) => inspect(name, 'tree', modules && join(modules, name), deps)),
+    ...installed.map((name) => inspect(name, 'tree', nodeModules && join(nodeModules, name), deps)),
     ...Object.entries(input.dev).map(([name, path]) => inspect(name, 'dev', path, deps)),
   ]);
   const known = new Set(found.map((p) => p.pkg));
-  const plugins = found.map((p) => ({ ...p, peers: pluginPeers(p, known, modules, deps) }));
-  return { plugins, warnings: tree.warning === null ? [] : [tree.warning] };
+  const modules = found.map((p) => ({ ...p, peers: modulePeers(p, known, nodeModules, deps) }));
+  return { modules, warnings: tree.warning === null ? [] : [tree.warning] };
 };

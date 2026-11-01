@@ -70,5 +70,5 @@
   <text x="1155" y="200" text-anchor="middle" font-size="10.5" fill="#F59E0B">signs in</text>
 
   <!-- caption -->
-  <text x="700" y="392" text-anchor="middle" font-size="13" fill="#8b949e">one command connects any machine to your agentage account - browser sign-in, tokens for CI, plugins to follow</text>
+  <text x="700" y="392" text-anchor="middle" font-size="13" fill="#8b949e">one command connects any machine to your agentage account - browser sign-in, tokens for CI, modules to follow</text>
 </svg>

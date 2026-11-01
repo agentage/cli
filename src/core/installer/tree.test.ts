@@ -10,22 +10,26 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { acquireFileLock, releaseFileLock } from '../../lib/fs/file-lock.js';
 import { currentTree } from '../loader/discover.js';
 import {
   clearStaging,
   commitTree,
   discardTree,
   isComplete,
+  MANIFEST_NAME,
+  manifestText,
   pointCurrent,
   promoteFiles,
   readText,
   stageTree,
   treeName,
   treePath,
+  withInstallLock,
 } from './tree.js';
 
-describe('plugin trees', () => {
+describe('module trees', () => {
   let dir: string;
 
   beforeEach(() => {
@@ -36,7 +40,7 @@ describe('plugin trees', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  const files = { manifest: '{"name":"agentage-plugins"}\n', lock: '{"packages":{}}\n' };
+  const files = { manifest: '{"name":"agentage-modules"}\n', lock: '{"packages":{}}\n' };
 
   it('names a tree by the normalized lock: stable, 16 hex, distinct per set', () => {
     const name = treeName(['a@1.0.0+x', 'b@1.0.0+y']);
@@ -45,7 +49,7 @@ describe('plugin trees', () => {
     expect(treeName([])).not.toBe(name);
   });
 
-  it('stages under a dot name that plugins/current can never point at', () => {
+  it('stages under a dot name that modules/current can never point at', () => {
     const staging = stageTree(dir, files);
     expect(staging.startsWith(join(dir, 'trees', '.staging-'))).toBe(true);
     expect(readdirSync(staging).sort()).toEqual(['package-lock.json', 'package.json']);
@@ -95,15 +99,71 @@ describe('plugin trees', () => {
     expect(readdirSync(join(dir, 'trees'))).toEqual(['kept']);
   });
 
-  it('promotes manifest, lock and npm major to the plugins root', () => {
-    promoteFiles(dir, { ...files, npmMajor: 10 });
+  it('promotes manifest and lock to the modules root, dropping a lock the tree lacks', () => {
+    promoteFiles(dir, files);
     expect(readText(join(dir, 'package.json'))).toBe(files.manifest);
     expect(readText(join(dir, 'package-lock.json'))).toBe(files.lock);
-    expect(readText(join(dir, 'npm-major'))).toBe('10\n');
-    promoteFiles(dir, { ...files, npmMajor: null });
-    expect(readText(join(dir, 'npm-major'))).toBe('10\n');
-    promoteFiles(dir, { manifest: files.manifest, lock: null, npmMajor: null });
+    promoteFiles(dir, { manifest: files.manifest, lock: null });
     expect(readdirSync(dir).sort()).toEqual(['package.json']);
     expect(readText(join(dir, 'missing'))).toBeNull();
+  });
+
+  it('writes the same private, sorted, script-free manifest for the same set', () => {
+    const a = manifestText({ '@agentage/z': '^1', '@agentage/a': '~1.2' });
+    expect(manifestText({ '@agentage/a': '~1.2', '@agentage/z': '^1' })).toBe(a);
+    expect(a.endsWith('}\n')).toBe(true);
+    expect(JSON.parse(a)).toEqual({
+      name: MANIFEST_NAME,
+      private: true,
+      dependencies: { '@agentage/a': '~1.2', '@agentage/z': '^1' },
+    });
+  });
+});
+
+describe('withInstallLock (R8)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'agentage-install-lock-'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const lockFile = (): string => join(dir, 'install.lock');
+
+  it('holds install.lock with this pid during the body and refreshes it on a heartbeat', async () => {
+    vi.useFakeTimers({ now: 1_000 });
+    const stamps = await withInstallLock(dir, async () => {
+      const first = readFileSync(lockFile(), 'utf-8');
+      await vi.advanceTimersByTimeAsync(20_000);
+      return [first, readFileSync(lockFile(), 'utf-8')];
+    });
+    expect(stamps).toEqual([`${process.pid} 1000`, `${process.pid} 21000`]);
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
+  it('waits for a live holder, saying so once on stderr', async () => {
+    const target = join(dir, 'install');
+    expect(acquireFileLock(target)).toBe(true);
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      setTimeout(() => releaseFileLock(target), 300);
+      await expect(withInstallLock(dir, async () => 'after')).resolves.toBe('after');
+      expect(stderr).toHaveBeenCalledTimes(1);
+      expect(stderr).toHaveBeenCalledWith(`waiting for another install to finish (${target}.lock)`);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('takes over a lock left by a crashed run and releases on throw', async () => {
+    writeFileSync(lockFile(), '999999 1');
+    await expect(withInstallLock(dir, () => Promise.reject(new Error('npm')))).rejects.toThrow(
+      'npm'
+    );
+    expect(existsSync(lockFile())).toBe(false);
   });
 });

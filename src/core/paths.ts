@@ -7,5 +7,5 @@ export const machinePath = (): string => join(getConfigDir(), 'machine.json');
 
 export const stateDir = (): string => join(getConfigDir(), 'state');
 
-export const pluginsDir = (): string =>
-  process.env['AGENTAGE_PLUGINS_DIR'] || join(getConfigDir(), 'plugins');
+export const modulesDir = (): string =>
+  process.env['AGENTAGE_MODULES_DIR'] || join(getConfigDir(), 'modules');

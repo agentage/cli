@@ -6,10 +6,11 @@ import {
   type SetupDeps,
   type SetupOptions,
 } from './commands/auth/setup.js';
-import { pluginsSetupDeps, runPluginsSetup } from './commands/plugins/setup.js';
+import { registerModule, runModuleList, type ModuleListOptions } from './commands/module/list.js';
+import { moduleSetupDeps, runModuleSetup } from './commands/module/setup.js';
 import { registerStatus, runStatus, type StatusOptions } from './commands/status/status.js';
 import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
-import { pluginsEnabled } from './core/flag.js';
+import { modulesEnabled } from './core/flag.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
@@ -18,6 +19,7 @@ export interface ProgramDeps {
   setup: (opts: SetupOptions) => Promise<void>;
   status: (opts: StatusOptions) => Promise<void>;
   update: (opts: UpdateOptions) => Promise<void>;
+  moduleList: (opts: ModuleListOptions) => Promise<void>;
   updateHint: () => string | null;
   refreshUpdateCache: () => Promise<void>;
   writeOut: (text: string) => void;
@@ -32,11 +34,10 @@ const setupDeps: SetupDeps = {
 
 const defaultDeps: ProgramDeps = {
   setup: (opts) =>
-    pluginsEnabled()
-      ? runPluginsSetup(opts, pluginsSetupDeps(setupDeps))
-      : runSetup(opts, setupDeps),
+    modulesEnabled() ? runModuleSetup(opts, moduleSetupDeps(setupDeps)) : runSetup(opts, setupDeps),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
+  moduleList: (opts) => runModuleList(opts),
   updateHint,
   refreshUpdateCache: () => refreshUpdateCache(),
   writeOut: (text) => void process.stdout.write(text),
@@ -84,6 +85,7 @@ export const createProgram = (deps: ProgramDeps = defaultDeps): Command => {
   registerSetup(program, withAction(deps, deps.setup, 'Setup failed: '));
   registerStatus(program, withAction(deps, deps.status));
   registerUpdate(program, withAction(deps, deps.update));
+  if (modulesEnabled()) registerModule(program, withAction(deps, deps.moduleList));
   return program;
 };
 

@@ -12,11 +12,11 @@ const pkg = (version: string, integrity: string, resolved = 'http://a/x.tgz') =>
 });
 
 const lockA = {
-  name: 'agentage-plugins',
+  name: 'agentage-modules',
   lockfileVersion: 3,
   requires: true,
   packages: {
-    '': { name: 'agentage-plugins', dependencies: { [HELLO]: '^1.0.0', [WORLD]: '^1' } },
+    '': { name: 'agentage-modules', dependencies: { [HELLO]: '^1.0.0', [WORLD]: '^1' } },
     [`node_modules/${HELLO}`]: pkg('1.0.0', 'sha512-h'),
     [`node_modules/${WORLD}`]: pkg('1.0.0', 'sha512-w'),
   },
@@ -25,7 +25,7 @@ const lockA = {
 // Another npm major: other key order, other resolved host, a nested copy, no license.
 const lockB = {
   lockfileVersion: 3,
-  name: 'agentage-plugins',
+  name: 'agentage-modules',
   packages: {
     [`node_modules/${WORLD}`]: { integrity: 'sha512-w', version: '1.0.0', resolved: 'https://b' },
     [`node_modules/${WORLD}/node_modules/${HELLO}`]: pkg('1.0.0', 'sha512-h', 'https://b'),

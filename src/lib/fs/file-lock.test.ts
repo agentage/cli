@@ -114,6 +114,16 @@ describe('file lock', () => {
     expect(existsSync(lockFile())).toBe(false);
   });
 
+  it('holds the lock across an async fn and calls onWait once while it waits', async () => {
+    let waits = 0;
+    const onWait = (): void => void waits++;
+    const first = withFileLock(target, () => new Promise((r) => setTimeout(() => r('a'), 100)));
+    const second = withFileLock(target, () => existsSync(lockFile()), { onWait });
+    expect(await Promise.all([first, second])).toEqual(['a', true]);
+    expect(waits).toBe(1);
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
   it('releases the lock even when fn throws (finally path)', async () => {
     await expect(
       withFileLock(target, () => {

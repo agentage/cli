@@ -10,9 +10,11 @@ export interface LockOptions {
   hardStaleMs?: number;
   // How long withFileLock blocks on a contended lock before it throws.
   maxWaitMs?: number;
+  // Called once when withFileLock finds the lock busy on its first try.
+  onWait?: () => void;
 }
 
-type Limits = Required<LockOptions>;
+type Limits = Required<Omit<LockOptions, 'onWait'>>;
 
 // Sized for sub-millisecond config read-modify-writes; the wait outlives the TTL on purpose.
 const DEFAULTS: Limits = { ttlMs: 10_000, hardStaleMs: 60_000, maxWaitMs: 15_000 };
@@ -159,24 +161,23 @@ export const refreshFileLock = (target: string, now: number = Date.now()): boole
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-// `fn` MUST be synchronous and hold the whole read-modify-write; released in a finally.
+// Held for all of `fn`, sync or async; a holder past hardStaleMs keeps it with refreshFileLock.
 export const withFileLock = async <T>(
   target: string,
-  fn: () => T,
+  fn: () => T | Promise<T>,
   opts: LockOptions = {}
 ): Promise<T> => {
   const { maxWaitMs } = limitsOf(opts);
   const deadline = Date.now() + maxWaitMs;
-  for (;;) {
-    if (acquireFileLock(target, Date.now(), opts)) {
-      try {
-        return fn();
-      } finally {
-        releaseFileLock(target);
-      }
-    }
+  for (let tries = 0; !acquireFileLock(target, Date.now(), opts); tries++) {
+    if (tries === 0) opts.onWait?.();
     if (Date.now() >= deadline)
       throw new Error(`could not acquire lock for ${target} within ${maxWaitMs}ms`);
     await sleep(STEP_MS + Math.floor(Math.random() * STEP_MS));
+  }
+  try {
+    return await fn();
+  } finally {
+    releaseFileLock(target);
   }
 };
