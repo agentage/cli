@@ -1,12 +1,12 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
-import { pluginsEnabled } from '../../core/flag.js';
+import { extensionsEnabled } from '../../core/flag.js';
 import { resolveAuth } from '../../lib/auth/credentials.js';
 import { siteFqdn } from '../../lib/net/origins.js';
 import { gatherStatus, type StatusReport } from '../../lib/status/status-info.js';
 import { INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
-import { pluginStatusLines } from '../plugins/status-print.js';
-import { gatherPluginStatus, type PluginsGather } from '../plugins/status-rows.js';
+import { printWarnings, summaryLines } from '../extension/list.js';
+import { gatherExtensions, invalidProfileError, type ExtensionsGather } from '../extension/rows.js';
 
 const mark = (good: boolean): string => (good ? chalk.green('✓') : chalk.red('✗'));
 
@@ -63,41 +63,39 @@ export interface StatusOptions {
 
 export interface StatusDeps {
   gather: (opts: StatusOptions) => Promise<StatusReport>;
-  // null while the plugins flag is off, so today's output stays byte-identical.
-  plugins: () => Promise<PluginsGather | null>;
+  // null while the extensions flag is off, so today's output stays byte-identical.
+  extensions: () => Promise<ExtensionsGather | null>;
 }
 
 const defaultDeps: StatusDeps = {
   gather: (opts) => gatherStatus(resolveAuth({ token: opts.token }), siteFqdn()),
-  plugins: () => (pluginsEnabled() ? gatherPluginStatus() : Promise.resolve(null)),
+  extensions: () => (extensionsEnabled() ? gatherExtensions() : Promise.resolve(null)),
 };
 
-type PluginsOutcome = { gathered: PluginsGather | null; error: unknown };
+type ExtensionsOutcome = { gathered: ExtensionsGather | null; error: unknown };
 
-const settle = async (deps: StatusDeps): Promise<PluginsOutcome> => {
+const settle = async (deps: StatusDeps): Promise<ExtensionsOutcome> => {
   try {
-    return { gathered: await deps.plugins(), error: null };
+    return { gathered: await deps.extensions(), error: null };
   } catch (error) {
     return { gathered: null, error };
   }
 };
 
-const emit = (report: StatusReport, gathered: PluginsGather | null, json?: boolean): void => {
-  if (json) {
-    console.log(JSON.stringify(gathered ? { ...report, ...gathered.status } : report, null, 2));
-    return;
-  }
+// With the extensions flag on, `--json` adds machine, profile and the extension count.
+const jsonOf = (report: StatusReport, gathered: ExtensionsGather | null): object => {
+  if (!gathered) return report;
+  const { machine, profile, extensions } = gathered.status;
+  return { ...report, machine, profile, extensions: extensions.length };
+};
+
+const emit = (report: StatusReport, gathered: ExtensionsGather | null, json?: boolean): void => {
+  if (json) return console.log(JSON.stringify(jsonOf(report, gathered), null, 2));
   printStatus(report);
-  for (const text of gathered ? pluginStatusLines(gathered.status) : []) console.log(text);
+  for (const text of gathered ? summaryLines(gathered.status) : []) console.log(text);
 };
 
-const profileFailure = (gathered: PluginsGather | null): Error | null => {
-  const profile = gathered?.status.profile;
-  if (profile?.state !== 'invalid') return null;
-  return new Error(`profile.json is invalid:\n${profile.errors.map((e) => `  ${e}`).join('\n')}`);
-};
-
-// The report always prints; a plugin-side failure then fails the step (exit 1) on stderr.
+// The report always prints; an extension-side failure then fails the step (exit 1) on stderr.
 export const runStatus = async (
   opts: StatusOptions = {},
   deps: StatusDeps = defaultDeps
@@ -105,18 +103,16 @@ export const runStatus = async (
   const report = await deps.gather(opts);
   const { gathered, error } = await settle(deps);
   emit(report, gathered, opts.json);
-  for (const warning of gathered?.warnings ?? [])
-    console.error(chalk.yellow(`warning: ${warning}`));
+  printWarnings(gathered?.warnings ?? []);
   if (error) throw error;
-  const failure = profileFailure(gathered);
+  const failure = gathered && invalidProfileError(gathered.status.profile);
   if (failure) throw failure;
 };
 
-const PLUGINS_HELP = `
-Plugins: one row per plugin in the profile or a dev path: id, state (installed, off,
-blocked, invalid, missing), package, installed version, wanted range, contributed commands,
-the last run from state/<id>.json, and the reason when it cannot load. Plugin code is never
-loaded; the only file written is machine.json.`;
+const EXTENSIONS_HELP = `
+Extensions: adds this machine's id and name (machine.json), the local profile version
+(profile.json) and the number of extensions; agentage extension list shows one row per extension.
+Extension code is never loaded; the only file written is machine.json.`;
 
 export const registerStatus = (
   program: Command,
@@ -125,8 +121,8 @@ export const registerStatus = (
   const command = program
     .command('status')
     .description(
-      pluginsEnabled()
-        ? 'Show CLI, account, endpoint, machine, profile, and plugin status'
+      extensionsEnabled()
+        ? 'Show CLI, account, endpoint, machine, profile, and extension status'
         : 'Show CLI, account, and endpoint status'
     )
     .option('--json', 'machine-readable output')
@@ -135,5 +131,5 @@ export const registerStatus = (
       'authenticate with a personal access token (aga_...); or set AGENTAGE_TOKEN'
     )
     .action(action);
-  if (pluginsEnabled()) command.addHelpText('after', PLUGINS_HELP);
+  if (extensionsEnabled()) command.addHelpText('after', EXTENSIONS_HELP);
 };

@@ -12,6 +12,7 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     setup: vi.fn(async () => undefined),
     status: vi.fn(async () => undefined),
     update: vi.fn(async () => undefined),
+    extensionList: vi.fn(async () => undefined),
     updateHint: vi.fn(() => 'update available: 9.9.9'),
     refreshUpdateCache: vi.fn(async () => undefined),
     writeOut: (text) => void out.push(text),
@@ -141,8 +142,28 @@ describe('run', () => {
 });
 
 describe('createProgram', () => {
-  it('registers exactly the launcher commands', () => {
+  afterEach(() => {
+    delete process.env['AGENTAGE_EXTENSIONS'];
+  });
+
+  it('registers exactly the launcher commands while the extensions flag is off', async () => {
     const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
     expect(names).toEqual(['setup', 'status', 'update']);
+    const h = makeDeps();
+    expect(await h.exec('extension', 'list')).toBe(2);
+    expect(h.stderr()).toContain("unknown command 'extension'");
+  });
+
+  it('adds the extension group behind AGENTAGE_EXTENSIONS=1', async () => {
+    process.env['AGENTAGE_EXTENSIONS'] = '1';
+    const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
+    expect(names).toEqual(['setup', 'status', 'update', 'extension']);
+    const h = makeDeps();
+    expect(await h.exec('extension')).toBe(0);
+    expect(h.stdout()).toContain('Usage: agentage extension');
+    expect(await h.exec('extension', 'list', '--json')).toBe(0);
+    expect(h.deps.extensionList).toHaveBeenCalledWith({ json: true });
+    expect(await h.exec('extension', 'nope')).toBe(2);
+    expect(h.stderr()).toContain("unknown command 'nope'");
   });
 });

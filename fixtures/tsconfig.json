@@ -8,7 +8,7 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "paths": { "@agentage/cli/plugin": ["../src/plugin.ts"] }
+    "paths": { "@agentage/cli/extension": ["../src/extension.ts"] }
   },
   "include": ["**/*.js"]
 }

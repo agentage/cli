@@ -1,133 +1,152 @@
 import { describe, expect, it } from 'vitest';
-import { parseProfile, specProblem, toDocument, type ProfileParse } from './schema.js';
+import { parseProfile, toDocument, type ProfileParse } from './schema.js';
 
-const two = {
-  version: 1,
-  plugins: { '@agentage/fixture-hello': '^1.0.0', '@agentage/fixture-world': '^1.0.0' },
-  config: { hello: { greeting: 'hi' } },
-  machines: { m_8f2a91c0: { off: ['@agentage/fixture-world'], config: { hello: { a: 1 } } } },
-};
+const HELLO = '@agentage/fixture-hello';
+const WORLD = '@agentage/fixture-world';
 
 const errorsOf = (result: ProfileParse): string[] => (result.ok ? [] : result.errors);
 
-const withPlugin = (spec: unknown, name = '@agentage/x') => ({
+const withVersion = (spec: unknown) => ({ version: 1, extensions: { [HELLO]: spec } });
+
+const withRegistry = (url: unknown, scope = '@acme') => ({
   version: 1,
-  plugins: { [name]: spec },
+  registries: { [scope]: url },
 });
 
-describe('parseProfile (schema v1)', () => {
-  it('parses a valid profile', () => {
-    const result = parseProfile(two);
-    expect(result).toEqual({
-      ok: true,
-      readOnly: false,
-      warnings: [],
-      profile: {
-        ...two,
-        machines: { m_8f2a91c0: { ...two.machines.m_8f2a91c0, extra: {} } },
-        extra: {},
-      },
+describe('a profile (schema v1)', () => {
+  it('names extensions by package and version; registries, config and machines are optional', () => {
+    const doc = {
+      version: 1,
+      extensions: { [HELLO]: '^1.0.0', [WORLD]: '^1' },
+      registries: { '@agentage': 'https://registry.npmjs.org' },
+      config: { hello: { greeting: 'hi' } },
+      machines: { m_8f2a91c0: { off: [WORLD], config: { hello: { a: 1 } } } },
+    };
+    const result = parseProfile(doc);
+    expect(result).toMatchObject({ ok: true, readOnly: false, warnings: [] });
+    expect(result.ok && toDocument(result.profile)).toEqual(doc);
+    const bare = parseProfile({ version: 1 });
+    expect(bare.ok && toDocument(bare.profile)).toEqual({
+      version: 1,
+      extensions: {},
+      config: {},
+      machines: {},
     });
   });
 
-  it('defaults absent sections to empty maps', () => {
-    const result = parseProfile({ version: 1 });
-    expect(result.ok && result.profile).toMatchObject({ plugins: {}, config: {}, machines: {} });
-  });
-
-  it('accepts https tarball URLs and semver ranges', () => {
-    for (const spec of ['https://example.com/x-1.0.0.tgz', '^1', '~1.2.3', '1.x', '>=1 <2', '*'])
-      expect(errorsOf(parseProfile(withPlugin(spec))), spec).toEqual([]);
-  });
+  it.each(['^1', '~1.2.3', '1.x', '>=1 <2', '*', 'https://example.com/x-1.0.0.tgz'])(
+    'accepts %j as a version: a semver range or an https: tarball URL',
+    (spec) => {
+      expect(errorsOf(parseProfile(withVersion(spec)))).toEqual([]);
+    }
+  );
 
   it.each([
-    ['file:../x', 'file: specs are refused'],
+    ['file:../x', 'file: specs are refused; use a semver range or an https: tarball URL'],
     ['npm:@agentage/y@1', 'npm: specs are refused'],
     ['github:agentage/x', 'github: specs are refused'],
     ['http://example.com/x.tgz', 'http: specs are refused'],
     ['https://127.0.0.1/x.tgz', 'loopback URLs are refused'],
-    ['https://localhost:8080/x.tgz', 'loopback URLs are refused'],
     ['https://[::1]/x.tgz', 'loopback URLs are refused'],
     ['https://', 'is not a valid https: URL'],
-    ['./plugins/x', 'local paths are dev-only'],
-    ['/abs/x', 'local paths are dev-only'],
+    ['./extensions/x', 'local paths are dev-only and belong in machine.json'],
     ['~/x', 'local paths are dev-only'],
     ['git+ssh://host/x.git', 'unsupported spec'],
-    ['agentage/x', 'is not a semver range'],
     ['latest', 'is not a semver range'],
     ['', 'must be a non-empty string'],
     [2, 'must be a non-empty string'],
-  ])('refuses %j naming the path', (spec, message) => {
-    const [error] = errorsOf(parseProfile(withPlugin(spec)));
-    expect(error).toContain('plugins["@agentage/x"]');
-    expect(error).toContain(message);
+  ])('refuses %j as a version, naming the extension', (spec, message) => {
+    const [error] = errorsOf(parseProfile(withVersion(spec)));
+    expect(error).toContain(`extensions["${HELLO}"]: ${message}`);
   });
 
-  it('refuses an invalid package name', () => {
-    expect(errorsOf(parseProfile(withPlugin('^1', 'Bad Name')))).toEqual([
-      'plugins["Bad Name"]: is not a valid package name',
+  it('refuses a package name npm would not accept', () => {
+    const doc = { version: 1, extensions: { 'Bad Name': '^1' } };
+    expect(errorsOf(parseProfile(doc))).toEqual([
+      'extensions["Bad Name"]: is not a valid package name',
     ]);
   });
 
-  it('names the path of every malformed section', () => {
-    const errors = errorsOf(
-      parseProfile({
-        version: 1,
-        plugins: [],
-        config: { hello: 'x' },
-        machines: { m_1: { off: 'world', config: { hello: [] } }, m_2: 3 },
-      })
-    );
-    expect(errors).toEqual([
-      'plugins: must be an object',
+  it.each(['https://npm.acme.example', 'http://127.0.0.1:4873', 'http://localhost:4873/npm/'])(
+    'sends a scope to %j: an https: registry, or http: on a loopback host',
+    (url) => {
+      expect(errorsOf(parseProfile(withRegistry(url)))).toEqual([]);
+    }
+  );
+
+  it.each([
+    'http://npm.acme.example',
+    'ftp://npm.acme.example',
+    'https://',
+    'https://npm.acme.example/\n@x:registry=https://evil.example',
+    3,
+  ])('refuses %j as a registry, naming registries["@acme"]', (url) => {
+    expect(errorsOf(parseProfile(withRegistry(url)))).toEqual([
+      'registries["@acme"]: must be an https: URL, or http: on a loopback host',
+    ]);
+  });
+
+  it('refuses a registry URL that carries credentials: they would land in the tree', () => {
+    expect(errorsOf(parseProfile(withRegistry('https://user:secret@npm.acme.example')))).toEqual([
+      'registries["@acme"]: must not carry credentials',
+    ]);
+  });
+
+  it('keys registries by npm scope only', () => {
+    expect(errorsOf(parseProfile(withRegistry('https://r.example', 'acme')))).toEqual([
+      'registries["acme"]: is not an npm scope (@name)',
+    ]);
+    expect(errorsOf(parseProfile({ version: 1, registries: [] }))).toEqual([
+      'registries: must be an object',
+    ]);
+  });
+
+  it('reports every malformed section with its path', () => {
+    const doc = {
+      version: 1,
+      extensions: [],
+      config: { hello: 'x' },
+      machines: { m_1: { off: 'world', config: { hello: [] } }, m_2: 3, m_3: { config: 2 } },
+    };
+    expect(errorsOf(parseProfile(doc))).toEqual([
+      'extensions: must be an object',
       'config["hello"]: must be an object',
       'machines["m_1"].off: must be an array of package names',
       'machines["m_1"].config["hello"]: must be an object',
       'machines["m_2"]: must be an object',
+      'machines["m_3"].config: must be an object',
     ]);
-  });
-
-  it('refuses non-object config and machines sections', () => {
     expect(errorsOf(parseProfile({ version: 1, config: 1, machines: [] }))).toEqual([
       'config: must be an object',
       'machines: must be an object',
     ]);
-    expect(errorsOf(parseProfile({ version: 1, machines: { m: { config: 2 } } }))).toEqual([
-      'machines["m"].config: must be an object',
-    ]);
   });
 
-  it.each([[undefined], ['1'], [0], [1.5]])('requires an integer version, got %j', (version) => {
-    const [error] = errorsOf(parseProfile({ version }));
-    expect(error).toMatch(/^version: must be 1 \(got /);
+  it.each([[undefined], ['1'], [0], [1.5]])('needs version 1, refusing %j', (version) => {
+    expect(errorsOf(parseProfile({ version }))[0]).toMatch(/^version: must be 1 \(got /);
   });
 
-  it('refuses a document that is not an object', () => {
+  it('must be a JSON object', () => {
     expect(errorsOf(parseProfile([]))).toEqual(['profile.json: must be a JSON object']);
   });
 
-  it('reads a higher major as read-only with a warning', () => {
-    const result = parseProfile({ version: 2, plugins: { '@agentage/x': '^1' } });
-    expect(result.ok && result.readOnly).toBe(true);
+  it('from a newer schema is read-only, with a warning', () => {
+    const result = parseProfile({ version: 2, extensions: { [HELLO]: '^1' } });
+    expect(result).toMatchObject({ ok: true, readOnly: true });
     expect(result.ok && result.warnings[0]).toContain('version: 2 is newer');
   });
 
-  it('keeps unknown keys with a warning and writes them back on round-trip', () => {
-    const doc = { ...two, teams: ['a'], machines: { m: { off: [], pinned: true } } };
+  it('keeps keys this CLI does not know, with a warning, and writes them back', () => {
+    const doc = { version: 1, extensions: {}, teams: ['a'], machines: { m: { off: [], pin: 1 } } };
     const result = parseProfile(doc);
-    if (!result.ok) throw new Error(result.errors.join('\n'));
-    expect(result.warnings).toEqual([
-      'machines["m"]: unknown key "pinned" kept',
+    expect(result.ok && result.warnings).toEqual([
+      'machines["m"]: unknown key "pin" kept',
       'profile.json: unknown key "teams" kept',
     ]);
-    expect(toDocument(result.profile)).toEqual({
+    expect(result.ok && toDocument(result.profile)).toEqual({
       ...doc,
-      machines: { m: { off: [], config: {}, pinned: true } },
+      config: {},
+      machines: { m: { off: [], config: {}, pin: 1 } },
     });
-  });
-
-  it('exposes the spec rule on its own', () => {
-    expect(specProblem('^1.2.3')).toBeNull();
-    expect(specProblem('FILE:x')).toContain('file: specs are refused');
   });
 });

@@ -14,12 +14,6 @@ export interface RunState {
   error: string | null;
 }
 
-export interface RunStateDeps {
-  dir: () => string;
-}
-
-const defaultDeps: RunStateDeps = { dir: stateDir };
-
 const isRunStateName = (value: unknown): value is RunStateName =>
   RUN_STATES.some((name) => name === value);
 
@@ -30,10 +24,10 @@ const isRunState = (value: unknown): value is RunState =>
   isRunStateName(value['state']) &&
   (value['error'] === undefined || value['error'] === null || typeof value['error'] === 'string');
 
-// Reads the core's own record of the last run; plugin logs are never consulted.
-export const readRunState = (id: string, deps: RunStateDeps = defaultDeps): RunState | null => {
+// Reads the core's own record of the last run; extension logs are never consulted.
+export const readRunState = (id: string): RunState | null => {
   if (!ID_PATTERN.test(id)) return null;
-  const found = readJson(join(deps.dir(), `${id}.json`), isRunState);
+  const found = readJson(join(stateDir(), `${id}.json`), isRunState);
   if (!found) return null;
   return { at: found.at, pid: found.pid, state: found.state, error: found.error ?? null };
 };

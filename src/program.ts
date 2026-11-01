@@ -1,8 +1,21 @@
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
-import { registerSetup, runSetup, type SetupOptions } from './commands/auth/setup.js';
+import {
+  registerSetup,
+  runSetup,
+  type SetupDeps,
+  type SetupOptions,
+} from './commands/auth/setup.js';
+import {
+  registerExtension,
+  runExtensionList,
+  type ExtensionListOptions,
+} from './commands/extension/list.js';
+import { runExtensionSetup } from './commands/extension/setup.js';
 import { registerStatus, runStatus, type StatusOptions } from './commands/status/status.js';
 import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
+import { extensionsEnabled } from './core/flag.js';
+import { prepareNpm } from './core/installer/npm.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
@@ -11,21 +24,27 @@ export interface ProgramDeps {
   setup: (opts: SetupOptions) => Promise<void>;
   status: (opts: StatusOptions) => Promise<void>;
   update: (opts: UpdateOptions) => Promise<void>;
+  extensionList: (opts: ExtensionListOptions) => Promise<void>;
   updateHint: () => string | null;
   refreshUpdateCache: () => Promise<void>;
   writeOut: (text: string) => void;
   writeErr: (text: string) => void;
 }
 
+const setupDeps: SetupDeps = {
+  ensureSignedIn: (signInOpts) => ensureSignedIn(signInOpts),
+  signOut: () => signOut(),
+  printStatus: () => runStatus({}),
+};
+
 const defaultDeps: ProgramDeps = {
   setup: (opts) =>
-    runSetup(opts, {
-      ensureSignedIn: (signInOpts) => ensureSignedIn(signInOpts),
-      signOut: () => signOut(),
-      printStatus: () => runStatus({}),
-    }),
+    extensionsEnabled()
+      ? runExtensionSetup(opts, { ...setupDeps, npm: prepareNpm })
+      : runSetup(opts, setupDeps),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
+  extensionList: (opts) => runExtensionList(opts),
   updateHint,
   refreshUpdateCache: () => refreshUpdateCache(),
   writeOut: (text) => void process.stdout.write(text),
@@ -73,6 +92,7 @@ export const createProgram = (deps: ProgramDeps = defaultDeps): Command => {
   registerSetup(program, withAction(deps, deps.setup, 'Setup failed: '));
   registerStatus(program, withAction(deps, deps.status));
   registerUpdate(program, withAction(deps, deps.update));
+  if (extensionsEnabled()) registerExtension(program, withAction(deps, deps.extensionList));
   return program;
 };
 

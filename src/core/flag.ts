@@ -1,1 +1,1 @@
-export const pluginsEnabled = (): boolean => process.env['AGENTAGE_PLUGINS'] === '1';
+export const extensionsEnabled = (): boolean => process.env['AGENTAGE_EXTENSIONS'] === '1';

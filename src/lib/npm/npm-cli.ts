@@ -12,6 +12,8 @@ export interface RunNpmOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs: number;
+  // A path from resolveNpmCli, so a caller that resolved once is not resolved again.
+  npmCli?: string;
 }
 
 export interface ResolveNpmOptions {
@@ -61,8 +63,11 @@ const isScrubbed = (key: string): boolean =>
   /^npm_config_/i.test(key) || key.toUpperCase() === 'NODE_OPTIONS';
 
 // Inherited npm_config_* (an `npx` or `npm run` parent) would redirect a global install.
-const childEnv = (env: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
-  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !isScrubbed(key))),
+export const scrubNpmEnv = (
+  parent: NodeJS.ProcessEnv,
+  env: NodeJS.ProcessEnv = {}
+): NodeJS.ProcessEnv => ({
+  ...Object.fromEntries(Object.entries(parent).filter(([key]) => !isScrubbed(key))),
   ...env,
 });
 
@@ -74,10 +79,10 @@ const failureNote = (err: ExecFileException | null, timeoutMs: number): string =
 
 export const runNpm = (args: string[], opts: RunNpmOptions): Promise<NpmResult> =>
   new Promise((resolve) => {
-    const argv = [resolveNpmCli(), ...args, '--no-audit', '--no-fund'];
+    const argv = [opts.npmCli ?? resolveNpmCli(), ...args, '--no-audit', '--no-fund'];
     const options = {
       cwd: opts.cwd,
-      env: childEnv(opts.env),
+      env: scrubNpmEnv(process.env, opts.env),
       timeout: opts.timeoutMs,
       maxBuffer: MAX_BUFFER,
       windowsHide: true,

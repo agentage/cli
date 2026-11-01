@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { acquireFileLock, releaseFileLock, withFileLock } from './file-lock.js';
+import { acquireFileLock, refreshFileLock, releaseFileLock, withFileLock } from './file-lock.js';
 
 describe('file lock', () => {
   let dir: string;
@@ -35,6 +35,18 @@ describe('file lock', () => {
     expect(acquireFileLock(target)).toBe(true);
     expect(existsSync(lockFile())).toBe(true);
     releaseFileLock(target);
+  });
+
+  it('refreshes only its own lock, so a long holder never ages into a takeover', () => {
+    expect(refreshFileLock(target, 5)).toBe(false);
+    expect(acquireFileLock(target, 1_000)).toBe(true);
+    expect(refreshFileLock(target, 50_000)).toBe(true);
+    expect(readFileSync(lockFile(), 'utf-8')).toBe(`${process.pid} 50000`);
+    expect(acquireFileLock(target, 55_000, { ttlMs: 10_000 })).toBe(false);
+    releaseFileLock(target);
+    writeFileSync(lockFile(), '999999 1');
+    expect(refreshFileLock(target, 60_000)).toBe(false);
+    expect(readFileSync(lockFile(), 'utf-8')).toBe('999999 1');
   });
 
   it('refuses when a fresh lock is already held', () => {
@@ -99,6 +111,16 @@ describe('file lock', () => {
       return 42;
     });
     expect(result).toBe(42);
+    expect(existsSync(lockFile())).toBe(false);
+  });
+
+  it('holds the lock across an async fn and calls onWait once while it waits', async () => {
+    let waits = 0;
+    const onWait = (): void => void waits++;
+    const first = withFileLock(target, () => new Promise((r) => setTimeout(() => r('a'), 100)));
+    const second = withFileLock(target, () => existsSync(lockFile()), { onWait });
+    expect(await Promise.all([first, second])).toEqual(['a', true]);
+    expect(waits).toBe(1);
     expect(existsSync(lockFile())).toBe(false);
   });
 

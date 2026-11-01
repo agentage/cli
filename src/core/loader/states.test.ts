@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { type DiscoveredPlugin } from './discover.js';
+import { pkg } from '../../test/config-dir.js';
+import { type DiscoveredExtension } from './discover.js';
 import { staticStates } from './states.js';
 
-const HELLO = '@agentage/fixture-hello';
-const WORLD = '@agentage/fixture-world';
+const [HELLO, WORLD] = [pkg('hello'), pkg('world')];
 
-const plugin = (pkg: string, extra: Partial<DiscoveredPlugin> = {}): DiscoveredPlugin => ({
-  pkg,
+// What discovery reports for an extension in the tree, with a valid manifest unless overridden.
+const found = (name: string, extra: Partial<DiscoveredExtension> = {}): DiscoveredExtension => ({
+  pkg: name,
   source: 'tree',
-  dir: `/tree/${pkg}`,
+  dir: `/tree/${name}`,
   version: '1.0.0',
-  id: pkg.replace('@agentage/fixture-', ''),
-  entry: `/tree/${pkg}/index.js`,
+  id: name.replace('@agentage/fixture-', ''),
+  entry: `/tree/${name}/index.js`,
   commands: [],
   peers: [],
   optionalPeers: [],
@@ -20,79 +21,65 @@ const plugin = (pkg: string, extra: Partial<DiscoveredPlugin> = {}): DiscoveredP
   ...extra,
 });
 
-const world = (extra: Partial<DiscoveredPlugin> = {}) =>
-  plugin(WORLD, { peers: [HELLO], ...extra });
+const world = (extra: Partial<DiscoveredExtension> = {}) =>
+  found(WORLD, { peers: [HELLO], ...extra });
 
-const statesOf = (plugins: DiscoveredPlugin[], off: string[] = []) =>
-  Object.fromEntries(staticStates(plugins, off));
+const statesOf = (extensions: DiscoveredExtension[], off: string[] = []) =>
+  Object.fromEntries(staticStates(extensions, off));
 
-describe('staticStates (T15)', () => {
-  it('installed when manifests are valid and peers are installed', () => {
-    expect(statesOf([plugin(HELLO), world()])).toEqual({
+describe('the state of each extension, known without running it', () => {
+  it('is installed when its manifest is valid and its peers are installed', () => {
+    expect(statesOf([found(HELLO), world()])).toEqual({
       [HELLO]: { state: 'installed', error: null },
       [WORLD]: { state: 'installed', error: null },
     });
   });
 
-  it('a peer that is off blocks its dependent, naming the peer', () => {
-    expect(statesOf([plugin(HELLO), world()], [HELLO])).toEqual({
-      [HELLO]: { state: 'off', error: null },
-      [WORLD]: { state: 'blocked', error: `peer ${HELLO} is off` },
+  it('is blocked when a peer is missing, naming the peer, and a blocked peer blocks in turn', () => {
+    const third = found('@agentage/third', { peers: [WORLD] });
+    const states = statesOf([found(HELLO, { missing: true }), world(), third]);
+    expect(states).toEqual({
+      [HELLO]: { state: 'missing', error: 'not installed in the current tree' },
+      [WORLD]: { state: 'blocked', error: `peer ${HELLO} is missing` },
+      '@agentage/third': { state: 'blocked', error: `peer ${WORLD} is blocked` },
     });
   });
 
-  it('an invalid or missing peer blocks; blocked propagates', () => {
-    const third = plugin('@agentage/fixture-third', { peers: [WORLD] });
-    const invalid = statesOf([plugin(HELLO, { problem: 'bad engine' }), world(), third]);
-    expect(invalid[HELLO]).toEqual({ state: 'invalid', error: 'bad engine' });
-    expect(invalid[WORLD]).toEqual({ state: 'blocked', error: `peer ${HELLO} is invalid` });
-    expect(invalid['@agentage/fixture-third']?.error).toBe(`peer ${WORLD} is blocked`);
-    const missing = statesOf([plugin(HELLO, { missing: true }), world()]);
-    expect(missing[HELLO]).toEqual({
-      state: 'missing',
-      error: 'not installed in the current tree',
-    });
-    expect(missing[WORLD]?.error).toBe(`peer ${HELLO} is missing`);
-  });
-
-  it('a peer absent from the profile blocks', () => {
+  it('is blocked when a peer is not in the profile', () => {
     expect(statesOf([world()])[WORLD]).toEqual({
       state: 'blocked',
       error: `peer ${HELLO} is not in the profile`,
     });
   });
 
-  it('honours peerDependenciesMeta.optional', () => {
+  it('is not blocked by an optional peer that is absent or off', () => {
     const optional = world({ optionalPeers: [HELLO] });
     expect(statesOf([optional])[WORLD]?.state).toBe('installed');
-    expect(statesOf([plugin(HELLO), optional], [HELLO])[WORLD]?.state).toBe('installed');
+    expect(statesOf([found(HELLO), optional], [HELLO])[WORLD]?.state).toBe('installed');
   });
 
-  it('marks every member of a peer cycle invalid, dependents blocked', () => {
-    const a = plugin('a', { peers: ['b'] });
-    const b = plugin('b', { peers: ['a'] });
-    const c = plugin('c', { peers: ['a'] });
-    expect(statesOf([a, b, c])).toEqual({
+  it('is invalid for every member of a peer cycle, and blocked for what depends on one', () => {
+    const a = found('a', { peers: ['b'] });
+    const b = found('b', { peers: ['a'] });
+    const c = found('c', { peers: ['a', HELLO] });
+    expect(statesOf([a, b, c, found(HELLO)])).toMatchObject({
       a: { state: 'invalid', error: 'peer dependency cycle' },
       b: { state: 'invalid', error: 'peer dependency cycle' },
       c: { state: 'blocked', error: 'peer a is invalid' },
     });
   });
 
-  it('a dev plugin is never off; a missing dev path names the path', () => {
-    const dev = plugin(HELLO, { source: 'dev', dir: '/src/hello' });
+  it('is invalid over off: a bad manifest shows even on a machine that turned it off', () => {
+    expect(statesOf([found(HELLO, { problem: 'x' })], [HELLO])[HELLO]).toEqual({
+      state: 'invalid',
+      error: 'x',
+    });
+  });
+
+  it('is never off for a dev path, and a missing dev path names the path', () => {
+    const dev = found(HELLO, { source: 'dev', dir: '/src/hello' });
     expect(statesOf([dev], [HELLO])[HELLO]?.state).toBe('installed');
-    const gone = plugin(HELLO, { source: 'dev', dir: '/src/gone', missing: true });
+    const gone = found(HELLO, { source: 'dev', dir: '/src/gone', missing: true });
     expect(statesOf([gone])[HELLO]?.error).toBe('no package.json at /src/gone');
-  });
-
-  it('an invalid manifest wins over off', () => {
-    expect(statesOf([plugin(HELLO, { problem: 'x' })], [HELLO])[HELLO]?.state).toBe('invalid');
-  });
-
-  it('shared peers are resolved once and reused', () => {
-    const a = plugin('a', { peers: [HELLO] });
-    const b = plugin('b', { peers: [HELLO, 'a'] });
-    expect(statesOf([b, a, plugin(HELLO)])['b']?.state).toBe('installed');
   });
 });

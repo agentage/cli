@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, readdirSync, readFileSync } from 'node:fs';
+import { createReadStream, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { type AddressInfo } from 'node:net';
 import { join } from 'node:path';
+import { loadNpmCli } from './npm-cli.js';
 import { readPackedManifest, type PackedManifest } from './tar.js';
 
 interface PackedVersion {
@@ -106,4 +107,19 @@ export const startRegistry = async (packDir: string): Promise<Registry> => {
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   server.on('request', serve(url, packDir, index));
   return { url, close: () => closeServer(server) };
+};
+
+const FIXTURES = join(process.cwd(), 'fixtures');
+
+// Every fixtures/extension-* packed with `npm pack` under `root` and served, read-only.
+export const startFixtureRegistry = async (root: string): Promise<Registry> => {
+  const packDir = join(root, 'pack');
+  mkdirSync(packDir);
+  const dirs = readdirSync(FIXTURES).filter((n) => n.startsWith('extension-'));
+  const env = { npm_config_userconfig: join(root, '.npmrc'), npm_config_cache: join(root, '.npm') };
+  const { runNpm } = await loadNpmCli();
+  const packArgs = ['pack', ...dirs.map((d) => join(FIXTURES, d)), '--pack-destination', packDir];
+  const packed = await runNpm(packArgs, { env, timeoutMs: 120_000 });
+  if (packed.code !== 0) throw new Error(`npm pack failed:\n${packed.stderr}`);
+  return startRegistry(packDir);
 };

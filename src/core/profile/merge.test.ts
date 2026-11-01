@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { MACHINE_ID, pkg } from '../../test/config-dir.js';
 import { type MachineFile } from './machine.js';
-import { effective, mergeConfig } from './merge.js';
+import { effective, keepMachine } from './merge.js';
 import { type Profile } from './schema.js';
 
-const HELLO = '@agentage/fixture-hello';
-const WORLD = '@agentage/fixture-world';
-const DEV = '@agentage/fixture-dev';
+const [HELLO, WORLD, DEV] = [pkg('hello'), pkg('world'), pkg('dev')];
 
 const machine: MachineFile = {
-  id: 'm_8f2a91c0',
+  id: MACHINE_ID,
   name: 'box',
   dev: { [DEV]: '/home/me/dev' },
   profileSource: 'file',
@@ -16,10 +15,11 @@ const machine: MachineFile = {
 
 const profile: Profile = {
   version: 1,
-  plugins: { [WORLD]: '^1.0.0', [HELLO]: '^1.0.0' },
+  extensions: { [WORLD]: '^1.0.0', [HELLO]: '^1.0.0' },
+  registries: {},
   config: { hello: { greeting: 'hi', tags: ['a', 'b'], keep: true } },
   machines: {
-    m_8f2a91c0: {
+    [MACHINE_ID]: {
       off: [WORLD],
       config: { hello: { greeting: 'yo', tags: ['c'] }, world: { x: 1 } },
       extra: {},
@@ -29,33 +29,50 @@ const profile: Profile = {
   extra: {},
 };
 
-describe('effective (T04)', () => {
-  it('installs the shared map, loads it minus off plus dev', () => {
-    const eff = effective(profile, machine);
-    expect(eff.install).toEqual({ [WORLD]: '^1.0.0', [HELLO]: '^1.0.0' });
-    expect(eff.load).toEqual([DEV, HELLO]);
-    expect(eff.off).toEqual([WORLD]);
-    expect(eff.dev).toEqual(machine.dev);
+describe('what this machine installs and loads', () => {
+  it("installs the profile's extensions; loads them minus its own off list, plus its dev paths", () => {
+    expect(effective(profile, machine)).toMatchObject({
+      install: { [WORLD]: '^1.0.0', [HELLO]: '^1.0.0' },
+      load: [DEV, HELLO],
+      off: [WORLD],
+      dev: machine.dev,
+    });
   });
 
-  it('replaces shared config per key, arrays whole, no deep merge', () => {
-    const { config } = effective(profile, machine);
-    expect(config['hello']).toEqual({ greeting: 'yo', tags: ['c'], keep: true });
-    expect(config['world']).toEqual({ x: 1 });
+  it('takes its own config per key over the shared one, arrays whole, no deep merge', () => {
+    expect(effective(profile, machine).config).toEqual({
+      hello: { greeting: 'yo', tags: ['c'], keep: true },
+      world: { x: 1 },
+    });
   });
 
-  it('ignores other machines entries', () => {
-    const eff = effective(profile, { ...machine, id: 'm_unknown', dev: {} });
-    expect(eff.load).toEqual([HELLO, WORLD]);
-    expect(eff.config['hello']?.['greeting']).toBe('hi');
+  it("ignores other machines' entries", () => {
+    const other = effective(profile, { ...machine, id: 'm_unknown', dev: {} });
+    expect(other).toMatchObject({ load: [HELLO, WORLD], off: [] });
+    expect(other.config['hello']?.['greeting']).toBe('hi');
   });
 
-  it('with no profile, only dev plugins load', () => {
-    const eff = effective(null, machine);
-    expect(eff).toEqual({ install: {}, load: [DEV], off: [], dev: machine.dev, config: {} });
+  it('with no profile, loads only its dev paths', () => {
+    const none = effective(null, machine);
+    expect(none).toEqual({ install: {}, load: [DEV], off: [], dev: machine.dev, config: {} });
+  });
+});
+
+describe('saving a new profile over a local one', () => {
+  const next: Profile = {
+    ...profile,
+    extensions: { [HELLO]: '^2' },
+    machines: { [MACHINE_ID]: { off: [], config: {}, extra: {} } },
+  };
+
+  it("replaces the shared fields and keeps this machine's own entry from the local copy", () => {
+    const kept = keepMachine(next, profile, MACHINE_ID);
+    expect(kept.extensions).toEqual({ [HELLO]: '^2' });
+    expect(kept.machines).toEqual({ [MACHINE_ID]: profile.machines[MACHINE_ID] });
   });
 
-  it('merges config maps by plugin id', () => {
-    expect(mergeConfig({ a: { k: 1 } }, { b: { k: 2 } })).toEqual({ a: { k: 1 }, b: { k: 2 } });
+  it('takes the new profile as is when the local copy has no entry for this machine', () => {
+    expect(keepMachine(next, null, MACHINE_ID)).toBe(next);
+    expect(keepMachine(next, profile, 'm_nothere')).toBe(next);
   });
 });

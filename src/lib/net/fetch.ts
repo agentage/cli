@@ -3,7 +3,7 @@ import { requestHeaders } from './user-agent.js';
 export const DEFAULT_TIMEOUT_MS = 10_000;
 export const AUTH_TIMEOUT_MS = 15_000;
 
-// Captured at load: plugins loaded later must not be able to swap the fetch that carries tokens.
+// Captured at load: extensions loaded later must not be able to swap the fetch that carries tokens.
 const baseFetch = globalThis.fetch;
 
 export type CliRequestInit = Omit<RequestInit, 'headers' | 'redirect' | 'signal'> & {

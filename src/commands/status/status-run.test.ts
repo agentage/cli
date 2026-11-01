@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type StatusReport } from '../../lib/status/status-info.js';
-import { type PluginsGather } from '../plugins/status-rows.js';
+import { type ExtensionsGather } from '../extension/rows.js';
 import { printStatus, registerStatus, runStatus, type StatusDeps } from './status.js';
 
 const baseReport: StatusReport = {
@@ -24,11 +24,11 @@ const captureLines = (report: StatusReport): string => {
   }
 };
 
-const gathered: PluginsGather = {
+const gathered: ExtensionsGather = {
   status: {
     machine: { id: 'm_0000beef', name: 'box' },
     profile: { state: 'ok', version: 1, source: 'default', readOnly: false },
-    plugins: [],
+    extensions: [],
   },
   warnings: ['profile.json: unknown key "x" kept'],
 };
@@ -49,13 +49,13 @@ const capture = async (deps: StatusDeps, json = false) => {
   }
 };
 
-const depsWith = (plugins: StatusDeps['plugins']): StatusDeps => ({
+const depsWith = (extensions: StatusDeps['extensions']): StatusDeps => ({
   gather: () => Promise.resolve(baseReport),
-  plugins,
+  extensions,
 });
 
 describe('runStatus', () => {
-  it("with the plugins flag off prints exactly today's report", async () => {
+  it("with the extensions flag off prints exactly today's report", async () => {
     const human = await capture(depsWith(() => Promise.resolve(null)));
     expect(human).toEqual({ stdout: captureLines(baseReport), stderr: '', error: null });
     const json = await capture(
@@ -65,10 +65,16 @@ describe('runStatus', () => {
     expect(json.stdout).toBe(JSON.stringify(baseReport, null, 2));
   });
 
-  it("appends machine, profile and plugins after today's lines and keys", async () => {
+  it("appends only machine, profile and the extension count after today's lines and keys", async () => {
     const human = await capture(depsWith(() => Promise.resolve(gathered)));
-    expect(human.stdout.startsWith(captureLines(baseReport))).toBe(true);
-    expect(human.stdout).toContain('machine    m_0000beef (box)');
+    expect(human.stdout).toBe(
+      [
+        captureLines(baseReport),
+        'machine    m_0000beef (box)',
+        'profile    version 1 (source: default)',
+        'extensions 0',
+      ].join('\n')
+    );
     expect(human.stderr).toContain('warning: profile.json: unknown key "x" kept');
     const json = await capture(
       depsWith(() => Promise.resolve(gathered)),
@@ -79,14 +85,17 @@ describe('runStatus', () => {
       ...Object.keys(baseReport),
       'machine',
       'profile',
-      'plugins',
+      'extensions',
     ]);
-    expect(parsed['plugins']).toEqual([]);
+    expect(parsed['extensions']).toBe(0);
   });
 
   it('prints the report, then fails the step on an invalid profile', async () => {
-    const invalid: PluginsGather = {
-      status: { ...gathered.status, profile: { state: 'invalid', errors: ['plugins["x"]: bad'] } },
+    const invalid: ExtensionsGather = {
+      status: {
+        ...gathered.status,
+        profile: { state: 'invalid', errors: ['extensions["x"]: bad'] },
+      },
       warnings: [],
     };
     const result = await capture(
@@ -94,10 +103,10 @@ describe('runStatus', () => {
       true
     );
     expect(JSON.parse(result.stdout)).toMatchObject({ profile: { state: 'invalid' } });
-    expect(String(result.error)).toContain('profile.json is invalid:\n  plugins["x"]: bad');
+    expect(String(result.error)).toContain('profile.json is invalid:\n  extensions["x"]: bad');
   });
 
-  it("prints today's report even when the plugin side throws", async () => {
+  it("prints today's report even when the extension side throws", async () => {
     const result = await capture(depsWith(() => Promise.reject(new Error('EACCES machine.json'))));
     expect(result.stdout).toBe(captureLines(baseReport));
     expect(String(result.error)).toContain('EACCES machine.json');
@@ -108,12 +117,12 @@ describe('registerStatus help', () => {
   let saved: string | undefined;
 
   beforeEach(() => {
-    saved = process.env['AGENTAGE_PLUGINS'];
+    saved = process.env['AGENTAGE_EXTENSIONS'];
   });
 
   afterEach(() => {
-    if (saved === undefined) delete process.env['AGENTAGE_PLUGINS'];
-    else process.env['AGENTAGE_PLUGINS'] = saved;
+    if (saved === undefined) delete process.env['AGENTAGE_EXTENSIONS'];
+    else process.env['AGENTAGE_EXTENSIONS'] = saved;
   });
 
   const helpOf = (): string => {
@@ -124,16 +133,16 @@ describe('registerStatus help', () => {
     return text;
   };
 
-  it('is unchanged while the plugins flag is off', () => {
-    delete process.env['AGENTAGE_PLUGINS'];
+  it('is unchanged while the extensions flag is off', () => {
+    delete process.env['AGENTAGE_EXTENSIONS'];
     expect(helpOf()).toContain('Show CLI, account, and endpoint status');
-    expect(helpOf()).not.toContain('Plugins:');
+    expect(helpOf()).not.toContain('Extensions:');
   });
 
-  it('describes the plugin rows with the flag on', () => {
-    process.env['AGENTAGE_PLUGINS'] = '1';
+  it('describes the extension lines with the flag on', () => {
+    process.env['AGENTAGE_EXTENSIONS'] = '1';
     const help = helpOf();
-    expect(help).toContain('machine, profile, and plugin status');
-    expect(help).toContain('Plugins: one row per plugin');
+    expect(help).toContain('machine, profile, and extension status');
+    expect(help).toContain('agentage extension list shows one row per extension');
   });
 });
