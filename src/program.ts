@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
 import { registerSetup, type SetupDeps, type SetupOptions } from './commands/auth/setup.js';
+import { runExtensionBuild, type ExtensionBuildOptions } from './commands/extension/build.js';
 import { runExtensionCheck, type ExtensionCheckOptions } from './commands/extension/check.js';
 import { registerDelegates } from './commands/extension/delegate.js';
 import { runExtensionInstall, type ExtensionInstallOptions } from './commands/extension/install.js';
@@ -36,6 +37,7 @@ export interface ProgramDeps {
   extensionRemove: (opts: ExtensionRemoveOptions) => Promise<void>;
   extensionList: (opts: ExtensionListOptions) => Promise<void>;
   extensionCheck: (opts: ExtensionCheckOptions) => Promise<void>;
+  extensionBuild: (opts: ExtensionBuildOptions) => Promise<void>;
   updateHint: () => string | null;
   refreshUpdateCache: () => Promise<void>;
   writeOut: (text: string) => void;
@@ -60,6 +62,7 @@ const defaultDeps: ProgramDeps = {
   extensionRemove: (opts) => runExtensionRemove(opts, { ...editDeps, io: terminalIo() }),
   extensionList: (opts) => runExtensionList(opts),
   extensionCheck: (opts) => runExtensionCheck(opts),
+  extensionBuild: (opts) => runExtensionBuild(opts),
   updateHint,
   refreshUpdateCache: () => refreshUpdateCache(),
   writeOut: (text) => void process.stdout.write(text),
@@ -103,6 +106,7 @@ const addExtensions = (program: Command, deps: ProgramDeps, argv: string[]): voi
     remove: withAction(deps, deps.extensionRemove),
     list: withAction(deps, deps.extensionList),
     check: withAction(deps, deps.extensionCheck),
+    build: withAction(deps, deps.extensionBuild),
   });
   try {
     registerDelegates(program, argv, (fn) => withAction(deps, fn));

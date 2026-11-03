@@ -17,6 +17,7 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     extensionRemove: vi.fn(async () => undefined),
     extensionList: vi.fn(async () => undefined),
     extensionCheck: vi.fn(async () => undefined),
+    extensionBuild: vi.fn(async () => undefined),
     updateHint: vi.fn(() => 'update available: 9.9.9'),
     refreshUpdateCache: vi.fn(async () => undefined),
     writeOut: (text) => void out.push(text),
@@ -173,7 +174,7 @@ describe('createProgram', () => {
     expect(h.stderr()).toContain("unknown command 'nope'");
   });
 
-  test('extension install and remove pass the name and their flags; extension --help lists all four', async () => {
+  test('extension install and remove pass the name and their flags; extension --help lists all five', async () => {
     const h = makeDeps();
     expect(await h.exec('extension', 'install', 'hello', '--off')).toBe(0);
     expect(h.deps.extensionInstall).toHaveBeenCalledWith({ name: 'hello', off: true });
@@ -182,8 +183,26 @@ describe('createProgram', () => {
     expect(await h.exec('extension', 'install')).toBe(2);
     expect(h.stderr()).toContain("missing required argument 'name'");
     expect(await h.exec('extension', '--help')).toBe(0);
-    const listed = h.stdout().match(/^ {2}(install|remove|list|check)\b/gm);
-    expect(listed).toEqual(['  install', '  remove', '  list', '  check']);
+    const listed = h.stdout().match(/^ {2}(install|remove|list|check|build)\b/gm);
+    expect(listed).toEqual(['  install', '  remove', '  list', '  check', '  build']);
+  });
+
+  test('extension build passes --push, --dir and --registry; a failed build exits 1', async () => {
+    const h = makeDeps();
+    expect(await h.exec('extension', 'build')).toBe(0);
+    expect(h.deps.extensionBuild).toHaveBeenLastCalledWith({});
+    expect(await h.exec('extension', 'build', '--push', '--dir', 'ext', '--registry', 'r/o')).toBe(
+      0
+    );
+    expect(h.deps.extensionBuild).toHaveBeenLastCalledWith({
+      push: true,
+      dir: 'ext',
+      registry: 'r/o',
+    });
+    expect(await h.exec('extension', 'build', '--dir')).toBe(2);
+    const failing = makeDeps({ extensionBuild: boom });
+    expect(await failing.exec('extension', 'build')).toBe(1);
+    expect(failing.stderr()).toContain('boom');
   });
 
   test.for(['--profile=x', '--dry-run', '--check', '--disconnect'])(

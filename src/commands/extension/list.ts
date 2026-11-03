@@ -1,4 +1,5 @@
 import { type Command } from 'commander';
+import { addBuild, type ExtensionBuildOptions } from './build.js';
 import { type ExtensionCheckOptions } from './check.js';
 import { type ExtensionInstallOptions } from './install.js';
 import { type ExtensionRemoveOptions } from './remove.js';
@@ -71,6 +72,7 @@ export interface ExtensionActions {
   remove: (opts: ExtensionRemoveOptions) => Promise<void>;
   list: (opts: ExtensionListOptions) => Promise<void>;
   check: (opts: ExtensionCheckOptions) => Promise<void>;
+  build: (opts: ExtensionBuildOptions) => Promise<void>;
 }
 
 const addChanges = (group: Command, { install, remove }: ExtensionActions): void => {
@@ -106,7 +108,7 @@ const addReports = (group: Command, { list, check }: ExtensionActions): void => 
     .action(check);
 };
 
-// Help lists the subcommands in this order: install, remove, list, check.
+// Help lists the subcommands in this order: install, remove, list, check, build.
 export const registerExtension = (program: Command, actions: ExtensionActions): void => {
   const group = program
     .command('extension')
@@ -115,4 +117,5 @@ export const registerExtension = (program: Command, actions: ExtensionActions): 
     .action(helpOrUnknown);
   addChanges(group, actions);
   addReports(group, actions);
+  addBuild(group, actions.build);
 };

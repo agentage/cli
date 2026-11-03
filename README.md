@@ -65,6 +65,7 @@ For extensions (see below):
 | `agentage extension remove <name> [--purge]` | Take it out of the profile and reinstall the rest                |
 | `agentage extension list`                    | One row per extension: state, version, commands, last run        |
 | `agentage extension check`                   | Load every extension once and refresh the states                 |
+| `agentage extension build [--push]`          | Build the part images of an extension package; push with digests |
 | `agentage <command>`                         | Run a command an installed extension contributes                 |
 
 Flags, exit codes and token auth are in [`docs/reference.md`](docs/reference.md).

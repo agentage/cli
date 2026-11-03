@@ -41,8 +41,9 @@ extensions.
   `install.ts` adds one extension (npm is its only seam), `remove.ts` takes one out (`--purge` asks
   through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists missing secrets
   (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per contributed command and
-  hands it to the extension); `status/account-status.ts` is what `status` asks the account (seen,
-  the profile's etag)
+  hands it to the extension), `build.ts` is `extension build`: a thin command over the kit's
+  `@agentage/extension/tool` (`build`, `buildLines`), imported on use; `status/account-status.ts`
+  is what `status` asks the account (seen, the profile's etag)
 - `src/lib/` - shared library, grouped by domain:
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,
@@ -110,7 +111,8 @@ extensions.
 - `e2e/registry/` - in-process npm registry serving `npm pack` output to e2e on loopback
 - `scripts/bump-version.js` - release helper (`node scripts/bump-version.js patch|minor|major`)
 - `src/package-guard.test.ts` - CI guard: no product or agent-runtime imports; runtime deps stay
-  exactly `chalk + commander + open`
+  exactly `@agentage/extension + chalk + commander + open` (the kit's tool only; it never loads
+  the kit's server stack, and `express` is an optional peer the cli does not install)
 
 ## Auth model
 Fresh DCR public client per `setup` run (the redirect URI binds the ephemeral callback
