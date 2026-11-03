@@ -72,7 +72,12 @@ describe('package guard (the core)', () => {
       dependencies: Record<string, string>;
       bin: Record<string, string>;
     };
-    expect(Object.keys(pkg.dependencies).sort()).toEqual(['chalk', 'commander', 'open']);
+    expect(Object.keys(pkg.dependencies).sort()).toEqual([
+      '@agentage/extension',
+      'chalk',
+      'commander',
+      'open',
+    ]);
     expect(pkg.bin['agentage']).toBe('./dist/cli.js');
   });
 

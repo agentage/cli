@@ -18,6 +18,7 @@ const agentage = async (...args: string[]) => {
     extensionRemove: notHere,
     extensionList: notHere,
     extensionCheck: notHere,
+    extensionBuild: notHere,
     updateHint: () => null,
     refreshUpdateCache: async () => undefined,
     writeOut: (text) => void out.push(text),

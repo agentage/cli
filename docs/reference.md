@@ -390,6 +390,25 @@ message) for what it loaded, `blocked` for a dependent of a failed extension, an
 state for the rest. What an extension prints while loading goes to stderr, so `--json` stays
 valid JSON. Exits 1 when any extension failed, `profile.json` is invalid, or on integrity drift.
 
+## extension build
+
+```bash
+agentage extension build                  # one image per part of the package in this folder
+agentage extension build --push           # push them, write dist/agentage-extension.json
+agentage extension build --dir ../my-ext  # another package folder
+```
+
+For extension authors and their CI: a thin command over the `@agentage/extension/tool` exports of
+the extension kit, so it builds exactly what the kit's own tool builds. It checks the `agentage`
+manifest in `package.json`, runs the package's `build` script, then builds one image per server
+part from the kit recipe (`node:26-alpine`, production dependencies, non-root), tagged
+`ghcr.io/agentage/<id>-<part>:<version>` with the labels `org.opencontainers.image.revision` (the
+full commit sha: `COMMIT_SHA`, else `GITHUB_SHA`, else the checkout's `HEAD`) and
+`org.opencontainers.image.created`. `--push` pushes each image (run `docker login ghcr.io` first)
+and writes the build record `dist/agentage-extension.json` with every image by digest;
+`--registry <host/owner>` points at another registry. Prints one line per image, then the record
+path. Needs `docker`. Exits 1 when the manifest is invalid or a build or push fails.
+
 ## Extension commands
 
 ```bash
@@ -491,9 +510,9 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 | `2`  | Usage error: an unknown command or flag, a missing flag value, or no command                        |
 
 `setup`, `extension install`, `extension remove` and `extension check` also exit 1 when an
-extension failed to load or on integrity drift, an extension command exits 1 when its extension
-cannot load, `setup --check` exits 1 when the machine is not converged, and `setup --latest`
-exits 1 when the new tree did not load clean. Signed in, `setup` also exits 1 when this machine
+extension failed to load or on integrity drift, `extension build` exits 1 when a build or push
+fails, an extension command exits 1 when its extension cannot load, `setup --check` exits 1 when
+the machine is not converged, and `setup --latest` exits 1 when the new tree did not load clean. Signed in, `setup` also exits 1 when this machine
 is connected to another account; when your account cannot be reached it carries on (exit 0).
 `extension install`, `extension remove` and `setup --latest` on a copy of your account's profile
 exit 1 when your account cannot be reached, a push fails, or a second push conflict shows both
