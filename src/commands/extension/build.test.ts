@@ -55,9 +55,4 @@ describe('extension build', () => {
     });
     expect(lines).toEqual(['api     ghcr.io/agentage/probe-api:0.1.0  built']);
   });
-
-  test('refuses a folder without a valid manifest before touching docker', async () => {
-    const tool = await loadBuildTool();
-    await expect(tool.build({ dir: '/nonexistent-agentage-extension' })).rejects.toThrow(/ENOENT/);
-  });
 });

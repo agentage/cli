@@ -42,8 +42,8 @@ extensions.
   through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists missing secrets
   (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per contributed command and
   hands it to the extension), `build.ts` is `extension build`: a thin command over the kit's
-  `@agentage/extension/tool` (`build`, `buildLines`), imported on use; `status/account-status.ts` is what `status` asks the account (seen,
-  the profile's etag)
+  `@agentage/extension/tool` (`build`, `buildLines`), imported on use; `status/account-status.ts`
+  is what `status` asks the account (seen, the profile's etag)
 - `src/lib/` - shared library, grouped by domain:
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,

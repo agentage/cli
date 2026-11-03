@@ -1,11 +1,7 @@
 import { type Command } from 'commander';
 import { type BuildOptions, type BuildResult } from '@agentage/extension/tool';
 
-export interface ExtensionBuildOptions {
-  push?: boolean;
-  dir?: string;
-  registry?: string;
-}
+export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'>;
 
 // The two exports of the kit's build tool this command uses; the logic lives in the kit.
 export interface BuildTool {
@@ -22,8 +18,7 @@ export const runExtensionBuild = async (
   tool: () => Promise<BuildTool> = loadBuildTool
 ): Promise<void> => {
   const { build, buildLines } = await tool();
-  const result = await build({ dir: opts.dir, push: opts.push, registry: opts.registry });
-  for (const line of buildLines(result)) console.log(line);
+  for (const line of buildLines(await build(opts))) console.log(line);
 };
 
 const BUILD_HELP = `
