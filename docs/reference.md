@@ -512,11 +512,11 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 `setup`, `extension install`, `extension remove` and `extension check` also exit 1 when an
 extension failed to load or on integrity drift, `extension build` exits 1 when a build or push
 fails, an extension command exits 1 when its extension cannot load, `setup --check` exits 1 when
-the machine is not converged, and `setup --latest` exits 1 when the new tree did not load clean. Signed in, `setup` also exits 1 when this machine
-is connected to another account; when your account cannot be reached it carries on (exit 0).
-`extension install`, `extension remove` and `setup --latest` on a copy of your account's profile
-exit 1 when your account cannot be reached, a push fails, or a second push conflict shows both
-documents.
+the machine is not converged, and `setup --latest` exits 1 when the new tree did not load clean.
+Signed in, `setup` also exits 1 when this machine is connected to another account; when your
+account cannot be reached it carries on (exit 0). `extension install`, `extension remove` and
+`setup --latest` on a copy of your account's profile exit 1 when your account cannot be reached,
+a push fails, or a second push conflict shows both documents.
 
 Errors go to stderr; stdout carries only command output (`status --json` stays parseable).
 
