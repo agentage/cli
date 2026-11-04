@@ -64,9 +64,14 @@ For extensions (see below):
 | `agentage extension install <name> [--off]`  | Add an extension to the profile, install and load it             |
 | `agentage extension remove <name> [--purge]` | Take it out of the profile and reinstall the rest                |
 | `agentage extension list`                    | One row per extension: state, version, commands, last run        |
-| `agentage extension check`                   | Load every extension once and refresh the states                 |
+| `agentage extension doctor`                  | Load every extension once and refresh the states                 |
 | `agentage extension build [--push]`          | Build the part images of an extension package; push with digests |
+| `agentage extension up` / `down`             | Run an extension package on this machine with Docker, then stop  |
+| `agentage extension token --scope <scope>`   | Print a token from the dev issuer `extension up` started         |
 | `agentage <command>`                         | Run a command an installed extension contributes                 |
+| `agentage <id> <command>`                    | The same for an extension built on the kit; always works         |
+
+`agentage extension check` is the old name of `doctor`, kept for 90 days.
 
 Flags, exit codes and token auth are in [`docs/reference.md`](docs/reference.md).
 
@@ -96,10 +101,18 @@ agentage setup --check                             # exit 1 when this machine di
 agentage setup --latest                            # newest versions the ranges allow, diff printed
 agentage extension install @agentage/example       # add one extension, install and load it
 agentage extension install ./my-extension          # a local folder, for development
+agentage extension install .                       # link the working copy you are in
 agentage extension remove @agentage/example        # take it out again
 agentage extension list                            # state per extension, with what setup would change
 agentage hello                                     # a command the hello extension contributes
+agentage ping                                      # a command of an extension built on the kit
+agentage probe ping                                # the same, by its extension id
 ```
+
+An extension built on the extension kit lists its commands in its manifest; each runs as
+`agentage <command>` and always as `agentage <id> <command>`. When the name is a core command,
+an extension id or a command an earlier install took, only `agentage <id> <command>` runs it, and
+the install says so.
 
 The plan is what `setup` would change, one line per extension (`+ add`, `~ update`, `- remove`,
 `o off`) and a summary such as `plan: 1 to add, 0 to update, 0 to remove, 0 off, 2 unchanged`.
@@ -127,13 +140,14 @@ Extensions run in the CLI process with your privileges, so install only extensio
 npm runs with `--ignore-scripts`, and the account token is removed from the environment before
 any extension code loads. Everything lives in the config directory:
 
-| Path                       | What                                                           |
-| -------------------------- | -------------------------------------------------------------- |
-| `~/.agentage/profile.json` | the profile: what this account wants                           |
-| `~/.agentage/machine.json` | this machine's id, name, development extensions and account    |
-| `~/.agentage/extensions/`  | installed extensions; `extensions/current` names the live tree |
-| `~/.agentage/state/`       | the last run of each extension                                 |
-| `~/.agentage/data/<id>/`   | what each extension keeps                                      |
+| Path                        | What                                                           |
+| --------------------------- | -------------------------------------------------------------- |
+| `~/.agentage/profile.json`  | the profile: what this account wants                           |
+| `~/.agentage/machine.json`  | this machine's id, name, development extensions and account    |
+| `~/.agentage/extensions/`   | installed extensions; `extensions/current` names the live tree |
+| `~/.agentage/state/`        | the last run of each extension                                 |
+| `~/.agentage/commands.json` | which extension holds each top-level command                   |
+| `~/.agentage/data/<id>/`    | what each extension keeps                                      |
 
 Every state an extension can be in, and every flag, is in [`docs/reference.md`](docs/reference.md).
 To write an extension, start with [`docs/extensions.md`](docs/extensions.md).

@@ -210,13 +210,14 @@ Extension authors: see [`extensions.md`](extensions.md).
 Extensions run in the CLI process with your privileges: installing one is an act of trust.
 What they keep, and what the CLI keeps about them, lives in the config directory:
 
-| Path              | What                                                                            |
-| ----------------- | ------------------------------------------------------------------------------- |
-| `state/<id>.json` | the last load, written by the CLI: `{ at, pid, state, error, version, lastOk }` |
-| `secrets.json`    | secrets per extension id (mode 0600, never synced)                              |
-| `logs/<id>.log`   | the extension's own log, one JSON line per entry (0600, kept under 1 MB)        |
-| `data/<id>/`      | the extension's durable data (`ctx.data`); only `remove --purge` deletes it     |
-| `cache/<id>/`     | the extension's disposable cache (`ctx.cache`), created by the extension        |
+| Path              | What                                                                                   |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| `state/<id>.json` | the last load, written by the CLI: `{ at, pid, state, error, version, lastOk }`        |
+| `commands.json`   | which kit-built extension holds each top-level command, `{ "<command>": "<package>" }` |
+| `secrets.json`    | secrets per extension id (mode 0600, never synced)                                     |
+| `logs/<id>.log`   | the extension's own log, one JSON line per entry (0600, kept under 1 MB)               |
+| `data/<id>/`      | the extension's durable data (`ctx.data`); only `remove --purge` deletes it            |
+| `cache/<id>/`     | the extension's disposable cache (`ctx.cache`), created by the extension               |
 
 The installer runs npm 10 or newer as `node npm-cli.js` (no shell, `--ignore-scripts`,
 `npm_config_*` and `NODE_OPTIONS` removed from its environment, at most 10 minutes per run) into
@@ -283,23 +284,28 @@ agentage extension install @agentage/example@~1.2     # the same, with the range
 agentage extension install example                    # short name: @agentage/extension-example, else agentage-extension-example
 agentage extension install @agentage/example --off    # install it, but do not load it on this machine
 agentage extension install ./my-extension             # a dev extension from a local folder
+agentage extension install .                          # link the working copy you are in
 ```
 
 `<name>` is resolved in this order:
 
-1. `./path`, `../path` or `/path`: a dev extension. The folder needs a `package.json` with a
-   `name` and `agentage.id`; its real path goes into `machine.json` under `dev`, keyed by package
-   name, and the profile is not changed. It loads on this machine only, in place of an installed
-   copy of the same package. `--off` is refused for it: a dev extension always loads.
+1. `.`, `./path`, `../path` or `/path`: a dev extension, the working copy linked. The folder needs
+   a `package.json` with a `name` and `agentage.id`; its real path goes into `machine.json` under
+   `dev`, keyed by package name, and the profile is not changed. It loads on this machine only, in
+   place of an installed copy of the same package. `--off` is refused for it: a dev extension
+   always loads. A working copy built on the extension kit prints
+   `linked     <package> (working copy)`, others `dev        <package> <path>`.
 2. `http:`, `file:`, `npm:` and `github:` (and any other scheme but `https:`) are refused, naming
    the rule; nothing is written.
 3. An `https:` tarball URL is kept as written, under the package name the tarball declares.
 4. A scoped name, or one starting with `agentage-extension-`, is used as written. With an
    `@<range>` suffix the range is kept as typed. Without one it is pinned to `^<version>`, the
    newest release whose `engines.agentage` (absent means `^1`) the extension API satisfies,
-   rather than the `latest` tag; each newer release that needs another API prints
-   `skipped    <version>: needs extension API <range>`. When no release fits, the command exits 1
-   naming the newest and what it needs. Prereleases are never picked.
+   rather than the `latest` tag; for a release built on the extension kit (its manifest has
+   `agentage.parts`) the range is over the kit's version instead. Each newer release that needs
+   another API prints `skipped    <version>: needs extension API <range>` (or `needs kit
+<range>`). When no release fits, the command exits 1 naming the newest and what it needs.
+   Prereleases are never picked.
 5. Any other name is a short name: `example` is `@agentage/extension-example`, else
    `agentage-extension-example`, whichever the registry has first; with neither, the command exits
    1 naming both.
@@ -315,7 +321,9 @@ profile is a copy of your account's, the change goes to your account (see
 machine's `machines[<id>].off`; installing without `--off` takes it out again. Then the command
 installs and loads the way `setup` does and prints the same rows; it exits 1 when the install or
 an extension failed. An invalid `profile.json`, or one from a newer schema, is refused and never
-overwritten. It never signs in.
+overwritten. It never signs in. When a command of a kit-built extension keeps only its namespaced
+form (see [Extension commands](#extension-commands)), one line says so after the rows:
+`namespaced agentage pong ping (agentage ping is taken by extension probe)`.
 
 ## extension remove
 
@@ -377,18 +385,25 @@ integrity drifted, or it is a dev extension whose folder anyone can write to or 
 Declared defaults fill the keys the profile leaves out. `invalid` extensions are never imported.
 The JSON adds a top-level `plan`, the summary `{ add, update, remove, off, unchanged }`.
 
-## extension check
+## extension doctor
 
 ```bash
-agentage extension check          # load every extension once, print ok or failed
-agentage extension check --json   # { machine, profile, extensions: [...] } on stdout
+agentage extension doctor          # load every extension once, print ok or failed
+agentage extension doctor --json   # { machine, profile, extensions: [...] } on stdout
 ```
 
 Loads every extension this machine can run once, the way `setup` does, rewrites
 `state/<id>.json` for each and prints the rows: `state` is `ok` or `failed` (with the extension's
 message) for what it loaded, `blocked` for a dependent of a failed extension, and the static
-state for the rest. What an extension prints while loading goes to stderr, so `--json` stays
-valid JSON. Exits 1 when any extension failed, `profile.json` is invalid, or on integrity drift.
+state for the rest. An extension built on the extension kit is not imported by the CLI: the kit
+checks that its command entry exports `create` and that its handlers are exactly the commands it
+declares, `ok` or `failed` with what differs. What an extension prints while loading goes to
+stderr, so `--json` stays valid JSON. Exits 1 when any extension failed, `profile.json` is
+invalid, or on integrity drift.
+
+`agentage extension check` is the old name, kept for 90 days: it prints
+`warning: agentage extension check is now agentage extension doctor; in 90 days check becomes the
+conformance check` on stderr, then does the same.
 
 ## extension build
 
@@ -408,6 +423,26 @@ full commit sha: `COMMIT_SHA`, else `GITHUB_SHA`, else the checkout's `HEAD`) an
 and writes the build record `dist/agentage-extension.json` with every image by digest;
 `--registry <host/owner>` points at another registry. Prints one line per image, then the record
 path. Needs `docker`. Exits 1 when the manifest is invalid or a build or push fails.
+
+## extension up, down and token
+
+```bash
+agentage extension up                         # run the package in this folder on Docker
+agentage extension up --dir ../my-ext         # another package folder
+agentage extension down                       # remove what up started
+agentage extension down --keep-data           # keep the store's volume for the next up
+agentage extension token --scope probe:write  # a dev token, alone on stdout
+```
+
+For extension authors: thin commands over the `@agentage/extension/tool` exports of the extension
+kit, imported only when one of them runs. `up` runs the package the way a deployment does, with
+Docker only: the part images built with the release recipe, the store with its migrations and
+seeds, a dev token issuer and a local gateway, and prints one line per step as the kit reports
+it, the last once every part is healthy. `down` removes its containers, network and store volume
+(`--keep-data` keeps the volume). `token --scope <scope> [--issuer <url>]` prints a token from
+the dev issuer `up` started (default `http://localhost:4281`), trusted only by `up`; an issuer
+that is not an `http:` or `https:` URL is a usage error. Each exits 1 with the kit's message when
+its step fails.
 
 ## Extension commands
 
@@ -433,6 +468,28 @@ world: world
 
 Reading the manifests never stops `setup`, `status` or `update`: an extension with a broken
 manifest contributes no commands.
+
+### Commands of an extension built on the extension kit
+
+```bash
+agentage ping            # the command ping of the probe extension
+agentage ping hi         # its args, parsed and checked by the kit
+agentage probe ping hi   # the same; always works
+agentage probe --help    # probe's commands from its manifest, no code run
+```
+
+A manifest with `agentage.parts` is built on the extension kit. Each command in its
+`agentage.commands` runs as `agentage <command>`, and always as `agentage <id> <command>`. The CLI
+hands what follows the command, `--json` and `--help` included, to the kit untouched; the kit
+parses the args, runs the handler the package's command entry (`parts.cli.entry`, else
+`./dist/cli/index.js`) returns from `create`, and its exit code is the CLI's: 0 ok, 2 usage, 1
+failure.
+
+A command whose name is a core command, an extension id, or a command an earlier-installed
+extension already took keeps only its namespaced form, `agentage <id> <command>`; the install says
+so in one line, and `extension list` shows that form in its commands column. Which extension holds
+each top-level command is kept in `commands.json`, so the earlier install keeps it whatever is
+installed later.
 
 ## Extension context
 
@@ -509,9 +566,10 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 | `1`  | A step failed: sign-in, install or update failed, a refused or invalid profile, or an invalid token |
 | `2`  | Usage error: an unknown command or flag, a missing flag value, or no command                        |
 
-`setup`, `extension install`, `extension remove` and `extension check` also exit 1 when an
+`setup`, `extension install`, `extension remove` and `extension doctor` also exit 1 when an
 extension failed to load or on integrity drift, `extension build` exits 1 when a build or push
-fails, an extension command exits 1 when its extension cannot load, `setup --check` exits 1 when
+fails, `extension up`, `down` and `token` exit 1 when the kit's step fails, an extension command
+exits 1 when its extension cannot load (a kit-built one exits with the kit's code), `setup --check` exits 1 when
 the machine is not converged, and `setup --latest` exits 1 when the new tree did not load clean.
 Signed in, `setup` also exits 1 when this machine is connected to another account; when your
 account cannot be reached it carries on (exit 0). `extension install`, `extension remove` and

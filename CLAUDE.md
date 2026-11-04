@@ -4,8 +4,14 @@ The agentage CLI core. Commands: `setup` (OAuth sign-in), `status`, `update`.
 Extensions extend it through `src/core/`, always on (no env switch): `setup --profile` installs
 and loads them, `setup --latest` moves them to the newest versions their ranges allow (`npm update`
 in a staged tree, the new tree current only after a clean load), `extension install` and
-`extension remove` add or take out one at a time, `extension list` and `extension check` show
-them, and the commands they contribute run as `agentage <command>`. Without a range, `extension
+`extension remove` add or take out one at a time, `extension list` and `extension doctor` show
+them (`extension check` is its old name for 90 days), and the commands they contribute run
+as `agentage <command>`. Two manifest kinds: the 1.0 API (`register(ctx)`, `engines.agentage`
+over `EXTENSION_API_VERSION`) and kit-shaped (`agentage.parts`; `engines.agentage` over the kit's
+version; never register-loaded: the kit's `checkCli` checks it, its `runCommand` runs
+`agentage {command}` and `agentage {id} {command}`, its exit code is the CLI's; a verb a core
+command, an extension id or an earlier install has stays namespaced, `commands.json` keeps who
+holds each verb). Without a range, `extension
 install` pins the newest release whose `engines.agentage` fits `EXTENSION_API_VERSION`. After a
 successful install only the tree `extensions/current` names is kept. The model: the profile is the
 desired state, the installed tree (plus
@@ -28,7 +34,8 @@ extensions.
   `NO_COLOR`
 - `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability: `auth/`
   (`setup` registration: its flags and help), `status/`, `update/`, `extension/` (`rows.ts` gathers the extension rows, `list.ts`
-  prints them and registers the `extension` group, `check.ts` loads once and reports, `row-lines.ts`
+  prints them and registers the `extension` group, `doctor.ts` loads once and reports (and
+  `deprecatedCheck`, the `check` alias), `row-lines.ts`
   renders the rows and the `status` lines, `install-load.ts` is the install, load, print rows, fail
   flow `setup`, `install` and `remove` end with, `setup.ts` is the extensions `setup` flow (its only
   deps are the network ones, npm and the account), `setup-cloud.ts` its signed-in half (account
@@ -38,11 +45,14 @@ extensions.
   current, then the same push with the lock counting),
   `account.ts` the account seam (`signedInAccount`: bearer fetch to the API origin plus the account
   id from introspection; null when signed out), `plan.ts` is `setup --dry-run` and `setup --check`,
-  `install.ts` adds one extension (npm is its only seam), `remove.ts` takes one out (`--purge` asks
+  `install.ts` adds one extension (npm is its only seam; a kit-built working copy prints `linked`), `remove.ts` takes one out (`--purge` asks
   through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists missing secrets
   (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per contributed command and
   hands it to the extension), `build.ts` is `extension build`: a thin command over the kit's
-  `@agentage/extension/tool` (`build`, `buildLines`), imported on use; `status/account-status.ts`
+  `@agentage/extension/tool` (`build`, `buildLines`), imported on use; `kit-tool.ts` is the rest of
+  that seam (`runCommand`, `checkCli`, `up`, `down`, `token`, `loadKitTool`, `kitCheck`), `up.ts`
+  is `extension up`, `down` and `token` over it, `kit-commands.ts` registers a kit-built
+  extension's `agentage {id}` group and top-level verbs; `status/account-status.ts`
   is what `status` asks the account (seen, the profile's etag)
 - `src/lib/` - shared library, grouped by domain:
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
@@ -64,10 +74,13 @@ extensions.
     seam), `push.ts`: push with one replay on 412 and the npm-major lock rule (`lockCounts`: a new
     lock alone is a change, for `setup --latest`), `register.ts`: the
     `/v1/machines` calls, 2 s, never throwing, `AGENTAGE_DEBUG=1` prints one line each)
+  - `kit-version.ts` - the kit's version read from its `package.json`, so startup never imports
+    the kit
   - `loader/` - reading without running: `scan.ts` (profile + machine + manifests -> static states,
     the plan, rows to remove, integrity drift and the load set; or of a tree that is not current
     yet, for `setup --latest`), `discover.ts`, `dev-path.ts` (a dev
-    folder another user can write is invalid), `manifest.ts`, `config.ts` (config slice checked
+    folder another user can write is invalid), `manifest.ts` (both kinds; `kit-manifest.ts` reads the kit-shaped block), `verbs.ts` (who
+    runs each top-level verb: `claimVerbs`, `commands.json`), `config.ts` (config slice checked
     against `configuration`: type, `enum`, defaults filled), `states.ts`; running: `load.ts` (a
     session: peer order via `order.ts`, `AGENTAGE_TOKEN` removed, console to stderr,
     `state/<id>.json` via `state.ts`, which keeps `lastOk` for `ctx.previousVersion`), `register.ts`
@@ -81,8 +94,9 @@ extensions.
     `extensions/trees/<hash>/` + `.complete` + `extensions/current`, `install.lock` with a
     heartbeat, `collectTrees`: every tree but `current` removed after a success, staging dirs left
     to the next locked run), `compare-lock.ts` (normalized lock compare, root dependencies,
-    locked versions, integrity drift), `compat.ts` (the extension API gate: `engines.agentage`
-    against `EXTENSION_API_VERSION`, newest compatible version, `npm view` output),
+    locked versions, integrity drift), `compat.ts` (the gate: `engines.agentage` against
+    `EXTENSION_API_VERSION`, or the kit's version for a kit-shaped release (`agentage.parts` in
+    `npm view`), newest compatible version, `npm view` output),
     `latest.ts` (`setup --latest`: `npm update` in a staged tree, held-back extensions whose new
     version fails the gate, the version diff, a check before the tree becomes current),
     `plan.ts` (desired vs current: `add`, `update`, `remove`, `off`, `unchanged` per package, from
