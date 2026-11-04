@@ -29,8 +29,7 @@ export interface KitTool {
 export type LoadKitTool = () => Promise<KitTool>;
 
 // Imported on use, so every other command starts without loading the kit.
-export const loadKitTool: LoadKitTool = async () =>
-  (await import('@agentage/extension/tool')) as unknown as KitTool;
+export const loadKitTool: LoadKitTool = () => import('@agentage/extension/tool');
 
 // doctor and every load check a kit-shaped extension's command entry through the kit.
 export const kitCheck =
