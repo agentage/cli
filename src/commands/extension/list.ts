@@ -1,10 +1,11 @@
 import { type Command } from 'commander';
 import { addBuild, type ExtensionBuildOptions } from './build.js';
-import { type ExtensionCheckOptions } from './check.js';
+import { type ExtensionDoctorOptions } from './doctor.js';
 import { type ExtensionInstallOptions } from './install.js';
 import { type ExtensionRemoveOptions } from './remove.js';
 import { printWarnings, rowLines } from './row-lines.js';
 import { gatherExtensions, invalidProfileError, type ExtensionsGather } from './rows.js';
+import { addKitTools, type KitActions } from './up.js';
 
 export interface ExtensionListOptions {
   json?: boolean;
@@ -27,18 +28,21 @@ export const runExtensionList = async (opts: ExtensionListOptions = {}): Promise
 };
 
 const INSTALL_HELP = `
-<name> is resolved in this order: a local path (./path or /path) is a dev extension, kept in
-machine.json by its real path and loaded on this machine only, in place of an installed copy of
-the same package; http:, file:, npm: and github: are refused; an https: tarball URL and a
-package name are used as written (a name without @<range> is pinned to ^ its newest version
-whose engines.agentage fits this CLI's extension API, naming each newer version it skipped);
-a short name like memory is @agentage/extension-memory, else agentage-extension-memory. A
-package goes into profile.json (created from the default profile when absent), from the
-registry the profile names for its scope; --off keeps it from loading on this machine. Then
-installs and loads like setup, and exits 1 when an extension failed. Never signs in. On a
-machine whose profile comes from your account, the change applies to the account's newest
-profile and is pushed (with npm's lock) once everything loaded; if another machine pushed in
-between, it is replayed once on that profile.`;
+<name> is resolved in this order: a local path (./path or /path) is a working copy, linked as a
+dev extension: kept in machine.json by its real path and loaded on this machine only, in place
+of an installed copy of the same package; http:, file:, npm: and github: are refused; an https:
+tarball URL and a package name are used as written (a name without @<range> is pinned to ^ its
+newest version whose engines.agentage fits this CLI's extension API, or the kit's version for a
+package built on the extension kit, naming each newer version it skipped); a short name like
+memory is @agentage/extension-memory, else agentage-extension-memory. A package goes into
+profile.json (created from the default profile when absent), from the registry the profile
+names for its scope; --off keeps it from loading on this machine. Then installs and loads like
+setup, and exits 1 when an extension failed. Never signs in. On a machine whose profile comes
+from your account, the change applies to the account's newest profile and is pushed (with npm's
+lock) once everything loaded; if another machine pushed in between, it is replayed once on that
+profile. The commands of a package built on the kit run as agentage <command> and always as
+agentage <id> <command>; one whose name is a core command, an extension id or a command an
+earlier install took runs only as agentage <id> <command>, and one line says so.`;
 
 const REMOVE_HELP = `
 <name> is a package name, a short name or an extension id. Refused while another extension
@@ -54,24 +58,28 @@ nothing), package, installed version, wanted range, contributed commands, the la
 state/<id>.json, and the reason when it cannot load. Extension code is never loaded; the only
 file written is machine.json.`;
 
-const CHECK_HELP = `
+const DOCTOR_HELP = `
 Loads every extension this machine can run, once, the way setup does: what an extension prints
 while loading goes to stderr, state/<id>.json is rewritten for each, and the rows show ok or
-failed with the reason (a dependent of a failed extension is blocked). Exits 1 when any
-extension failed, or on integrity drift between the lock and the installed tree.`;
+failed with the reason (a dependent of a failed extension is blocked). An extension built on the
+extension kit is ok when its command entry exports create and its handlers are the commands it
+declares. Exits 1 when any extension failed, or on integrity drift between the lock and the
+installed tree. extension check is its old name, kept for 90 days.`;
 
 // Bare `extension` prints its help (exit 0); an unknown subcommand stays a usage error (exit 2).
-const helpOrUnknown = (_opts: unknown, group: Command): void => {
+export const helpOrUnknown = (_opts: unknown, group: Command): void => {
   const name = group.args[0];
   if (name === undefined) group.help();
   group.error(`error: unknown command '${name}'`, { code: 'commander.unknownCommand' });
 };
 
-export interface ExtensionActions {
+export interface ExtensionActions extends KitActions {
   install: (opts: ExtensionInstallOptions) => Promise<void>;
   remove: (opts: ExtensionRemoveOptions) => Promise<void>;
   list: (opts: ExtensionListOptions) => Promise<void>;
-  check: (opts: ExtensionCheckOptions) => Promise<void>;
+  doctor: (opts: ExtensionDoctorOptions) => Promise<void>;
+  // doctor after one deprecation line, for 90 days.
+  check: (opts: ExtensionDoctorOptions) => Promise<void>;
   build: (opts: ExtensionBuildOptions) => Promise<void>;
 }
 
@@ -93,7 +101,7 @@ const addChanges = (group: Command, { install, remove }: ExtensionActions): void
     .action((name: string, opts: { purge?: boolean; yes?: boolean }) => remove({ name, ...opts }));
 };
 
-const addReports = (group: Command, { list, check }: ExtensionActions): void => {
+const addReports = (group: Command, { list, doctor, check }: ExtensionActions): void => {
   group
     .command('list')
     .description('Show one row per extension: state, versions, commands, last run')
@@ -101,14 +109,19 @@ const addReports = (group: Command, { list, check }: ExtensionActions): void => 
     .addHelpText('after', LIST_HELP)
     .action(list);
   group
-    .command('check')
+    .command('doctor')
     .description('Load every extension once and refresh its state: ok or failed')
     .option('--json', 'machine-readable output')
-    .addHelpText('after', CHECK_HELP)
+    .addHelpText('after', DOCTOR_HELP)
+    .action(doctor);
+  group
+    .command('check', { hidden: true })
+    .description('Deprecated: the old name of doctor')
+    .option('--json', 'machine-readable output')
     .action(check);
 };
 
-// Help lists the subcommands in this order: install, remove, list, check, build.
+// Help lists the subcommands in this order: install, remove, list, doctor, build, up, down, token.
 export const registerExtension = (program: Command, actions: ExtensionActions): void => {
   const group = program
     .command('extension')
@@ -118,4 +131,5 @@ export const registerExtension = (program: Command, actions: ExtensionActions): 
   addChanges(group, actions);
   addReports(group, actions);
   addBuild(group, actions.build);
+  addKitTools(group, actions);
 };

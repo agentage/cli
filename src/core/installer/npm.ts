@@ -12,7 +12,7 @@ export type NpmCommand = 'ci' | 'install' | 'update';
 // `packages` limits an update to those packages.
 export type Npm = (command: NpmCommand, tree: string, packages?: string[]) => Promise<NpmResult>;
 
-// pack: what one spec resolves to; view: every release of a name with its engines.
+// pack: what one spec resolves to; view: every release of a name with its engines and parts.
 export type LookupCommand = 'pack' | 'view';
 
 // `extension install`'s seam: what the registry has, read by npm without installing anything.
@@ -25,7 +25,7 @@ export type NpmManifest = (
 // `name` keeps every version an object: npm view unwraps to bare values when the first has one field.
 const LOOKUP_FLAGS: Record<LookupCommand, string[]> = {
   pack: ['--dry-run', '--json'],
-  view: ['name', 'version', 'engines', '--json'],
+  view: ['name', 'version', 'engines', 'agentage.parts', '--json'],
 };
 
 // npm reads its env config case-insensitively, so either spelling may carry these paths.

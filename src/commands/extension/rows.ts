@@ -1,9 +1,10 @@
 import { type PlanSummary, type PlanVerb } from '../../core/installer/plan.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { type LoadOutcome } from '../../core/loader/load.js';
-import { scan, type Scan } from '../../core/loader/scan.js';
+import { loadSet, scan, type Scan } from '../../core/loader/scan.js';
 import { readRunState } from '../../core/loader/state.js';
 import { type StaticResult, type StaticState } from '../../core/loader/states.js';
+import { claimVerbs, commandNames, readHeld, type Verbs } from '../../core/loader/verbs.js';
 import { loadMachine, type MachineFile, type ProfileSource } from '../../core/profile/machine.js';
 import { type ProfileParse } from '../../core/profile/schema.js';
 
@@ -51,6 +52,8 @@ export interface ExtensionsGather {
   warnings: string[];
   // name@version whose integrity the two locks disagree on.
   drift: string[];
+  // Who runs each top-level verb of a kit-built extension, and what runs only namespaced.
+  verbs: Verbs;
 }
 
 const profileStatus = (parsed: ProfileParse | null, machine: MachineFile): ProfileStatus => {
@@ -68,7 +71,12 @@ const lastRunOf = (p: DiscoveredExtension, s: StaticResult): ExtensionRow['lastR
   return run && { at: run.at, state: run.state, error: run.error };
 };
 
-const toRow = (p: DiscoveredExtension, found: Scan, s: StaticResult): ExtensionRow => ({
+interface Seen {
+  found: Scan;
+  verbs: Verbs;
+}
+
+const toRow = (p: DiscoveredExtension, { found, verbs }: Seen, s: StaticResult): ExtensionRow => ({
   id: p.id,
   package: p.pkg,
   mode: p.source === 'dev' ? 'dev' : 'installed',
@@ -77,7 +85,7 @@ const toRow = (p: DiscoveredExtension, found: Scan, s: StaticResult): ExtensionR
   state: s.state,
   plan: p.source === 'dev' ? null : verbOf(found, p.pkg),
   error: s.error,
-  commands: p.commands,
+  commands: commandNames(p, verbs),
   lastRun: lastRunOf(p, s),
 });
 
@@ -91,17 +99,23 @@ const withRun = (row: ExtensionRow, run: LoadOutcome | undefined): ExtensionRow 
 const UNKNOWN: StaticResult = { state: 'invalid', error: null };
 const STILL_INSTALLED: StaticResult = { state: 'installed', error: null };
 
+const rowsOf = (seen: Seen, runs: ReadonlyMap<string, LoadOutcome>): ExtensionRow[] => {
+  const { found, states, removed } = seen.found;
+  return [
+    ...found.extensions.map((p) =>
+      withRun(toRow(p, seen, states.get(p.pkg) ?? UNKNOWN), runs.get(p.pkg))
+    ),
+    ...removed.map((p) => toRow(p, seen, STILL_INSTALLED)),
+  ].sort((a, b) => (a.package < b.package ? -1 : 1));
+};
+
 export const gatherFrom = (
   found: Scan,
   runs: ReadonlyMap<string, LoadOutcome> = new Map()
 ): ExtensionsGather => {
-  const { machine, parsed, states } = found;
-  const extensions = [
-    ...found.found.extensions.map((p) =>
-      withRun(toRow(p, found, states.get(p.pkg) ?? UNKNOWN), runs.get(p.pkg))
-    ),
-    ...found.removed.map((p) => toRow(p, found, STILL_INSTALLED)),
-  ].sort((a, b) => (a.package < b.package ? -1 : 1));
+  const { machine, parsed } = found;
+  const seen = { found, verbs: claimVerbs(loadSet(found), readHeld()) };
+  const extensions = rowsOf(seen, runs);
   const status = {
     machine: { id: machine.id, name: machine.name },
     profile: profileStatus(parsed, machine),
@@ -109,7 +123,7 @@ export const gatherFrom = (
     extensions,
   };
   const warnings = [...(parsed?.ok ? parsed.warnings : []), ...found.found.warnings];
-  return { status, warnings, drift: found.drift };
+  return { status, warnings, drift: found.drift, verbs: seen.verbs };
 };
 
 // Reads manifests, profile and state files; writes only a missing machine.json.

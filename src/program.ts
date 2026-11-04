@@ -2,8 +2,12 @@ import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
 import { registerSetup, type SetupDeps, type SetupOptions } from './commands/auth/setup.js';
 import { runExtensionBuild, type ExtensionBuildOptions } from './commands/extension/build.js';
-import { runExtensionCheck, type ExtensionCheckOptions } from './commands/extension/check.js';
 import { registerDelegates } from './commands/extension/delegate.js';
+import {
+  deprecatedCheck,
+  runExtensionDoctor,
+  type ExtensionDoctorOptions,
+} from './commands/extension/doctor.js';
 import { runExtensionInstall, type ExtensionInstallOptions } from './commands/extension/install.js';
 import {
   registerExtension,
@@ -16,7 +20,17 @@ import {
   type ExtensionRemoveOptions,
 } from './commands/extension/remove.js';
 import { signedInAccount } from './commands/extension/account.js';
+import { KIT_EXIT } from './commands/extension/kit-commands.js';
+import { loadKitTool, type LoadKitTool } from './commands/extension/kit-tool.js';
 import { runExtensionSetup } from './commands/extension/setup.js';
+import {
+  runExtensionDown,
+  runExtensionToken,
+  runExtensionUp,
+  type ExtensionDownOptions,
+  type ExtensionTokenOptions,
+  type ExtensionUpOptions,
+} from './commands/extension/up.js';
 import {
   registerStatus,
   runStatus,
@@ -36,8 +50,13 @@ export interface ProgramDeps {
   extensionInstall: (opts: ExtensionInstallOptions) => Promise<void>;
   extensionRemove: (opts: ExtensionRemoveOptions) => Promise<void>;
   extensionList: (opts: ExtensionListOptions) => Promise<void>;
-  extensionCheck: (opts: ExtensionCheckOptions) => Promise<void>;
+  extensionDoctor: (opts: ExtensionDoctorOptions) => Promise<void>;
   extensionBuild: (opts: ExtensionBuildOptions) => Promise<void>;
+  extensionUp: (opts: ExtensionUpOptions) => Promise<void>;
+  extensionDown: (opts: ExtensionDownOptions) => Promise<void>;
+  extensionToken: (opts: ExtensionTokenOptions) => Promise<void>;
+  // The kit's tool library, which runs the commands of kit-built extensions.
+  kitTool: LoadKitTool;
   updateHint: () => string | null;
   refreshUpdateCache: () => Promise<void>;
   writeOut: (text: string) => void;
@@ -61,8 +80,12 @@ const defaultDeps: ProgramDeps = {
     runExtensionInstall(opts, { ...editDeps, manifest: () => prepareManifest() }),
   extensionRemove: (opts) => runExtensionRemove(opts, { ...editDeps, io: terminalIo() }),
   extensionList: (opts) => runExtensionList(opts),
-  extensionCheck: (opts) => runExtensionCheck(opts),
+  extensionDoctor: (opts) => runExtensionDoctor(opts),
   extensionBuild: (opts) => runExtensionBuild(opts),
+  extensionUp: (opts) => runExtensionUp(opts),
+  extensionDown: (opts) => runExtensionDown(opts),
+  extensionToken: (opts) => runExtensionToken(opts),
+  kitTool: loadKitTool,
   updateHint,
   refreshUpdateCache: () => refreshUpdateCache(),
   writeOut: (text) => void process.stdout.write(text),
@@ -105,11 +128,15 @@ const addExtensions = (program: Command, deps: ProgramDeps, argv: string[]): voi
     install: withAction(deps, deps.extensionInstall),
     remove: withAction(deps, deps.extensionRemove),
     list: withAction(deps, deps.extensionList),
-    check: withAction(deps, deps.extensionCheck),
+    doctor: withAction(deps, deps.extensionDoctor),
+    check: withAction(deps, deprecatedCheck(deps.extensionDoctor, deps.writeErr)),
     build: withAction(deps, deps.extensionBuild),
+    up: withAction(deps, deps.extensionUp),
+    down: withAction(deps, deps.extensionDown),
+    token: withAction(deps, deps.extensionToken),
   });
   try {
-    registerDelegates(program, argv, (fn) => withAction(deps, fn));
+    registerDelegates(program, argv, (fn) => withAction(deps, fn), deps.kitTool);
   } catch (err) {
     deps.writeErr(`${chalk.yellow(`warning: extension commands skipped: ${messageOf(err)}`)}\n`);
   }
@@ -135,13 +162,14 @@ export const createProgram = (
   return program;
 };
 
-// Commander's own exit 0 (--help, --version) stays 0; any other commander error is usage.
+// --help and --version stay 0; a kit command keeps its code; any other commander error is usage.
 const exitCodeOf = (err: unknown, deps: ProgramDeps): number => {
   if (!(err instanceof CommanderError)) {
     deps.writeErr(`${chalk.red(messageOf(err))}\n`);
     return EXIT_FAILED;
   }
   if (err.code === ACTION_FAILED) return EXIT_FAILED;
+  if (err.code === KIT_EXIT) return err.exitCode;
   return err.exitCode === 0 ? EXIT_OK : EXIT_USAGE;
 };
 

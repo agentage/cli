@@ -1,0 +1,28 @@
+{
+  "name": "@agentage/fixture-pong",
+  "version": "0.2.0",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "agentage": "^0.2"
+  },
+  "agentage": {
+    "id": "pong",
+    "parts": {
+      "api": true,
+      "cli": {
+        "entry": "./cli.js"
+      }
+    },
+    "commands": [
+      {
+        "name": "ping",
+        "summary": "answer from pong"
+      },
+      {
+        "name": "status",
+        "summary": "a name the core holds"
+      }
+    ]
+  }
+}

@@ -1,18 +1,18 @@
 import { realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
-import { EXTENSION_API_VERSION } from '../../extension.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type NpmResult } from '../../lib/npm/npm-cli.js';
 import { PACKAGE_NAME, specProblem } from '../profile/schema.js';
-import { needs, newestCompatible, parsePublished, type Published } from './compat.js';
+import { cliGate, needs, newestCompatible, parsePublished, type Published } from './compat.js';
+import { isKitShaped } from '../loader/kit-manifest.js';
 import { lastLines } from './installer.js';
 import { type LookupCommand, type NpmManifest } from './npm.js';
 
 // A package goes into profile.json; a dev extension into machine.json, by its real path.
-// `skipped`: newer versions left out because their engines.agentage does not fit.
+// `skipped`: newer versions whose engines.agentage does not fit; `kit`: built on the kit.
 export type Resolved =
   | { kind: 'package'; name: string; spec: string; skipped: Published[] }
-  | { kind: 'dev'; name: string; path: string };
+  | { kind: 'dev'; name: string; path: string; kit: boolean };
 
 export interface Found {
   name: string;
@@ -70,7 +70,7 @@ const devExtension = (input: string): Resolved => {
     throw new Error(
       `${input}: not an extension folder (no package.json with a name and agentage.id)`
     );
-  return { kind: 'dev', name, path };
+  return { kind: 'dev', name, path, kit: isKitShaped(agentage) };
 };
 
 // The first candidate the registry has; a missing one moves on to the next.
@@ -90,10 +90,11 @@ const fromUrl = async (url: string, look: Lookup): Promise<Resolved> => {
 };
 
 const pinned = (input: string, name: string, published: Published[]): Resolved => {
-  const { version, skipped } = newestCompatible(published);
+  const gate = cliGate();
+  const { version, skipped } = newestCompatible(published, gate);
   if (version !== null) return { kind: 'package', name, spec: `^${version}`, skipped };
   const newest = skipped[0] === undefined ? '' : ` (${needs(skipped[0])})`;
-  const api = `extension API ${EXTENSION_API_VERSION}`;
+  const api = skipped[0]?.kit ? `kit ${gate.kit}` : `extension API ${gate.api}`;
   throw new Error(`${input}: no published version works with ${api}${newest}`);
 };
 

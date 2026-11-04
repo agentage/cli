@@ -16,8 +16,14 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     extensionInstall: vi.fn(async () => undefined),
     extensionRemove: vi.fn(async () => undefined),
     extensionList: vi.fn(async () => undefined),
-    extensionCheck: vi.fn(async () => undefined),
+    extensionDoctor: vi.fn(async () => undefined),
     extensionBuild: vi.fn(async () => undefined),
+    extensionUp: vi.fn(async () => undefined),
+    extensionDown: vi.fn(async () => undefined),
+    extensionToken: vi.fn(async () => undefined),
+    kitTool: vi.fn(async () => {
+      throw new Error('no kit in these tests');
+    }),
     updateHint: vi.fn(() => 'update available: 9.9.9'),
     refreshUpdateCache: vi.fn(async () => undefined),
     writeOut: (text) => void out.push(text),
@@ -162,19 +168,50 @@ describe('createProgram', () => {
     }
   });
 
-  test('extension alone prints its help; list and check pass --json; an unknown subcommand is usage', async () => {
+  test('extension alone prints its help; list and doctor pass --json; an unknown subcommand is usage', async () => {
     const h = makeDeps();
     expect(await h.exec('extension')).toBe(0);
     expect(h.stdout()).toContain('Usage: agentage extension');
     expect(await h.exec('extension', 'list', '--json')).toBe(0);
     expect(h.deps.extensionList).toHaveBeenCalledWith({ json: true });
-    expect(await h.exec('extension', 'check', '--json')).toBe(0);
-    expect(h.deps.extensionCheck).toHaveBeenCalledWith({ json: true });
+    expect(await h.exec('extension', 'doctor', '--json')).toBe(0);
+    expect(h.deps.extensionDoctor).toHaveBeenCalledWith({ json: true });
     expect(await h.exec('extension', 'nope')).toBe(2);
     expect(h.stderr()).toContain("unknown command 'nope'");
   });
 
-  test('extension install and remove pass the name and their flags; extension --help lists all five', async () => {
+  test('extension check runs doctor after one deprecation line on stderr; stdout stays clean', async () => {
+    const h = makeDeps();
+    expect(await h.exec('extension', 'check', '--json')).toBe(0);
+    expect(h.deps.extensionDoctor).toHaveBeenCalledWith({ json: true });
+    expect(h.stderr().trim().split('\n')).toEqual([
+      'warning: agentage extension check is now agentage extension doctor; in 90 days check becomes the conformance check',
+    ]);
+    expect(h.stdout()).toBe('');
+    const failing = makeDeps({ extensionDoctor: boom });
+    expect(await failing.exec('extension', 'check')).toBe(1);
+  });
+
+  test('extension up, down and token pass their flags; token needs --scope and an http(s) issuer', async () => {
+    const h = makeDeps();
+    expect(await h.exec('extension', 'up', '--dir', 'probe')).toBe(0);
+    expect(h.deps.extensionUp).toHaveBeenLastCalledWith({ dir: 'probe' });
+    expect(await h.exec('extension', 'down', '--keep-data')).toBe(0);
+    expect(h.deps.extensionDown).toHaveBeenLastCalledWith({ keepData: true });
+    const issuer = ['--issuer', 'http://localhost:4281'];
+    expect(await h.exec('extension', 'token', '--scope', 'probe:write', ...issuer)).toBe(0);
+    expect(h.deps.extensionToken).toHaveBeenLastCalledWith({
+      scope: 'probe:write',
+      issuer: 'http://localhost:4281',
+    });
+    expect(await h.exec('extension', 'token')).toBe(2);
+    expect(h.stderr()).toContain("required option '--scope <scope>' not specified");
+    expect(await h.exec('extension', 'token', '--scope', 'x:y', '--issuer', 'ftp://x')).toBe(2);
+    expect(h.stderr()).toContain('not an http: or https: URL.');
+    expect(await makeDeps({ extensionUp: boom }).exec('extension', 'up')).toBe(1);
+  });
+
+  test('extension install and remove pass the name and their flags; extension --help lists them all', async () => {
     const h = makeDeps();
     expect(await h.exec('extension', 'install', 'hello', '--off')).toBe(0);
     expect(h.deps.extensionInstall).toHaveBeenCalledWith({ name: 'hello', off: true });
@@ -183,8 +220,19 @@ describe('createProgram', () => {
     expect(await h.exec('extension', 'install')).toBe(2);
     expect(h.stderr()).toContain("missing required argument 'name'");
     expect(await h.exec('extension', '--help')).toBe(0);
-    const listed = h.stdout().match(/^ {2}(install|remove|list|check|build)\b/gm);
-    expect(listed).toEqual(['  install', '  remove', '  list', '  check', '  build']);
+    const listed = h
+      .stdout()
+      .match(/^ {2}(install|remove|list|doctor|check|build|up|down|token)\b/gm);
+    expect(listed).toEqual([
+      '  install',
+      '  remove',
+      '  list',
+      '  doctor',
+      '  build',
+      '  up',
+      '  down',
+      '  token',
+    ]);
   });
 
   test('extension build passes --push, --dir and --registry; a failed build exits 1', async () => {

@@ -25,6 +25,7 @@ describe("an extension's package.json", () => {
       })
     );
     expect(info).toEqual({
+      kind: 'api',
       name: NAME,
       version: '1.2.3',
       id: 'x',
@@ -34,6 +35,8 @@ describe("an extension's package.json", () => {
       peers: ['@agentage/fixture-hello', 'express'],
       optionalPeers: ['express'],
       configuration: {},
+      kitCommands: [],
+      shape: null,
     });
   });
 
@@ -97,4 +100,49 @@ describe("an extension's package.json", () => {
       expect(problemOf({ agentage: { id } })).toBe(`agentage.id "${id}" is reserved`);
     }
   );
+});
+
+describe('a kit-shaped package.json (agentage.parts)', () => {
+  const PROBE = '@agentage/extension-probe';
+  const ping = { name: 'ping', summary: 'answer pong', args: [{ name: 'msg', type: 'string' }] };
+  const kit = (agentage: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) => ({
+    name: PROBE,
+    version: '0.2.0',
+    engines: { agentage: '^0.2' },
+    agentage: { id: 'probe', parts: { api: true, cli: true }, commands: [ping], ...agentage },
+    ...extra,
+  });
+  const problem = (agentage = {}, extra = {}, version = '0.2.1'): string | null =>
+    manifestProblem(PROBE, manifestInfo(kit(agentage, extra)), '1.0.0', version);
+
+  it('reads the command entry, the command names and summaries; it has no peers', () => {
+    const info = manifestInfo(kit({}, { peerDependencies: { react: '^19' } }));
+    expect(info).toMatchObject({
+      kind: 'kit',
+      id: 'probe',
+      engine: '^0.2',
+      entry: './dist/cli/index.js',
+      commands: ['ping'],
+      kitCommands: [{ name: 'ping', summary: 'answer pong' }],
+      peers: [],
+      shape: null,
+    });
+  });
+
+  it('checks engines.agentage against the kit version, not the extension API', () => {
+    expect(problem()).toBeNull();
+    expect(problem({}, {}, '0.3.0')).toBe('engines.agentage "^0.2" does not match kit 0.3.0');
+    expect(problem({}, { engines: {} })).toBe('engines.agentage is missing');
+    expect(problem({}, { engines: { agentage: 'next' } })).toBe(
+      'engines.agentage "next" is not a supported range'
+    );
+  });
+
+  it('needs a valid id and a sound block; without parts.cli it has no entry and no commands', () => {
+    expect(problem({ id: 'setup' })).toBe('agentage.id "setup" is reserved');
+    expect(problem({ commands: [ping, ping] })).toBe('agentage.commands: "ping" is declared twice');
+    const info = manifestInfo(kit({ parts: { api: true }, commands: [] }));
+    expect(info.entry).toBeNull();
+    expect(manifestProblem(PROBE, info, '1.0.0', '0.2.0')).toBeNull();
+  });
 });

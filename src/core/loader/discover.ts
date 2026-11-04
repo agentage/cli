@@ -4,12 +4,15 @@ import { isRecord } from '../../lib/fs/json-file.js';
 import { type ConfigMap } from '../profile/schema.js';
 import { checkConfig } from './config.js';
 import { unsafeDevPath } from './dev-path.js';
-import { manifestInfo, manifestProblem, type ManifestInfo } from './manifest.js';
+import { type KitCommand } from './kit-manifest.js';
+import { manifestInfo, manifestProblem, type ManifestInfo, type ManifestKind } from './manifest.js';
 
 export type ExtensionSource = 'tree' | 'dev';
 
 export interface DiscoveredExtension {
   pkg: string;
+  // `kit`: never register-loaded; its commands run through the kit.
+  kind: ManifestKind;
   source: ExtensionSource;
   dir: string;
   version: string | null;
@@ -17,6 +20,8 @@ export interface DiscoveredExtension {
   // Resolved as a path only; discovery never imports it.
   entry: string | null;
   commands: string[];
+  // kit only: the commands with their summaries.
+  kitCommands: KitCommand[];
   peers: string[];
   optionalPeers: string[];
   // The profile's config checked against the manifest, defaults filled; what ctx.config holds.
@@ -94,12 +99,14 @@ const entryProblem = (info: ManifestInfo, path: string | null): string | null =>
 
 const blank = (pkg: string, source: ExtensionSource, dir: string): DiscoveredExtension => ({
   pkg,
+  kind: 'api',
   source,
   dir,
   version: null,
   id: null,
   entry: null,
   commands: [],
+  kitCommands: [],
   peers: [],
   optionalPeers: [],
   config: {},
@@ -123,12 +130,13 @@ const inspect = ({ pkg, source, dir }: Candidate, configs: ConfigMap): Discovere
   if (dir === null || manifest === null) return { ...base, missing: true };
   const info = manifestInfo(manifest);
   const entry = info.entry === null ? null : inside(dir, info.entry);
-  const { version, id, commands, peers, optionalPeers } = info;
+  const { kind, version, id, commands, kitCommands, peers, optionalPeers } = info;
   const slice = configs[id ?? ''] ?? {};
   const { problem: badConfig, ...declared } = checkConfig(id ?? '', info.configuration, slice);
   const unsafe = source === 'dev' ? unsafeDevPath(dir, process.getuid?.()) : null;
   const problem = unsafe ?? manifestProblem(pkg, info) ?? entryProblem(info, entry) ?? badConfig;
-  return { ...base, version, id, entry, commands, peers, optionalPeers, ...declared, problem };
+  const read = { kind, version, id, entry, commands, kitCommands, peers, optionalPeers };
+  return { ...base, ...read, ...declared, problem };
 };
 
 // Every claimant of a shared id is invalid; a dev copy of the same package never reaches here.

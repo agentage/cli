@@ -34,7 +34,8 @@ const addPackage = async (target: Package, off: boolean, deps: ExtensionInstallD
 const addDev = async (target: Dev, off: boolean, deps: ExtensionInstallDeps) => {
   if (off) throw new Error(`--off does not apply to ${target.path}: a dev extension always loads`);
   await setDev(target.name, target.path);
-  console.log(line('dev', `${target.name} ${target.path}`));
+  if (target.kit) console.log(line('linked', `${target.name} (working copy)`));
+  else console.log(line('dev', `${target.name} ${target.path}`));
   await installAndLoad(editableProfile(), deps.npm);
 };
 

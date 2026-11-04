@@ -14,6 +14,8 @@ kit (`src/test/config-dir.ts`) copies them into hand-placed trees.
 | `extension-secret`     | `secret`      | declares `configuration.token` with `secret: true` and a `description`, and `configuration.access` with `enum: ["read", "write"]`                                                                                                                    |
 | `extension-old-engine` | `oldengine`   | `engines.agentage: "^0.1"`, never matches the extension API                                                                                                                                                                                          |
 | `extension-dup-id`     | `hello`       | claims the same id as `extension-hello`                                                                                                                                                                                                              |
+| `extension-probe`      | `probe`       | kit-shaped (`agentage.parts`, `engines.agentage: "^0.2"` over the kit): command `ping [msg]` from `cli.js`'s `create`, printing `pong` or `pong <msg>`                                                                                                |
+| `extension-pong`       | `pong`        | kit-shaped: commands `ping` (taken by probe when installed after it) and `status` (a core command), so both run only as `agentage pong <command>`                                                                                                    |
 
 Each entry is plain ESM, type-checked against `@agentage/cli/extension` by `tsc -p fixtures`
 (with the `.d.ts` files, so `extension-world` checks the typed `ctx.use`).

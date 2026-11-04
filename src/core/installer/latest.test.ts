@@ -97,7 +97,7 @@ describe('setup --latest: the newest versions the profile allows', () => {
     const result = await latest(TWO, more, check);
     expect(result).toMatchObject({
       changes: [{ name: WORLD, from: '1.0.0', to: '1.0.1' }],
-      held: [{ name: HELLO, version: '1.0.0', newer: '1.1.0', engine: '^2' }],
+      held: [{ name: HELLO, version: '1.0.0', newer: '1.1.0', engine: '^2', kit: false }],
       unchanged: 1,
       current: true,
     });
@@ -112,7 +112,7 @@ describe('setup --latest: the newest versions the profile allows', () => {
     const result = await latest(ONE, { [HELLO]: { '1.1.0': NEEDS_2 } }, check);
     expect(result).toEqual({
       changes: [],
-      held: [{ name: HELLO, version: '1.0.0', newer: '1.1.0', engine: '^2' }],
+      held: [{ name: HELLO, version: '1.0.0', newer: '1.1.0', engine: '^2', kit: false }],
       unchanged: 1,
       tree: null,
       current: false,

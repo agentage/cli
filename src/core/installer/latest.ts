@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { manifestInfo } from '../loader/manifest.js';
 import { extensionsDir } from '../paths.js';
-import { fitsApi } from './compat.js';
+import { fits } from './compat.js';
 import { lockEntries, lockedVersion, parseLock, rootDependencies } from './compare-lock.js';
 import {
   planInstall,
@@ -32,12 +32,13 @@ export interface VersionChange {
   to: string | null;
 }
 
-// Kept at `version`: the newest version its range allows, `newer`, needs extension API `engine`.
+// Kept at `version`: `newer`, the newest its range allows, needs `engine` (of the kit when `kit`).
 export interface Held {
   name: string;
   version: string;
   newer: string;
   engine: string;
+  kit: boolean;
 }
 
 export interface LatestResult {
@@ -87,16 +88,19 @@ const update = async (plan: InstallPlan, npm: Npm, packages: string[] = []): Pro
   }
 };
 
-const engineIn = (staging: string, name: string): string =>
-  manifestInfo(readJson(join(staging, 'node_modules', name, 'package.json'), isRecord) ?? {})
-    .engine;
+const engineIn = (staging: string, name: string): { engine: string; kit: boolean } => {
+  const info = manifestInfo(
+    readJson(join(staging, 'node_modules', name, 'package.json'), isRecord) ?? {}
+  );
+  return { engine: info.engine, kit: info.kind === 'kit' };
+};
 
 // An extension whose new version needs another extension API stays where it was.
 const heldIn = (built: Built, changes: VersionChange[]): Held[] =>
   changes.flatMap(({ name, from, to }) => {
     if (from === null || to === null) return [];
-    const engine = engineIn(built.staging, name);
-    return fitsApi(engine) ? [] : [{ name, version: from, newer: to, engine }];
+    const range = engineIn(built.staging, name);
+    return fits(range) ? [] : [{ name, version: from, newer: to, ...range }];
   });
 
 const unchanged = (plan: InstallPlan, changes: VersionChange[]): number =>
