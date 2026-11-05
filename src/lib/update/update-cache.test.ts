@@ -48,6 +48,14 @@ describe('update cache', () => {
       expect(updateHint()).toContain('npm i -g @agentage/cli');
     });
 
+    // An older copy on the PATH or in a project's node_modules names itself, never only the latest.
+    it('names the running version beside the newer one', () => {
+      writeCache({ checkedAt: Date.now(), latest: '99.0.0' });
+      expect(updateHint()).toBe(
+        `update available: ${VERSION} -> 99.0.0 - npm i -g @agentage/cli@latest`
+      );
+    });
+
     it('is silent when the cached latest is not newer', () => {
       writeCache({ checkedAt: Date.now(), latest: VERSION });
       expect(updateHint()).toBeNull();
