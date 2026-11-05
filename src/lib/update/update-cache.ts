@@ -35,7 +35,7 @@ export const updateHint = (): string | null => {
   const c = readUpdateCache();
   if (!c?.latest) return null;
   return compareVersions(VERSION, c.latest) < 0
-    ? `update available: ${c.latest} -> ${INSTALL_HINT}`
+    ? `update available: ${VERSION} -> ${c.latest} - ${INSTALL_HINT}`
     : null;
 };
 
