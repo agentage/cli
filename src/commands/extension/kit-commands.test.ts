@@ -122,8 +122,11 @@ describe('the commands of a kit-built extension', () => {
     expect(help.out).toMatch(/Usage: agentage probe \[options\] \[command\]/);
     expect(help.out).toMatch(/\n {2}ping +answer pong\n/);
     expect(kitTool).not.toHaveBeenCalled();
-    expect((await agentage({ kitTool }, 'probe')).code).toBe(0);
-    expect(await agentage({ kitTool }, 'probe', 'nope')).toMatchObject({ code: 2 });
+    expect(await agentage({ kitTool }, 'probe')).toMatchObject({ code: 0, out: help.out });
+    expect(await agentage({ kitTool }, 'probe', 'nope')).toMatchObject({
+      code: 2,
+      err: "error: unknown command 'nope'\n",
+    });
   });
 
   test('agentage --help lists ping and the probe group under probe:', async ({ dir }) => {
@@ -170,6 +173,9 @@ describe('a command name someone else has: only agentage <id> <command> runs it'
     probeAndPong(dir);
     const nope = await agentage({ kitTool: fakeKit().tool }, 'nope');
     expect(nope.code).toBe(2);
-    expect(nope.err).toContain('probe: ping\npong: pong ping, pong status\n');
+    expect(nope.err).toBe(
+      "error: unknown command 'nope'\ncore: setup, status, update, extension\n" +
+        'probe: ping\npong: pong ping, pong status\n'
+    );
   });
 });

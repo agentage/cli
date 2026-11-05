@@ -1,8 +1,8 @@
 import { describe, expect, vi } from 'vitest';
 import { install } from '../../core/installer/installer.js';
-import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
+import { fixture, output, pkg, plain, test, type ConfigDir } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
-import { CHECK_DEPRECATED, deprecatedCheck, runExtensionDoctor } from './doctor.js';
+import { deprecatedCheck, runExtensionDoctor } from './doctor.js';
 import { type KitTool } from './kit-tool.js';
 
 // The kit fixtures range over kit ^0.2, whatever kit is installed here.
@@ -61,6 +61,7 @@ describe('agentage extension doctor', () => {
       'hello  failed     @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello  "gone"',
       'world  blocked    @agentage/fixture-world 1.0.0 (wants ^1)  commands: world  peer @agentage/fixture-hello is failed',
     ]);
+    expect(run.error).toBe('1 extension failed to load: hello');
   });
 
   test('fails on integrity drift, loading nothing whose bytes the two locks disagree on', async ({
@@ -112,15 +113,19 @@ describe('agentage extension doctor', () => {
 });
 
 describe('agentage extension check, the old name of doctor for 90 days', () => {
-  test('prints one deprecation line on stderr naming doctor, then runs doctor', async () => {
+  test('prints one deprecation line on stderr naming doctor, then runs doctor and keeps its failure', async () => {
     const err: string[] = [];
-    const ran: unknown[] = [];
-    const doctor = async (opts: unknown) => void ran.push(opts);
-    await deprecatedCheck(doctor, (text) => void err.push(text))({ json: true });
-    expect(err).toHaveLength(1);
-    expect(err[0]).toContain(`warning: ${CHECK_DEPRECATED}`);
-    expect(CHECK_DEPRECATED).toContain('agentage extension doctor');
-    expect(CHECK_DEPRECATED).toContain('check becomes the conformance check');
-    expect(ran).toEqual([{ json: true }]);
+    const ran: [unknown, number][] = [];
+    const doctor = async (opts: unknown) => void ran.push([opts, err.length]);
+    await deprecatedCheck(doctor, (text) => void err.push(plain(text)))({ json: true });
+    expect(err).toEqual([
+      'warning: agentage extension check is now agentage extension doctor; in 90 days check becomes the conformance check\n',
+    ]);
+    expect(ran).toEqual([[{ json: true }, 1]]);
+    const failing = deprecatedCheck(
+      () => Promise.reject(new Error('boom')),
+      () => undefined
+    );
+    await expect(failing({})).rejects.toThrow('boom');
   });
 });
