@@ -49,10 +49,11 @@ extensions.
   through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists missing secrets
   (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per contributed command and
   hands it to the extension), `build.ts` is `extension build`: a thin command over the kit's
-  `@agentage/extension/tool` (`build`, `buildLines`), imported on use; `kit-tool.ts` is the rest of
-  that seam (`runCommand`, `checkCli`, `up`, `down`, `token`, `loadKitTool`, `kitCheck`), `up.ts`
-  is `extension up`, `down` and `token` over it, `kit-commands.ts` registers a kit-built
-  extension's `agentage {id}` group and top-level verbs; `status/account-status.ts`
+  `@agentage/extension/tool`, imported on use; `kit-tool.ts` is that one seam (`build`,
+  `buildLines`, `runCommand`, `checkCli`, `up`, `down`, `token`, typed by the kit; `loadKitTool`,
+  `kitCheck`), `up.ts` is `extension up`, `down` and `token` over it, `kit-commands.ts` registers a
+  kit-built extension's `agentage {id}` group and top-level verbs (its `stub` is the one every
+  delegated command uses); `status/account-status.ts`
   is what `status` asks the account (seen, the profile's etag)
 - `src/lib/` - shared library, grouped by domain:
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:

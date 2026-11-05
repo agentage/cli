@@ -1,30 +1,11 @@
+import type * as Kit from '@agentage/extension/tool';
 import { type KitCheck } from '../../core/loader/load.js';
 
-export interface KitRun {
-  dir: string;
-  command: string;
-  argv: string[];
-  stdout?: (text: string) => void;
-  stderr?: (text: string) => void;
-}
-
-export interface KitUp {
-  dir?: string;
-  onLine?: (line: string) => void;
-}
-
-export interface KitDown extends KitUp {
-  keepData?: boolean;
-}
-
-// What the cli uses of the kit's tool library; the logic lives in the kit.
-export interface KitTool {
-  runCommand: (options: KitRun) => Promise<number>;
-  checkCli: (dir: string) => Promise<string | null>;
-  up: (options: KitUp) => Promise<{ parts: number; seconds: number }>;
-  down: (options: KitDown) => Promise<unknown>;
-  token: (options: { scope: string; issuer?: string }) => Promise<string>;
-}
+// What the cli uses of the kit's tool library, typed by the kit itself; the logic lives there.
+export type KitTool = Pick<
+  typeof Kit,
+  'build' | 'buildLines' | 'runCommand' | 'checkCli' | 'up' | 'down' | 'token'
+>;
 
 export type LoadKitTool = () => Promise<KitTool>;
 

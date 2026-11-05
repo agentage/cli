@@ -19,8 +19,7 @@ export interface ExtensionDoctorOptions {
 
 type BeforeLoad = (extensions: DiscoveredExtension[]) => Promise<void>;
 
-// Loads what can load, once: state files rewritten, rows carrying this run's ok and failed.
-// `tree` loads that tree instead of the current one; kit-shaped ones are checked by the kit.
+// Loads what can load once (`tree`: that tree, not the current one); the kit checks kit-shaped ones.
 export const loadAndGather = async (
   beforeLoad: BeforeLoad = async () => undefined,
   tree?: string,

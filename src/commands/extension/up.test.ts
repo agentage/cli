@@ -16,7 +16,10 @@ const fakeKit = (fail?: Error) => {
       await step('up', { ...options }, ['store    postgres:18-alpine', 'ready    7 parts healthy']);
       return { parts: 7, seconds: 48 };
     },
-    down: (options) => step('down', { ...options }, ['removed  6 containers']),
+    down: async (options) => {
+      await step('down', { ...options }, ['removed  6 containers']);
+      return { containers: 6, networks: 1, volumes: 1 };
+    },
     token: async (options) => {
       calls.push(['token', options]);
       if (fail) throw fail;

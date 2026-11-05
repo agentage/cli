@@ -23,8 +23,8 @@ const runKit = async (tool: LoadKitTool, dir: string, command: string, argv: str
   if (code !== 0) throw new CommanderError(code, KIT_EXIT, `${command} exited ${code}`);
 };
 
-// A stub per command: help from the manifest, everything after its own words to the kit.
-const stub = (parent: Command, name: string, summary: string, run: Run): Command =>
+// A stub per command: help from the manifest, the rest of the line to the extension's own code.
+export const stub = (parent: Command, name: string, summary: string, run: Run): Command =>
   parent
     .command(name)
     .description(summary)
