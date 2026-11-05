@@ -1,7 +1,8 @@
+import { type RunCommandOptions } from '@agentage/extension/tool';
 import { afterEach, describe, expect, vi } from 'vitest';
 import { run, type ProgramDeps } from '../../program.js';
 import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
-import { type KitRun, type KitTool } from './kit-tool.js';
+import { type KitTool } from './kit-tool.js';
 
 // The kit fixtures range over kit ^0.2, whatever kit is installed here.
 vi.mock('../../core/kit-version.js', () => ({ kitVersion: () => '0.2.0' }));
@@ -12,8 +13,8 @@ const notHere = async (): Promise<void> => {
 
 // The kit's runCommand as a seam: what it got, an answer like the fixtures', the code to return.
 const fakeKit = (code = 0) => {
-  const runs: Omit<KitRun, 'stdout' | 'stderr'>[] = [];
-  const runCommand = async ({ dir, command, argv }: KitRun) => {
+  const runs: Omit<RunCommandOptions, 'stdout' | 'stderr'>[] = [];
+  const runCommand = async ({ dir, command, argv }: RunCommandOptions) => {
     runs.push({ dir, command, argv });
     console.log(`${command} ${argv.join(' ')}`.trim());
     return code;

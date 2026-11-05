@@ -8,8 +8,8 @@ import { kitCheck, loadKitTool, type KitTool } from './kit-tool.js';
 describe('the kit tool library', () => {
   it('is imported on use from @agentage/extension/tool, with every export the cli uses', async () => {
     const tool = await loadKitTool();
-    for (const name of ['runCommand', 'checkCli', 'up', 'down', 'token'] as const)
-      expect(typeof tool[name], name).toBe('function');
+    const names = ['build', 'buildLines', 'runCommand', 'checkCli', 'up', 'down', 'token'] as const;
+    for (const name of names) expect(typeof tool[name], name).toBe('function');
   });
 
   it('KIT_VERSION is the version the static gate reads from the kit package.json', async () => {

@@ -5,7 +5,7 @@ import { loadOrder } from '../../core/loader/order.js';
 import { loadSet, scan } from '../../core/loader/scan.js';
 import { claimVerbs, commandNames, readHeld, type Verbs } from '../../core/loader/verbs.js';
 import { NO_MACHINE, readMachine } from '../../core/profile/machine.js';
-import { registerKit } from './kit-commands.js';
+import { registerKit, stub } from './kit-commands.js';
 import { kitCheck, loadKitTool, type LoadKitTool } from './kit-tool.js';
 
 type Run = (opts: unknown) => Promise<void>;
@@ -21,8 +21,7 @@ const runDelegated = async (
   program: Command,
   argv: string[]
 ): Promise<void> => {
-  const order = loadOrder([ext], extensions);
-  const session = await loadExtensions(order, program, kitCheck());
+  const session = await loadExtensions(loadOrder([ext], extensions), program, kitCheck());
   try {
     const loaded = session.loaded.get(ext.id ?? '');
     const run = session.outcomes.get(ext.pkg);
@@ -47,14 +46,7 @@ const unknownCommand =
 
 const registerApi = (program: Command, ext: DiscoveredExtension, run: (name: string) => Run) => {
   for (const name of ext.commands)
-    program
-      .command(name)
-      .description(`from the ${ext.id} extension`)
-      .helpGroup(`${ext.id}:`)
-      .helpOption(false)
-      .allowUnknownOption()
-      .allowExcessArguments()
-      .action(run(name));
+    stub(program, name, `from the ${ext.id} extension`, run(name)).helpGroup(`${ext.id}:`);
 };
 
 // Manifests only, never code: each stub hands the command line, --help included, to the extension.

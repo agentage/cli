@@ -1,21 +1,13 @@
 import { type Command } from 'commander';
-import { type BuildOptions, type BuildResult } from '@agentage/extension/tool';
+import { type BuildOptions } from '@agentage/extension/tool';
+import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
 export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'>;
-
-// The two exports of the kit's build tool this command uses; the logic lives in the kit.
-export interface BuildTool {
-  build: (options: BuildOptions) => Promise<BuildResult>;
-  buildLines: (result: BuildResult) => string[];
-}
-
-// Imported on use, so every other command starts without loading the kit.
-export const loadBuildTool = (): Promise<BuildTool> => import('@agentage/extension/tool');
 
 // One line per image on stdout (part, tag, digest when pushed), then the record path.
 export const runExtensionBuild = async (
   opts: ExtensionBuildOptions = {},
-  tool: () => Promise<BuildTool> = loadBuildTool
+  tool: LoadKitTool = loadKitTool
 ): Promise<void> => {
   const { build, buildLines } = await tool();
   for (const line of buildLines(await build(opts))) console.log(line);

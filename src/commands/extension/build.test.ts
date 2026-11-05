@@ -1,13 +1,14 @@
 import { describe, expect } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
-import { loadBuildTool, runExtensionBuild, type BuildTool } from './build.js';
+import { runExtensionBuild } from './build.js';
+import { loadKitTool, type KitTool } from './kit-tool.js';
 
 const SHA = 'a'.repeat(40);
 const DIGEST = `sha256:${'b'.repeat(64)}`;
 
 const fakeTool = (fail?: Error) => {
   const calls: unknown[] = [];
-  const tool: BuildTool = {
+  const tool: Partial<KitTool> = {
     build: async (options) => {
       calls.push(options);
       if (fail) throw fail;
@@ -22,7 +23,7 @@ const fakeTool = (fail?: Error) => {
     },
     buildLines: (result) => result.images.map((image) => `${image.part} ${image.tag} pushed`),
   };
-  return { tool: async () => tool, calls };
+  return { tool: async () => tool as KitTool, calls };
 };
 
 describe('extension build', () => {
@@ -44,7 +45,7 @@ describe('extension build', () => {
   });
 
   test('loads build and buildLines from @agentage/extension/tool', async () => {
-    const tool = await loadBuildTool();
+    const tool = await loadKitTool();
     expect(typeof tool.build).toBe('function');
     const lines = tool.buildLines({
       id: 'probe',
