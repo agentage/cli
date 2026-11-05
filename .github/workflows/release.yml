@@ -129,10 +129,69 @@ jobs:
       - name: ✅ Verify
         run: npm run verify
 
+  # agentage/e2e's cli tier (the @smoke one verify-prod runs on the published cli) against this
+  # commit, packed and served as npm `latest` on loopback: a cli the e2e tier refuses never ships.
+  e2e-cli:
+    name: 🧪 e2e cli tier on the candidate
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.should-publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v7
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install, build and pack the candidate
+        run: |
+          npm ci
+          npm run build
+          mkdir -p /tmp/pack
+          npm pack --pack-destination /tmp/pack
+
+      # agentage/e2e is private (the org PAT_TOKEN reads it).
+      - name: 📥 Checkout agentage/e2e
+        uses: actions/checkout@v7
+        with:
+          repository: agentage/e2e
+          path: e2e-suite
+          token: ${{ secrets.PAT_TOKEN }}
+          persist-credentials: false
+
+      - name: 📦 Install agentage/e2e
+        run: npm ci --prefix e2e-suite --no-audit --no-fund
+
+      - name: 🧪 cli tier against the candidate
+        run: |
+          set -euo pipefail
+          node scripts/candidate-registry.mjs /tmp/pack/*.tgz /tmp/registry-url > /tmp/registry.log 2>&1 &
+          for _ in $(seq 50); do [ -s /tmp/registry-url ] && break; sleep 0.2; done
+          export npm_config_registry="$(cat /tmp/registry-url)"
+          cd e2e-suite
+          npx playwright test --project=cli --grep @smoke --retries=0
+
+      # 17 executed on 2026-11-05; the install must have come from the candidate, not npm.
+      - name: ✅ Assert the tier ran, on the candidate
+        env:
+          MIN_EXECUTED: '17'
+        run: |
+          set -euo pipefail
+          (cd e2e-suite && node scripts/assert-executed.mjs)
+          cat /tmp/registry.log
+          grep -q "served @agentage/cli@${{ needs.detect-changes.outputs.version }} (the candidate)" /tmp/registry.log
+
   publish:
     name: 📤 Publish Package
-    needs: [detect-changes, verify]
-    if: needs.detect-changes.outputs.should-publish == 'true' && needs.verify.result == 'success'
+    needs: [detect-changes, verify, e2e-cli]
+    if: needs.detect-changes.outputs.should-publish == 'true' && needs.verify.result == 'success' && needs.e2e-cli.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
@@ -178,7 +237,7 @@ jobs:
 
   summary:
     name: 📋 Publish Summary
-    needs: [release-gate, detect-changes, verify, publish]
+    needs: [release-gate, detect-changes, verify, e2e-cli, publish]
     if: always()
     runs-on: ubuntu-latest
 
@@ -201,6 +260,10 @@ jobs:
             echo "❌ **Verification failed - package not published**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Please fix verification errors and try again." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.e2e-cli.result }}" != "success" ]; then
+            echo "❌ **The agentage/e2e cli tier refused the candidate - package not published**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Fix the cli or the e2e test, then re-run release.yml (workflow_dispatch)." >> $GITHUB_STEP_SUMMARY
           elif [ "${{ needs.publish.result }}" == "success" ]; then
             echo "✅ **Package published successfully!**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
