@@ -2,9 +2,15 @@ import { Command } from 'commander';
 import { type DiscoveredExtension } from './discover.js';
 import { disposeAll, holdSignals } from './dispose.js';
 import { loadOrder } from './order.js';
-import { registerExtension, type LoadedExtension } from './register.js';
+import { registerExtension, registerTimeoutMs, type LoadedExtension } from './register.js';
 import { writeRunState } from './state.js';
+import { withTimeout } from './timeout.js';
 import { createUse } from './use.js';
+
+// A kit-shaped extension's code runs in the kit: null when its command entry is right, else why.
+export type KitCheck = (dir: string) => Promise<string | null>;
+
+const noKitCheck: KitCheck = async () => 'no kit check in this command';
 
 export interface LoadOutcome {
   state: 'ok' | 'failed' | 'blocked';
@@ -26,13 +32,28 @@ const blockedBy = (ext: DiscoveredExtension, outcomes: Map<string, LoadOutcome>)
   return peer === undefined ? null : `peer ${peer} is ${outcomes.get(peer)?.state ?? 'not loaded'}`;
 };
 
+const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+// The kit imports the entry, so its top-level code counts toward the same timeout as register.
+const checkKit = async (ext: DiscoveredExtension, check: KitCheck): Promise<LoadOutcome> => {
+  if (ext.entry === null) return { state: 'ok', error: null };
+  try {
+    const problem = await withTimeout(check(ext.dir), registerTimeoutMs());
+    return problem === null ? { state: 'ok', error: null } : { state: 'failed', error: problem };
+  } catch (err) {
+    return { state: 'failed', error: messageOf(err) };
+  }
+};
+
 const attempt = async (
   ext: DiscoveredExtension,
   session: LoadSession,
-  template: Command
+  template: Command,
+  check: KitCheck
 ): Promise<LoadOutcome> => {
   const blocked = blockedBy(ext, session.outcomes);
   if (blocked) return { state: 'blocked', error: blocked };
+  if (ext.kind === 'kit') return checkKit(ext, check);
   const result = await registerExtension(ext, createUse(ext, session.loaded), template);
   if (!result.ok) return { state: 'failed', error: result.error };
   session.loaded.set(ext.id ?? '', result.loaded);
@@ -70,14 +91,15 @@ const newSession = (): LoadSession => {
 // Loads in peer order; one extension failing never stops the others, only what depends on it.
 export const loadExtensions = async (
   extensions: DiscoveredExtension[],
-  template: Command = new Command('agentage')
+  template: Command = new Command('agentage'),
+  check: KitCheck = noKitCheck
 ): Promise<LoadSession> => {
   // Not a sandbox, but the token never reaches extension code through the environment.
   delete process.env['AGENTAGE_TOKEN'];
   const session = newSession();
   await toStderr(async () => {
     for (const ext of loadOrder(extensions)) {
-      const outcome = await attempt(ext, session, template);
+      const outcome = await attempt(ext, session, template, check);
       session.outcomes.set(ext.pkg, outcome);
       writeRunState(ext.id ?? '', { ...outcome, version: ext.version });
     }

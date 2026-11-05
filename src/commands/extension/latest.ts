@@ -1,3 +1,4 @@
+import { needsText } from '../../core/installer/compat.js';
 import { type InstallSet } from '../../core/installer/installer.js';
 import {
   updateLatest,
@@ -9,7 +10,7 @@ import {
 import { type Npm } from '../../core/installer/npm.js';
 import { editableProfile, mutateProfile } from '../../core/profile/profile.js';
 import { pushBody, type Apply } from '../../core/profile/push.js';
-import { loadAndGather } from './check.js';
+import { loadAndGather } from './doctor.js';
 import { line, listSecrets } from './install-load.js';
 import { printWarnings, rowLines } from './row-lines.js';
 import { type ExtensionRow } from './rows.js';
@@ -21,8 +22,8 @@ const changeLine = ({ name, from, to }: VersionChange): string => {
   return `~ update ${name} ${from} -> ${to}`;
 };
 
-const heldLine = ({ name, version, newer, engine }: Held): string =>
-  line('kept', `${name} ${version} (${newer} needs extension API ${engine})`);
+const heldLine = ({ name, version, newer, ...range }: Held): string =>
+  line('kept', `${name} ${version} (${newer} ${needsText(range)})`);
 
 const printDiff = (result: Omit<LatestResult, 'tree' | 'current'>, tree: string | null): void => {
   for (const held of result.held) console.log(heldLine(held));

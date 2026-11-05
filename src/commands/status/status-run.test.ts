@@ -33,6 +33,7 @@ const gathered: ExtensionsGather = {
   },
   warnings: ['profile.json: unknown key "x" kept'],
   drift: [],
+  verbs: { top: new Map(), namespaced: [] },
 };
 
 const capture = async (deps: StatusDeps, json = false) => {
@@ -92,6 +93,7 @@ describe('runStatus', () => {
       },
       warnings: [],
       drift: [],
+      verbs: gathered.verbs,
     };
     const result = await capture(
       depsWith(() => Promise.resolve(invalid)),

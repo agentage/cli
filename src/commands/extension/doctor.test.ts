@@ -1,17 +1,31 @@
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
 import { install } from '../../core/installer/installer.js';
-import { output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
+import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
-import { runExtensionCheck } from './check.js';
+import { CHECK_DEPRECATED, deprecatedCheck, runExtensionDoctor } from './doctor.js';
+import { type KitTool } from './kit-tool.js';
 
-const check = (json = false) => output(() => runExtensionCheck({ json }));
+// The kit fixtures range over kit ^0.2, whatever kit is installed here.
+vi.mock('../../core/kit-version.js', () => ({ kitVersion: () => '0.2.0' }));
+
+const check = (json = false) => output(() => runExtensionDoctor({ json }));
+
+// The kit's checkCli as a seam: a problem per folder, null for the rest.
+const kitChecking = (problems: Record<string, string> = {}) => {
+  const asked: string[] = [];
+  const checkCli = async (dir: string) => {
+    asked.push(dir);
+    return problems[dir] ?? null;
+  };
+  return { tool: async () => ({ checkCli }) as unknown as KitTool, asked };
+};
 
 const helloAndThrows = (dir: ConfigDir): void => {
   dir.profile({ extensions: { hello: '^1.0.0', throws: '^1' } });
   dir.tree('hello', 'throws');
 };
 
-describe('agentage extension check', () => {
+describe('agentage extension doctor', () => {
   test('loads every extension once, prints ok and failed rows, and fails naming the failed', async ({
     dir,
   }) => {
@@ -68,5 +82,45 @@ describe('agentage extension check', () => {
 
   test('with no extensions says so and passes', async () => {
     expect(await check()).toMatchObject({ lines: ['no extensions'], error: null });
+  });
+
+  test('a kit-built extension is ok when the kit finds create and the declared handlers', async ({
+    dir,
+  }) => {
+    dir.machine({ probe: fixture('probe') });
+    const { tool, asked } = kitChecking();
+    const run = await output(() => runExtensionDoctor({}, tool));
+    expect(run.lines).toEqual([
+      'probe  ok         @agentage/fixture-probe 0.2.0 (dev)  commands: ping',
+    ]);
+    expect(asked).toEqual([fixture('probe')]);
+    expect(run.error).toBeNull();
+  });
+
+  test('a kit-built extension whose handlers differ from its commands fails with the reason', async ({
+    dir,
+  }) => {
+    dir.machine({ pong: fixture('pong') });
+    const { tool } = kitChecking({ [fixture('pong')]: 'status is declared but has no handler' });
+    const run = await output(() => runExtensionDoctor({}, tool));
+    expect(run.lines).toEqual([
+      'pong  failed     @agentage/fixture-pong 0.2.0 (dev)  commands: ping, pong status  "status is declared but has no handler"',
+    ]);
+    expect(run.error).toBe('1 extension failed to load: pong');
+    expect(dir.json('state/pong.json')).toMatchObject({ state: 'failed' });
+  });
+});
+
+describe('agentage extension check, the old name of doctor for 90 days', () => {
+  test('prints one deprecation line on stderr naming doctor, then runs doctor', async () => {
+    const err: string[] = [];
+    const ran: unknown[] = [];
+    const doctor = async (opts: unknown) => void ran.push(opts);
+    await deprecatedCheck(doctor, (text) => void err.push(text))({ json: true });
+    expect(err).toHaveLength(1);
+    expect(err[0]).toContain(`warning: ${CHECK_DEPRECATED}`);
+    expect(CHECK_DEPRECATED).toContain('agentage extension doctor');
+    expect(CHECK_DEPRECATED).toContain('check becomes the conformance check');
+    expect(ran).toEqual([{ json: true }]);
   });
 });

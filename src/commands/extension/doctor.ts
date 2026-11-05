@@ -1,8 +1,10 @@
+import chalk from 'chalk';
 import { driftLines } from '../../core/installer/plan.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { loadExtensions } from '../../core/loader/load.js';
 import { loadSet, scan } from '../../core/loader/scan.js';
 import { loadMachine } from '../../core/profile/machine.js';
+import { kitCheck, type LoadKitTool } from './kit-tool.js';
 import { printReport } from './list.js';
 import {
   gatherFrom,
@@ -11,22 +13,23 @@ import {
   type ExtensionsGather,
 } from './rows.js';
 
-export interface ExtensionCheckOptions {
+export interface ExtensionDoctorOptions {
   json?: boolean;
 }
 
 type BeforeLoad = (extensions: DiscoveredExtension[]) => Promise<void>;
 
 // Loads what can load, once: state files rewritten, rows carrying this run's ok and failed.
-// `tree` loads that tree instead of the current one.
+// `tree` loads that tree instead of the current one; kit-shaped ones are checked by the kit.
 export const loadAndGather = async (
   beforeLoad: BeforeLoad = async () => undefined,
-  tree?: string
+  tree?: string,
+  tool?: LoadKitTool
 ): Promise<ExtensionsGather> => {
   const found = scan(await loadMachine(), tree);
   const extensions = loadSet(found);
   await beforeLoad(extensions);
-  const session = await loadExtensions(extensions);
+  const session = await loadExtensions(extensions, undefined, kitCheck(tool));
   await session.dispose();
   return gatherFrom(found, session.outcomes);
 };
@@ -43,11 +46,26 @@ const driftError = (drift: string[]): Error | null =>
   drift.length === 0 ? null : new Error(driftLines(drift).join('\n'));
 
 // The rows always print; an invalid profile.json, integrity drift or a failed load fails the step.
-export const runExtensionCheck = async (opts: ExtensionCheckOptions = {}): Promise<void> => {
-  const gathered = await loadAndGather();
+export const runExtensionDoctor = async (
+  opts: ExtensionDoctorOptions = {},
+  tool?: LoadKitTool
+): Promise<void> => {
+  const gathered = await loadAndGather(undefined, undefined, tool);
   printReport(gathered, opts.json);
   const { profile, extensions } = gathered.status;
   const failure =
     invalidProfileError(profile) ?? driftError(gathered.drift) ?? failedError(extensions);
   if (failure) throw failure;
 };
+
+export const CHECK_DEPRECATED =
+  'agentage extension check is now agentage extension doctor; ' +
+  'in 90 days check becomes the conformance check';
+
+// The old name for 90 days: one line on stderr, then doctor, so --json stdout stays the report.
+export const deprecatedCheck =
+  (doctor: (opts: ExtensionDoctorOptions) => Promise<void>, writeErr: (text: string) => void) =>
+  async (opts: ExtensionDoctorOptions): Promise<void> => {
+    writeErr(`${chalk.yellow(`warning: ${CHECK_DEPRECATED}`)}\n`);
+    await doctor(opts);
+  };

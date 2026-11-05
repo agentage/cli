@@ -78,7 +78,7 @@ agentage setup --latest                   # move each extension to the newest ve
 agentage extension install <name> [--off] # add one extension, install, load
 agentage extension remove <name>          # drop one, then install and load the rest
 agentage extension list                   # states, no extension code runs
-agentage extension check                  # load everything once, refresh the run state
+agentage extension doctor                 # load everything once, refresh the run state
 ```
 
 `extension install` takes a package name with an optional range (`@acme/example@~1.2`), an
@@ -101,7 +101,7 @@ Static states are known without running code. They show in `extension list` and 
 | `invalid`   | Bad manifest, entry not found, wrong config type, duplicate id, peer cycle.     |
 | `missing`   | Named in the profile but not in the installed tree.                             |
 
-Run states come from a load. `extension check` and `setup` show them.
+Run states come from a load. `extension doctor` and `setup` show them.
 
 | State    | What makes it                                                                        |
 | -------- | ------------------------------------------------------------------------------------ |
@@ -111,7 +111,7 @@ Run states come from a load. `extension check` and `setup` show them.
 A failed load shows the extension's own message (`"timeout"` for the time limit). Its context is
 revoked, its subscriptions are disposed, and none of its commands are kept. Other extensions still
 load. Dependents of a failed extension are `blocked`. The last run is kept in `state/<id>.json`.
-`setup` and `extension check` exit 1 when any extension failed.
+`setup` and `extension doctor` exit 1 when any extension failed.
 
 Extensions run in the CLI process with the user's privileges. This is not a sandbox. The CLI
 removes `AGENTAGE_TOKEN` from the environment before the first import, and what an extension
@@ -238,7 +238,7 @@ Install a folder as a development extension:
 ```bash
 agentage extension install ./my-extension   # needs package.json with name and agentage.id
 agentage extension list                     # check the state and reason
-agentage extension check                    # load it, see ok or failed
+agentage extension doctor                   # load it, see ok or failed
 agentage extension remove my-extension      # stop using it (name, short name or id)
 ```
 
@@ -268,4 +268,16 @@ registry URL; other packages come from the public npm registry.
 7. Other extensions you call are in `peerDependencies` (optional ones marked).
 8. `register` finishes well inside 10 seconds; slow work waits for a command.
 9. Anything that needs cleanup is pushed to `ctx.subscriptions`.
-10. `agentage extension check` shows `ok`, and nothing in your code reads `AGENTAGE_TOKEN`.
+10. `agentage extension doctor` shows `ok`, and nothing in your code reads `AGENTAGE_TOKEN`.
+
+## Built on the extension kit
+
+A package whose `agentage` block has `parts` is built on the extension kit
+(`@agentage/extension`) instead of this API: its `engines.agentage` ranges over the kit's
+version, its commands are `agentage.commands[].name` with a `summary` each, and its command entry
+is `parts.cli.entry`, else `./dist/cli/index.js`, exporting `create(ctx)`. The CLI never imports
+it to load it: `extension doctor` asks the kit whether the entry exports `create` and its
+handlers are the declared commands, and running `agentage <command>` or `agentage <id> <command>`
+hands the rest of the command line to the kit, which parses the args and runs the handler. The
+kit's own documentation covers writing one; `agentage extension install .` links your working
+copy, and `agentage extension up` runs the whole package on Docker.

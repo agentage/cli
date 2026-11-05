@@ -120,7 +120,7 @@ test.describe('agentage setup --check @p0 @offline', () => {
 });
 
 test.describe('integrity drift @p0 @offline', () => {
-  test("after a hand edit of hello's integrity in the lock, extension list shows hello invalid, and setup --profile and extension check exit 1", async ({
+  test("after a hand edit of hello's integrity in the lock, extension list shows hello invalid, and setup --profile and extension doctor exit 1", async ({
     cli,
   }) => {
     await cli.run(`setup --profile ${cli.profile(TWO)}`);
@@ -133,6 +133,6 @@ test.describe('integrity drift @p0 @offline', () => {
     const setup = await cli.run(`setup --profile ${cli.profile(TWO)}`);
     expect(setup.code).toBe(1);
     expect(setup.stderr).toContain(`Setup failed: integrity drift: ${HELLO}@1.0.0`);
-    expect((await cli.run('extension check')).code).toBe(1);
+    expect((await cli.run('extension doctor')).code).toBe(1);
   });
 });

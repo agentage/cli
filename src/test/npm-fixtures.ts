@@ -119,11 +119,20 @@ const specParts = (spec: string): { name: string; range: string | null } => {
 
 const answer = (value: unknown) => ({ code: 0, stdout: JSON.stringify(value), stderr: '' });
 
-// `npm view <name>@>=0.0.0 version engines --json`: every release, engines when it has them.
+// `npm view <name>@>=0.0.0 version engines agentage.parts --json`: every release, the fields it has.
+const viewed = ({ version, engines, agentage }: Manifest) => {
+  const parts = (agentage as { parts?: unknown } | undefined)?.parts;
+  return {
+    version,
+    ...(engines ? { engines } : {}),
+    ...(parts ? { 'agentage.parts': parts } : {}),
+  };
+};
+
 const view = (name: string, more: Publishes) => {
   const all = versionsOf(name, more);
   if (all.length === 0) return failed('E404', `404 Not Found - ${name}`);
-  return answer(all.map(({ version, engines }) => (engines ? { version, engines } : { version })));
+  return answer(all.map(viewed));
 };
 
 // Plays `npm pack <spec> --dry-run --json` and `npm view`: the fixtures plus `more` are published.

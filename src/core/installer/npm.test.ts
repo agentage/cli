@@ -55,7 +55,7 @@ describe('npm, as the installer runs it', () => {
     ]);
   });
 
-  it('reads every release and its engines with view, through the same registries', () => {
+  it('reads every release, its engines and parts with view, through the same registries', () => {
     const registries = { '@agentage': 'http://127.0.0.1:9' };
     expect(manifestArgs('view', '@agentage/x@>=0.0.0', registries, '/x/extensions', {})).toEqual([
       'view',
@@ -63,6 +63,7 @@ describe('npm, as the installer runs it', () => {
       'name',
       'version',
       'engines',
+      'agentage.parts',
       '--json',
       '--ignore-scripts',
       '--prefix',

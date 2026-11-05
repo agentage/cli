@@ -8,12 +8,14 @@ const [HELLO, WORLD] = [pkg('hello'), pkg('world')];
 // What discovery reports for an extension in the tree, with a valid manifest unless overridden.
 const found = (name: string, extra: Partial<DiscoveredExtension> = {}): DiscoveredExtension => ({
   pkg: name,
+  kind: 'api',
   source: 'tree',
   dir: `/tree/${name}`,
   version: '1.0.0',
   id: name.replace('@agentage/fixture-', ''),
   entry: `/tree/${name}/index.js`,
   commands: [],
+  kitCommands: [],
   peers: [],
   optionalPeers: [],
   config: {},

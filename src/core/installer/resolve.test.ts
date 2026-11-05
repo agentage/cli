@@ -1,6 +1,6 @@
 import { realpathSync, symlinkSync } from 'node:fs';
 import { relative } from 'node:path';
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
 import { fixture, test } from '../../test/config-dir.js';
 import { manifestFromFixtures, type Publishes } from '../../test/npm-fixtures.js';
 import { type NpmManifest } from './npm.js';
@@ -15,8 +15,13 @@ const asked = async (spec: string): Promise<never> => {
 };
 const neverAsked: Registry = { find: asked, versions: asked };
 
+// The kit fixtures range over kit ^0.2, whatever kit is installed here.
+vi.mock('../kit-version.js', () => ({ kitVersion: () => '0.2.0' }));
+
 const HELLO = '@agentage/fixture-hello';
+const PROBE = '@agentage/fixture-probe';
 const NEEDS_2 = { engines: { agentage: '^2' } };
+const NEEDS_KIT_3 = { engines: { agentage: '^0.3' }, agentage: { id: 'later', parts: {} } };
 
 const HELLO_URL = 'https://registry.example/@agentage/fixture-hello/-/fixture-hello-1.0.0.tgz';
 
@@ -111,10 +116,36 @@ describe('extension install <name>: what a name resolves to', () => {
       kind: 'dev',
       name: '@agentage/fixture-hello',
       path: realpathSync(fixture('hello')),
+      kit: false,
     };
     expect(await resolveName(link, neverAsked)).toEqual(expected);
     expect(await resolveName(`./${relative(process.cwd(), fixture('hello'))}`, neverAsked)).toEqual(
       expected
+    );
+  });
+
+  test('a local path to a kit-built working copy is a dev extension marked kit', async () => {
+    expect(await resolveName(fixture('probe'), neverAsked)).toEqual({
+      kind: 'dev',
+      name: PROBE,
+      path: realpathSync(fixture('probe')),
+      kit: true,
+    });
+  });
+
+  test('a kit-built package name is pinned to its newest version the kit can run', async () => {
+    const newer = published({
+      [PROBE]: { '0.2.1': {}, '0.3.0': { engines: { agentage: '^0.3' } } },
+    });
+    expect(await resolveName(PROBE, newer)).toEqual({
+      kind: 'package',
+      name: PROBE,
+      spec: '^0.2.1',
+      skipped: [{ version: '0.3.0', engine: '^0.3', kit: true }],
+    });
+    const only = published({ '@agentage/extension-later': { '0.3.0': NEEDS_KIT_3 } });
+    await expect(resolveName('later', only)).rejects.toThrow(
+      'later: no published version works with kit 0.2.0 (0.3.0: needs kit ^0.3)'
     );
   });
 

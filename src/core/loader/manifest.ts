@@ -1,18 +1,30 @@
 import { isRecord } from '../../lib/fs/json-file.js';
 import { EXTENSION_API_VERSION } from '../../extension.js';
+import { kitVersion } from '../kit-version.js';
 import { isRange, satisfies } from '../semver-range.js';
+import {
+  cliEntryOf,
+  isKitShaped,
+  kitCommandsOf,
+  kitShapeProblem,
+  type KitCommand,
+} from './kit-manifest.js';
 
 export const ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 const DEFAULT_ENGINE = '^1';
 
-const CORE_COMMANDS = ['setup', 'status', 'update', 'extension', 'add', 'remove', 'help'];
+export const CORE_COMMANDS = ['setup', 'status', 'update', 'extension', 'add', 'remove', 'help'];
 const DEVICE_NAMES = ['con', 'prn', 'aux', 'nul'].concat(
   ...Array.from({ length: 10 }, (_, n) => [`com${n}`, `lpt${n}`])
 );
 const RESERVED_IDS: ReadonlySet<string> = new Set([...CORE_COMMANDS, ...DEVICE_NAMES]);
 const SUBCOMMAND = /^[a-z0-9][a-z0-9-]*$/;
 
+// `api`: the 1.0 extension API, register(ctx); `kit`: built on the extension kit (agentage.parts).
+export type ManifestKind = 'api' | 'kit';
+
 export interface ManifestInfo {
+  kind: ManifestKind;
   name: string | null;
   version: string | null;
   id: string | null;
@@ -23,6 +35,10 @@ export interface ManifestInfo {
   optionalPeers: string[];
   // Read as data; checked against the profile's config by checkConfig.
   configuration: Record<string, unknown>;
+  // kit only: agentage.commands with their summaries, for help without running code.
+  kitCommands: KitCommand[];
+  // kit only: what is wrong with the block's shape.
+  shape: string | null;
 }
 
 const str = (value: unknown): string | null => (typeof value === 'string' ? value : null);
@@ -52,9 +68,29 @@ const optionalPeersOf = (meta: Record<string, unknown>): string[] =>
     .filter(([, m]) => isRecord(m) && m['optional'] === true)
     .map(([name]) => name);
 
+const kitInfo = (pkg: Record<string, unknown>, agentage: Record<string, unknown>): ManifestInfo => {
+  const kitCommands = kitCommandsOf(agentage['commands']);
+  return {
+    kind: 'kit',
+    name: str(pkg['name']),
+    version: str(pkg['version']),
+    id: str(agentage['id']),
+    engine: str(record(pkg['engines'])['agentage']) ?? '',
+    entry: cliEntryOf(agentage['parts']),
+    commands: kitCommands.map((command) => command.name),
+    peers: [],
+    optionalPeers: [],
+    configuration: {},
+    kitCommands,
+    shape: kitShapeProblem(agentage),
+  };
+};
+
 export const manifestInfo = (pkg: Record<string, unknown>): ManifestInfo => {
   const agentage = record(pkg['agentage']);
+  if (isKitShaped(agentage)) return kitInfo(pkg, agentage);
   return {
+    kind: 'api',
     name: str(pkg['name']),
     version: str(pkg['version']),
     id: str(agentage['id']),
@@ -64,6 +100,8 @@ export const manifestInfo = (pkg: Record<string, unknown>): ManifestInfo => {
     peers: Object.keys(record(pkg['peerDependencies'])),
     optionalPeers: optionalPeersOf(record(pkg['peerDependenciesMeta'])),
     configuration: record(agentage['configuration']),
+    kitCommands: [],
+    shape: null,
   };
 };
 
@@ -73,11 +111,18 @@ const idProblem = (id: string | null): string | null => {
   return RESERVED_IDS.has(id) ? `agentage.id "${id}" is reserved` : null;
 };
 
-const engineProblem = (engine: string, api: string): string | null => {
+// `against` names what the range must match: the extension API, or the kit.
+const engineProblem = (engine: string, version: string, against: string): string | null => {
   if (!isRange(engine)) return `engines.agentage "${engine}" is not a supported range`;
-  if (satisfies(api, engine)) return null;
-  return `engines.agentage "${engine}" does not match extension API ${api}`;
+  if (satisfies(version, engine)) return null;
+  return `engines.agentage "${engine}" does not match ${against} ${version}`;
 };
+
+// A kit-shaped range is over the kit's version; it has no default.
+const kitProblem = (info: ManifestInfo, kit: string): string | null =>
+  idProblem(info.id) ??
+  info.shape ??
+  (info.engine === '' ? 'engines.agentage is missing' : engineProblem(info.engine, kit, 'kit'));
 
 // Commands are named after the id, so no two extensions, nor the core, can claim one.
 const commandsProblem = (id: string, commands: string[]): string | null => {
@@ -92,12 +137,14 @@ const commandsProblem = (id: string, commands: string[]): string | null => {
 export const manifestProblem = (
   pkg: string,
   info: ManifestInfo,
-  api: string = EXTENSION_API_VERSION
+  api: string = EXTENSION_API_VERSION,
+  kit: string = kitVersion()
 ): string | null => {
   if (info.name !== pkg) return `package.json name ${JSON.stringify(info.name)} is not ${pkg}`;
+  if (info.kind === 'kit') return kitProblem(info, kit);
   return (
     idProblem(info.id) ??
-    engineProblem(info.engine, api) ??
+    engineProblem(info.engine, api, 'extension API') ??
     (info.entry === null ? 'no entry point (exports or main)' : null) ??
     commandsProblem(info.id ?? '', info.commands)
   );

@@ -1,11 +1,14 @@
 import { chmodSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
 import { fixture, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { extensionsDir } from '../paths.js';
 import { discover, type DiscoveredExtension } from './discover.js';
 
-const [HELLO, WORLD, DUP] = [pkg('hello'), pkg('world'), pkg('dup-id')];
+// The kit fixtures range over kit ^0.2, whatever kit is installed here.
+vi.mock('../kit-version.js', () => ({ kitVersion: () => '0.2.0' }));
+
+const [HELLO, WORLD, DUP, PROBE] = [pkg('hello'), pkg('world'), pkg('dup-id'), pkg('probe')];
 
 const find = (names: string[], dev: Record<string, string> = {}, config = {}) =>
   discover({ extensionsDir: extensionsDir(), names, dev, config });
@@ -183,5 +186,27 @@ describe('finding extensions on disk', () => {
       extensions: [expect.objectContaining({ missing: true })],
       warnings: [],
     });
+  });
+
+  test('a kit-shaped dev path is read as kit: its command entry, commands and summaries', () => {
+    const [probe] = find([], { [PROBE]: fixture('probe') }).extensions;
+    expect(probe).toMatchObject({
+      kind: 'kit',
+      id: 'probe',
+      entry: join(fixture('probe'), 'cli.js'),
+      commands: ['ping'],
+      kitCommands: [{ name: 'ping', summary: 'answer pong' }],
+      problem: null,
+    });
+  });
+
+  test('a kit-shaped package without its built command entry is invalid, naming the entry', ({
+    dir,
+  }) => {
+    const manifest = { name: '@test/kit', engines: { agentage: '^0.2' } };
+    const agentage = { id: 'kit', parts: { cli: true }, commands: [{ name: 'go', summary: 's' }] };
+    place(dir, '@test/kit', { ...manifest, agentage });
+    const [kit] = find(['@test/kit']).extensions;
+    expect(kit?.problem).toBe('entry ./dist/cli/index.js not found');
   });
 });
