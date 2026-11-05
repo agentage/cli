@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { runExtensionBuild } from './build.js';
@@ -18,7 +19,7 @@ const fakeTool = (fail?: Error) => {
         commit: SHA,
         buildTime: '2026-11-03T20:00:00Z',
         images: [{ part: 'api', tag: 'ghcr.io/agentage/probe-api:0.1.0', digest: DIGEST }],
-        recordFile: '/repo/dist/agentage-extension.json',
+        recordFile: join(process.cwd(), 'dist', 'agentage-extension.json'),
       };
     },
     buildLines: (result) => result.images.map((image) => `${image.part} ${image.tag} pushed`),
@@ -44,16 +45,14 @@ describe('extension build', () => {
     expect(printed.lines).toEqual([]);
   });
 
-  test('loads build and buildLines from @agentage/extension/tool', async () => {
-    const tool = await loadKitTool();
-    expect(typeof tool.build).toBe('function');
-    const lines = tool.buildLines({
-      id: 'probe',
-      version: '0.1.0',
-      commit: SHA,
-      buildTime: '2026-11-03T20:00:00Z',
-      images: [{ part: 'api', tag: 'ghcr.io/agentage/probe-api:0.1.0' }],
-    });
-    expect(lines).toEqual(['api     ghcr.io/agentage/probe-api:0.1.0  built']);
+  test("prints the kit's own lines: each image with its short digest, then the record path", async () => {
+    const { buildLines } = await loadKitTool();
+    const { tool } = fakeTool();
+    const kitLines = async () => ({ ...(await tool()), buildLines });
+    const printed = await output(() => runExtensionBuild({ push: true }, kitLines));
+    expect(printed.lines).toEqual([
+      'api     ghcr.io/agentage/probe-api:0.1.0  sha256:bbbbbbbb pushed',
+      'record  dist/agentage-extension.json',
+    ]);
   });
 });

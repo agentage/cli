@@ -129,10 +129,21 @@ jobs:
       - name: ✅ Verify
         run: npm run verify
 
+  # The e2e cli tier on this commit's packed cli (_e2e-cli.yml); publish waits for it.
+  e2e-cli:
+    name: 🧪 e2e cli tier
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.should-publish == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_e2e-cli.yml
+    secrets:
+      PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+
   publish:
     name: 📤 Publish Package
-    needs: [detect-changes, verify]
-    if: needs.detect-changes.outputs.should-publish == 'true' && needs.verify.result == 'success'
+    needs: [detect-changes, verify, e2e-cli]
+    if: needs.detect-changes.outputs.should-publish == 'true' && needs.verify.result == 'success' && needs.e2e-cli.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
@@ -178,7 +189,7 @@ jobs:
 
   summary:
     name: 📋 Publish Summary
-    needs: [release-gate, detect-changes, verify, publish]
+    needs: [release-gate, detect-changes, verify, e2e-cli, publish]
     if: always()
     runs-on: ubuntu-latest
 
@@ -201,6 +212,10 @@ jobs:
             echo "❌ **Verification failed - package not published**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Please fix verification errors and try again." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.e2e-cli.result }}" != "success" ]; then
+            echo "❌ **The agentage/e2e cli tier refused the candidate - package not published**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Fix the cli or the e2e test, then re-run release.yml (workflow_dispatch)." >> $GITHUB_STEP_SUMMARY
           elif [ "${{ needs.publish.result }}" == "success" ]; then
             echo "✅ **Package published successfully!**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY

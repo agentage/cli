@@ -105,4 +105,8 @@ export const stubEnv = (site: StubSite): NodeJS.ProcessEnv => ({
   https_proxy: BLACKHOLE,
   NO_PROXY: LOOPBACK,
   no_proxy: LOOPBACK,
+  // Node 22 warns on stderr that the env proxy is experimental: the harness asked for it, not the cli.
+  NODE_OPTIONS: [process.env['NODE_OPTIONS'], '--disable-warning=UNDICI-EHPA']
+    .filter(Boolean)
+    .join(' '),
 });

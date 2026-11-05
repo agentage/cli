@@ -56,6 +56,8 @@ const machineEnv = (configDir: string, home: string, extra: NodeJS.ProcessEnv) =
   AGENTAGE_CONFIG_DIR: configDir,
   AGENTAGE_SITE_FQDN: TARGET_FQDN,
   NO_COLOR: '1',
+  // Playwright's workers set FORCE_COLOR; beside NO_COLOR, Node warns about it on stderr.
+  FORCE_COLOR: undefined,
   // Loopback (the in-process stubs) must bypass any proxy, blackhole or real.
   NO_PROXY: '127.0.0.1,localhost',
   // A throwaway home: nothing may read or write the developer's real dotfiles.

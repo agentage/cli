@@ -1,5 +1,5 @@
 import { realpathSync } from 'node:fs';
-import { describe, expect, vi } from 'vitest';
+import { afterEach, describe, expect, vi } from 'vitest';
 import { noAccount } from '../../test/account.js';
 import { fixture, output, pkg, test } from '../../test/config-dir.js';
 import { manifestFromFixtures, npmFromFixtures } from '../../test/npm-fixtures.js';
@@ -22,12 +22,16 @@ const deps: ExtensionInstallDeps = {
 
 const install = (name: string) => output(() => runExtensionInstall({ name }, deps));
 
-const INSTALL = expect.stringMatching(
-  /^install {4}no extensions in tree [0-9a-f]{16} \(npm skipped\)$/
-);
+const installed = (how: string) =>
+  expect.stringMatching(new RegExp(`^install {4}no extensions in tree [0-9a-f]{16} \\(${how}\\)$`));
+const INSTALL = installed('npm skipped');
 const PROBE_OK = 'probe  ok         @agentage/fixture-probe 0.2.0 (dev)  commands: ping';
 
 describe('agentage extension install <path> of a working copy built on the kit', () => {
+  afterEach(() => {
+    kit.problem = null;
+  });
+
   test('links it: one linked line, the rows with probe ok and its top-level command', async ({
     dir,
   }) => {
@@ -50,7 +54,9 @@ describe('agentage extension install <path> of a working copy built on the kit',
   }) => {
     await install(fixture('probe'));
     const run = await install(fixture('pong'));
-    expect(run.lines.slice(2)).toEqual([
+    expect(run.lines).toEqual([
+      'linked     @agentage/fixture-pong (working copy)',
+      installed('reused'),
       'pong   ok         @agentage/fixture-pong 0.2.0 (dev)  commands: pong ping, pong status',
       PROBE_OK,
       'namespaced agentage pong ping (agentage ping is taken by extension probe)',
@@ -59,11 +65,13 @@ describe('agentage extension install <path> of a working copy built on the kit',
     expect(dir.json('commands.json')).toEqual({ ping: pkg('probe') });
   });
 
-  test('installing either one again changes nothing: the first install holds the name', async ({
+  test('installing either one again changes nothing: the first install holds the name, not the order on disk', async ({
     dir,
   }) => {
     await install(fixture('probe'));
     await install(fixture('pong'));
+    const real = (name: string) => realpathSync(fixture(name));
+    dir.machine({ pong: real('pong'), probe: real('probe') });
     for (const again of [fixture('probe'), fixture('pong')])
       expect((await install(again)).lines).toContain(
         'namespaced agentage pong ping (agentage ping is taken by extension probe)'
@@ -78,6 +86,5 @@ describe('agentage extension install <path> of a working copy built on the kit',
       'pong  failed     @agentage/fixture-pong 0.2.0 (dev)  commands: ping, pong status  "status is declared but has no handler"'
     );
     expect(run.error).toBe('1 extension failed to load: pong');
-    kit.problem = null;
   });
 });

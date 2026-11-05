@@ -64,14 +64,16 @@ describe('who runs agentage <command> for a kit-built extension', () => {
   it('forgets a holder that is gone or no longer declares the verb', () => {
     const held = new Map([
       ['ping', '@test/gone'],
-      ['pong', '@test/probe'],
+      ['pang', '@test/probe'],
     ]);
     expect([...claimVerbs([PONG, PROBE], held).top]).toEqual([['ping', '@test/pong']]);
   });
 
   it('1.0 extensions never get verbs: their commands are their own already', () => {
-    expect(claimVerbs([HELLO], none).top.size).toBe(0);
-    expect(commandNames(HELLO, claimVerbs([HELLO], none))).toEqual(['hello']);
+    const greet = ext('hello', ['hello', 'hello:greet'], 'api');
+    const verbs = claimVerbs([greet], none);
+    expect(verbs).toEqual({ top: new Map(), namespaced: [] });
+    expect(commandNames(greet, verbs)).toEqual(['hello', 'hello:greet']);
   });
 });
 

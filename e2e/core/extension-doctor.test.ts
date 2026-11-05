@@ -7,6 +7,8 @@ import { expect, test } from './cli.js';
 
 const HELLO_AND_THROWS = { extensions: { hello: '^1.0.0', throws: '^1' } };
 
+const said = (stderr: string): string[] => stderr.split('\n').filter((line) => line !== '');
+
 test.describe('agentage extension doctor @p0 @offline', () => {
   test('agentage extension doctor after a failed setup loads again, rewrites the state files and exits 1', async ({
     cli,
@@ -15,13 +17,14 @@ test.describe('agentage extension doctor @p0 @offline', () => {
     const before = cli.json('state/throws.json');
     const check = await cli.run('extension doctor');
     expect(check.code).toBe(1);
-    expect(check.lines).toContain(
-      'hello   ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello'
-    );
-    expect(check.lines).toContain(
-      'throws  failed     @agentage/fixture-throws 1.0.0 (wants ^1)  "boom"'
-    );
-    expect(check.stderr).toContain('1 extension failed to load: throws');
+    expect(check.lines.filter((line) => line !== '')).toEqual([
+      'hello   ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello',
+      'throws  failed     @agentage/fixture-throws 1.0.0 (wants ^1)  "boom"',
+    ]);
+    expect(said(check.stderr)).toEqual([
+      'throws is about to throw',
+      '1 extension failed to load: throws',
+    ]);
     expect(cli.json('state/throws.json')['at']).not.toBe(before['at']);
   });
 
@@ -45,11 +48,11 @@ test.describe('agentage extension doctor @p0 @offline', () => {
     await cli.run(`setup --profile ${cli.profile(HELLO_AND_THROWS)}`);
     const doctor = await cli.run('extension doctor');
     const check = await cli.run('extension check');
-    expect(check.code).toBe(doctor.code);
+    expect([doctor.code, check.code]).toEqual([1, 1]);
     expect(check.lines).toEqual(doctor.lines);
-    const warning = check.stderr.split('\n').filter((line) => line.includes('doctor'));
-    expect(warning).toEqual([
+    expect(said(check.stderr)).toEqual([
       'warning: agentage extension check is now agentage extension doctor; in 90 days check becomes the conformance check',
+      ...said(doctor.stderr),
     ]);
   });
 });

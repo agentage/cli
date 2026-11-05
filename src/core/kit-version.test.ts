@@ -1,13 +1,32 @@
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { describe, expect, it } from 'vitest';
+import type * as Kit from '@agentage/extension/tool';
+import { describe, expect, it, vi } from 'vitest';
 import { kitVersion } from './kit-version.js';
 
+// Startup never loads the kit: importing any of its runtime entries from kit-version.ts fails this file.
+vi.mock('@agentage/extension', () => {
+  throw new Error('kit-version.ts imported the kit');
+});
+vi.mock('@agentage/extension/tool', () => {
+  throw new Error('kit-version.ts imported the kit tool');
+});
+vi.mock('@agentage/extension/migrate', () => {
+  throw new Error('kit-version.ts imported the kit migrate entry');
+});
+
 describe('the kit version kit-shaped ranges are checked against', () => {
-  it("is the installed kit's own version, read without importing the kit", () => {
-    const path = createRequire(import.meta.url).resolve('@agentage/extension/package.json');
-    const { version } = JSON.parse(readFileSync(path, 'utf-8')) as { version: string };
-    expect(kitVersion()).toBe(version);
-    expect(kitVersion()).toMatch(/^\d+\.\d+\.\d+/);
+  it("is the installed kit's own KIT_VERSION, read without importing the kit", async () => {
+    const kit = await vi.importActual<typeof Kit>('@agentage/extension/tool');
+    expect(kitVersion()).toBe(kit.KIT_VERSION);
+  });
+
+  it('is 0.0.0 when the kit cannot be found, so no kit-shaped range fits', async () => {
+    vi.resetModules();
+    const missing = () => {
+      throw new Error("Cannot find module '@agentage/extension/package.json'");
+    };
+    vi.doMock('node:module', () => ({ createRequire: () => ({ resolve: missing }) }));
+    const fresh = await import('./kit-version.js');
+    expect(fresh.kitVersion()).toBe('0.0.0');
+    vi.doUnmock('node:module');
   });
 });

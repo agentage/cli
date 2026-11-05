@@ -5,7 +5,8 @@
  * command entry, and `extension up`, `down` and `token` reach the kit's tool library.
  */
 import { realpathSync } from 'node:fs';
-import { expect, test, type Machine } from './cli.js';
+import { resolve } from 'node:path';
+import { expect, test, type Machine, type Run } from './cli.js';
 
 const PROBE = './fixtures/extension-probe';
 const PONG = './fixtures/extension-pong';
@@ -14,6 +15,12 @@ const PROBE_OK = 'probe  ok         @agentage/fixture-probe 0.2.0 (dev)  command
 const linked = async (cli: Machine, ...paths: string[]): Promise<void> => {
   for (const path of paths) expect((await cli.run(`extension install ${path}`)).code).toBe(0);
 };
+
+const said = ({ code, stdout, stderr }: Run) => ({
+  code,
+  stdout,
+  stderr: stderr.split('\n').filter((line) => line !== ''),
+});
 
 test.describe('agentage extension install <path> of a kit-built working copy @p0 @offline', () => {
   test('agentage extension install ./fixtures/extension-probe links it and lists probe ok with ping', async ({
@@ -38,6 +45,18 @@ test.describe('agentage extension install <path> of a kit-built working copy @p0
     expect(doctor.lines.filter((line) => line !== '')).toEqual([PROBE_OK]);
     expect(cli.json('state/probe.json')).toMatchObject({ state: 'ok', version: '0.2.0' });
   });
+
+  test('agentage extension doctor of a working copy whose handlers differ from its commands fails with the kit reason, exit 1', async ({
+    cli,
+  }) => {
+    const pang = cli.fixture('probe', { '"name": "ping"': '"name": "pang"' });
+    expect((await cli.run(`extension install ${pang}`)).code).toBe(1);
+    const doctor = await cli.run('extension doctor');
+    expect(said(doctor)).toMatchObject({ code: 1, stderr: ['1 extension failed to load: probe'] });
+    expect(doctor.lines.filter((line) => line !== '')).toEqual([
+      'probe  failed     @agentage/fixture-probe 0.2.0 (dev)  commands: pang  "cli handlers [ping] differ from commands [pang]"',
+    ]);
+  });
 });
 
 test.describe('agentage <command> of a kit-built extension @p0 @offline', () => {
@@ -57,9 +76,11 @@ test.describe('agentage <command> of a kit-built extension @p0 @offline', () => 
     cli,
   }) => {
     await linked(cli, PROBE);
-    const usage = await cli.run('ping a b');
-    expect(usage.code).toBe(2);
-    expect(usage.stderr).toContain('too many arguments: b');
+    expect(said(await cli.run('ping a b'))).toEqual({
+      code: 2,
+      stdout: '',
+      stderr: ['too many arguments: b'],
+    });
     const help = await cli.run('ping --help');
     expect(help.code).toBe(0);
     expect(help.lines[0]).toBe('usage: agentage ping [msg] [--json]');
@@ -111,11 +132,16 @@ test.describe('a kit command whose name is taken keeps only agentage <id> <comma
     ]);
   });
 
-  test('installing probe again after pong keeps agentage ping with probe, the earlier install', async ({
+  test('installing probe again after pong keeps agentage ping with probe, the earlier install, with pong first on disk', async ({
     cli,
   }) => {
-    await linked(cli, PROBE, PONG, PROBE);
-    expect(cli.json('commands.json')).toEqual({ ping: '@agentage/fixture-probe' });
+    await linked(cli, PROBE, PONG);
+    const [probe, pong] = ['@agentage/fixture-probe', '@agentage/fixture-pong'];
+    const machine = cli.json('machine.json');
+    const dev = machine['dev'] as Record<string, string>;
+    cli.write('machine.json', { ...machine, dev: { [pong]: dev[pong], [probe]: dev[probe] } });
+    await linked(cli, PROBE);
+    expect(cli.json('commands.json')).toEqual({ ping: probe });
     expect(await cli.run('ping')).toMatchObject({ code: 0, stdout: 'pong\n' });
   });
 });
@@ -124,28 +150,39 @@ test.describe('agentage extension up, down and token reach the kit @offline', ()
   test('agentage extension up and down in a folder that is not an extension fail with the kit message, exit 1', async ({
     cli,
   }) => {
-    for (const verb of ['up', 'down']) {
-      const run = await cli.run(`extension ${verb} --dir ./e2e`);
-      expect(run.code).toBe(1);
-      expect(run.stderr).toContain('package.json');
-    }
+    const message = `no package.json in ${resolve('e2e')}: run it in an extension package folder`;
+    for (const verb of ['up', 'down'])
+      expect(said(await cli.run(`extension ${verb} --dir ./e2e`))).toEqual({
+        code: 1,
+        stdout: '',
+        stderr: [message],
+      });
   });
 
   test('agentage extension token with no dev issuer running exits 1 naming extension up', async ({
     cli,
   }) => {
     const run = await cli.run('extension token --scope probe:write --issuer http://127.0.0.1:9');
-    expect(run.code).toBe(1);
-    expect(run.stderr).toContain(
-      'no dev issuer at http://127.0.0.1:9: run agentage extension up first'
-    );
-    expect(run.stdout).toBe('');
+    expect(said(run)).toEqual({
+      code: 1,
+      stdout: '',
+      stderr: ['no dev issuer at http://127.0.0.1:9: run agentage extension up first'],
+    });
   });
 
   test('agentage extension token without --scope, or with an issuer that is not http(s), is usage, exit 2', async ({
     cli,
   }) => {
-    expect((await cli.run('extension token')).code).toBe(2);
-    expect((await cli.run('extension token --scope probe:write --issuer ftp://x')).code).toBe(2);
+    expect(said(await cli.run('extension token'))).toMatchObject({
+      code: 2,
+      stderr: ["error: required option '--scope <scope>' not specified"],
+    });
+    const ftp = await cli.run('extension token --scope probe:write --issuer ftp://x');
+    expect(said(ftp)).toMatchObject({
+      code: 2,
+      stderr: [
+        "error: option '--issuer <url>' argument 'ftp://x' is invalid. not an http: or https: URL.",
+      ],
+    });
   });
 });
