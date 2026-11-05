@@ -1,5 +1,5 @@
 import { type Command } from 'commander';
-import { type BuildOptions } from '@agentage/extension/tool';
+import type { BuildOptions } from '@agentage/extension/tool';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
 export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'>;
