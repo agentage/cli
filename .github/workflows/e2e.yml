@@ -18,6 +18,9 @@ on:
         description: 'Target site FQDN'
         required: true
 
+permissions:
+  contents: read
+
 jobs:
   e2e-offline:
     name: 🧪 E2E offline (no live stack)

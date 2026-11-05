@@ -14,11 +14,11 @@ const fakeKit = (fail?: Error) => {
   const tool: Partial<KitTool> = {
     up: async (options) => {
       await step('up', { ...options }, ['store    postgres:18-alpine', 'ready    7 parts healthy']);
-      return { parts: 7, seconds: 48 };
+      return { parts: 7, seconds: 48, project: 'agentage-probe-ab1613a3' };
     },
     down: async (options) => {
       await step('down', { ...options }, ['removed  6 containers']);
-      return { containers: 6, networks: 1, volumes: 1 };
+      return { project: 'agentage-probe-ab1613a3', containers: 6, networks: 1, volumes: 1 };
     },
     token: async (options) => {
       calls.push(['token', options]);
