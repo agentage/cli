@@ -152,10 +152,12 @@ Drives the built `dist/cli.js` as a subprocess. Tiers are tags in the test title
 Run via `npm run build && npm run test:e2e -- --grep @offline`; `@smoke` runs by manual dispatch
 of `e2e.yml` with a target.
 Before a publish, `release.yml` runs agentage/e2e's cli tier (`--project=cli --grep @smoke`, what
-verify-prod runs on the published cli) against this commit: `scripts/candidate-registry.mjs` serves
-the packed tarball as npm `latest` on loopback and proxies the rest; a red tier blocks the publish
-(fix, then dispatch `release.yml`). A cli change that the e2e tier pins (a help line, a renamed
-command) needs its agentage/e2e test first, version-gated on the release that changes it.
+verify-prod runs on the published cli) against this commit through `_e2e-cli.yml`:
+`scripts/candidate-registry.mjs` serves the packed tarball as npm `latest` on loopback and proxies
+the rest; a red tier blocks the publish (fix, then dispatch `release.yml`; the tier reads prod
+agentage.io, so a prod outage blocks it too). `e2e.yml` runs the same tier on every PR, not
+required: a cli change the e2e tier pins (a help line, a renamed command) needs its agentage/e2e
+test first, version-gated on the release that changes it, and is red on its PR until then.
 
 ## Conventions
 - `AGENTAGE_SITE_FQDN` selects the target host (production default); `AGENTAGE_CONFIG_DIR`

@@ -16,11 +16,10 @@ const linked = async (cli: Machine, ...paths: string[]): Promise<void> => {
   for (const path of paths) expect((await cli.run(`extension install ${path}`)).code).toBe(0);
 };
 
-// What the cli wrote to stderr: Node's own NO_COLOR-beside-FORCE_COLOR warning left out.
 const said = ({ code, stdout, stderr }: Run) => ({
   code,
   stdout,
-  stderr: stderr.split('\n').filter((line) => line !== '' && !/^\((node:\d+|Use `node)/.test(line)),
+  stderr: stderr.split('\n').filter((line) => line !== ''),
 });
 
 test.describe('agentage extension install <path> of a kit-built working copy @p0 @offline', () => {

@@ -6,8 +6,9 @@ export default defineConfig({
   timeout: 120_000,
   expect: { timeout: 10_000 },
   forbidOnly: !!process.env.CI,
-  // No retries: the tiers are hermetic, so a flake is a bug to fix, never a second chance.
-  retries: 0,
+  // A test that passes only on its retry still fails the run: a flake is a bug to fix.
+  retries: process.env.CI ? 1 : 0,
+  failOnFlakyTests: !!process.env.CI,
   workers: 1,
   reporter: process.env['CI'] ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: { extraHTTPHeaders: { ...testClientHeader() } },

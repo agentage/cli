@@ -7,9 +7,7 @@ import { expect, test } from './cli.js';
 
 const HELLO_AND_THROWS = { extensions: { hello: '^1.0.0', throws: '^1' } };
 
-// What the cli wrote to stderr: Node's own NO_COLOR-beside-FORCE_COLOR warning left out.
-const said = (stderr: string): string[] =>
-  stderr.split('\n').filter((line) => line !== '' && !/^\((node:\d+|Use `node)/.test(line));
+const said = (stderr: string): string[] => stderr.split('\n').filter((line) => line !== '');
 
 test.describe('agentage extension doctor @p0 @offline', () => {
   test('agentage extension doctor after a failed setup loads again, rewrites the state files and exits 1', async ({

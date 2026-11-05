@@ -3,21 +3,24 @@ import { fixture } from '../../test/config-dir.js';
 import { kitCheck, loadKitTool, type KitTool } from './kit-tool.js';
 
 const USED = ['build', 'buildLines', 'runCommand', 'checkCli', 'up', 'down', 'token'] as const;
+// Every runtime entry of the kit's exports map (schemas/* and package.json are data).
+const ENTRIES = ['@agentage/extension', '@agentage/extension/tool', '@agentage/extension/migrate'];
 
 describe('the kit tool library', () => {
-  it('is imported on use: the program loads no kit code until loadKitTool, then has every export', async () => {
+  it('is imported on use: the program loads no kit entry until loadKitTool, then has every export', async () => {
     vi.resetModules();
     const loads: string[] = [];
-    vi.doMock('@agentage/extension/tool', async (actual) => {
-      loads.push('tool');
-      return actual();
-    });
+    for (const entry of ENTRIES)
+      vi.doMock(entry, async (actual) => {
+        loads.push(entry);
+        return actual();
+      });
     await import('../../program.js');
     expect(loads).toEqual([]);
     const tool = await (await import('./kit-tool.js')).loadKitTool();
-    expect(loads).toEqual(['tool']);
+    expect(loads).toEqual(['@agentage/extension/tool']);
     for (const name of USED) expect(typeof tool[name], name).toBe('function');
-    vi.doUnmock('@agentage/extension/tool');
+    for (const entry of ENTRIES) vi.doUnmock(entry);
   });
 
   it("the kit's checkCli finds probe's create and its ping handler", async () => {

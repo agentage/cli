@@ -2,4 +2,4 @@
 class: node-lib
 waive:
   - id: tst-pw-baseurl
-    reason: 'the e2e drives the built cli as a subprocess against loopback stubs it starts per test; there is no page and no base URL'
+    reason: 'the e2e drives the cli as a subprocess; its target is AGENTAGE_SITE_FQDN (live @smoke) or per-test loopback stubs (@offline), read by the cli, so there is no Playwright baseURL'

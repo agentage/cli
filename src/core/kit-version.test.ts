@@ -2,9 +2,15 @@ import type * as Kit from '@agentage/extension/tool';
 import { describe, expect, it, vi } from 'vitest';
 import { kitVersion } from './kit-version.js';
 
-// Startup never loads the kit: importing it from kit-version.ts fails this file.
-vi.mock('@agentage/extension/tool', () => {
+// Startup never loads the kit: importing any of its runtime entries from kit-version.ts fails this file.
+vi.mock('@agentage/extension', () => {
   throw new Error('kit-version.ts imported the kit');
+});
+vi.mock('@agentage/extension/tool', () => {
+  throw new Error('kit-version.ts imported the kit tool');
+});
+vi.mock('@agentage/extension/migrate', () => {
+  throw new Error('kit-version.ts imported the kit migrate entry');
 });
 
 describe('the kit version kit-shaped ranges are checked against', () => {

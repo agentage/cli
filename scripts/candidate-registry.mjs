@@ -1,8 +1,5 @@
 #!/usr/bin/env node
-// The packed cli as npm `latest` on loopback; every other request goes to the public registry.
-// agentage/e2e's cli tier installs `@agentage/cli@latest`, so with npm pointed here it tests the
-// release candidate before release.yml publishes it.
-// Usage: node scripts/candidate-registry.mjs <tarball> <url-file> (the URL is written there).
+// The packed cli as npm `latest` on loopback, the rest proxied: the e2e cli tier then tests it.
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -60,8 +57,18 @@ const proxy = async (req, res) => {
   }
 };
 
+// npm escapes only the scope slash; a malformed escape is a 400, never a crash.
+const pathOf = (req, url) => {
+  try {
+    return decodeURIComponent(new URL(req.url ?? '/', url).pathname);
+  } catch {
+    return null;
+  }
+};
+
 const route = (url) => (req, res) => {
-  const path = decodeURIComponent(new URL(req.url ?? '/', url).pathname);
+  const path = pathOf(req, url);
+  if (path === null) return send(res, 400, 'text/plain', 'malformed path');
   if (path === `/${NAME}`)
     return send(res, 200, 'application/json', JSON.stringify(packument(url)));
   if (path !== `/${NAME}/-/${FILE}`) return void proxy(req, res);

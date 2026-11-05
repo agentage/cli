@@ -1,0 +1,67 @@
+name: e2e cli tier on the candidate
+
+# agentage/e2e's cli tier (@smoke, as verify-prod runs it) on this commit's packed cli as npm latest.
+on:
+  workflow_call:
+    secrets:
+      PAT_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    name: on the candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v7
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 📦 Install, build and pack the candidate
+        run: |
+          npm ci
+          npm run build
+          mkdir -p /tmp/pack
+          npm pack --pack-destination /tmp/pack
+
+      # agentage/e2e is private (the org PAT_TOKEN reads it).
+      - name: 📥 Checkout agentage/e2e
+        uses: actions/checkout@v7
+        with:
+          repository: agentage/e2e
+          path: e2e-suite
+          token: ${{ secrets.PAT_TOKEN }}
+          persist-credentials: false
+
+      - name: 📦 Install agentage/e2e
+        run: npm ci --prefix e2e-suite --no-audit --no-fund
+
+      - name: 🧪 cli tier against the candidate
+        run: |
+          set -euo pipefail
+          node scripts/candidate-registry.mjs /tmp/pack/*.tgz /tmp/registry-url > /tmp/registry.log 2>&1 &
+          for _ in $(seq 50); do [ -s /tmp/registry-url ] && break; sleep 0.2; done
+          [ -s /tmp/registry-url ] || { echo "the candidate registry did not start"; cat /tmp/registry.log; exit 1; }
+          url=$(cat /tmp/registry-url)
+          export npm_config_registry="$url"
+          cd e2e-suite
+          npx playwright test --project=cli --grep @smoke --retries=0
+
+      # 17 executed on 2026-11-05; the install must have come from the candidate, not from npm.
+      - name: ✅ Assert the tier ran, on the candidate
+        env:
+          MIN_EXECUTED: '10'
+        run: |
+          set -euo pipefail
+          (cd e2e-suite && node scripts/assert-executed.mjs)
+          cat /tmp/registry.log
+          version=$(node -p "require('./package.json').version")
+          grep -q "served @agentage/cli@${version} (the candidate)" /tmp/registry.log
