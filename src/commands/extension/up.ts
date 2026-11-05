@@ -57,17 +57,21 @@ export const issuerUrl = (value: string): string => {
 const UP_HELP = `
 Runs the extension package in --dir (default: the current folder) on this machine with Docker
 only, the way a deployment runs it: the part images built with the release recipe, the store
-with its migrations and seeds, a dev token issuer and a local gateway. Prints one line per step
-as the kit reports it, the last one once every part is healthy. Needs docker. Exits 1 when a
-step fails, with the kit's message.`;
+with its migrations and seeds, a dev token issuer and a local gateway. Each working copy is its
+own compose project; up refuses while another one holds localhost:4280 or 4281 and names it, and
+on a kept store says what was already applied. Prints one line per step as the kit reports it,
+the last one once every part is healthy. Needs docker; every docker call has a timeout. Exits 1
+when a step fails, with the kit's message.`;
 
 const DOWN_HELP = `
-Removes what agentage extension up started for the package in --dir: its containers, network
-and the store's volume; --keep-data keeps the volume. Exits 1 when that fails.`;
+Removes what agentage extension up started for the package in --dir, and nothing else: its
+containers, network and the store's volume; --keep-data keeps the volume. The line it prints
+names the compose project it removed. Exits 1 when that fails.`;
 
 const TOKEN_HELP = `
 Prints a token from the dev issuer agentage extension up started, alone on stdout, for calling
-/api/v1/ and /mcp by hand or from tests. Only up trusts it. Exits 1 when the issuer refuses.`;
+/api/v1/ and /mcp by hand or from tests. Only up trusts it. Exits 1 when the issuer refuses or
+does not answer within 5 s.`;
 
 export interface KitActions {
   up: (opts: ExtensionUpOptions) => Promise<void>;

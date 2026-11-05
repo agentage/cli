@@ -3,11 +3,17 @@ name: CI
 on:
   push:
     branches: [main, master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
     name: 🏗️ Build & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     strategy:
       matrix:
@@ -35,6 +41,7 @@ jobs:
   pack-smoke:
     name: 📦 Pack smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: 📥 Checkout code
