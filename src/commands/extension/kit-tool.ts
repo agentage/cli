@@ -4,7 +4,15 @@ import { type KitCheck } from '../../core/loader/load.js';
 // What the cli uses of the kit's tool library, typed by the kit itself; the logic lives there.
 export type KitTool = Pick<
   typeof Kit,
-  'build' | 'buildLines' | 'runCommand' | 'checkCli' | 'up' | 'down' | 'token'
+  | 'check'
+  | 'checkLines'
+  | 'build'
+  | 'buildLines'
+  | 'runCommand'
+  | 'checkCli'
+  | 'up'
+  | 'down'
+  | 'token'
 >;
 
 export type LoadKitTool = () => Promise<KitTool>;

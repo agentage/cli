@@ -1,10 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { kitVersion } from '../../core/kit-version.js';
+import { satisfies } from '../../core/semver-range.js';
 import { fixture } from '../../test/config-dir.js';
 import { kitCheck, loadKitTool, type KitTool } from './kit-tool.js';
 
-const USED = ['build', 'buildLines', 'runCommand', 'checkCli', 'up', 'down', 'token'] as const;
+const USED = [
+  'check',
+  'checkLines',
+  'build',
+  'buildLines',
+  'runCommand',
+  'checkCli',
+  'up',
+  'down',
+  'token',
+] as const;
 // Every runtime entry of the kit's exports map (schemas/* and package.json are data).
 const ENTRIES = ['@agentage/extension', '@agentage/extension/tool', '@agentage/extension/migrate'];
+
+describe('the kit fixtures', () => {
+  it.each(['probe', 'pong'])('%s ranges over the kit installed here', (name) => {
+    const pkg = JSON.parse(readFileSync(join(fixture(name), 'package.json'), 'utf8')) as {
+      engines: { agentage: string };
+    };
+    expect(satisfies(kitVersion(), pkg.engines.agentage)).toBe(true);
+  });
+});
 
 describe('the kit tool library', () => {
   it('is imported on use: the program loads no kit entry until loadKitTool, then has every export', async () => {

@@ -1,13 +1,14 @@
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
 import { registerSetup, type SetupDeps, type SetupOptions } from './commands/auth/setup.js';
-import { runExtensionBuild, type ExtensionBuildOptions } from './commands/extension/build.js';
-import { registerDelegates } from './commands/extension/delegate.js';
 import {
-  deprecatedCheck,
-  runExtensionDoctor,
-  type ExtensionDoctorOptions,
-} from './commands/extension/doctor.js';
+  runExtensionBuild,
+  runExtensionCheck,
+  type ExtensionBuildOptions,
+  type ExtensionCheckOptions,
+} from './commands/extension/build.js';
+import { registerDelegates } from './commands/extension/delegate.js';
+import { runExtensionDoctor, type ExtensionDoctorOptions } from './commands/extension/doctor.js';
 import { runExtensionInstall, type ExtensionInstallOptions } from './commands/extension/install.js';
 import {
   registerExtension,
@@ -51,6 +52,7 @@ export interface ProgramDeps {
   extensionRemove: (opts: ExtensionRemoveOptions) => Promise<void>;
   extensionList: (opts: ExtensionListOptions) => Promise<void>;
   extensionDoctor: (opts: ExtensionDoctorOptions) => Promise<void>;
+  extensionCheck: (opts: ExtensionCheckOptions) => Promise<void>;
   extensionBuild: (opts: ExtensionBuildOptions) => Promise<void>;
   extensionUp: (opts: ExtensionUpOptions) => Promise<void>;
   extensionDown: (opts: ExtensionDownOptions) => Promise<void>;
@@ -81,6 +83,7 @@ const defaultDeps: ProgramDeps = {
   extensionRemove: (opts) => runExtensionRemove(opts, { ...editDeps, io: terminalIo() }),
   extensionList: (opts) => runExtensionList(opts),
   extensionDoctor: (opts) => runExtensionDoctor(opts),
+  extensionCheck: (opts) => runExtensionCheck(opts),
   extensionBuild: (opts) => runExtensionBuild(opts),
   extensionUp: (opts) => runExtensionUp(opts),
   extensionDown: (opts) => runExtensionDown(opts),
@@ -129,7 +132,7 @@ const addExtensions = (program: Command, deps: ProgramDeps, argv: string[]): voi
     remove: withAction(deps, deps.extensionRemove),
     list: withAction(deps, deps.extensionList),
     doctor: withAction(deps, deps.extensionDoctor),
-    check: withAction(deps, deprecatedCheck(deps.extensionDoctor, deps.writeErr)),
+    check: withAction(deps, deps.extensionCheck),
     build: withAction(deps, deps.extensionBuild),
     up: withAction(deps, deps.extensionUp),
     down: withAction(deps, deps.extensionDown),

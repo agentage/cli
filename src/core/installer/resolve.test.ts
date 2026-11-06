@@ -15,7 +15,7 @@ const asked = async (spec: string): Promise<never> => {
 };
 const neverAsked: Registry = { find: asked, versions: asked };
 
-// The kit fixtures range over kit ^0.2, whatever kit is installed here.
+// The kit fixtures accept kit 0.2.0, so this mock holds whatever kit is installed here.
 vi.mock('../kit-version.js', () => ({ kitVersion: () => '0.2.0' }));
 
 const HELLO = '@agentage/fixture-hello';

@@ -17,6 +17,7 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     extensionRemove: vi.fn(async () => undefined),
     extensionList: vi.fn(async () => undefined),
     extensionDoctor: vi.fn(async () => undefined),
+    extensionCheck: vi.fn(async () => undefined),
     extensionBuild: vi.fn(async () => undefined),
     extensionUp: vi.fn(async () => undefined),
     extensionDown: vi.fn(async () => undefined),
@@ -180,15 +181,14 @@ describe('createProgram', () => {
     expect(h.stderr()).toContain("unknown command 'nope'");
   });
 
-  test('extension check runs doctor after one deprecation line on stderr; stdout stays clean', async () => {
+  test('extension check [dir] is the conformance check; doctor stays the installed health', async () => {
     const h = makeDeps();
-    expect(await h.exec('extension', 'check', '--json')).toBe(0);
-    expect(h.deps.extensionDoctor).toHaveBeenCalledWith({ json: true });
-    expect(h.stderr().trim().split('\n')).toEqual([
-      'warning: agentage extension check is now agentage extension doctor; in 90 days check becomes the conformance check',
-    ]);
-    expect(h.stdout()).toBe('');
-    const failing = makeDeps({ extensionDoctor: boom });
+    expect(await h.exec('extension', 'check', 'probe', '--json')).toBe(0);
+    expect(h.deps.extensionCheck).toHaveBeenLastCalledWith({ dir: 'probe', json: true });
+    expect(await h.exec('extension', 'check')).toBe(0);
+    expect(h.deps.extensionCheck).toHaveBeenLastCalledWith({ dir: undefined });
+    expect(h.deps.extensionDoctor).not.toHaveBeenCalled();
+    const failing = makeDeps({ extensionCheck: boom });
     expect(await failing.exec('extension', 'check')).toBe(1);
   });
 
@@ -228,6 +228,7 @@ describe('createProgram', () => {
       '  remove',
       '  list',
       '  doctor',
+      '  check',
       '  build',
       '  up',
       '  down',

@@ -5,7 +5,7 @@ Extensions extend it through `src/core/`, always on (no env switch): `setup --pr
 and loads them, `setup --latest` moves them to the newest versions their ranges allow (`npm update`
 in a staged tree, the new tree current only after a clean load), `extension install` and
 `extension remove` add or take out one at a time, `extension list` and `extension doctor` show
-them (`extension check` is its old name for 90 days), and the commands they contribute run
+them (`extension check [dir]` is the kit's conformance check of a working copy), and the commands they contribute run
 as `agentage <command>`. Two manifest kinds: the 1.0 API (`register(ctx)`, `engines.agentage`
 over `EXTENSION_API_VERSION`) and kit-shaped (`agentage.parts`; `engines.agentage` over the kit's
 version; never register-loaded: the kit's `checkCli` checks it, its `runCommand` runs
@@ -34,8 +34,7 @@ extensions.
   `NO_COLOR`
 - `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability: `auth/`
   (`setup` registration: its flags and help), `status/`, `update/`, `extension/` (`rows.ts` gathers the extension rows, `list.ts`
-  prints them and registers the `extension` group, `doctor.ts` loads once and reports (and
-  `deprecatedCheck`, the `check` alias), `row-lines.ts`
+  prints them and registers the `extension` group, `doctor.ts` loads once and reports, `row-lines.ts`
   renders the rows and the `status` lines, `install-load.ts` is the install, load, print rows, fail
   flow `setup`, `install` and `remove` end with, `setup.ts` is the extensions `setup` flow (its only
   deps are the network ones, npm and the account), `setup-cloud.ts` its signed-in half (account
@@ -48,8 +47,8 @@ extensions.
   `install.ts` adds one extension (npm is its only seam; a kit-built working copy prints `linked`), `remove.ts` takes one out (`--purge` asks
   through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists missing secrets
   (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per contributed command and
-  hands it to the extension), `build.ts` is `extension build`: a thin command over the kit's
-  `@agentage/extension/tool`, imported on use; `kit-tool.ts` is that one seam (`build`,
+  hands it to the extension), `build.ts` is `extension check` and `extension build`: thin commands over the kit's
+  `@agentage/extension/tool`, imported on use; `kit-tool.ts` is that one seam (`check`, `checkLines`, `build`,
   `buildLines`, `runCommand`, `checkCli`, `up`, `down`, `token`, typed by the kit; `loadKitTool`,
   `kitCheck`), `up.ts` is `extension up`, `down` and `token` over it, `kit-commands.ts` registers a
   kit-built extension's `agentage {id}` group and top-level verbs (its `stub` is the one every

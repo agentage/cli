@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { describe, expect } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
-import { runExtensionBuild } from './build.js';
+import { runExtensionBuild, runExtensionCheck } from './build.js';
+import { kitVersion } from '../../core/kit-version.js';
 import { loadKitTool, type KitTool } from './kit-tool.js';
 
 const SHA = 'a'.repeat(40);
@@ -54,5 +55,73 @@ describe('extension build', () => {
       'api     ghcr.io/agentage/probe-api:0.1.0  sha256:bbbbbbbb pushed',
       'record  dist/agentage-extension.json',
     ]);
+  });
+});
+
+const fakeLines: KitTool['checkLines'] = (r) =>
+  r.conforms
+    ? ['sealing ok', 'PASS probe 0.4.0 conforms (1 rule)']
+    : ['sealing: src/api/index.ts:7 reads process.env', 'FAIL 1 problem in 1 rule'];
+
+describe('extension check', () => {
+  const report = (conforms: boolean) => ({
+    id: 'probe',
+    version: '0.4.0',
+    conforms,
+    rules: ['sealing'],
+    problems: conforms
+      ? []
+      : [{ rule: 'sealing', file: 'src/api/index.ts', line: 7, problem: 'reads process.env' }],
+    skipped: {},
+  });
+  const checking = (conforms: boolean) => {
+    const dirs: string[] = [];
+    const tool: Partial<KitTool> = {
+      check: async (dir) => (dirs.push(dir), report(conforms)),
+      checkLines: fakeLines,
+    };
+    return { tool: async () => tool as KitTool, dirs };
+  };
+  test('prints the kit lines and PASS; checks the current folder by default', async () => {
+    const { tool, dirs } = checking(true);
+    const printed = await output(() => runExtensionCheck({}, tool));
+    expect(dirs).toEqual(['.']);
+    expect(printed.lines).toEqual(['sealing ok', 'PASS probe 0.4.0 conforms (1 rule)']);
+    expect(printed.error).toBeNull();
+  });
+
+  test('prints each problem, then fails with the FAIL line (exit 1)', async () => {
+    const { tool, dirs } = checking(false);
+    const printed = await output(() => runExtensionCheck({ dir: 'probe' }, tool));
+    expect(dirs).toEqual(['probe']);
+    expect(printed.lines).toEqual(['sealing: src/api/index.ts:7 reads process.env']);
+    expect(printed.error).toBe('FAIL 1 problem in 1 rule');
+  });
+
+  test('--json prints the report: conforms and each problem with rule, file, line', async () => {
+    const printed = await output(() => runExtensionCheck({ json: true }, checking(false).tool));
+    expect(JSON.parse(printed.lines.join('\n'))).toMatchObject({
+      conforms: false,
+      problems: [
+        { rule: 'sealing', file: 'src/api/index.ts', line: 7, problem: 'reads process.env' },
+      ],
+    });
+    expect(printed.error).toBe('FAIL 1 problem in 1 rule');
+  });
+});
+
+describe('extension check on the real kit', () => {
+  test('runs the kit through the command: a folder without a package.json fails the manifest rule', async () => {
+    const printed = await output(() => runExtensionCheck({ dir: join(process.cwd(), 'none') }));
+    expect(printed.lines[0]).toMatch(/^manifest: /);
+    expect(printed.error).toMatch(/^FAIL \d+ problems? in 1 rule$/);
+  });
+
+  test('names the kit found and the one needed when that kit has no check (kit 0.3)', async () => {
+    const old = async () => ({ checkLines: fakeLines }) as unknown as KitTool;
+    const printed = await output(() => runExtensionCheck({}, old));
+    expect(printed.error).toBe(
+      `this package uses kit ${kitVersion()}; check needs @agentage/extension ^0.4`
+    );
   });
 });

@@ -1,7 +1,6 @@
 /**
  * @offline - `agentage extension doctor`: load every extension this machine can run once, rewrite
- * state/<id>.json, print the rows with ok or failed, exit 1 when any failed. `extension check` is
- * its old name for 90 days: one deprecation line on stderr, then the same.
+ * state/<id>.json, print the rows with ok or failed, exit 1 when any failed.
  */
 import { expect, test } from './cli.js';
 
@@ -40,19 +39,5 @@ test.describe('agentage extension doctor @p0 @offline', () => {
       ['throws', 'failed'],
     ]);
     expect(check.stderr).toContain('throws is about to throw');
-  });
-
-  test('agentage extension check prints one line naming doctor on stderr, then the same rows and exit code', async ({
-    cli,
-  }) => {
-    await cli.run(`setup --profile ${cli.profile(HELLO_AND_THROWS)}`);
-    const doctor = await cli.run('extension doctor');
-    const check = await cli.run('extension check');
-    expect([doctor.code, check.code]).toEqual([1, 1]);
-    expect(check.lines).toEqual(doctor.lines);
-    expect(said(check.stderr)).toEqual([
-      'warning: agentage extension check is now agentage extension doctor; in 90 days check becomes the conformance check',
-      ...said(doctor.stderr),
-    ]);
   });
 });

@@ -1,11 +1,11 @@
 import { describe, expect, vi } from 'vitest';
 import { install } from '../../core/installer/installer.js';
-import { fixture, output, pkg, plain, test, type ConfigDir } from '../../test/config-dir.js';
+import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
-import { deprecatedCheck, runExtensionDoctor } from './doctor.js';
+import { runExtensionDoctor } from './doctor.js';
 import { type KitTool } from './kit-tool.js';
 
-// The kit fixtures range over kit ^0.2, whatever kit is installed here.
+// The kit fixtures accept kit 0.2.0, so this mock holds whatever kit is installed here.
 vi.mock('../../core/kit-version.js', () => ({ kitVersion: () => '0.2.0' }));
 
 const check = (json = false) => output(() => runExtensionDoctor({ json }));
@@ -109,23 +109,5 @@ describe('agentage extension doctor', () => {
     ]);
     expect(run.error).toBe('1 extension failed to load: pong');
     expect(dir.json('state/pong.json')).toMatchObject({ state: 'failed' });
-  });
-});
-
-describe('agentage extension check, the old name of doctor for 90 days', () => {
-  test('prints one deprecation line on stderr naming doctor, then runs doctor and keeps its failure', async () => {
-    const err: string[] = [];
-    const ran: [unknown, number][] = [];
-    const doctor = async (opts: unknown) => void ran.push([opts, err.length]);
-    await deprecatedCheck(doctor, (text) => void err.push(plain(text)))({ json: true });
-    expect(err).toEqual([
-      'warning: agentage extension check is now agentage extension doctor; in 90 days check becomes the conformance check\n',
-    ]);
-    expect(ran).toEqual([[{ json: true }, 1]]);
-    const failing = deprecatedCheck(
-      () => Promise.reject(new Error('boom')),
-      () => undefined
-    );
-    await expect(failing({})).rejects.toThrow('boom');
   });
 });
