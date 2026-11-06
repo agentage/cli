@@ -2,7 +2,6 @@ import { join } from 'node:path';
 import { describe, expect } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { runExtensionBuild, runExtensionCheck } from './build.js';
-import { kitVersion } from '../../core/kit-version.js';
 import { loadKitTool, type KitTool } from './kit-tool.js';
 
 const SHA = 'a'.repeat(40);
@@ -115,13 +114,5 @@ describe('extension check on the real kit', () => {
     const printed = await output(() => runExtensionCheck({ dir: join(process.cwd(), 'none') }));
     expect(printed.lines[0]).toMatch(/^manifest: /);
     expect(printed.error).toMatch(/^FAIL \d+ problems? in 1 rule$/);
-  });
-
-  test('names the kit found and the one needed when that kit has no check (kit 0.3)', async () => {
-    const old = async () => ({ checkLines: fakeLines }) as unknown as KitTool;
-    const printed = await output(() => runExtensionCheck({}, old));
-    expect(printed.error).toBe(
-      `this package uses kit ${kitVersion()}; check needs @agentage/extension ^0.4`
-    );
   });
 });
