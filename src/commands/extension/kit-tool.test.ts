@@ -2,7 +2,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { fixture } from '../../test/config-dir.js';
 import { kitCheck, loadKitTool, type KitTool } from './kit-tool.js';
 
-const USED = ['build', 'buildLines', 'runCommand', 'checkCli', 'up', 'down', 'token'] as const;
+const USED = [
+  'check',
+  'checkLines',
+  'build',
+  'buildLines',
+  'runCommand',
+  'checkCli',
+  'up',
+  'down',
+  'token',
+] as const;
 // Every runtime entry of the kit's exports map (schemas/* and package.json are data).
 const ENTRIES = ['@agentage/extension', '@agentage/extension/tool', '@agentage/extension/migrate'];
 

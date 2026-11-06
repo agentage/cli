@@ -1,4 +1,3 @@
-import chalk from 'chalk';
 import { driftLines } from '../../core/installer/plan.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { loadExtensions } from '../../core/loader/load.js';
@@ -56,15 +55,3 @@ export const runExtensionDoctor = async (
     invalidProfileError(profile) ?? driftError(gathered.drift) ?? failedError(extensions);
   if (failure) throw failure;
 };
-
-export const CHECK_DEPRECATED =
-  'agentage extension check is now agentage extension doctor; ' +
-  'in 90 days check becomes the conformance check';
-
-// The old name for 90 days: one line on stderr, then doctor, so --json stdout stays the report.
-export const deprecatedCheck =
-  (doctor: (opts: ExtensionDoctorOptions) => Promise<void>, writeErr: (text: string) => void) =>
-  async (opts: ExtensionDoctorOptions): Promise<void> => {
-    writeErr(`${chalk.yellow(`warning: ${CHECK_DEPRECATED}`)}\n`);
-    await doctor(opts);
-  };

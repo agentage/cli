@@ -401,9 +401,19 @@ declares, `ok` or `failed` with what differs. What an extension prints while loa
 stderr, so `--json` stays valid JSON. Exits 1 when any extension failed, `profile.json` is
 invalid, or on integrity drift.
 
-`agentage extension check` is the old name, kept for 90 days: it prints
-`warning: agentage extension check is now agentage extension doctor; in 90 days check becomes the
-conformance check` on stderr, then does the same.
+## extension check
+
+```bash
+agentage extension check [dir]            # the six rules every build runs, on the package in dir
+agentage extension check --json           # { conforms, problems: [{ rule, file, line, problem }] }
+```
+
+Checks a working copy against the kit's conformance rules (manifest, entries, surface, stack,
+store, sealing) and prints `manifest ok · ... · sealing ok` and `PASS <id> <version> conforms (6
+rules)`, or one line per problem (`sealing: src/api/index.ts:7 reads process.env`) and `FAIL n
+problems in m rules` on stderr. The store rule applies the migrations on a throwaway postgres and
+prints `store skipped: no docker` without docker (`build` never skips it). Exits 1 when the
+package does not conform. Until 0.42 this name was the old name of `doctor`.
 
 ## extension build
 

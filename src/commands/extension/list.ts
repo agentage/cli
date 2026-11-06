@@ -1,5 +1,5 @@
 import { type Command } from 'commander';
-import { addBuild, type ExtensionBuildOptions } from './build.js';
+import { addBuild, type BuildActions } from './build.js';
 import { type ExtensionDoctorOptions } from './doctor.js';
 import { type ExtensionInstallOptions } from './install.js';
 import { type ExtensionRemoveOptions } from './remove.js';
@@ -64,7 +64,7 @@ while loading goes to stderr, state/<id>.json is rewritten for each, and the row
 failed with the reason (a dependent of a failed extension is blocked). An extension built on the
 extension kit is ok when its command entry exports create and its handlers are the commands it
 declares. Exits 1 when any extension failed, or on integrity drift between the lock and the
-installed tree. extension check is its old name, kept for 90 days.`;
+installed tree.`;
 
 // Bare `extension` prints its help (exit 0); an unknown subcommand stays a usage error (exit 2).
 export const helpOrUnknown = (_opts: unknown, group: Command): void => {
@@ -73,14 +73,11 @@ export const helpOrUnknown = (_opts: unknown, group: Command): void => {
   group.error(`error: unknown command '${name}'`, { code: 'commander.unknownCommand' });
 };
 
-export interface ExtensionActions extends KitActions {
+export interface ExtensionActions extends KitActions, BuildActions {
   install: (opts: ExtensionInstallOptions) => Promise<void>;
   remove: (opts: ExtensionRemoveOptions) => Promise<void>;
   list: (opts: ExtensionListOptions) => Promise<void>;
   doctor: (opts: ExtensionDoctorOptions) => Promise<void>;
-  // doctor after one deprecation line, for 90 days.
-  check: (opts: ExtensionDoctorOptions) => Promise<void>;
-  build: (opts: ExtensionBuildOptions) => Promise<void>;
 }
 
 const addChanges = (group: Command, { install, remove }: ExtensionActions): void => {
@@ -101,7 +98,7 @@ const addChanges = (group: Command, { install, remove }: ExtensionActions): void
     .action((name: string, opts: { purge?: boolean; yes?: boolean }) => remove({ name, ...opts }));
 };
 
-const addReports = (group: Command, { list, doctor, check }: ExtensionActions): void => {
+const addReports = (group: Command, { list, doctor }: ExtensionActions): void => {
   group
     .command('list')
     .description('Show one row per extension: state, versions, commands, last run')
@@ -114,14 +111,9 @@ const addReports = (group: Command, { list, doctor, check }: ExtensionActions): 
     .option('--json', 'machine-readable output')
     .addHelpText('after', DOCTOR_HELP)
     .action(doctor);
-  group
-    .command('check', { hidden: true })
-    .description('Deprecated: the old name of doctor')
-    .option('--json', 'machine-readable output')
-    .action(check);
 };
 
-// Help lists the subcommands in this order: install, remove, list, doctor, build, up, down, token.
+// Help lists the subcommands in this order: install, remove, list, doctor, check, build, up, down, token.
 export const registerExtension = (program: Command, actions: ExtensionActions): void => {
   const group = program
     .command('extension')
@@ -130,6 +122,6 @@ export const registerExtension = (program: Command, actions: ExtensionActions): 
     .action(helpOrUnknown);
   addChanges(group, actions);
   addReports(group, actions);
-  addBuild(group, actions.build);
+  addBuild(group, actions);
   addKitTools(group, actions);
 };
