@@ -1,6 +1,5 @@
 import { type Command } from 'commander';
 import type { BuildOptions } from '@agentage/extension/tool';
-import { kitVersion } from '../../core/kit-version.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
 export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'>;
@@ -13,15 +12,11 @@ export const runExtensionCheck = async (
   tool: LoadKitTool = loadKitTool
 ): Promise<void> => {
   const { check, checkLines } = await tool();
-  if (typeof check !== 'function')
-    throw new Error(`this package uses kit ${kitVersion()}; check needs @agentage/extension ^0.4`);
   const report = await check(dir);
   const lines = checkLines(report);
-  const shown = json
-    ? [JSON.stringify(report, null, 2)]
-    : lines.slice(0, report.conforms ? undefined : -1);
-  for (const line of shown) console.log(line);
-  if (!report.conforms) throw new Error(lines.at(-1));
+  const fail = report.conforms ? undefined : lines.pop();
+  for (const line of json ? [JSON.stringify(report, null, 2)] : lines) console.log(line);
+  if (!report.conforms) throw new Error(fail);
 };
 
 // One line per image on stdout (part, tag, digest when pushed), then the record path.
@@ -35,11 +30,11 @@ export const runExtensionBuild = async (
 
 const BUILD_HELP = `
 Builds one image per server part of the extension package in --dir (default: the current
-folder): the manifest is checked, the package's own build script runs, then the kit recipe makes
+folder): the package's own build script runs, then extension check, then the kit recipe makes
 each image, tagged ghcr.io/agentage/<id>-<part>:<version> with the commit and build time as
 labels. --push pushes them (run docker login first) and writes dist/agentage-extension.json, the
-build record with every image by digest. Needs docker. Exits 1 when the manifest is invalid or a
-build or push fails.`;
+build record with every image by digest. Needs docker. Exits 1 when the package does not conform or
+a build or push fails.`;
 
 export interface BuildActions {
   check: (opts: ExtensionCheckOptions) => Promise<void>;
