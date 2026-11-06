@@ -97,6 +97,13 @@ describe('extension check', () => {
     expect(printed.error).toBe('FAIL 1 problem in 1 rule');
   });
 
+  test('a report that does not conform fails even when the kit gives no lines', async () => {
+    const tool = async () => ({ ...(await checking(false).tool()), checkLines: () => [] });
+    const printed = await output(() => runExtensionCheck({}, tool));
+    expect(printed.lines).toEqual([]);
+    expect(printed.error).not.toBeNull();
+  });
+
   test('--json prints the report: conforms and each problem with rule, file, line', async () => {
     const printed = await output(() => runExtensionCheck({ json: true }, checking(false).tool));
     expect(JSON.parse(printed.lines.join('\n'))).toMatchObject({

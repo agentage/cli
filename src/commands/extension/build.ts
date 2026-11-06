@@ -16,7 +16,7 @@ export const runExtensionCheck = async (
   const lines = checkLines(report);
   const fail = report.conforms ? undefined : lines.pop();
   for (const line of json ? [JSON.stringify(report, null, 2)] : lines) console.log(line);
-  if (fail) throw new Error(fail);
+  if (!report.conforms) throw new Error(fail);
 };
 
 // One line per image on stdout (part, tag, digest when pushed), then the record path.
