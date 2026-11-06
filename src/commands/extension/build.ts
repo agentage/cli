@@ -1,5 +1,6 @@
 import { type Command } from 'commander';
 import type { BuildOptions } from '@agentage/extension/tool';
+import { kitVersion } from '../../core/kit-version.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
 export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'>;
@@ -12,6 +13,8 @@ export const runExtensionCheck = async (
   tool: LoadKitTool = loadKitTool
 ): Promise<void> => {
   const { check, checkLines } = await tool();
+  if (typeof check !== 'function')
+    throw new Error(`this package uses kit ${kitVersion()}; check needs @agentage/extension ^0.4`);
   const report = await check(dir);
   const lines = checkLines(report);
   const shown = json
@@ -38,11 +41,6 @@ labels. --push pushes them (run docker login first) and writes dist/agentage-ext
 build record with every image by digest. Needs docker. Exits 1 when the manifest is invalid or a
 build or push fails.`;
 
-const CHECK_HELP = `
-Runs the kit's six rules (manifest, entries, surface, stack, store, sealing) on the package in
-[dir], as every build does before an image; the store rule is skipped without docker. Exits 1
-when the package does not conform.`;
-
 export interface BuildActions {
   check: (opts: ExtensionCheckOptions) => Promise<void>;
   build: (opts: ExtensionBuildOptions) => Promise<void>;
@@ -54,7 +52,6 @@ export const addBuild = (group: Command, { check, build }: BuildActions): void =
     .description('Check that an extension package conforms, as every build does first')
     .argument('[dir]', 'the extension package folder (default: the current folder)')
     .option('--json', 'machine-readable report')
-    .addHelpText('after', CHECK_HELP)
     .action((dir: string | undefined, opts: { json?: boolean }) => check({ dir, ...opts }));
   group
     .command('build')

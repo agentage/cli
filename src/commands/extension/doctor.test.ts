@@ -5,7 +5,7 @@ import { npmFromFixtures } from '../../test/npm-fixtures.js';
 import { runExtensionDoctor } from './doctor.js';
 import { type KitTool } from './kit-tool.js';
 
-// The kit fixtures range over kit ^0.2, whatever kit is installed here.
+// The kit fixtures accept kit 0.2.0, so this mock holds whatever kit is installed here.
 vi.mock('../../core/kit-version.js', () => ({ kitVersion: () => '0.2.0' }));
 
 const check = (json = false) => output(() => runExtensionDoctor({ json }));

@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { describe, expect } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { runExtensionBuild, runExtensionCheck } from './build.js';
+import { kitVersion } from '../../core/kit-version.js';
 import { loadKitTool, type KitTool } from './kit-tool.js';
 
 const SHA = 'a'.repeat(40);
@@ -57,6 +58,11 @@ describe('extension build', () => {
   });
 });
 
+const fakeLines: KitTool['checkLines'] = (r) =>
+  r.conforms
+    ? ['sealing ok', 'PASS probe 0.4.0 conforms (1 rule)']
+    : ['sealing: src/api/index.ts:7 reads process.env', 'FAIL 1 problem in 1 rule'];
+
 describe('extension check', () => {
   const report = (conforms: boolean) => ({
     id: 'probe',
@@ -68,10 +74,6 @@ describe('extension check', () => {
       : [{ rule: 'sealing', file: 'src/api/index.ts', line: 7, problem: 'reads process.env' }],
     skipped: {},
   });
-  const fakeLines: KitTool['checkLines'] = (r) =>
-    r.conforms
-      ? ['sealing ok', 'PASS probe 0.4.0 conforms (1 rule)']
-      : ['sealing: src/api/index.ts:7 reads process.env', 'FAIL 1 problem in 1 rule'];
   const checking = (conforms: boolean) => {
     const dirs: string[] = [];
     const tool: Partial<KitTool> = {
@@ -109,10 +111,17 @@ describe('extension check', () => {
 });
 
 describe('extension check on the real kit', () => {
-  test('refuses a folder without a package.json: the manifest rule', async () => {
-    const { check } = await loadKitTool();
-    const report = await check(join(process.cwd(), 'no-package-here'));
-    expect(report.conforms).toBe(false);
-    expect(report.problems[0]?.rule).toBe('manifest');
+  test('runs the kit through the command: a folder without a package.json fails the manifest rule', async () => {
+    const printed = await output(() => runExtensionCheck({ dir: join(process.cwd(), 'none') }));
+    expect(printed.lines[0]).toMatch(/^manifest: /);
+    expect(printed.error).toMatch(/^FAIL \d+ problems? in 1 rule$/);
+  });
+
+  test('names the kit found and the one needed when that kit has no check (kit 0.3)', async () => {
+    const old = async () => ({ checkLines: fakeLines }) as unknown as KitTool;
+    const printed = await output(() => runExtensionCheck({}, old));
+    expect(printed.error).toBe(
+      `this package uses kit ${kitVersion()}; check needs @agentage/extension ^0.4`
+    );
   });
 });
