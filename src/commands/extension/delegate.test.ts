@@ -19,6 +19,7 @@ const agentage = async (...args: string[]) => {
     extensionList: notHere,
     extensionDoctor: notHere,
     extensionCheck: notHere,
+    extensionCreate: notHere,
     extensionBuild: notHere,
     extensionUp: notHere,
     extensionDown: notHere,

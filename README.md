@@ -65,8 +65,9 @@ For extensions (see below):
 | `agentage extension remove <name> [--purge]` | Take it out of the profile and reinstall the rest                |
 | `agentage extension list`                    | One row per extension: state, version, commands, last run        |
 | `agentage extension doctor`                  | Load every extension once and refresh the states                 |
+| `agentage extension create <id> [part...]`   | New `./extension-<id>` from the template, only the parts named   |
 | `agentage extension check [dir]`             | Check that an extension package conforms (the six kit rules)     |
-| `agentage extension build [--push]`          | Build the part images of an extension package; push with digests |
+| `agentage extension build [--push]`          | Build the part images of a committed tree; push with digests     |
 | `agentage extension up` / `down`             | Run an extension package on this machine with Docker, then stop  |
 | `agentage extension token --scope <scope>`   | Print a token from the dev issuer `extension up` started         |
 | `agentage <command>`                         | Run a command an installed extension contributes                 |
