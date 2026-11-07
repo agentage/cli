@@ -18,6 +18,7 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     extensionList: vi.fn(async () => undefined),
     extensionDoctor: vi.fn(async () => undefined),
     extensionCheck: vi.fn(async () => undefined),
+    extensionCreate: vi.fn(async () => undefined),
     extensionBuild: vi.fn(async () => undefined),
     extensionUp: vi.fn(async () => undefined),
     extensionDown: vi.fn(async () => undefined),
@@ -222,18 +223,32 @@ describe('createProgram', () => {
     expect(await h.exec('extension', '--help')).toBe(0);
     const listed = h
       .stdout()
-      .match(/^ {2}(install|remove|list|doctor|check|build|up|down|token)\b/gm);
+      .match(/^ {2}(install|remove|list|doctor|create|check|build|up|down|token)\b/gm);
     expect(listed).toEqual([
       '  install',
       '  remove',
       '  list',
       '  doctor',
+      '  create',
       '  check',
       '  build',
       '  up',
       '  down',
       '  token',
     ]);
+  });
+
+  test('extension create passes the id, the parts and --from; no id is usage', async () => {
+    const h = makeDeps();
+    expect(await h.exec('extension', 'create', 'market', 'mcp', 'api', '--from', 'x/y')).toBe(0);
+    expect(h.deps.extensionCreate).toHaveBeenLastCalledWith({
+      id: 'market',
+      parts: ['mcp', 'api'],
+      from: 'x/y',
+    });
+    expect(await h.exec('extension', 'create', 'market')).toBe(0);
+    expect(h.deps.extensionCreate).toHaveBeenLastCalledWith({ id: 'market', parts: [] });
+    expect(await h.exec('extension', 'create')).toBe(2);
   });
 
   test('extension build passes --push, --dir and --registry; a failed build exits 1', async () => {

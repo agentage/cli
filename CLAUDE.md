@@ -36,7 +36,8 @@ extensions.
   (`setup` registration: its flags and help), `status/`, `update/`, `extension/` (`rows.ts` gathers the extension rows, `list.ts`
   prints them and registers the `extension` group, `doctor.ts` loads once and reports, `row-lines.ts`
   renders the rows and the `status` lines, `install-load.ts` is the install, load, print rows, fail
-  flow `setup`, `install` and `remove` end with, `setup.ts` is the extensions `setup` flow (its only
+  flow `setup`, `install` and `remove` end with, `create.ts` is `extension create` (a shallow clone of
+  the template, the other parts dropped, the word `template` rewritten to the id), `setup.ts` is the extensions `setup` flow (its only
   deps are the network ones, npm and the account), `setup-cloud.ts` its signed-in half (account
   check, machine registration, pull or create, `--disconnect`), `sync.ts` the edit path of
   `install`, `remove` and `--off` (pull whole, change, install, load, push with one replay),

@@ -7,6 +7,7 @@ import {
   type ExtensionBuildOptions,
   type ExtensionCheckOptions,
 } from './commands/extension/build.js';
+import { runExtensionCreate, type ExtensionCreateOptions } from './commands/extension/create.js';
 import { registerDelegates } from './commands/extension/delegate.js';
 import { runExtensionDoctor, type ExtensionDoctorOptions } from './commands/extension/doctor.js';
 import { runExtensionInstall, type ExtensionInstallOptions } from './commands/extension/install.js';
@@ -52,6 +53,7 @@ export interface ProgramDeps {
   extensionRemove: (opts: ExtensionRemoveOptions) => Promise<void>;
   extensionList: (opts: ExtensionListOptions) => Promise<void>;
   extensionDoctor: (opts: ExtensionDoctorOptions) => Promise<void>;
+  extensionCreate: (opts: ExtensionCreateOptions) => Promise<void>;
   extensionCheck: (opts: ExtensionCheckOptions) => Promise<void>;
   extensionBuild: (opts: ExtensionBuildOptions) => Promise<void>;
   extensionUp: (opts: ExtensionUpOptions) => Promise<void>;
@@ -83,6 +85,7 @@ const defaultDeps: ProgramDeps = {
   extensionRemove: (opts) => runExtensionRemove(opts, { ...editDeps, io: terminalIo() }),
   extensionList: (opts) => runExtensionList(opts),
   extensionDoctor: (opts) => runExtensionDoctor(opts),
+  extensionCreate: (opts) => runExtensionCreate(opts),
   extensionCheck: (opts) => runExtensionCheck(opts),
   extensionBuild: (opts) => runExtensionBuild(opts),
   extensionUp: (opts) => runExtensionUp(opts),
@@ -132,6 +135,7 @@ const addExtensions = (program: Command, deps: ProgramDeps, argv: string[]): voi
     remove: withAction(deps, deps.extensionRemove),
     list: withAction(deps, deps.extensionList),
     doctor: withAction(deps, deps.extensionDoctor),
+    create: withAction(deps, deps.extensionCreate),
     check: withAction(deps, deps.extensionCheck),
     build: withAction(deps, deps.extensionBuild),
     up: withAction(deps, deps.extensionUp),

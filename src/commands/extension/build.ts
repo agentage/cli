@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { type Command } from 'commander';
 import type { BuildOptions } from '@agentage/extension/tool';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
@@ -19,11 +21,24 @@ export const runExtensionCheck = async (
   if (!report.conforms) throw new Error(fail);
 };
 
+export type Committed = (dir: string) => Promise<void>;
+
+// The build record names HEAD, so the tree it builds must be HEAD.
+export const assertCommitted: Committed = async (dir) => {
+  const status = promisify(execFile)('git', ['status', '--porcelain'], { cwd: dir });
+  const { stdout } = await status.catch(() => {
+    throw new Error(`${dir} is not a git checkout: commit first`);
+  });
+  if (stdout.trim()) throw new Error(`${dir} has uncommitted changes: commit first`);
+};
+
 // One line per image on stdout (part, tag, digest when pushed), then the record path.
 export const runExtensionBuild = async (
   opts: ExtensionBuildOptions = {},
-  tool: LoadKitTool = loadKitTool
+  tool: LoadKitTool = loadKitTool,
+  committed: Committed = assertCommitted
 ): Promise<void> => {
+  await committed(opts.dir ?? '.');
   const { build, buildLines } = await tool();
   for (const line of buildLines(await build(opts))) console.log(line);
 };

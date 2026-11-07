@@ -1,10 +1,14 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
-import { runExtensionBuild, runExtensionCheck } from './build.js';
+import { assertCommitted, runExtensionBuild, runExtensionCheck } from './build.js';
 import { loadKitTool, type KitTool } from './kit-tool.js';
 
 const SHA = 'a'.repeat(40);
+const clean = async () => undefined;
 const DIGEST = `sha256:${'b'.repeat(64)}`;
 
 const fakeTool = (fail?: Error) => {
@@ -28,10 +32,33 @@ const fakeTool = (fail?: Error) => {
 };
 
 describe('extension build', () => {
+  test('a tree with uncommitted changes exits 1 with "commit first" before the kit runs', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'agentage-build-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
+    git('init', '-q');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'x');
+    const { tool, calls } = fakeTool();
+    expect((await output(() => runExtensionBuild({ dir: repo }, tool))).error).toBeNull();
+    writeFileSync(join(repo, 'new.ts'), '');
+    const printed = await output(() => runExtensionBuild({ dir: repo }, tool));
+    expect(printed.error).toBe(`${repo} has uncommitted changes: commit first`);
+    expect(calls).toHaveLength(1);
+    await expect(assertCommitted(repo)).rejects.toThrow('commit first');
+    rmSync(join(repo, '.git'), { recursive: true, force: true });
+    await expect(assertCommitted(repo)).rejects.toThrow(
+      `${repo} is not a git checkout: commit first`
+    );
+    rmSync(repo, { recursive: true, force: true });
+  });
+
   test('hands --push, --dir and --registry to the kit tool and prints its lines', async () => {
     const { tool, calls } = fakeTool();
     const printed = await output(() =>
-      runExtensionBuild({ push: true, dir: 'ext', registry: 'localhost:5000/agentage' }, tool)
+      runExtensionBuild(
+        { push: true, dir: 'ext', registry: 'localhost:5000/agentage' },
+        tool,
+        clean
+      )
     );
     expect(calls).toEqual([{ push: true, dir: 'ext', registry: 'localhost:5000/agentage' }]);
     expect(printed.lines).toEqual(['api ghcr.io/agentage/probe-api:0.1.0 pushed']);
@@ -40,7 +67,7 @@ describe('extension build', () => {
 
   test('a failed build fails the step with the tool message', async () => {
     const { tool } = fakeTool(new Error('docker build failed with exit code 1'));
-    const printed = await output(() => runExtensionBuild({}, tool));
+    const printed = await output(() => runExtensionBuild({}, tool, clean));
     expect(printed.error).toBe('docker build failed with exit code 1');
     expect(printed.lines).toEqual([]);
   });
@@ -49,7 +76,7 @@ describe('extension build', () => {
     const { buildLines } = await loadKitTool();
     const { tool } = fakeTool();
     const kitLines = async () => ({ ...(await tool()), buildLines });
-    const printed = await output(() => runExtensionBuild({ push: true }, kitLines));
+    const printed = await output(() => runExtensionBuild({ push: true }, kitLines, clean));
     expect(printed.lines).toEqual([
       'api     ghcr.io/agentage/probe-api:0.1.0  sha256:bbbbbbbb pushed',
       'record  dist/agentage-extension.json',
