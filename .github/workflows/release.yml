@@ -79,7 +79,7 @@ jobs:
           cache: 'npm'
 
       - name: 📦 Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: 🔍 Detect version changes
         id: detect
@@ -124,7 +124,7 @@ jobs:
           cache: 'npm'
 
       - name: 📦 Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: ✅ Verify
         run: npm run verify
@@ -149,6 +149,13 @@ jobs:
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Commit must be on master
+        run: |
+          git fetch origin master
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master || { echo "::error::$GITHUB_SHA is not on master"; exit 1; }
 
       - name: 🔧 Setup Node.js
         uses: actions/setup-node@v7
@@ -160,7 +167,7 @@ jobs:
         run: npm install -g npm@latest && npm --version # OIDC needs npm >= 11.5.1
 
       - name: 📦 Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: 🏗️ Build package
         run: npm run build
