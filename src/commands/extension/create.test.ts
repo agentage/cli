@@ -27,6 +27,14 @@ const MANIFEST = {
   },
 };
 
+const LOCK = {
+  name: '@agentage/extension-template',
+  packages: {
+    '': { name: '@agentage/extension-template' },
+    'node_modules/@babel/template': { version: '7.27.2' },
+  },
+};
+
 // A repo shaped like the template manifest of sheet C2, committed, cloned over file://.
 const templateRepo = (root: string): string => {
   const repo = join(root, 'extension-template-src');
@@ -44,6 +52,7 @@ const templateRepo = (root: string): string => {
   put('template.mcpc.json', '{ "name": "agentage-template", "tool": "template__echo" }\n');
   put('openapi.json', '{ "title": "template", "pat": ["template:read"] }\n');
   put('CLAUDE.md', '# extension-template\nhost `template.next.agentage.io`, templates stay\n');
+  put('package-lock.json', JSON.stringify(LOCK, null, 2));
   put('logo.png', Buffer.from([0, 116, 101, 109, 112, 108, 97, 116, 101]));
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
   git('init', '-q', '-b', 'master');
@@ -124,12 +133,37 @@ describe('extension create', () => {
     );
   });
 
+  test('the lock keeps its template packages and takes the new name', async () => {
+    await create('market', ['api']);
+    const lock = JSON.parse(read('package-lock.json')) as typeof LOCK;
+    expect(lock.name).toBe('@agentage/extension-market');
+    expect(lock.packages['']).toEqual({ name: '@agentage/extension-market' });
+    expect(lock.packages).toHaveProperty(['node_modules/@babel/template']);
+  });
+
+  test('a template repo that is not there fails with its name, no folder left', async () => {
+    const printed = await output(() =>
+      runExtensionCreate({ id: 'market', parts: [], from: 'x/none' }, () => `file://${root}/none`)
+    );
+    expect(printed.error).toBe('template x/none not found');
+    expect(existsSync(join(root, 'extension-market'))).toBe(false);
+  });
+
   test.each([
     ['market', ['mcp', 'db'], 'unknown part db: one of pages, ui, api, mcp, worker, store, cli'],
     ['api', ['api'], 'id api is a part name: pick another id'],
+    ['../x', [], 'id ../x: lowercase letters, digits and -, starting with a letter'],
+    ['m$&', [], 'id m$&: lowercase letters, digits and -, starting with a letter'],
+    ['market', ['cli'], 'an extension needs at least one of pages, ui, api, mcp'],
+    ['market', ['store'], 'an extension needs at least one of pages, ui, api, mcp'],
+    ['market', ['cli', 'store'], 'an extension needs at least one of pages, ui, api, mcp'],
   ])('refuses %s %j before cloning', async (id, parts, message) => {
     expect((await create(id, parts)).error).toBe(message);
     expect(existsSync(join(root, `extension-${id}`))).toBe(false);
+  });
+
+  test('refuses a --from that is not owner/repo', async () => {
+    expect((await create('market', [], '../../x')).error).toBe('--from ../../x: owner/repo');
   });
 
   test('refuses an existing folder and leaves it as it was', async () => {

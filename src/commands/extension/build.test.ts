@@ -44,6 +44,10 @@ describe('extension build', () => {
     expect(printed.error).toBe(`${repo} has uncommitted changes: commit first`);
     expect(calls).toHaveLength(1);
     await expect(assertCommitted(repo)).rejects.toThrow('commit first');
+    rmSync(join(repo, '.git'), { recursive: true, force: true });
+    await expect(assertCommitted(repo)).rejects.toThrow(
+      `${repo} is not a git checkout: commit first`
+    );
     rmSync(repo, { recursive: true, force: true });
   });
 

@@ -25,7 +25,10 @@ export type Committed = (dir: string) => Promise<void>;
 
 // The build record names HEAD, so the tree it builds must be HEAD.
 export const assertCommitted: Committed = async (dir) => {
-  const { stdout } = await promisify(execFile)('git', ['status', '--porcelain'], { cwd: dir });
+  const status = promisify(execFile)('git', ['status', '--porcelain'], { cwd: dir });
+  const { stdout } = await status.catch(() => {
+    throw new Error(`${dir} is not a git checkout: commit first`);
+  });
   if (stdout.trim()) throw new Error(`${dir} has uncommitted changes: commit first`);
 };
 
