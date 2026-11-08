@@ -18,7 +18,12 @@ const USED = [
   'token',
 ] as const;
 // Every runtime entry of the kit's exports map (schemas/* and package.json are data).
-const ENTRIES = ['@agentage/extension', '@agentage/extension/tool', '@agentage/extension/migrate'];
+const ENTRIES = [
+  '@agentage/extension',
+  '@agentage/extension/tool',
+  '@agentage/extension/contracts',
+  '@agentage/extension/migrate',
+];
 
 describe('the kit fixtures', () => {
   it.each(['probe', 'pong'])('%s ranges over the kit installed here', (name) => {
