@@ -1,5 +1,7 @@
+import { join } from 'node:path';
 import { type RunCommandOptions } from '@agentage/extension/tool';
 import { afterEach, describe, expect, vi } from 'vitest';
+import { getConfigDir } from '../../lib/fs/config.js';
 import { run, type ProgramDeps } from '../../program.js';
 import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { type KitTool } from './kit-tool.js';
@@ -14,8 +16,8 @@ const notHere = async (): Promise<void> => {
 // The kit's runCommand as a seam: what it got, an answer like the fixtures', the code to return.
 const fakeKit = (code = 0) => {
   const runs: Omit<RunCommandOptions, 'stdout' | 'stderr'>[] = [];
-  const runCommand = async ({ dir, command, argv }: RunCommandOptions) => {
-    runs.push({ dir, command, argv });
+  const runCommand = async ({ dir, command, argv, dataDir }: RunCommandOptions) => {
+    runs.push({ dir, command, argv, dataDir });
     console.log(`${command} ${argv.join(' ')}`.trim());
     return code;
   };
@@ -70,7 +72,9 @@ describe('the commands of a kit-built extension', () => {
       code: 0,
       lines: ['ping'],
     });
-    expect(kit.runs).toEqual([{ dir: fixture('probe'), command: 'ping', argv: [] }]);
+    expect(kit.runs).toEqual([
+      { dir: fixture('probe'), command: 'ping', argv: [], dataDir: join(getConfigDir(), 'data') },
+    ]);
   });
 
   test('agentage ping hi and agentage probe ping hi --json hand the args to the kit untouched', async ({
@@ -159,7 +163,9 @@ describe('a command name someone else has: only agentage <id> <command> runs it'
     const kit = fakeKit();
     expect((await agentage({ kitTool: kit.tool }, 'status')).lines).toEqual(['core status']);
     expect((await agentage({ kitTool: kit.tool }, 'pong', 'status')).lines).toEqual(['status']);
-    expect(kit.runs).toEqual([{ dir: fixture('pong'), command: 'status', argv: [] }]);
+    expect(kit.runs).toEqual([
+      { dir: fixture('pong'), command: 'status', argv: [], dataDir: join(getConfigDir(), 'data') },
+    ]);
   });
 
   test('the holder commands.json names keeps agentage ping, whatever the order on disk', async ({
