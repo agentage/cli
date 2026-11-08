@@ -1,4 +1,6 @@
+import { join } from 'node:path';
 import { CommanderError, type Command } from 'commander';
+import { getConfigDir } from '../../lib/fs/config.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { type Verbs } from '../../core/loader/verbs.js';
 import { type LoadKitTool } from './kit-tool.js';
@@ -19,7 +21,7 @@ export interface KitRegistration {
 const runKit = async (tool: LoadKitTool, dir: string, command: string, argv: string[]) => {
   const { runCommand } = await tool();
   delete process.env['AGENTAGE_TOKEN'];
-  const code = await runCommand({ dir, command, argv });
+  const code = await runCommand({ dir, command, argv, dataDir: join(getConfigDir(), 'data') });
   if (code !== 0) throw new CommanderError(code, KIT_EXIT, `${command} exited ${code}`);
 };
 
