@@ -162,6 +162,26 @@ describe('extension create', () => {
     expect(existsSync(join(root, 'extension-market'))).toBe(false);
   });
 
+  test('a clone that fails after it made the folder leaves no folder', async () => {
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, 'git'),
+      '#!/bin/sh\nfor a; do last=$a; done\nmkdir -p "$last"\nexit 1\n',
+      {
+        mode: 0o755,
+      }
+    );
+    const path = process.env['PATH'];
+    process.env['PATH'] = `${bin}:${path ?? ''}`;
+    try {
+      expect((await create('market')).error).toMatch(/^cannot clone template /);
+    } finally {
+      process.env['PATH'] = path;
+    }
+    expect(existsSync(join(root, 'extension-market'))).toBe(false);
+  });
+
   test('a clone that is not a template fails with one line and leaves no folder, so a re-run works', async () => {
     rmSync(join(url.slice('file://'.length), 'package.json'));
     execFileSync('git', ['-C', url.slice('file://'.length), 'commit', '-qam', 'x'], {

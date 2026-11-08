@@ -24,6 +24,7 @@ interface World {
   stageFails?: boolean;
   uploadFails?: boolean;
   viewFails?: string;
+  publishTimesOut?: boolean;
 }
 
 const ran = (ok: boolean, text = ''): Ran =>
@@ -49,6 +50,7 @@ const world =
     if (args[0] === 'view' && w.viewFails) return ran(false, w.viewFails);
     if (args[0] === 'view')
       return (w.onNpm ?? []).includes(args[1] ?? '') ? ran(true, '0.1.0\n') : ran(false, 'E404');
+    if (args[0] === 'publish' && w.publishTimesOut) return ran(false, 'timed out after 300 s');
     if (args[0] === 'publish') return ran(!w.publishDenied, 'E404 Not Found - PUT');
     if (args[0] === 'stage') return ran(!w.stageFails, 'E403 Forbidden');
     return ran(true);
@@ -67,6 +69,7 @@ const release = async (w: World = {}, env: Record<string, string> = ENV) => {
   const calls: string[] = [];
   const seen: string[] = [];
   const unbounded: string[] = [];
+  const bounds: string[] = [];
   const dir = checkout();
   const parts = { pages: true, api: true, mcp: false, store: 'postgres' };
   const pkg = validateManifest({
@@ -86,13 +89,17 @@ const release = async (w: World = {}, env: Record<string, string> = ENV) => {
   const deps = {
     exec: (_dir: string, seconds = 0): Exec => {
       const run = world(w, calls, seen);
-      return (cmd, args, env) => (seconds || unbounded.push(cmd), run(cmd, args, env));
+      return (cmd, args, env) => {
+        if (!seconds) unbounded.push(cmd);
+        bounds.push(`${cmd} ${args[0] ?? ''} ${seconds}`);
+        return run(cmd, args, env);
+      };
     },
     tool: async () => tool as KitTool,
     env: { ...env },
   };
   const printed = await output(() => runExtensionRelease({ dir }, deps));
-  return { ...printed, calls, seen, unbounded, env: deps.env };
+  return { ...printed, calls, seen, unbounded, bounds, env: deps.env };
 };
 
 describe('extension release', () => {
@@ -234,5 +241,19 @@ describe('extension release', () => {
       );
       expect(run.calls.some((c) => /^npm (stage )?publish/.test(c))).toBe(false);
     }
+  });
+
+  test('npm publish has its own 300 s bound, every other call the --timeout', async () => {
+    const { bounds } = await release({ publishDenied: true });
+    expect(bounds.filter((b) => b.endsWith(' 300'))).toEqual(['npm publish 300', 'npm stage 300']);
+    expect(bounds.filter((b) => !b.endsWith(' 300')).every((b) => b.endsWith(' 60'))).toBe(true);
+  });
+
+  test('a publish killed by its bound stops there, never stages', async () => {
+    const run = await release({ publishTimesOut: true });
+    expect(run.error).toBe(
+      `FAIL npm: publish of ${NAME}@0.1.0 timed out after 300 s; re-run the release: it reads "already on npm" if the upload landed`
+    );
+    expect(run.calls.some((c) => c.startsWith('npm stage'))).toBe(false);
   });
 });

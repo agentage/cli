@@ -84,11 +84,12 @@ const renameLock = (dir: string, id: string): void => {
   save(join(dir, LOCK), lock);
 };
 
-// Bounded; git's own first line says why (no such repo, no network, no access).
+// Bounded, a partial folder removed; git's own first line says why (no repo, no network, no access).
 const clone = async (url: string, from: string, dir: string): Promise<void> => {
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
   await run('git', ['clone', '-q', '--depth', '1', url, dir], { env, timeout: 120_000 }).catch(
     (err: { stderr?: string; message: string }) => {
+      rmSync(dir, { recursive: true, force: true });
       const why = (err.stderr?.trim() || err.message).split('\n')[0];
       throw new Error(`cannot clone template ${from}: ${why}`);
     }
