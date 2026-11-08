@@ -1,5 +1,6 @@
 import { type Command } from 'commander';
 import { addBuild, type BuildActions } from './build.js';
+import { addRelease, type ExtensionReleaseOptions } from './release.js';
 import { addCreate, type ExtensionCreateOptions } from './create.js';
 import { type ExtensionDoctorOptions } from './doctor.js';
 import { type ExtensionInstallOptions } from './install.js';
@@ -80,6 +81,7 @@ export interface ExtensionActions extends KitActions, BuildActions {
   list: (opts: ExtensionListOptions) => Promise<void>;
   doctor: (opts: ExtensionDoctorOptions) => Promise<void>;
   create: (opts: ExtensionCreateOptions) => Promise<void>;
+  release: (opts: ExtensionReleaseOptions) => Promise<void>;
 }
 
 const addChanges = (group: Command, { install, remove }: ExtensionActions): void => {
@@ -115,7 +117,7 @@ const addReports = (group: Command, { list, doctor }: ExtensionActions): void =>
     .action(doctor);
 };
 
-// Help lists the subcommands in this order: install, remove, list, doctor, create, check, build, up, down, token.
+// Help lists the subcommands in this order: install, remove, list, doctor, create, check, build, release, up, down, token.
 export const registerExtension = (program: Command, actions: ExtensionActions): void => {
   const group = program
     .command('extension')
@@ -126,5 +128,6 @@ export const registerExtension = (program: Command, actions: ExtensionActions): 
   addReports(group, actions);
   addCreate(group, actions.create);
   addBuild(group, actions);
+  addRelease(group, actions.release);
   addKitTools(group, actions);
 };

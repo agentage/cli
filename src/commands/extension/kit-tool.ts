@@ -13,6 +13,7 @@ export type KitTool = Pick<
   | 'up'
   | 'down'
   | 'token'
+  | 'readManifest'
 >;
 
 export type LoadKitTool = () => Promise<KitTool>;

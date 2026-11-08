@@ -141,6 +141,37 @@ describe('extension check', () => {
     });
     expect(printed.error).toBe('FAIL 1 problem in 1 rule');
   });
+
+  test('--write writes the contracts through the kit, prints each file, then checks', async () => {
+    const { tool, dirs } = checking(true);
+    const writer = async () => ({
+      writeContracts: async (dir: string) => [`${dir}/probe.mcpc.json`],
+    });
+    const printed = await output(() =>
+      runExtensionCheck({ dir: 'probe', write: true }, tool, writer)
+    );
+    expect(printed.lines).toEqual([
+      'wrote probe/probe.mcpc.json',
+      'sealing ok',
+      'PASS probe 0.4.0 conforms (1 rule)',
+    ]);
+    expect(dirs).toEqual(['probe']);
+  });
+
+  test('--write --json keeps stdout one JSON document: the written paths go to stderr', async () => {
+    const writer = async () => ({ writeContracts: async () => ['probe.mcpc.json'] });
+    const run = () => runExtensionCheck({ write: true, json: true }, checking(true).tool, writer);
+    const printed = await output(run);
+    expect(printed.stderr.trim()).toBe('wrote probe.mcpc.json');
+    expect(JSON.parse(printed.lines.join('\n'))).toMatchObject({ conforms: true });
+  });
+
+  test('--write on a kit without writeContracts names the kit version it needs', async () => {
+    const { tool, dirs } = checking(true);
+    const printed = await output(() => runExtensionCheck({ write: true }, tool, async () => ({})));
+    expect(printed.error).toBe('check --write needs @agentage/extension >= 0.5.1');
+    expect(dirs).toEqual([]);
+  });
 });
 
 describe('extension check on the real kit', () => {

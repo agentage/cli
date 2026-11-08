@@ -37,6 +37,7 @@ const agentage = async (kit: Pick<ProgramDeps, 'kitTool'>, ...args: string[]) =>
     extensionCheck: notHere,
     extensionCreate: notHere,
     extensionBuild: notHere,
+    extensionRelease: notHere,
     extensionUp: notHere,
     extensionDown: notHere,
     extensionToken: notHere,

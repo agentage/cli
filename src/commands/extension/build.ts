@@ -6,13 +6,30 @@ import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
 export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'>;
 
-export type ExtensionCheckOptions = { dir?: string; json?: boolean };
+export type ExtensionCheckOptions = { dir?: string; json?: boolean; write?: boolean };
+
+type WriteContracts = (dir: string) => Promise<string[]>;
+export type LoadWriter = () => Promise<Record<string, unknown>>;
+
+// Not in the 0.5.0 types yet: the kit lane adds it in 0.5.1.
+const loadWriter: LoadWriter = () => import('@agentage/extension/tool');
+
+// With --json the written paths go to stderr, so stdout stays one JSON document.
+const writeContracts = async (dir: string, writer: LoadWriter, json?: boolean): Promise<void> => {
+  const write = (await writer())['writeContracts'];
+  if (typeof write !== 'function')
+    throw new Error('check --write needs @agentage/extension >= 0.5.1');
+  for (const file of await (write as WriteContracts)(dir))
+    (json ? console.error : console.log)(`wrote ${file}`);
+};
 
 // The kit's lines, or its report as JSON, on stdout; a package that does not conform exits 1.
 export const runExtensionCheck = async (
-  { dir = '.', json }: ExtensionCheckOptions = {},
-  tool: LoadKitTool = loadKitTool
+  { dir = '.', json, write }: ExtensionCheckOptions = {},
+  tool: LoadKitTool = loadKitTool,
+  writer: LoadWriter = loadWriter
 ): Promise<void> => {
+  if (write) await writeContracts(dir, writer, json);
   const { check, checkLines } = await tool();
   const report = await check(dir);
   const lines = checkLines(report);
@@ -62,7 +79,10 @@ export const addBuild = (group: Command, { check, build }: BuildActions): void =
     .description('Check that an extension package conforms, as every build does first')
     .argument('[dir]', 'the extension package folder (default: the current folder)')
     .option('--json', 'machine-readable report')
-    .action((dir: string | undefined, opts: { json?: boolean }) => check({ dir, ...opts }));
+    .option('--write', 'write the committed contracts (such as {id}.mcpc.json) first, then check')
+    .action((dir: string | undefined, opts: { json?: boolean; write?: boolean }) =>
+      check({ dir, ...opts })
+    );
   group
     .command('build')
     .description('Build the part images of an extension package; --push pushes them')
