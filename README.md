@@ -66,8 +66,9 @@ For extensions (see below):
 | `agentage extension list`                    | One row per extension: state, version, commands, last run        |
 | `agentage extension doctor`                  | Load every extension once and refresh the states                 |
 | `agentage extension create <id> [part...]`   | New `./extension-<id>` from the template, only the parts named   |
-| `agentage extension check [dir]`             | Check that an extension package conforms (the six kit rules)     |
+| `agentage extension check [dir] [--write]`   | Check that an extension package conforms (the six kit rules)     |
 | `agentage extension build [--push]`          | Build the part images of a committed tree; push with digests     |
+| `agentage extension release`                 | Release from a tag in CI: guard, images, record, npm package     |
 | `agentage extension up` / `down`             | Run an extension package on this machine with Docker, then stop  |
 | `agentage extension token --scope <scope>`   | Print a token from the dev issuer `extension up` started         |
 | `agentage <command>`                         | Run a command an installed extension contributes                 |

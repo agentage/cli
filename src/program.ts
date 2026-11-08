@@ -24,6 +24,7 @@ import {
 import { signedInAccount } from './commands/extension/account.js';
 import { KIT_EXIT } from './commands/extension/kit-commands.js';
 import { loadKitTool, type LoadKitTool } from './commands/extension/kit-tool.js';
+import { runExtensionRelease, type ExtensionReleaseOptions } from './commands/extension/release.js';
 import { runExtensionSetup } from './commands/extension/setup.js';
 import {
   runExtensionDown,
@@ -56,6 +57,7 @@ export interface ProgramDeps {
   extensionCreate: (opts: ExtensionCreateOptions) => Promise<void>;
   extensionCheck: (opts: ExtensionCheckOptions) => Promise<void>;
   extensionBuild: (opts: ExtensionBuildOptions) => Promise<void>;
+  extensionRelease: (opts: ExtensionReleaseOptions) => Promise<void>;
   extensionUp: (opts: ExtensionUpOptions) => Promise<void>;
   extensionDown: (opts: ExtensionDownOptions) => Promise<void>;
   extensionToken: (opts: ExtensionTokenOptions) => Promise<void>;
@@ -88,6 +90,7 @@ const defaultDeps: ProgramDeps = {
   extensionCreate: (opts) => runExtensionCreate(opts),
   extensionCheck: (opts) => runExtensionCheck(opts),
   extensionBuild: (opts) => runExtensionBuild(opts),
+  extensionRelease: (opts) => runExtensionRelease(opts),
   extensionUp: (opts) => runExtensionUp(opts),
   extensionDown: (opts) => runExtensionDown(opts),
   extensionToken: (opts) => runExtensionToken(opts),
@@ -138,6 +141,7 @@ const addExtensions = (program: Command, deps: ProgramDeps, argv: string[]): voi
     create: withAction(deps, deps.extensionCreate),
     check: withAction(deps, deps.extensionCheck),
     build: withAction(deps, deps.extensionBuild),
+    release: withAction(deps, deps.extensionRelease),
     up: withAction(deps, deps.extensionUp),
     down: withAction(deps, deps.extensionDown),
     token: withAction(deps, deps.extensionToken),

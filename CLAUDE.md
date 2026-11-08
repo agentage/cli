@@ -48,10 +48,11 @@ extensions.
   `install.ts` adds one extension (npm is its only seam; a kit-built working copy prints `linked`), `remove.ts` takes one out (`--purge` asks
   through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists missing secrets
   (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per contributed command and
-  hands it to the extension), `build.ts` is `extension check` and `extension build`: thin commands over the kit's
+  hands it to the extension), `build.ts` is `extension check` (`--write` over the kit's `writeContracts`) and `extension build`: thin commands over the kit's
   `@agentage/extension/tool`, imported on use; `kit-tool.ts` is that one seam (`check`, `checkLines`, `build`,
-  `buildLines`, `runCommand`, `checkCli`, `up`, `down`, `token`, typed by the kit; `loadKitTool`,
-  `kitCheck`), `up.ts` is `extension up`, `down` and `token` over it, `kit-commands.ts` registers a
+  `buildLines`, `runCommand`, `checkCli`, `up`, `down`, `token`, `readManifest`, typed by the kit; `loadKitTool`,
+  `kitCheck`), `release.ts` is `extension release` (preflight, guard, `build --push`, the release
+  asset, npm publish or stage) over `release-guard.ts` (the guard and the bounded `execIn` seam), `up.ts` is `extension up`, `down` and `token` over it, `kit-commands.ts` registers a
   kit-built extension's `agentage {id}` group and top-level verbs (its `stub` is the one every
   delegated command uses); `status/account-status.ts`
   is what `status` asks the account (seen, the profile's etag)

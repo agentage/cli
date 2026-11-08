@@ -20,6 +20,7 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     extensionCheck: vi.fn(async () => undefined),
     extensionCreate: vi.fn(async () => undefined),
     extensionBuild: vi.fn(async () => undefined),
+    extensionRelease: vi.fn(async () => undefined),
     extensionUp: vi.fn(async () => undefined),
     extensionDown: vi.fn(async () => undefined),
     extensionToken: vi.fn(async () => undefined),
@@ -188,6 +189,8 @@ describe('createProgram', () => {
     expect(h.deps.extensionCheck).toHaveBeenLastCalledWith({ dir: 'probe', json: true });
     expect(await h.exec('extension', 'check')).toBe(0);
     expect(h.deps.extensionCheck).toHaveBeenLastCalledWith({ dir: undefined });
+    expect(await h.exec('extension', 'check', '--write')).toBe(0);
+    expect(h.deps.extensionCheck).toHaveBeenLastCalledWith({ dir: undefined, write: true });
     expect(h.deps.extensionDoctor).not.toHaveBeenCalled();
     const failing = makeDeps({ extensionCheck: boom });
     expect(await failing.exec('extension', 'check')).toBe(1);
@@ -266,6 +269,15 @@ describe('createProgram', () => {
     expect(await h.exec('extension', 'build', '--dir')).toBe(2);
     const failing = makeDeps({ extensionBuild: boom });
     expect(await failing.exec('extension', 'build')).toBe(1);
+    expect(failing.stderr()).toContain('boom');
+  });
+
+  test('extension release passes --dir and --timeout as seconds; a refusal exits 1', async () => {
+    const h = makeDeps();
+    expect(await h.exec('extension', 'release', '--dir', 'ext', '--timeout', '5')).toBe(0);
+    expect(h.deps.extensionRelease).toHaveBeenLastCalledWith({ dir: 'ext', timeout: 5 });
+    const failing = makeDeps({ extensionRelease: boom });
+    expect(await failing.exec('extension', 'release')).toBe(1);
     expect(failing.stderr()).toContain('boom');
   });
 
