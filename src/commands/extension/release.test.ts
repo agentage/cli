@@ -25,6 +25,7 @@ interface World {
   uploadFails?: boolean;
   viewFails?: string;
   publishTimesOut?: boolean;
+  private?: boolean;
 }
 
 const ran = (ok: boolean, text = ''): Ran =>
@@ -77,6 +78,7 @@ const release = async (w: World = {}, env: Record<string, string> = ENV) => {
     version: '0.1.0',
     engines: { agentage: '^0.5' },
     agentage: { id: w.id ?? 'probe', parts },
+    ...(w.private ? { private: true } : {}),
   });
   const tool: Partial<KitTool> = {
     readManifest: async () => pkg,
@@ -147,6 +149,25 @@ describe('extension release', () => {
           c.startsWith('build') || c.startsWith('gh release upload') || c.startsWith('npm publish')
       )
     ).toEqual([]);
+  });
+
+  test('a private package skips npm entirely, the record is still attached', async () => {
+    const run = await release({ private: true });
+    expect(run.error).toBeNull();
+    expect(run.lines.at(-1)).toBe('PASS npm: private package, not published');
+    expect(run.lines).not.toContain('PASS npm: npm 11.7.0');
+    expect(run.calls.some((c) => c.startsWith('gh release create'))).toBe(true);
+    expect(run.calls.filter((c) => c.startsWith('npm'))).toEqual([]);
+  });
+
+  test('a re-run of a released private package is a no-op PASS', async () => {
+    const run = await release({ private: true, record: true });
+    expect(run.error).toBeNull();
+    expect(run.lines.slice(-2)).toEqual([
+      'PASS guard: v0.1.0 is released',
+      'PASS npm: private package, not published',
+    ]);
+    expect(run.calls.filter((c) => /^(npm|build|gh release (upload|create))/.test(c))).toEqual([]);
   });
 
   test('the starting point (id template) never releases', async () => {

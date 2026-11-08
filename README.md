@@ -189,6 +189,8 @@ Releases publish to npm via GitHub Actions when a `chore(release): X.Y.Z` commit
 `package.json` lands on `master` (the squash-merge subject of a release PR). The workflow skips
 any version already on npm.
 
+An extension release (`agentage extension release`) skips npm for a package with `"private": true`: it pushes the images, attaches the record and prints `PASS npm: private package, not published`.
+
 ## License
 
 MIT - see [LICENSE](./LICENSE).
