@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "agentage": "^0.2 || ^0.3 || ^0.4"
+    "agentage": "^0.2 || ^0.3 || ^0.4 || ^0.5"
   },
   "agentage": {
     "id": "probe",
@@ -21,8 +21,7 @@
         "args": [
           {
             "name": "msg",
-            "type": "string",
-            "optional": true
+            "type": "string"
           }
         ]
       }
