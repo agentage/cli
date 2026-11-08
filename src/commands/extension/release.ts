@@ -109,7 +109,13 @@ const npmVersion = async (run: Exec): Promise<void> => {
   step(`npm: npm ${v}`);
 };
 
-const preflight = async (run: Exec, pkg: ExtensionPackage, tag: string, sha: string) => {
+const preflight = async (
+  run: Exec,
+  pkg: ExtensionPackage,
+  tag: string,
+  sha: string,
+  isPrivate: boolean
+) => {
   if (pkg.agentage.id === 'template')
     fail('id: this repo is the starting point for extensions: create one, release that');
   step(`id: ${pkg.agentage.id} is not the template`);
@@ -121,7 +127,7 @@ const preflight = async (run: Exec, pkg: ExtensionPackage, tag: string, sha: str
   if (tag !== v)
     fail(`tag: ${tag} is not ${v}, the package.json version; tag the commit that sets it`);
   step(`tag: ${tag} is the package.json version`);
-  await npmVersion(run);
+  if (!isPrivate) await npmVersion(run);
 };
 
 // One line per step, PASS or FAIL; any refusal exits 1 before anything is pushed or published.
@@ -135,16 +141,19 @@ export const runExtensionRelease = async (
   const secrets = takeSecrets(deps.env);
   const pkg = await (await deps.tool()).readManifest(dir);
   const run = scoped(deps.exec(dir, timeout), secrets);
-  await preflight(run, pkg, tag, sha);
+  const isPrivate = pkg['private'] === true;
+  await preflight(run, pkg, tag, sha, isPrivate);
   const { id } = pkg.agentage;
   const g = { dir, tag, sha, repo, id, version: pkg.version, parts: imageParts(pkg) };
   const decision = await releaseGuard(g, run).catch((e: Error) => fail(`guard: ${e.message}`));
   const build = decision === 'build';
-  step(`guard: ${tag} ${build ? 'has no record and no image: build' : 'is released: npm only'}`);
+  const done = isPrivate ? 'is released' : 'is released: npm only';
+  step(`guard: ${tag} ${build ? 'has no record and no image: build' : done}`);
   if (build) {
     await runExtensionBuild({ push: true, dir }, deps.tool);
     await attach(run, tag, repo);
   }
+  if (isPrivate) return step('npm: private package, not published');
   const push = scoped(deps.exec(dir, PUBLISH_SECONDS), secrets);
   await publish(run, push, pkg, secrets['npm']?.['NPM_TOKEN']);
 };

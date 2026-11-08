@@ -456,7 +456,7 @@ missing). Last, `npm publish --access public --provenance --ignore-scripts`, ski
 when the direct publish is not authorized, or `NPM_TOKEN` is set and the name is new, it runs `npm
 stage publish` instead. `GH_TOKEN` (or `GITHUB_TOKEN`) goes only to `gh` and `NPM_TOKEN` only to
 npm; both leave the environment first, so the image build and npm lifecycle scripts never see
-them. Needs `docker login` to the registry first.
+them. A package with `"private": true` skips npm entirely (no `npm --version`, `view` or `publish`) and prints `PASS npm: private package, not published`. Needs `docker login` to the registry first.
 
 ## extension up, down and token
 
