@@ -58,14 +58,22 @@ const tokenConfig = async (token?: string): Promise<string[]> => {
   return ['--userconfig', file];
 };
 
+// Only E404 means "not on npm"; a registry that cannot answer stops the release, never publishes.
+const onNpm = async (run: Exec, args: string[], what: string): Promise<boolean> => {
+  const viewed = await run('npm', ['view', ...args]);
+  if (viewed.ok) return viewed.out.trim() !== '';
+  if (!/E404/.test(viewed.err)) fail(`npm: cannot tell whether ${what} is on npm: ${viewed.err}`);
+  return false;
+};
+
 // OIDC trusted publishing; a new name (NPM_TOKEN set) or an unauthorized direct publish is staged.
 const publish = async (run: Exec, { name, version }: ExtensionPackage, token?: string) => {
   const cfg = await tokenConfig(token);
   const spec = `${name}@${version}`;
-  if ((await run('npm', ['view', spec, 'version', ...cfg])).out.trim())
+  if (await onNpm(run, [spec, 'version', ...cfg], spec))
     return step(`npm: ${spec} is already on npm`);
   const flags = ['--access', 'public', '--provenance', '--ignore-scripts', ...cfg];
-  const fresh = token !== undefined && !(await run('npm', ['view', name, 'name', ...cfg])).ok;
+  const fresh = token !== undefined && !(await onNpm(run, [name, 'name', ...cfg], name));
   if (!fresh && (await run('npm', ['publish', ...flags])).ok) return step(`npm: ${spec} published`);
   const staged = await run('npm', ['stage', 'publish', ...flags]);
   if (!staged.ok) fail(`npm: ${staged.err}`);
@@ -108,12 +116,11 @@ export const runExtensionRelease = async (
   if (!tag || !sha || !repo) return fail(`inputs: ${missing} is not set; run it on a tag push`);
   const secrets = takeSecrets(deps.env);
   const pkg = await (await deps.tool()).readManifest(dir);
-  const run = scoped(deps.exec(dir), secrets);
+  const run = scoped(deps.exec(dir, timeout), secrets);
   await preflight(run, pkg, tag, sha);
   const { id } = pkg.agentage;
   const g = { dir, tag, sha, repo, id, version: pkg.version, parts: imageParts(pkg) };
-  const bounded = scoped(deps.exec(dir, timeout), secrets);
-  const decision = await releaseGuard(g, bounded).catch((e: Error) => fail(`guard: ${e.message}`));
+  const decision = await releaseGuard(g, run).catch((e: Error) => fail(`guard: ${e.message}`));
   const build = decision === 'build';
   step(`guard: ${tag} ${build ? 'has no record and no image: build' : 'is released: npm only'}`);
   if (build) {
@@ -131,6 +138,6 @@ export const addRelease = (
     .command('release')
     .description('Release an extension from its v* tag in CI: guard, images, record, npm package')
     .option('--dir <path>', 'the extension package folder (default: the current folder)')
-    .option('--timeout <seconds>', 'bound on each GitHub and registry check (default: 60)', Number)
+    .option('--timeout <seconds>', 'bound on each git, GitHub and npm call (default: 60)', Number)
     .action(release);
 };

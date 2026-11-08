@@ -23,6 +23,7 @@ interface World {
   publishDenied?: boolean;
   stageFails?: boolean;
   uploadFails?: boolean;
+  viewFails?: string;
 }
 
 const ran = (ok: boolean, text = ''): Ran =>
@@ -45,6 +46,7 @@ const world =
       return ran(!w.uploadFails, 'HTTP 403');
     if (cmd === 'docker') return ran(false, 'manifest unknown');
     if (call === 'npm --version') return ran(true, `${w.npm ?? '11.7.0'}\n`);
+    if (args[0] === 'view' && w.viewFails) return ran(false, w.viewFails);
     if (args[0] === 'view')
       return (w.onNpm ?? []).includes(args[1] ?? '') ? ran(true, '0.1.0\n') : ran(false, 'E404');
     if (args[0] === 'publish') return ran(!w.publishDenied, 'E404 Not Found - PUT');
@@ -64,6 +66,7 @@ const checkout = (): string => {
 const release = async (w: World = {}, env: Record<string, string> = ENV) => {
   const calls: string[] = [];
   const seen: string[] = [];
+  const unbounded: string[] = [];
   const dir = checkout();
   const parts = { pages: true, api: true, mcp: false, store: 'postgres' };
   const pkg = validateManifest({
@@ -81,12 +84,15 @@ const release = async (w: World = {}, env: Record<string, string> = ENV) => {
     buildLines: () => ['api ghcr.io/agentage/probe-api:0.1.0 sha256:bbbbbbbb pushed'],
   };
   const deps = {
-    exec: () => world(w, calls, seen),
+    exec: (_dir: string, seconds = 0): Exec => {
+      const run = world(w, calls, seen);
+      return (cmd, args, env) => (seconds || unbounded.push(cmd), run(cmd, args, env));
+    },
     tool: async () => tool as KitTool,
     env: { ...env },
   };
   const printed = await output(() => runExtensionRelease({ dir }, deps));
-  return { ...printed, calls, seen, env: deps.env };
+  return { ...printed, calls, seen, unbounded, env: deps.env };
 };
 
 describe('extension release', () => {
@@ -214,5 +220,19 @@ describe('extension release', () => {
     expect(run.env).not.toHaveProperty('NPM_TOKEN');
     const fallback = await release({}, { ...ENV, GITHUB_TOKEN: 'gh_y' });
     expect([...new Set(fallback.seen)]).toEqual(['gh GH_TOKEN']);
+  });
+
+  test('every git, gh and npm call is bounded by --timeout', async () => {
+    expect((await release({ release: true })).unbounded).toEqual([]);
+  });
+
+  test('a registry that cannot answer stops before any publish', async () => {
+    for (const env of [ENV, { ...ENV, NPM_TOKEN: 'npm_x' }]) {
+      const run = await release({ viewFails: 'npm error code E503' }, env);
+      expect(run.error).toBe(
+        `FAIL npm: cannot tell whether ${NAME}@0.1.0 is on npm: npm error code E503`
+      );
+      expect(run.calls.some((c) => /^npm (stage )?publish/.test(c))).toBe(false);
+    }
   });
 });
