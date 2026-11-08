@@ -158,8 +158,44 @@ describe('extension create', () => {
     const printed = await output(() =>
       runExtensionCreate({ id: 'market', parts: [], from: 'x/none' }, () => `file://${root}/none`)
     );
-    expect(printed.error).toBe('template x/none not found');
+    expect(printed.error).toMatch(/^cannot clone template x\/none: fatal: .*none/);
     expect(existsSync(join(root, 'extension-market'))).toBe(false);
+  });
+
+  test('a clone that fails after it made the folder leaves no folder', async () => {
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, 'git'),
+      '#!/bin/sh\nfor a; do last=$a; done\nmkdir -p "$last"\nexit 1\n',
+      {
+        mode: 0o755,
+      }
+    );
+    const path = process.env['PATH'];
+    process.env['PATH'] = `${bin}:${path ?? ''}`;
+    try {
+      expect((await create('market')).error).toMatch(/^cannot clone template /);
+    } finally {
+      process.env['PATH'] = path;
+    }
+    expect(existsSync(join(root, 'extension-market'))).toBe(false);
+  });
+
+  test('a clone that is not a template fails with one line and leaves no folder, so a re-run works', async () => {
+    rmSync(join(url.slice('file://'.length), 'package.json'));
+    execFileSync('git', ['-C', url.slice('file://'.length), 'commit', '-qam', 'x'], {
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 't',
+        GIT_AUTHOR_EMAIL: 't@t',
+        GIT_COMMITTER_NAME: 't',
+        GIT_COMMITTER_EMAIL: 't@t',
+      },
+    });
+    const { error } = await create('market');
+    expect(existsSync(join(root, 'extension-market'))).toBe(false);
+    expect(error).toMatch(/^template agentage\/extension-template: ENOENT/);
   });
 
   test.each([

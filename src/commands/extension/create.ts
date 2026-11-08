@@ -84,12 +84,29 @@ const renameLock = (dir: string, id: string): void => {
   save(join(dir, LOCK), lock);
 };
 
+// Bounded, a partial folder removed; git's own first line says why (no repo, no network, no access).
 const clone = async (url: string, from: string, dir: string): Promise<void> => {
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
-  await run('git', ['clone', '-q', '--depth', '1', url, dir], { env }).catch(() => {
-    throw new Error(`template ${from} not found`);
-  });
+  await run('git', ['clone', '-q', '--depth', '1', url, dir], { env, timeout: 120_000 }).catch(
+    (err: { stderr?: string; message: string }) => {
+      rmSync(dir, { recursive: true, force: true });
+      const why = (err.stderr?.trim() || err.message).split('\n')[0];
+      throw new Error(`cannot clone template ${from}: ${why}`);
+    }
+  );
   rmSync(join(dir, '.git'), { recursive: true, force: true });
+};
+
+// A half-made folder is removed, so a re-run is not refused as "exists".
+const shape = (dir: string, from: string, id: string, kept: string[]): void => {
+  try {
+    drop(dir, kept);
+    rewrite(dir, id);
+    renameLock(dir, id);
+  } catch (err) {
+    rmSync(dir, { recursive: true, force: true });
+    throw new Error(`template ${from}: ${(err as Error).message}`);
+  }
 };
 
 // Clones the template's default branch into ./extension-<id> as a new working copy, no history.
@@ -103,9 +120,7 @@ export const runExtensionCreate = async (
   if (refused) throw new Error(refused);
   const dir = `extension-${id}`;
   await clone(url(from), from, dir);
-  drop(dir, kept);
-  rewrite(dir, id);
-  renameLock(dir, id);
+  shape(dir, from, id, kept);
   const kit = String(
     json(join(dir, 'package.json'))['dependencies']?.['@agentage/extension'] ?? '?'
   );
