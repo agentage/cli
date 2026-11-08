@@ -11,11 +11,12 @@ const ROUTED = ['pages', 'ui', 'api', 'mcp'];
 // `_` is a separator here, so `template__echo` is the id too.
 const WORD = /(?<![A-Za-z0-9])template(?![A-Za-z0-9])/g;
 const LOCK = 'package-lock.json';
-// What else goes with a dropped part: manifest keys the kit refuses without it, the store's SQL.
-const PRUNE: Record<string, { keys?: string[][]; dirs?: string[] }> = {
+// What else goes with a dropped part: manifest keys the kit refuses without it, the store's SQL, the contract file of api and mcp.
+const PRUNE: Record<string, { keys?: string[][]; paths?: string[] }> = {
   cli: { keys: [['agentage', 'commands']] },
-  mcp: { keys: [['agentage', 'settings', 'mcp.listing']] },
-  store: { dirs: ['migrations', 'seeds'] },
+  mcp: { keys: [['agentage', 'settings', 'mcp.listing']], paths: ['template.mcpc.json'] },
+  api: { paths: ['openapi.json'] },
+  store: { paths: ['migrations', 'seeds'] },
 };
 
 export interface ExtensionCreateOptions {
@@ -51,7 +52,7 @@ const drop = (dir: string, kept: string[]): void => {
   const pkg = json(join(dir, 'package.json'));
   for (const part of PARTS.filter((part) => !kept.includes(part))) {
     delete pkg['agentage']?.parts?.[part];
-    for (const sub of [join('src', part), ...(PRUNE[part]?.dirs ?? [])])
+    for (const sub of [join('src', part), ...(PRUNE[part]?.paths ?? [])])
       rmSync(join(dir, sub), { recursive: true, force: true });
     for (const path of PRUNE[part]?.keys ?? []) {
       const parent = path.slice(0, -1).reduce<Doc | undefined>((at, key) => at?.[key], pkg);

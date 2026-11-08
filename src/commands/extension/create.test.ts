@@ -110,13 +110,26 @@ describe('extension create', () => {
     expect(read('seeds/001-hello.sql')).toBe('select 1;\n');
   });
 
+  test.each([
+    [['mcp'], [false, true]],
+    [['api'], [true, false]],
+  ])('a contract file goes with its dropped part: keep %j', async (parts, [api, mcp]) => {
+    await create('market', parts);
+    const has = (file: string) => existsSync(join(root, 'extension-market', file));
+    expect([has('openapi.json'), has('market.mcpc.json'), has('template.mcpc.json')]).toEqual([
+      api,
+      mcp,
+      false,
+    ]);
+  });
+
   test('dropping mcp drops its listing setting', async () => {
     await create('market', ['api']);
     expect(manifest().agentage.settings).toEqual({});
   });
 
   test('rewrites the id, package name, host and contract file name from template', async () => {
-    const printed = await create('market', ['mcp'], 'someone/their-template');
+    const printed = await create('market', ['mcp', 'api'], 'someone/their-template');
     expect(printed.lines[0]).toBe(' template  someone/their-template (default branch, kit 0.5.0)');
     expect(manifest()).toMatchObject({
       name: '@agentage/extension-market',
