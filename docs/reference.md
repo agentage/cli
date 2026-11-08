@@ -416,7 +416,7 @@ problems in m rules` on stderr. The store rule applies the migrations on a throw
 prints `store skipped: no docker` without docker (`build` never skips it). Exits 1 when the
 package does not conform. Until 0.42 this name was the old name of `doctor`. `--write` first
 writes the contracts the package commits (the kit's `writeContracts`, `@agentage/extension` >=
-0.5.1) and prints `wrote <file>` for each, then checks.
+0.5.1) and prints `wrote <file>` for each (on stderr with `--json`), then checks.
 
 ## extension build
 
@@ -452,9 +452,11 @@ and record (`dist/agentage-extension.json` is downloaded) and only npm is retrie
 another commit, or an image already pushed without a record, is refused; a GitHub or registry
 call that fails or outlasts `--timeout` (default 60 s) stops the release. A new version runs
 `build --push` and attaches `agentage-extension.json` to the tag's GitHub release (created when
-missing). Last, `npm publish --access public --provenance`, skipped when the version is on npm;
+missing). Last, `npm publish --access public --provenance --ignore-scripts`, skipped when the version is on npm;
 when the direct publish is not authorized, or `NPM_TOKEN` is set and the name is new, it runs `npm
-stage publish` instead. Needs `docker login` to the registry first.
+stage publish` instead. `GH_TOKEN` (or `GITHUB_TOKEN`) goes only to `gh` and `NPM_TOKEN` only to
+npm; both leave the environment first, so the image build and npm lifecycle scripts never see
+them. Needs `docker login` to the registry first.
 
 ## extension up, down and token
 

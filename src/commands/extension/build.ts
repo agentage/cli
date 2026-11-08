@@ -14,11 +14,13 @@ export type LoadWriter = () => Promise<Record<string, unknown>>;
 // Not in the 0.5.0 types yet: the kit lane adds it in 0.5.1.
 const loadWriter: LoadWriter = () => import('@agentage/extension/tool');
 
-const writeContracts = async (dir: string, writer: LoadWriter): Promise<void> => {
+// With --json the written paths go to stderr, so stdout stays one JSON document.
+const writeContracts = async (dir: string, writer: LoadWriter, json?: boolean): Promise<void> => {
   const write = (await writer())['writeContracts'];
   if (typeof write !== 'function')
     throw new Error('check --write needs @agentage/extension >= 0.5.1');
-  for (const file of await (write as WriteContracts)(dir)) console.log(`wrote ${file}`);
+  for (const file of await (write as WriteContracts)(dir))
+    (json ? console.error : console.log)(`wrote ${file}`);
 };
 
 // The kit's lines, or its report as JSON, on stdout; a package that does not conform exits 1.
@@ -27,7 +29,7 @@ export const runExtensionCheck = async (
   tool: LoadKitTool = loadKitTool,
   writer: LoadWriter = loadWriter
 ): Promise<void> => {
-  if (write) await writeContracts(dir, writer);
+  if (write) await writeContracts(dir, writer, json);
   const { check, checkLines } = await tool();
   const report = await check(dir);
   const lines = checkLines(report);

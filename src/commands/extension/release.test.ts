@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -29,10 +30,11 @@ const ran = (ok: boolean, text = ''): Ran =>
 
 // git, gh, docker and npm as a tag push sees them; every call is logged.
 const world =
-  (w: World, calls: string[]): Exec =>
-  async (cmd, args) => {
+  (w: World, calls: string[], seen: string[]): Exec =>
+  async (cmd, args, env = {}) => {
     const call = [cmd, ...args].join(' ');
     calls.push(call);
+    for (const name of Object.keys(env)) seen.push(`${cmd} ${name}`);
     if (call.startsWith('git merge-base')) return ran(!w.offMaster);
     if (call.startsWith('gh release download'))
       return w.record
@@ -50,9 +52,19 @@ const world =
     return ran(true);
   };
 
+// A committed checkout: build refuses a dirty tree before the kit runs.
+const checkout = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), 'agentage-release-'));
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+  git('init', '-q');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'x');
+  return dir;
+};
+
 const release = async (w: World = {}, env: Record<string, string> = ENV) => {
   const calls: string[] = [];
-  const dir = mkdtempSync(join(tmpdir(), 'agentage-release-'));
+  const seen: string[] = [];
+  const dir = checkout();
   const parts = { pages: true, api: true, mcp: false, store: 'postgres' };
   const pkg = validateManifest({
     name: NAME,
@@ -69,13 +81,12 @@ const release = async (w: World = {}, env: Record<string, string> = ENV) => {
     buildLines: () => ['api ghcr.io/agentage/probe-api:0.1.0 sha256:bbbbbbbb pushed'],
   };
   const deps = {
-    exec: () => world(w, calls),
+    exec: () => world(w, calls, seen),
     tool: async () => tool as KitTool,
-    committed: async () => undefined,
-    env,
+    env: { ...env },
   };
   const printed = await output(() => runExtensionRelease({ dir }, deps));
-  return { ...printed, calls };
+  return { ...printed, calls, seen, env: deps.env };
 };
 
 describe('extension release', () => {
@@ -100,7 +111,7 @@ describe('extension release', () => {
     expect(run.calls).toContain(
       'gh release create v0.1.0 dist/agentage-extension.json --title v0.1.0 --notes Images by digest: agentage-extension.json -R agentage/probe'
     );
-    expect(run.calls).toContain('npm publish --access public --provenance');
+    expect(run.calls).toContain('npm publish --access public --provenance --ignore-scripts');
   });
 
   test('a tag that already has a release gets the record uploaded to it', async () => {
@@ -149,9 +160,7 @@ describe('extension release', () => {
       {},
       { GITHUB_REF_NAME: 'v0.1.0', GITHUB_REPOSITORY: 'agentage/probe' }
     );
-    expect(run.error).toBe(
-      'FAIL inputs: GITHUB_SHA is not set; release runs in a GitHub Actions tag push'
-    );
+    expect(run.error).toBe('FAIL inputs: GITHUB_SHA is not set; run it on a tag push');
     expect(run.calls).toEqual([]);
   });
 
@@ -172,7 +181,7 @@ describe('extension release', () => {
     expect(run.lines.at(-1)).toBe(
       `PASS npm: ${NAME}@0.1.0 staged for approval (direct publish not authorized: no validated trusted publisher)`
     );
-    expect(run.calls).toContain('npm stage publish --access public --provenance');
+    expect(run.calls).toContain('npm stage publish --access public --provenance --ignore-scripts');
     expect((await release({ publishDenied: true, stageFails: true })).error).toBe(
       'FAIL npm: E403 Forbidden'
     );
@@ -192,5 +201,18 @@ describe('extension release', () => {
   test('NPM_TOKEN with a name already on npm publishes directly', async () => {
     const run = await release({ onNpm: [NAME] }, { ...ENV, NPM_TOKEN: 'npm_secret' });
     expect(run.lines.at(-1)).toBe(`PASS npm: ${NAME}@0.1.0 published`);
+  });
+
+  test('GH_TOKEN reaches gh only and NPM_TOKEN npm only; both leave the environment', async () => {
+    const run = await release(
+      { publishDenied: true },
+      { ...ENV, GH_TOKEN: 'gh_x', NPM_TOKEN: 'npm_x' }
+    );
+    expect(run.error).toBeNull();
+    expect([...new Set(run.seen)].sort()).toEqual(['gh GH_TOKEN', 'npm NPM_TOKEN']);
+    expect(run.env).not.toHaveProperty('GH_TOKEN');
+    expect(run.env).not.toHaveProperty('NPM_TOKEN');
+    const fallback = await release({}, { ...ENV, GITHUB_TOKEN: 'gh_y' });
+    expect([...new Set(fallback.seen)]).toEqual(['gh GH_TOKEN']);
   });
 });

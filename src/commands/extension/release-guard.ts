@@ -3,44 +3,36 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BuiltImage } from '@agentage/extension/tool';
 
-export interface Ran {
-  ok: boolean;
-  out: string;
-  err: string;
-}
+export type Ran = { ok: boolean; out: string; err: string };
 
-export type Exec = (cmd: string, args: string[], input?: string) => Promise<Ran>;
+export type Exec = (cmd: string, args: string[], env?: NodeJS.ProcessEnv) => Promise<Ran>;
+
+const ran = (error: Error | null, out: string, err: string): Ran => ({ ok: !error, out, err });
 
 // Bounded by SIGKILL after `seconds` (0 = unbounded); a kill reads as "cannot tell".
 export const execIn =
   (cwd: string, seconds = 0): Exec =>
-  (cmd, args, input) =>
+  (cmd, args, env) =>
     new Promise((resolve) => {
-      const opts = {
-        cwd,
+      const limits = {
         timeout: seconds * 1000,
         killSignal: 'SIGKILL' as const,
         maxBuffer: 1 << 26,
       };
-      const child = execFile(cmd, args, opts, (error, stdout, stderr) => {
-        const why = error?.killed ? `timed out after ${seconds} s` : stderr ? '' : error?.message;
-        resolve({ ok: !error, out: stdout, err: [stderr.trim(), why].filter(Boolean).join('\n') });
+      const opts = { cwd, env: { ...process.env, ...env }, ...limits };
+      const child = execFile(cmd, args, opts, (e, out, err) => {
+        const why = e?.killed ? `timed out after ${seconds} s` : err ? '' : e?.message;
+        resolve(ran(e, out, [err.trim(), why].filter(Boolean).join('\n')));
       });
-      child.stdin?.end(input);
+      child.stdin?.end();
     });
 
 export const RECORD = 'agentage-extension.json';
 export const IMAGE_PARTS: readonly BuiltImage['part'][] = ['pages', 'ui', 'api', 'mcp', 'worker'];
 
-export interface GuardInput {
-  dir: string;
-  tag: string;
-  sha: string;
-  repo: string;
-  id: string;
-  version: string;
+export type GuardInput = Record<'dir' | 'tag' | 'sha' | 'repo' | 'id' | 'version', string> & {
   parts: readonly BuiltImage['part'][];
-}
+};
 
 // Only "not found" means "not released"; any other failure stops the release, never rebuilds it.
 const notFound = (ran: Ran, pattern: RegExp, what: string): void => {
@@ -56,6 +48,19 @@ const reuse = async ({ dir, tag, sha }: GuardInput, json: string): Promise<'reus
   await mkdir(join(dir, 'dist'), { recursive: true });
   await writeFile(join(dir, 'dist', RECORD), `${json.trimEnd()}\n`);
   return 'reuse';
+};
+
+const ensureNoImages = async (g: GuardInput, exec: Exec): Promise<void> => {
+  for (const part of g.parts) {
+    const image = `ghcr.io/agentage/${g.id}-${part}:${g.version}`;
+    const ran = await exec('docker', ['manifest', 'inspect', image]);
+    if (ran.ok)
+      throw new Error(
+        `${image} is already pushed but ${g.tag} has no record; release a new version`
+      );
+    // denied too: GHCR may answer it for a package that does not exist yet (a new part).
+    notFound(ran, /manifest unknown|no such manifest|denied/, image);
+  }
 };
 
 // A released version is never rebuilt: its images and record stay as first pushed.
@@ -77,15 +82,6 @@ export const releaseGuard = async (g: GuardInput, exec: Exec): Promise<'build' |
     /release not found|no assets match|no assets to download/,
     `the ${g.tag} release record`
   );
-  for (const part of g.parts) {
-    const image = `ghcr.io/agentage/${g.id}-${part}:${g.version}`;
-    const ran = await exec('docker', ['manifest', 'inspect', image]);
-    if (ran.ok)
-      throw new Error(
-        `${image} is already pushed but ${g.tag} has no record; release a new version`
-      );
-    // denied too: GHCR may answer it for a package that does not exist yet (a new part).
-    notFound(ran, /manifest unknown|no such manifest|denied/, image);
-  }
+  await ensureNoImages(g, exec);
   return 'build';
 };

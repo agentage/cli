@@ -158,6 +158,14 @@ describe('extension check', () => {
     expect(dirs).toEqual(['probe']);
   });
 
+  test('--write --json keeps stdout one JSON document: the written paths go to stderr', async () => {
+    const writer = async () => ({ writeContracts: async () => ['probe.mcpc.json'] });
+    const run = () => runExtensionCheck({ write: true, json: true }, checking(true).tool, writer);
+    const printed = await output(run);
+    expect(printed.stderr.trim()).toBe('wrote probe.mcpc.json');
+    expect(JSON.parse(printed.lines.join('\n'))).toMatchObject({ conforms: true });
+  });
+
   test('--write on a kit without writeContracts names the kit version it needs', async () => {
     const { tool, dirs } = checking(true);
     const printed = await output(() => runExtensionCheck({ write: true }, tool, async () => ({})));
