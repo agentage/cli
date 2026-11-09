@@ -62,7 +62,7 @@ export const checkAccount = async (account: Account, machine: MachineFile) => {
 export const pullForEdit = async (deps: EditDeps): Promise<Synced | null> => {
   const machine = await loadMachine();
   if (machine.profileSource !== 'cloud') return null;
-  const account = deps.account();
+  const account = await deps.account();
   if (account === null) throw new Error(NOT_SIGNED_IN);
   await checkAccount(account, machine);
   const pulled = await pullProfile(account.fetch, null);

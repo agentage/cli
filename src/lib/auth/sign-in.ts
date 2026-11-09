@@ -1,9 +1,10 @@
 import chalk from 'chalk';
 import { deleteAuth, ensureConfigDir, mutateAuth, readAuth, type AuthState } from '../fs/config.js';
-import { links, siteFqdn } from '../net/origins.js';
+import { discoverTarget } from '../net/discovery.js';
+import { siteFqdn, type Links } from '../net/origins.js';
 import { AuthRequiredError } from './auth-errors.js';
 import { startCallbackServer, type CallbackServer } from './callback-server.js';
-import { detectEnvMismatch, type AuthEnvMismatch } from './env-match.js';
+import { credentialLinks, detectEnvMismatch, type AuthEnvMismatch } from './env-match.js';
 import { introspectToken } from './introspect.js';
 import {
   buildAuthorizeUrl,
@@ -29,6 +30,8 @@ export interface SignInDeps {
   startServer: typeof startCallbackServer;
   openBrowser: (url: string) => Promise<void>;
   introspect: typeof introspectToken;
+  // The target's links, its auth being the issuer the site's discovery names.
+  discover: (fqdn: string) => Promise<Links>;
   log: (msg: string) => void;
 }
 
@@ -42,6 +45,7 @@ const defaultDeps: SignInDeps = {
     await open(url);
   },
   introspect: introspectToken,
+  discover: async (fqdn) => (await discoverTarget(fqdn)).links,
   log: (msg) => console.log(msg),
 };
 
@@ -65,9 +69,9 @@ const authorize = async (
   server: CallbackServer,
   state: string,
   opts: SignInOptions,
-  deps: SignInDeps
+  deps: SignInDeps,
+  authUrl: string
 ): Promise<Grant> => {
-  const authUrl = links(siteFqdn()).auth;
   const { verifier, challenge } = pkcePair();
   const clientId = await deps.register(authUrl, server.redirectUri);
   const redirectUri = server.redirectUri;
@@ -79,17 +83,20 @@ const authorize = async (
 // A fresh DCR client per run: the redirect URI binds this run's ephemeral callback port.
 export const signIn = async (
   opts: SignInOptions,
-  deps: SignInDeps = defaultDeps
+  deps: SignInDeps = defaultDeps,
+  issuer?: string
 ): Promise<void> => {
   const fqdn = siteFqdn();
+  const authUrl = issuer ?? (await deps.discover(fqdn)).auth;
   ensureConfigDir();
   const state = randomState();
   const server = await deps.startServer(state);
   try {
-    const { clientId, code, verifier } = await authorize(server, state, opts, deps);
+    const { clientId, code, verifier } = await authorize(server, state, opts, deps, authUrl);
     const redirectUri = server.redirectUri;
-    const res = await deps.exchange(links(fqdn).auth, { clientId, code, redirectUri, verifier });
-    await mutateAuth(() => ({ siteFqdn: fqdn, clientId, tokens: tokensFrom(res) }));
+    const res = await deps.exchange(authUrl, { clientId, code, redirectUri, verifier });
+    const tokens = tokensFrom(res);
+    await mutateAuth(() => ({ siteFqdn: fqdn, issuer: authUrl, clientId, tokens }));
     deps.log(chalk.green('\nSigned in.\n'));
   } finally {
     server.close();
@@ -102,7 +109,7 @@ export const signOut = async (deps: SignInDeps = defaultDeps): Promise<void> => 
     deps.log('Nothing to disconnect.');
     return;
   }
-  await deps.revoke(links(auth.siteFqdn).auth, auth.tokens.accessToken);
+  await deps.revoke(credentialLinks(auth).auth, auth.tokens.accessToken);
   await deleteAuth();
   deps.log('Disconnected - local credentials removed.');
 };
@@ -114,7 +121,7 @@ const mismatchNote = (m: AuthEnvMismatch): string =>
 // Only a dead session re-signs: a transient verify failure keeps the credentials.
 const verifyStored = async (auth: AuthState, deps: SignInDeps): Promise<boolean> => {
   try {
-    await deps.introspect(auth, links(auth.siteFqdn));
+    await deps.introspect(auth, credentialLinks(auth));
     deps.log(
       `Already signed in. Run ${chalk.white('agentage setup --reauth')} to sign in again.\n`
     );
@@ -135,9 +142,10 @@ export const ensureSignedIn = async (
   deps: SignInDeps = defaultDeps
 ): Promise<SignInResult> => {
   const stored = readAuth();
-  const mismatch = stored && !opts.reauth ? detectEnvMismatch(stored, siteFqdn()) : null;
+  const issuer = (await deps.discover(siteFqdn())).auth;
+  const mismatch = stored && !opts.reauth ? detectEnvMismatch(stored, siteFqdn(), issuer) : null;
   if (mismatch) deps.log(mismatchNote(mismatch));
   else if (stored && !opts.reauth && (await verifyStored(stored, deps))) return 'already';
-  await signIn(opts, deps);
+  await signIn(opts, deps, issuer);
   return mismatch ? 'mismatch-resigned' : 'signed-in';
 };

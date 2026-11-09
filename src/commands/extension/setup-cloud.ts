@@ -97,7 +97,7 @@ const connect = async (account: Account): Promise<MachineFile> => {
 
 // Registration runs alongside the profile, so it never delays setup by more than its 2 s.
 export const accountSetup = async (deps: EditDeps): Promise<void> => {
-  const account = deps.account();
+  const account = await deps.account();
   if (account === null) return fromLocalCopy('not signed in', deps);
   const platform = await account.platform();
   const machine = await connect(account);
@@ -112,7 +112,7 @@ export const accountSetup = async (deps: EditDeps): Promise<void> => {
 // setup --disconnect: the account marks this machine disconnected, then it forgets the account.
 export const disconnect = async (deps: AccountSetupDeps): Promise<void> => {
   const machine = readMachine();
-  const account = deps.account();
+  const account = await deps.account();
   if (machine !== null && account !== null) await disconnectMachine(account.machines, machine.id);
   await deps.signOut();
   if (machine !== null) await forgetAccount();

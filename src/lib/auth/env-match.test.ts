@@ -41,4 +41,17 @@ describe('detectEnvMismatch', () => {
   it('normalizes scheme and trailing slash before comparing', () => {
     expect(detectEnvMismatch(authFor('https://agentage.io/'), 'agentage.io')).toBeNull();
   });
+
+  it('matches by issuer: an agentage.io session serves a target naming auth.agentage.io', () => {
+    const issuer = 'https://auth.agentage.io';
+    expect(detectEnvMismatch(authFor('agentage.io'), 'next.agentage.io', issuer)).toBeNull();
+    const stored = { ...authFor('next.agentage.io'), issuer };
+    expect(detectEnvMismatch(stored, 'next.agentage.io', issuer)).toBeNull();
+    expect(detectEnvMismatch(stored, 'next.agentage.io')).not.toBeNull();
+  });
+
+  it('never flags a personal access token', () => {
+    const pat: AuthState = { ...authFor('dev.agentage.io'), kind: 'pat' };
+    expect(detectEnvMismatch(pat, 'agentage.io')).toBeNull();
+  });
 });

@@ -1,6 +1,6 @@
 import { isRecord } from '../fs/json-file.js';
 import { cliFetch } from './fetch.js';
-import { apiOrigin, links } from './origins.js';
+import { apiOrigin, links, type Links } from './origins.js';
 
 type Get = (url: string) => Promise<Response>;
 
@@ -25,6 +25,22 @@ const sameSite = (platform: string, site: string): boolean => {
   );
 };
 
+// Sign-in may also sit on a subdomain of the site's parent domain (next.agentage.io -> auth.agentage.io).
+export const issuerAllowed = (issuer: string, site: string): boolean => {
+  if (sameSite(issuer, site)) return true;
+  if (!URL.canParse(issuer)) return false;
+  const [i, s] = [new URL(issuer), new URL(site)];
+  const parent = s.hostname.slice(s.hostname.indexOf('.') + 1);
+  return i.protocol === s.protocol && parent.includes('.') && i.hostname.endsWith(`.${parent}`);
+};
+
+export interface Target {
+  // `auth` is the issuer the discovery document names, else `auth.<fqdn>`.
+  links: Links;
+  platform: Platform;
+  discovered: boolean;
+}
+
 const read = async (url: string, get: Get): Promise<unknown> => {
   try {
     const res = await get(url);
@@ -36,18 +52,38 @@ const read = async (url: string, get: Get): Promise<unknown> => {
   return undefined;
 };
 
-// An unserved document (404, 5xx, redirect, unreachable) keeps the api origin; a served one without a platform fails.
-export const discoverPlatform = async (fqdn: string, get: Get = cliFetch): Promise<Platform> => {
-  const site = links(fqdn).site;
-  const url = `${site}/.well-known/agentage.json`;
-  const doc = await read(url, get);
-  if (doc === undefined) {
-    const api = apiOrigin(fqdn);
-    return { url: api, machines: `${api}/v1/machines` };
-  }
+const platformOf = (doc: unknown, site: string, url: string): Platform => {
   const platform = isRecord(doc) ? doc['platform'] : undefined;
   if (typeof platform !== 'string' || !sameSite(platform, site))
     throw new Error(`FAIL discovery: ${url} has no "platform"`);
   const origin = new URL(platform).origin;
   return { url: origin, machines: `${origin}/api/v1/machines` };
 };
+
+const issuerOf = (doc: unknown, base: Links, url: string): string => {
+  const issuer = isRecord(doc) ? doc['issuer'] : undefined;
+  if (issuer === undefined) return base.auth;
+  if (typeof issuer !== 'string' || !issuerAllowed(issuer, base.site))
+    throw new Error(`FAIL discovery: ${url} names an issuer outside the site`);
+  return new URL(issuer).origin;
+};
+
+// An unserved document (404, 5xx, redirect, unreachable) keeps the api and auth origins; a served one without a platform fails.
+export const discoverTarget = async (fqdn: string, get: Get = cliFetch): Promise<Target> => {
+  const base = links(fqdn);
+  const url = `${base.site}/.well-known/agentage.json`;
+  const doc = await read(url, get);
+  if (doc === undefined) {
+    const api = apiOrigin(fqdn);
+    return {
+      links: base,
+      platform: { url: api, machines: `${api}/v1/machines` },
+      discovered: false,
+    };
+  }
+  const platform = platformOf(doc, base.site, url);
+  return { links: { ...base, auth: issuerOf(doc, base, url) }, platform, discovered: true };
+};
+
+export const discoverPlatform = async (fqdn: string, get: Get = cliFetch): Promise<Platform> =>
+  (await discoverTarget(fqdn, get)).platform;

@@ -16,7 +16,7 @@ const deps: ExtensionSetupDeps = {
   printStatus: never,
   npm: npmFromFixtures,
   npmMajor: never,
-  account: () => {
+  account: async () => {
     throw new Error('reached the account');
   },
 };

@@ -71,7 +71,7 @@ export interface StatusDeps {
 export const statusDeps = (account = true): StatusDeps => ({
   gather: (opts) => gatherStatus(resolveAuth({ token: opts.token }), siteFqdn()),
   extensions: (opts) =>
-    account ? gatherWithAccount(signedInAccount({ token: opts.token })) : gatherExtensions(),
+    account ? signedInAccount({ token: opts.token }).then(gatherWithAccount) : gatherExtensions(),
 });
 
 type ExtensionsOutcome = { gathered: ExtensionsGather | null; error: unknown };

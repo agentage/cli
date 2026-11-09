@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { discoverPlatform } from './discovery.js';
+import { discoverPlatform, discoverTarget, issuerAllowed } from './discovery.js';
 
 const serving = (body: unknown, status = 200) => {
   const urls: string[] = [];
@@ -58,5 +58,49 @@ describe('discoverPlatform', () => {
     await expect(discoverPlatform('agentage.io', serving(body).get)).rejects.toThrow(
       'FAIL discovery: https://agentage.io/.well-known/agentage.json has no "platform"'
     );
+  });
+});
+
+describe('the issuer', () => {
+  // Rule: same scheme as the site, and the site host, a subdomain of it, or a subdomain of its parent domain (never a bare TLD).
+  it.each([
+    ['https://auth.agentage.io', 'https://next.agentage.io', true],
+    ['https://next.agentage.io', 'https://next.agentage.io', true],
+    ['https://auth.next.agentage.io', 'https://next.agentage.io', true],
+    ['https://agentage.io', 'https://next.agentage.io', false],
+    ['https://evil.com', 'https://next.agentage.io', false],
+    ['https://evil.io', 'https://agentage.io', false],
+    ['https://auth.agentage.io.evil.com', 'https://next.agentage.io', false],
+    ['http://auth.agentage.io', 'https://next.agentage.io', false],
+    ['http://127.0.0.1:4000', 'http://127.0.0.1:4000', true],
+    ['not a url', 'https://next.agentage.io', false],
+  ])('%s for the site %s: %s', (issuer, site, allowed) => {
+    expect(issuerAllowed(issuer, site)).toBe(allowed);
+  });
+
+  const doc = {
+    issuer: 'https://auth.agentage.io/',
+    platform: 'https://platform.next.agentage.io',
+  };
+
+  it("signs in at the discovery document's issuer", async () => {
+    const target = await discoverTarget('next.agentage.io', serving(doc).get);
+    expect(target.links.auth).toBe('https://auth.agentage.io');
+    expect(target.discovered).toBe(true);
+  });
+
+  it('keeps auth.<fqdn> without a document, or without an issuer in it', async () => {
+    expect((await discoverTarget('agentage.io', serving({}, 404).get)).links.auth).toBe(
+      'https://auth.agentage.io'
+    );
+    const { get } = serving({ platform: doc.platform });
+    expect((await discoverTarget('next.agentage.io', get)).links.auth).toBe(
+      'https://auth.next.agentage.io'
+    );
+  });
+
+  it('refuses an issuer outside the site', async () => {
+    const { get } = serving({ ...doc, issuer: 'https://evil.com' });
+    await expect(discoverTarget('next.agentage.io', get)).rejects.toThrow('names an issuer');
   });
 });

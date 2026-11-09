@@ -3,7 +3,8 @@ import { detectEnvMismatch, type AuthEnvMismatch } from '../auth/env-match.js';
 import { type AuthState } from '../fs/config.js';
 import { fetchJsonUnref } from '../net/http.js';
 import { requestHeaders } from '../net/user-agent.js';
-import { environment, links, type Env } from '../net/origins.js';
+import { discoverTarget, type Target } from '../net/discovery.js';
+import { apiOrigin, environment, links, type Env } from '../net/origins.js';
 import { checkForUpdate, type UpdateInfo } from '../update/update-check.js';
 import { VERSION } from '../../utils/version.js';
 
@@ -59,14 +60,21 @@ const mismatchAuth = (m: AuthEnvMismatch): StatusReport['auth'] => ({
     `run: agentage setup to sign into ${m.targetEnv}, or set AGENTAGE_SITE_FQDN=${m.credentialFqdn}`,
 });
 
+// A discovery failure leaves status on the derived origins; setup and the account report it.
+const targetOf = (fqdn: string): Promise<Target> =>
+  discoverTarget(fqdn).catch(() => {
+    const api = apiOrigin(fqdn);
+    return { links: links(fqdn), platform: { url: api, machines: '' }, discovered: false };
+  });
+
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {
-  const target = links(fqdn);
+  const { links: target, platform, discovered } = await targetOf(fqdn);
   const env = environment(fqdn);
   const headers = requestHeaders();
-  // Endpoint reachability and the (npm-registry) update check are independent - run them
-  // together so `status` stays snappy.
+  // A discovered platform has no /health: its host answering is enough.
+  const endpoint = discovered ? platform.url : target.api;
   const [reachable, siteReachable, update] = await Promise.all([
-    checkEndpoint(target.api, headers),
+    discovered ? checkSite(endpoint, headers) : checkEndpoint(endpoint, headers),
     checkSite(target.site, headers),
     checkForUpdate(VERSION),
   ]);
@@ -76,11 +84,11 @@ export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promis
     env,
     target: { fqdn, env, reachable: siteReachable },
     auth: { signedIn: false, note: 'not signed in - run: agentage setup' },
-    endpoint: { url: target.api, reachable },
+    endpoint: { url: endpoint, reachable },
     update,
   };
   if (!auth) return report;
-  const mismatch = detectEnvMismatch(auth, fqdn);
+  const mismatch = detectEnvMismatch(auth, fqdn, target.auth);
   if (mismatch) {
     report.auth = mismatchAuth(mismatch);
     return report;

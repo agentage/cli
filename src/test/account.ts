@@ -168,13 +168,13 @@ const putProfile = (fake: FakeAccount, r: FakeRequest): Response => {
 };
 
 // The account seams of a machine that is not signed in, and npm 10 writing its lock.
-export const noAccount = { npmMajor: async (): Promise<number> => 10, account: () => null };
+export const noAccount = { npmMajor: async (): Promise<number> => 10, account: async () => null };
 
 // The seams of a profile edit with `account` signed in (null: signed out); npm plays fixtures/.
 export const editDeps = (account: FakeAccount | null) => ({
   ...noAccount,
   npm: npmFromFixtures,
-  account: () => account?.account() ?? null,
+  account: async () => account?.account() ?? null,
 });
 
 // This machine connected to the account: profile.json is its copy, at the etag returned.
