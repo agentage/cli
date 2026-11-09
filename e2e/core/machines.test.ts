@@ -84,6 +84,7 @@ test.describe('this machine in your account @p0 @offline', () => {
       id: cli.json('machine.json')['id'],
       name: expect.any(String),
       registered: true,
+      platform: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/),
     });
   });
 });

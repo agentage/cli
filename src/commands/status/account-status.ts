@@ -20,10 +20,15 @@ export const gatherWithAccount = async (account: Account | null): Promise<Extens
     account === null
       ? [null, null]
       : await Promise.all([
-          seenMachine(account.fetch, machine.id),
+          seenMachine(account.machines, machine.id),
           accountProfile(account.fetch, profile),
         ]);
   const compared = cloud !== null && profile.state === 'ok' ? { ...profile, cloud } : profile;
-  const status = { ...gathered.status, machine: { ...machine, registered }, profile: compared };
+  const platform = account === null ? null : await account.platform().catch(() => null);
+  const status = {
+    ...gathered.status,
+    machine: { ...machine, registered, platform },
+    profile: compared,
+  };
   return { ...gathered, status };
 };

@@ -11,7 +11,7 @@ const PATH = '/v1/machines/m_0000beef';
 describe('this machine in the account', () => {
   test('setup registers it with PUT (name, platform, CLI version, connected), then marks it seen, each within 2 s', async () => {
     const account = fakeAccount();
-    await registerMachine(account.fetch, BOX);
+    await registerMachine(account.account().machines, BOX);
     expect(account.requests).toMatchObject([
       {
         method: 'PUT',
@@ -31,17 +31,17 @@ describe('this machine in the account', () => {
 
   test('a host name longer than 128 characters is sent cut to 128', async () => {
     const account = fakeAccount();
-    await registerMachine(account.fetch, { ...BOX, name: 'h'.repeat(200) });
+    await registerMachine(account.account().machines, { ...BOX, name: 'h'.repeat(200) });
     expect(account.requests[0]?.body?.['name']).toBe('h'.repeat(128));
   });
 
   test('seen says whether the account knows this machine: true, false before it registered, null when unreachable', async () => {
     const account = fakeAccount();
-    expect(await seenMachine(account.fetch, BOX.id)).toBe(false);
-    await registerMachine(account.fetch, BOX);
-    expect(await seenMachine(account.fetch, BOX.id)).toBe(true);
+    expect(await seenMachine(account.account().machines, BOX.id)).toBe(false);
+    await registerMachine(account.account().machines, BOX);
+    expect(await seenMachine(account.account().machines, BOX.id)).toBe(true);
     account.fail('machines', 503);
-    expect(await seenMachine(account.fetch, BOX.id)).toBeNull();
+    expect(await seenMachine(account.account().machines, BOX.id)).toBeNull();
   });
 
   test('a 404 without the machines code is unknown, not false: an API without the route is as good as no answer', async () => {
@@ -58,8 +58,8 @@ describe('this machine in the account', () => {
 
   test('setup --disconnect sends PATCH state disconnected', async () => {
     const account = fakeAccount();
-    await registerMachine(account.fetch, BOX);
-    await disconnectMachine(account.fetch, BOX.id);
+    await registerMachine(account.account().machines, BOX);
+    await disconnectMachine(account.account().machines, BOX.id);
     expect(account.requests.at(-1)).toMatchObject({
       method: 'PATCH',
       path: PATH,
@@ -75,9 +75,9 @@ describe('this machine in the account', () => {
       const account = fakeAccount();
       account.fail('machines', how);
       const run = await output(async () => {
-        await registerMachine(account.fetch, BOX);
-        await seenMachine(account.fetch, BOX.id);
-        await disconnectMachine(account.fetch, BOX.id);
+        await registerMachine(account.account().machines, BOX);
+        await seenMachine(account.account().machines, BOX.id);
+        await disconnectMachine(account.account().machines, BOX.id);
       });
       expect(run).toEqual({ stdout: '', stderr: '', lines: [], error: null });
       expect(account.requests).toHaveLength(4);
@@ -89,14 +89,14 @@ describe('this machine in the account', () => {
     process.env['AGENTAGE_DEBUG'] = '1';
     try {
       const run = await output(async () => {
-        await registerMachine(account.fetch, BOX);
+        await registerMachine(account.account().machines, BOX);
         account.fail('machines', 'timeout');
-        await disconnectMachine(account.fetch, BOX.id);
+        await disconnectMachine(account.account().machines, BOX.id);
       });
       expect(run.stderr.split('\n')).toEqual([
-        `machines: PUT ${PATH} 201`,
-        `machines: POST ${PATH}/seen 204`,
-        `machines: PATCH ${PATH} failed: timed out`,
+        `machines: PUT /m_0000beef 201`,
+        `machines: POST /m_0000beef/seen 204`,
+        `machines: PATCH /m_0000beef failed: timed out`,
       ]);
     } finally {
       delete process.env['AGENTAGE_DEBUG'];

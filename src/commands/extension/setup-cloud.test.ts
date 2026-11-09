@@ -17,6 +17,8 @@ const DEFAULT = { version: 1, extensions: {}, config: {}, machines: {} };
 const HELLO_DOC = { version: 1, extensions: { [pkg('hello')]: '^1.0.0' } };
 const HELLO = { hello: '^1.0.0' };
 
+const NO_PLATFORM = 'FAIL discovery: https://x.test/.well-known/agentage.json has no "platform"';
+
 // Signed in already; besides npm, the account is all this flow reaches.
 const setup = (account: FakeAccount | null, opts: SetupOptions = {}) =>
   output(() =>
@@ -29,6 +31,28 @@ const setup = (account: FakeAccount | null, opts: SetupOptions = {}) =>
   );
 
 describe('agentage setup, signed in, and the profile in the account', () => {
+  test('a site whose discovery names no platform fails setup with the document URL, registering nothing', async () => {
+    const account = fakeAccount();
+    const failing = () => ({
+      ...account.account(),
+      platform: () => Promise.reject(new Error(NO_PLATFORM)),
+    });
+    const run = await output(() =>
+      runExtensionSetup(
+        {},
+        {
+          ensureSignedIn: async () => 'already',
+          signOut: async () => undefined,
+          printStatus: async () => undefined,
+          ...editDeps(account),
+          account: failing,
+        }
+      )
+    );
+    expect(run.error).toBe(NO_PLATFORM);
+    expect(account.requests).toEqual([]);
+  });
+
   test('the first signed-in setup, with no profile in the account, saves the default, installs, then creates it with If-None-Match: *', async ({
     dir,
   }) => {
@@ -44,6 +68,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     expect(run.lines).toEqual([
       expect.stringMatching(/^install {4}no extensions in tree \w+ \(npm skipped\)$/),
       'profile    created in your account (etag "etag-0001")',
+      expect.stringMatching(/^registered m_[0-9a-f]{8} at https:\/\/platform\.test$/),
     ]);
     expect(dir.json('machine.json')).toMatchObject({
       profileSource: 'cloud',
@@ -75,6 +100,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
       `profile    pulled from your account (etag ${etag})`,
       expect.stringMatching(/^install {4}1 extension in tree \w+ \(npm install\)$/),
       HELLO_OK,
+      expect.stringMatching(/^registered m_/),
     ]);
     expect(profileCalls(account)).toEqual(['GET 200']);
     expect(dir.json('profile.json')['extensions']).toEqual(HELLO_DOC.extensions);
@@ -124,7 +150,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     const account = fakeAccount();
     account.fail('profile', 'network');
     const run = await setup(account);
-    expect(run).toMatchObject({ lines: [], error: null });
+    expect(run).toMatchObject({ lines: [expect.stringMatching(/^registered /)], error: null });
     expect(run.stderr).toBe(
       'cloud profile unavailable and no local profile.json, nothing installed (fetch failed)'
     );
@@ -187,7 +213,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     const run = await setup(account);
     expect(profileCalls(account)).toEqual(['GET 404', 'PUT 412']);
     expect(run.lines).toContain(HELLO_OK);
-    expect(run.lines.at(-1)).toBe('profile    already in your account (etag "etag-0001")');
+    expect(run.lines).toContain('profile    already in your account (etag "etag-0001")');
     expect(dir.json('machine.json')['profileEtag']).toBe('"etag-0001"');
   });
 });
