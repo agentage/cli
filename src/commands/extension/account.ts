@@ -3,7 +3,7 @@ import { authedFetch } from '../../lib/auth/api.js';
 import { resolveAuth } from '../../lib/auth/credentials.js';
 import { detectEnvMismatch } from '../../lib/auth/env-match.js';
 import { introspectToken } from '../../lib/auth/introspect.js';
-import { discoverPlatform } from '../../lib/net/discovery.js';
+import { discoverPlatform, type Platform } from '../../lib/net/discovery.js';
 import { apiOrigin, links, siteFqdn } from '../../lib/net/origins.js';
 
 // The account seam: null when signed out, or signed in to another environment than the target.
@@ -27,10 +27,11 @@ export const signedInAccount: AccountOf = (opts = {}) => {
         { ...init, headers: { ...CLIENT, ...headers } },
         { timeoutMs }
       );
-  let found: Promise<string> | undefined;
-  const platform = () => (found ??= discoverPlatform(fqdn));
+  let found: Promise<Platform> | undefined;
+  const discovered = () => (found ??= discoverPlatform(fqdn));
+  const platform = async () => (await discovered()).url;
   const fetch = to(() => apiOrigin(fqdn));
-  const machines = to(async () => `${await platform()}/api/v1/machines`);
+  const machines = to(async () => (await discovered()).machines);
   const id = () =>
     introspectToken(auth, target).then(
       (s) => s.userId ?? null,

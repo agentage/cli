@@ -11,29 +11,31 @@ const serving = (body: unknown, status = 200) => {
 };
 
 describe('discoverPlatform', () => {
-  it('reads /.well-known/agentage.json on the site and returns its platform', async () => {
-    const { get, urls } = serving({
-      issuer: 'https://auth.next.agentage.io',
-      platform: 'https://platform.next.agentage.io/',
+  it('reads /.well-known/agentage.json on the site and builds the machines base from its platform', async () => {
+    const { get, urls } = serving({ platform: 'https://platform.next.agentage.io/' });
+    expect(await discoverPlatform('next.agentage.io', get)).toEqual({
+      url: 'https://platform.next.agentage.io',
+      machines: 'https://platform.next.agentage.io/api/v1/machines',
     });
-    expect(await discoverPlatform('next.agentage.io', get)).toBe(
-      'https://platform.next.agentage.io'
-    );
     expect(urls).toEqual(['https://next.agentage.io/.well-known/agentage.json']);
   });
 
   it.each([
-    ['no platform field', serving({ issuer: 'x' })],
-    ['a platform that is not a URL', serving({ platform: 'nope' })],
-    ['a missing document', serving({}, 404)],
-  ])('refuses %s naming the document', async (_name, { get }) => {
-    await expect(discoverPlatform('agentage.io', get)).rejects.toThrow(
-      'FAIL discovery: https://agentage.io/.well-known/agentage.json has no "platform"'
-    );
+    ['a 404', serving({}, 404).get],
+    ['an unreachable site', () => Promise.reject(new TypeError('fetch failed'))],
+  ])('keeps the api origin on %s', async (_name, get) => {
+    expect(await discoverPlatform('agentage.io', get)).toEqual({
+      url: 'https://api.agentage.io',
+      machines: 'https://api.agentage.io/v1/machines',
+    });
   });
 
-  it('refuses an unreachable site the same way', async () => {
-    const get = () => Promise.reject(new TypeError('fetch failed'));
-    await expect(discoverPlatform('agentage.io', get)).rejects.toThrow('has no "platform"');
+  it.each([
+    ['no platform field', { issuer: 'x' }],
+    ['a platform that is not a URL', { platform: 'nope' }],
+  ])('refuses a served document with %s, naming it', async (_name, body) => {
+    await expect(discoverPlatform('agentage.io', serving(body).get)).rejects.toThrow(
+      'FAIL discovery: https://agentage.io/.well-known/agentage.json has no "platform"'
+    );
   });
 });

@@ -8,7 +8,10 @@ vi.mock('../../lib/auth/api.js', () => ({
   authedFetch: (...a: unknown[]) => authed(...(a as [])),
 }));
 vi.mock('../../lib/net/discovery.js', () => ({
-  discoverPlatform: async () => 'https://platform.next.test',
+  discoverPlatform: async () => ({
+    url: 'https://platform.next.test',
+    machines: 'https://platform.next.test/api/v1/machines',
+  }),
 }));
 
 describe('signedInAccount', () => {
