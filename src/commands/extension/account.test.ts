@@ -13,6 +13,7 @@ interface Seen {
 // A loopback site answering get-session with a user, and anything else with 204.
 const site = async (seen: Seen[]): Promise<{ server: Server; fqdn: string }> => {
   const server = createServer((req, res) => {
+    if (req.url === '/.well-known/agentage.json') return void res.writeHead(404).end();
     seen.push({ method: req.method, url: req.url, headers: req.headers });
     if (req.url !== '/api/auth/mcp/get-session') return void res.writeHead(204).end();
     res.writeHead(200, { 'content-type': 'application/json' }).end('{"userId":"user_1"}');
@@ -29,14 +30,14 @@ afterEach(() => {
 });
 
 describe('the account the commands reach', () => {
-  test('signed out, or signed in to another environment, there is none', ({ dir }) => {
-    expect(signedInAccount()).toBeNull();
+  test('signed out, or signed in to another environment, there is none', async ({ dir }) => {
+    expect(await signedInAccount()).toBeNull();
     dir.write('auth.json', {
       siteFqdn: 'dev.agentage.io',
       clientId: 'c',
       tokens: { accessToken: 'a' },
     });
-    expect(signedInAccount()).toBeNull();
+    expect(await signedInAccount()).toBeNull();
   });
 
   test('sends the bearer, x-client-type: cli and the headers given to the API origin, and reads the account id', async ({
@@ -47,7 +48,7 @@ describe('the account the commands reach', () => {
     servers.push(server);
     process.env['AGENTAGE_SITE_FQDN'] = fqdn;
     dir.write('auth.json', { siteFqdn: fqdn, clientId: 'c', tokens: { accessToken: 'at_1' } });
-    const account = signedInAccount();
+    const account = await signedInAccount();
     const res = await account?.fetch('/v1/profile', { headers: { 'if-none-match': '"e"' } });
     expect(res?.status).toBe(204);
     expect(seen[0]).toMatchObject({
@@ -63,7 +64,9 @@ describe('the account the commands reach', () => {
     const { server, fqdn } = await site(seen);
     servers.push(server);
     process.env['AGENTAGE_SITE_FQDN'] = fqdn;
-    await signedInAccount({ token: 'aga_unit' })?.fetch('/v1/machines/m_0000beef/seen', {
+    await (
+      await signedInAccount({ token: 'aga_unit' })
+    )?.fetch('/v1/machines/m_0000beef/seen', {
       method: 'POST',
     });
     expect(seen[0]?.headers.authorization).toBe('Bearer aga_unit');

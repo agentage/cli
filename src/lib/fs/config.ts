@@ -12,6 +12,8 @@ export interface StoredTokens {
 
 export interface AuthState {
   siteFqdn: string;
+  // The issuer origin the session came from; absent on credentials stored before 0.50.1.
+  issuer?: string;
   clientId: string;
   tokens: StoredTokens;
   user?: { id: string; email: string };
@@ -44,6 +46,7 @@ const isStoredTokens = (value: unknown): value is StoredTokens =>
 export const isAuthState = (value: unknown): value is AuthState =>
   isRecord(value) &&
   typeof value['siteFqdn'] === 'string' &&
+  isOptional(value['issuer'], 'string') &&
   typeof value['clientId'] === 'string' &&
   isStoredTokens(value['tokens']);
 

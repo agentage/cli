@@ -1,6 +1,6 @@
 import { isRecord } from '../fs/json-file.js';
 import { cliFetch } from './fetch.js';
-import { apiOrigin, links } from './origins.js';
+import { apiOrigin, links, type Links } from './origins.js';
 
 type Get = (url: string) => Promise<Response>;
 
@@ -25,6 +25,32 @@ const sameSite = (platform: string, site: string): boolean => {
   );
 };
 
+const isIp = (host: string): boolean => /^[\d.]+$/.test(host) || host.startsWith('[');
+
+// The parent rule needs a 3+ label site, so a 2-label parent is never a public suffix like co.uk.
+const underParent = (host: string, site: string): boolean => {
+  const labels = site.split('.');
+  if (isIp(site) || labels.length < 3) return false;
+  return host.endsWith(`.${labels.slice(1).join('.')}`);
+};
+
+// The issuer: the site, a subdomain of it, or (3+ label site) of its parent; no userinfo, no other port.
+export const issuerAllowed = (issuer: string, site: string): boolean => {
+  if (!URL.canParse(issuer)) return false;
+  const [i, s] = [new URL(issuer), new URL(site)];
+  if (i.username || i.password || i.port !== s.port) return false;
+  return (
+    sameSite(issuer, site) || (i.protocol === s.protocol && underParent(i.hostname, s.hostname))
+  );
+};
+
+export interface Target {
+  // `auth` is the issuer the discovery document names, else `auth.<fqdn>`.
+  links: Links;
+  platform: Platform;
+  discovered: boolean;
+}
+
 const read = async (url: string, get: Get): Promise<unknown> => {
   try {
     const res = await get(url);
@@ -36,18 +62,45 @@ const read = async (url: string, get: Get): Promise<unknown> => {
   return undefined;
 };
 
-// An unserved document (404, 5xx, redirect, unreachable) keeps the api origin; a served one without a platform fails.
-export const discoverPlatform = async (fqdn: string, get: Get = cliFetch): Promise<Platform> => {
-  const site = links(fqdn).site;
-  const url = `${site}/.well-known/agentage.json`;
-  const doc = await read(url, get);
-  if (doc === undefined) {
-    const api = apiOrigin(fqdn);
-    return { url: api, machines: `${api}/v1/machines` };
-  }
+const platformOf = (doc: unknown, site: string, url: string): Platform => {
   const platform = isRecord(doc) ? doc['platform'] : undefined;
   if (typeof platform !== 'string' || !sameSite(platform, site))
     throw new Error(`FAIL discovery: ${url} has no "platform"`);
   const origin = new URL(platform).origin;
   return { url: origin, machines: `${origin}/api/v1/machines` };
+};
+
+const issuerOf = (doc: unknown, base: Links, url: string): string => {
+  const issuer = isRecord(doc) ? doc['issuer'] : undefined;
+  if (issuer === undefined) return base.auth;
+  if (typeof issuer !== 'string' || !issuerAllowed(issuer, base.site))
+    throw new Error(`FAIL discovery: ${url} names an issuer outside the site`);
+  return new URL(issuer).origin;
+};
+
+// The origins derived from the fqdn alone, as before discovery.
+export const derivedTarget = (fqdn: string): Target => {
+  const api = apiOrigin(fqdn);
+  const platform = { url: api, machines: `${api}/v1/machines` };
+  return { links: links(fqdn), platform, discovered: false };
+};
+
+const fetchTarget = async (fqdn: string, get: Get): Promise<Target> => {
+  const base = links(fqdn);
+  const url = `${base.site}/.well-known/agentage.json`;
+  const doc = await read(url, get);
+  if (doc === undefined) return derivedTarget(fqdn);
+  const platform = platformOf(doc, base.site, url);
+  return { links: { ...base, auth: issuerOf(doc, base, url) }, platform, discovered: true };
+};
+
+const once = new Map<string, Promise<Target>>();
+
+// Fetched once per run; an unserved document (404, 5xx, unreachable) keeps the derived origins,
+// a served one without a valid platform or issuer fails closed.
+export const discoverTarget = (fqdn: string, get: Get = cliFetch): Promise<Target> => {
+  if (get !== cliFetch) return fetchTarget(fqdn, get);
+  const found = once.get(fqdn) ?? fetchTarget(fqdn, get);
+  once.set(fqdn, found);
+  return found;
 };

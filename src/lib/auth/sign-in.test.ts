@@ -7,6 +7,7 @@ import { AuthRequiredError, TransientAuthError } from './auth-errors.js';
 import { type CallbackServer } from './callback-server.js';
 import { ensureSignedIn, signOut, type SignInDeps } from './sign-in.js';
 import { readAuth, saveAuth, type AuthState } from '../fs/config.js';
+import { links } from '../net/origins.js';
 
 const existingAuth: AuthState = {
   siteFqdn: 'dev.agentage.io',
@@ -31,6 +32,7 @@ const makeDeps = () => {
     startServer: vi.fn().mockResolvedValue(server),
     openBrowser: vi.fn().mockResolvedValue(undefined),
     introspect: vi.fn().mockResolvedValue({ userId: 'u1' }),
+    discover: vi.fn(async (fqdn: string) => links(fqdn)),
     log: (msg) => logs.push(msg),
   };
   return { deps, close, logs };
@@ -53,6 +55,33 @@ describe('sign-in flow', () => {
     delete process.env['AGENTAGE_SITE_FQDN'];
     rmSync(dir, { recursive: true, force: true });
     chalk.level = level;
+  });
+
+  it('signs in at the discovered issuer and stores it', async () => {
+    const { deps } = makeDeps();
+    vi.mocked(deps.discover).mockResolvedValue({ ...links('x'), auth: 'https://auth.agentage.io' });
+    await ensureSignedIn({}, deps);
+    expect(deps.register).toHaveBeenCalledWith('https://auth.agentage.io', expect.any(String));
+    expect(readAuth()).toMatchObject({
+      siteFqdn: 'dev.agentage.io',
+      issuer: 'https://auth.agentage.io',
+    });
+  });
+
+  it('reuses a stored agentage.io session for a target naming its issuer', async () => {
+    saveAuth({ ...existingAuth, siteFqdn: 'agentage.io' });
+    const { deps } = makeDeps();
+    vi.mocked(deps.discover).mockResolvedValue({ ...links('x'), auth: 'https://auth.agentage.io' });
+    expect(await ensureSignedIn({}, deps)).toBe('already');
+    const [, used] = vi.mocked(deps.introspect).mock.calls[0] ?? [];
+    expect(used?.auth).toBe('https://auth.agentage.io');
+  });
+
+  it('asks no discovery while the stored session matches the derived issuer', async () => {
+    saveAuth(existingAuth);
+    const { deps } = makeDeps();
+    expect(await ensureSignedIn({}, deps)).toBe('already');
+    expect(deps.discover).not.toHaveBeenCalled();
   });
 
   it('runs the full sign-in flow and persists auth state', async () => {

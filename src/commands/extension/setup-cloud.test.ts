@@ -33,7 +33,7 @@ const setup = (account: FakeAccount | null, opts: SetupOptions = {}) =>
 describe('agentage setup, signed in, and the profile in the account', () => {
   test('a site whose discovery names no platform fails setup with the document URL, registering nothing', async () => {
     const account = fakeAccount();
-    const failing = () => ({
+    const failing = async () => ({
       ...account.account(),
       platform: () => Promise.reject(new Error(NO_PLATFORM)),
     });

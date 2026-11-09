@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { discoverPlatform } from './discovery.js';
+import { discoverTarget, issuerAllowed } from './discovery.js';
+
+const discoverPlatform = async (fqdn: string, get: (url: string) => Promise<Response>) =>
+  (await discoverTarget(fqdn, get)).platform;
 
 const serving = (body: unknown, status = 200) => {
   const urls: string[] = [];
@@ -58,5 +61,70 @@ describe('discoverPlatform', () => {
     await expect(discoverPlatform('agentage.io', serving(body).get)).rejects.toThrow(
       'FAIL discovery: https://agentage.io/.well-known/agentage.json has no "platform"'
     );
+  });
+});
+
+describe('the issuer', () => {
+  // Rule: same scheme and port as the site, no userinfo, and the site host, a subdomain of it, or,
+  // only when the site host has 3+ labels (so the parent has 2+) and is not an IP, a subdomain of its parent.
+  it.each([
+    ['https://auth.agentage.io', 'https://next.agentage.io', true],
+    ['https://next.agentage.io', 'https://next.agentage.io', true],
+    ['https://auth.next.agentage.io', 'https://next.agentage.io', true],
+    ['https://agentage.io', 'https://next.agentage.io', false],
+    ['https://evil.com', 'https://next.agentage.io', false],
+    ['https://evil.io', 'https://agentage.io', false],
+    ['https://auth.agentage.io.evil.com', 'https://next.agentage.io', false],
+    ['http://auth.agentage.io', 'https://next.agentage.io', false],
+    ['http://127.0.0.1:4000', 'http://127.0.0.1:4000', true],
+    ['not a url', 'https://next.agentage.io', false],
+    ['https://evilagentage.io', 'https://next.agentage.io', false],
+    ['https://evilagentage.io', 'https://agentage.io', false],
+    ['https://user:pw@auth.agentage.io', 'https://next.agentage.io', false],
+    ['https://auth.agentage.io:8443', 'https://next.agentage.io', false],
+    ['https://auth.agentage.co.uk', 'https://next.agentage.co.uk', true],
+    // The limit of a rule without a public-suffix list: a 3-label apex trusts its suffix.
+    ['https://evil.co.uk', 'https://agentage.co.uk', true],
+    ['http://9.0.0.1:4000', 'http://127.0.0.1:4000', false],
+    ['http://[::2]:4000', 'http://[::1]:4000', false],
+  ])('%s for the site %s: %s', (issuer, site, allowed) => {
+    expect(issuerAllowed(issuer, site)).toBe(allowed);
+  });
+
+  const doc = {
+    issuer: 'https://auth.agentage.io/',
+    platform: 'https://platform.next.agentage.io',
+  };
+
+  it("signs in at the discovery document's issuer", async () => {
+    const target = await discoverTarget('next.agentage.io', serving(doc).get);
+    expect(target.links.auth).toBe('https://auth.agentage.io');
+    expect(target.discovered).toBe(true);
+  });
+
+  it('keeps auth.<fqdn> without a document, or without an issuer in it', async () => {
+    expect((await discoverTarget('agentage.io', serving({}, 404).get)).links.auth).toBe(
+      'https://auth.agentage.io'
+    );
+    const { get } = serving({ platform: doc.platform });
+    expect((await discoverTarget('next.agentage.io', get)).links.auth).toBe(
+      'https://auth.next.agentage.io'
+    );
+  });
+
+  it('refuses an issuer outside the site', async () => {
+    const { get } = serving({ ...doc, issuer: 'https://evil.com' });
+    await expect(discoverTarget('next.agentage.io', get)).rejects.toThrow('names an issuer');
+  });
+});
+
+describe('discoverTarget once per run', () => {
+  it('shares one answer per fqdn with the default fetch', async () => {
+    const [a, b] = await Promise.all([
+      discoverTarget('once.invalid'),
+      discoverTarget('once.invalid'),
+    ]);
+    expect(a).toBe(b);
+    expect(a.discovered).toBe(false);
   });
 });

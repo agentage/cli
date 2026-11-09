@@ -1,5 +1,5 @@
 import { type AuthState } from '../fs/config.js';
-import { environment, normalizeFqdn, type Env } from '../net/origins.js';
+import { environment, links, normalizeFqdn, type Env, type Links } from '../net/origins.js';
 
 export interface AuthEnvMismatch {
   credentialFqdn: string;
@@ -8,14 +8,22 @@ export interface AuthEnvMismatch {
   targetEnv: Env;
 }
 
-// The stored credential belongs to the environment it was issued for (auth.siteFqdn); the CLI's
-// current target comes from AGENTAGE_SITE_FQDN (production default). Introspecting a dev credential
-// against production rejects it and misreads as "expired" - so detect the mismatch by normalized
-// fqdn BEFORE any introspection. Returns null when the credential matches the current target.
-export const detectEnvMismatch = (auth: AuthState, targetFqdn: string): AuthEnvMismatch | null => {
+// A credential stored before the issuer field was kept reads as issued by auth.<its siteFqdn>.
+export const credentialLinks = (auth: AuthState): Links => {
+  const own = links(normalizeFqdn(auth.siteFqdn));
+  return { ...own, auth: auth.issuer ?? own.auth };
+};
+
+// A credential belongs to its issuer, so one session serves every target naming that issuer.
+// Introspecting it against another issuer would misread as "expired": detect that first.
+export const detectEnvMismatch = (
+  auth: AuthState,
+  targetFqdn: string,
+  targetIssuer: string = links(normalizeFqdn(targetFqdn)).auth
+): AuthEnvMismatch | null => {
   const credentialFqdn = normalizeFqdn(auth.siteFqdn);
   const target = normalizeFqdn(targetFqdn);
-  if (credentialFqdn === target) return null;
+  if (auth.kind === 'pat' || credentialLinks(auth).auth === targetIssuer) return null;
   return {
     credentialFqdn,
     credentialEnv: environment(credentialFqdn),

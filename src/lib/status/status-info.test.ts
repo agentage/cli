@@ -69,6 +69,16 @@ describe('gatherStatus', () => {
     expect(report.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
+  it('with a discovery document, reports the platform origin as the endpoint', async () => {
+    const doc = {
+      issuer: 'https://auth.agentage.io',
+      platform: 'https://platform.next.agentage.io',
+    };
+    useFetch(vi.fn(async () => jsonResponse(200, doc)));
+    const report = await gatherStatus(null, 'next.agentage.io');
+    expect(report.endpoint).toEqual({ url: 'https://platform.next.agentage.io', reachable: true });
+  });
+
   it('marks the endpoint and target unreachable on network failure', async () => {
     stubHttp('unreachable');
     const report = await gatherStatus(null, 'agentage.io');
