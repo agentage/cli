@@ -6,10 +6,11 @@ import { VERSION } from '../../utils/version.js';
 import { authedFetch, updateSession } from './api.js';
 
 const DAY_MS = 86_400_000;
+const SCOPES = ['platform:read', 'platform:write'];
 const MINT = JSON.stringify({
   label: 'agentage cli',
   format: 'jwt',
-  scopes: ['platform:read', 'platform:write'],
+  scopes: SCOPES,
   expiresInDays: 30,
 });
 
