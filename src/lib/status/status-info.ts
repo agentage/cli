@@ -3,8 +3,8 @@ import { detectEnvMismatch, type AuthEnvMismatch } from '../auth/env-match.js';
 import { type AuthState } from '../fs/config.js';
 import { fetchJsonUnref } from '../net/http.js';
 import { requestHeaders } from '../net/user-agent.js';
-import { discoverTarget, type Target } from '../net/discovery.js';
-import { apiOrigin, environment, links, type Env } from '../net/origins.js';
+import { derivedTarget, discoverTarget } from '../net/discovery.js';
+import { environment, links, type Env } from '../net/origins.js';
 import { checkForUpdate, type UpdateInfo } from '../update/update-check.js';
 import { VERSION } from '../../utils/version.js';
 
@@ -60,24 +60,21 @@ const mismatchAuth = (m: AuthEnvMismatch): StatusReport['auth'] => ({
     `run: agentage setup to sign into ${m.targetEnv}, or set AGENTAGE_SITE_FQDN=${m.credentialFqdn}`,
 });
 
-// A discovery failure leaves status on the derived origins; setup and the account report it.
-const targetOf = (fqdn: string): Promise<Target> =>
-  discoverTarget(fqdn).catch(() => {
-    const api = apiOrigin(fqdn);
-    return { links: links(fqdn), platform: { url: api, machines: '' }, discovered: false };
-  });
-
+// Discovery runs beside the derived probes, so a 404 costs no extra round trip.
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {
-  const { links: target, platform, discovered } = await targetOf(fqdn);
+  const derived = links(fqdn);
   const env = environment(fqdn);
   const headers = requestHeaders();
-  // A discovered platform has no /health: its host answering is enough.
-  const endpoint = discovered ? platform.url : target.api;
-  const [reachable, siteReachable, update] = await Promise.all([
-    discovered ? checkSite(endpoint, headers) : checkEndpoint(endpoint, headers),
-    checkSite(target.site, headers),
+  const [found, apiUp, siteReachable, update] = await Promise.all([
+    discoverTarget(fqdn).catch(() => derivedTarget(fqdn)),
+    checkEndpoint(derived.api, headers),
+    checkSite(derived.site, headers),
     checkForUpdate(VERSION),
   ]);
+  const { links: target, platform, discovered } = found;
+  // A discovered platform has no /health: its host answering is enough.
+  const endpoint = discovered ? platform.url : target.api;
+  const reachable = discovered ? await checkSite(endpoint, headers) : apiUp;
   const report: StatusReport = {
     version: VERSION,
     fqdn,

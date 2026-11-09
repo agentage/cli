@@ -83,11 +83,10 @@ const authorize = async (
 // A fresh DCR client per run: the redirect URI binds this run's ephemeral callback port.
 export const signIn = async (
   opts: SignInOptions,
-  deps: SignInDeps = defaultDeps,
-  issuer?: string
+  deps: SignInDeps = defaultDeps
 ): Promise<void> => {
   const fqdn = siteFqdn();
-  const authUrl = issuer ?? (await deps.discover(fqdn)).auth;
+  const authUrl = (await deps.discover(fqdn)).auth;
   ensureConfigDir();
   const state = randomState();
   const server = await deps.startServer(state);
@@ -141,11 +140,13 @@ export const ensureSignedIn = async (
   opts: SignInOptions,
   deps: SignInDeps = defaultDeps
 ): Promise<SignInResult> => {
-  const stored = readAuth();
-  const issuer = (await deps.discover(siteFqdn())).auth;
-  const mismatch = stored && !opts.reauth ? detectEnvMismatch(stored, siteFqdn(), issuer) : null;
+  const stored = opts.reauth ? null : readAuth();
+  const fqdn = siteFqdn();
+  // Discovery is asked only when the derived issuer differs from the credential's, or to sign in.
+  const derived = stored && detectEnvMismatch(stored, fqdn);
+  const mismatch = derived && detectEnvMismatch(stored, fqdn, (await deps.discover(fqdn)).auth);
   if (mismatch) deps.log(mismatchNote(mismatch));
-  else if (stored && !opts.reauth && (await verifyStored(stored, deps))) return 'already';
-  await signIn(opts, deps, issuer);
+  else if (stored && (await verifyStored(stored, deps))) return 'already';
+  await signIn(opts, deps);
   return mismatch ? 'mismatch-resigned' : 'signed-in';
 };

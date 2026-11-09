@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { discoverPlatform, discoverTarget, issuerAllowed } from './discovery.js';
+import { discoverTarget, issuerAllowed } from './discovery.js';
+
+const discoverPlatform = async (fqdn: string, get: (url: string) => Promise<Response>) =>
+  (await discoverTarget(fqdn, get)).platform;
 
 const serving = (body: unknown, status = 200) => {
   const urls: string[] = [];
@@ -62,7 +65,8 @@ describe('discoverPlatform', () => {
 });
 
 describe('the issuer', () => {
-  // Rule: same scheme as the site, and the site host, a subdomain of it, or a subdomain of its parent domain (never a bare TLD).
+  // Rule: same scheme and port as the site, no userinfo, and the site host, a subdomain of it, or,
+  // only when the site host has 3+ labels (so the parent has 2+) and is not an IP, a subdomain of its parent.
   it.each([
     ['https://auth.agentage.io', 'https://next.agentage.io', true],
     ['https://next.agentage.io', 'https://next.agentage.io', true],
@@ -74,6 +78,15 @@ describe('the issuer', () => {
     ['http://auth.agentage.io', 'https://next.agentage.io', false],
     ['http://127.0.0.1:4000', 'http://127.0.0.1:4000', true],
     ['not a url', 'https://next.agentage.io', false],
+    ['https://evilagentage.io', 'https://next.agentage.io', false],
+    ['https://evilagentage.io', 'https://agentage.io', false],
+    ['https://user:pw@auth.agentage.io', 'https://next.agentage.io', false],
+    ['https://auth.agentage.io:8443', 'https://next.agentage.io', false],
+    ['https://auth.agentage.co.uk', 'https://next.agentage.co.uk', true],
+    // The limit of a rule without a public-suffix list: a 3-label apex trusts its suffix.
+    ['https://evil.co.uk', 'https://agentage.co.uk', true],
+    ['http://9.0.0.1:4000', 'http://127.0.0.1:4000', false],
+    ['http://[::2]:4000', 'http://[::1]:4000', false],
   ])('%s for the site %s: %s', (issuer, site, allowed) => {
     expect(issuerAllowed(issuer, site)).toBe(allowed);
   });
@@ -102,5 +115,16 @@ describe('the issuer', () => {
   it('refuses an issuer outside the site', async () => {
     const { get } = serving({ ...doc, issuer: 'https://evil.com' });
     await expect(discoverTarget('next.agentage.io', get)).rejects.toThrow('names an issuer');
+  });
+});
+
+describe('discoverTarget once per run', () => {
+  it('shares one answer per fqdn with the default fetch', async () => {
+    const [a, b] = await Promise.all([
+      discoverTarget('once.invalid'),
+      discoverTarget('once.invalid'),
+    ]);
+    expect(a).toBe(b);
+    expect(a.discovered).toBe(false);
   });
 });

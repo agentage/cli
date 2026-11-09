@@ -77,6 +77,13 @@ describe('sign-in flow', () => {
     expect(used?.auth).toBe('https://auth.agentage.io');
   });
 
+  it('asks no discovery while the stored session matches the derived issuer', async () => {
+    saveAuth(existingAuth);
+    const { deps } = makeDeps();
+    expect(await ensureSignedIn({}, deps)).toBe('already');
+    expect(deps.discover).not.toHaveBeenCalled();
+  });
+
   it('runs the full sign-in flow and persists auth state', async () => {
     const { deps, close, logs } = makeDeps();
     expect(await ensureSignedIn({}, deps)).toBe('signed-in');

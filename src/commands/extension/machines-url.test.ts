@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { signedInAccount } from './account.js';
 
 vi.mock('../../lib/auth/credentials.js', () => ({ resolveAuth: () => ({ accessToken: 't' }) }));
-vi.mock('../../lib/auth/env-match.js', () => ({ detectEnvMismatch: () => null }));
+vi.mock('../../lib/auth/env-match.js', () => ({
+  detectEnvMismatch: () => null,
+  credentialLinks: () => ({}),
+}));
 const authed = vi.fn(async () => new Response(null, { status: 204 }));
 vi.mock('../../lib/auth/api.js', () => ({
   authedFetch: (...a: unknown[]) => authed(...(a as [])),
