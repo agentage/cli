@@ -9,7 +9,12 @@ import { platformFetch, revokePlatformPats } from './platform-pat.js';
 const DAY_S = 86_400;
 
 // An issuer minting tok_<n> for the session bearer at_1, and a platform taking only the newest.
-const site = async (calls: string[], opts: { expiresInS?: number; platform?: number } = {}) => {
+interface SiteOpts {
+  expiresInS?: number;
+  platform?: number;
+  mintData?: unknown;
+}
+const site = async (calls: string[], opts: SiteOpts = {}) => {
   let n = 0;
   const server = createServer((req, res) => {
     req.resume().on('end', () => {
@@ -18,7 +23,11 @@ const site = async (calls: string[], opts: { expiresInS?: number; platform?: num
       if (req.url === '/account/pat' && bearer === 'at_1') {
         n += 1;
         const expiresAt = new Date(Date.now() + (opts.expiresInS ?? 30 * DAY_S) * 1000);
-        const data = { id: `tok_${n}`, token: `aga_jwt_${n}`, expiresAt: expiresAt.toISOString() };
+        const data = opts.mintData ?? {
+          id: `tok_${n}`,
+          token: `aga_jwt_${n}`,
+          expiresAt: expiresAt.toISOString(),
+        };
         return void res.writeHead(201).end(JSON.stringify({ success: true, data }));
       }
       if (req.url?.startsWith('/account/pat'))
@@ -116,11 +125,30 @@ describe('the platform token', () => {
     expect(calls).toEqual(['GET /m at_1']);
   });
 
-  test('revokes every stored token with the bearer given', async () => {
+  test('a malformed stored entry is re-minted, never sent', async () => {
     const calls: string[] = [];
     const base = await site(calls);
+    const broken = { id: 'tok_0', expiresAt: '2099-01-01T00:00:00.000Z' };
+    expect((await go(signedIn(base, { platformPats: { [base]: broken } }), base)).status).toBe(204);
+    expect(calls).toEqual(['POST /account/pat at_1', 'GET /m aga_jwt_1']);
+  });
+
+  test('a malformed mint reply is refused, never stored or sent', async () => {
+    const calls: string[] = [];
+    const base = await site(calls, { mintData: { id: 'tok_1' } });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await expect(go(signedIn(base), base)).rejects.toThrow('platform token refused (201)');
+    expect(calls).toEqual(['POST /account/pat at_1']);
+    expect(readAuth()?.platformPats).toBeUndefined();
+  });
+
+  test("revokes only the bearer's issuer's token", async () => {
+    const calls: string[] = [];
+    const [base, away] = [await site(calls), await site(calls)];
     const pat = { id: 'tok_9', token: 't', expiresAt: '2099-01-01T00:00:00.000Z' };
-    await revokePlatformPats(signedIn(base, { platformPats: { [base]: pat } }), 'at_new');
+    const platformPats = { [base]: pat, [away]: { ...pat, id: 'tok_away' } };
+    const auth = signedIn(base, { platformPats, tokens: { accessToken: 'at_new' } });
+    await revokePlatformPats(auth, { ...links('x'), auth: base });
     expect(calls).toEqual(['DELETE /account/pat/tok_9 at_new']);
   });
 });
