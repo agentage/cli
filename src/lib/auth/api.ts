@@ -17,12 +17,15 @@ const requestTokens = async (auth: AuthState, links: Links, rt: string): Promise
 };
 
 // Never resurrect a sign-out (null) or overwrite a newer sign-in by another client.
-const persistTokens = async (clientId: string, tokens: StoredTokens): Promise<void> => {
-  await mutateAuth((current) => {
+export const updateSession = (clientId: string, change: (current: AuthState) => void) =>
+  mutateAuth((current) => {
     if (!current || current.clientId !== clientId) return null;
-    current.tokens = tokens;
+    change(current);
     return current;
   });
+
+const persistTokens = async (clientId: string, tokens: StoredTokens): Promise<void> => {
+  await updateSession(clientId, (current) => void (current.tokens = tokens));
 };
 
 const refreshAndPersist = async (

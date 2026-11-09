@@ -16,6 +16,7 @@ import {
   type Reply,
 } from './http.js';
 import { accountRoute } from './account.js';
+import { discovery, patRoute, platformRoute } from './platform.js';
 import { authorize, getSession, register, revoke, token } from './oauth.js';
 import { createState, type StubOptions, type StubRequest, type StubState } from './state.js';
 
@@ -55,6 +56,7 @@ const tokenRoute: Route = async ({ state, req, entry }) => {
 
 const ROUTES: Record<string, Route> = {
   'GET /api/health': () => json(200, { status: 'ok' }),
+  'GET /.well-known/agentage.json': ({ state, req }) => discovery(state, req),
   'POST /api/auth/mcp/register': async ({ state, req }) =>
     register(state, parseJson(await readBody(req))),
   'GET /api/auth/mcp/authorize': ({ state, url }) => authorize(state, url.searchParams),
@@ -65,10 +67,15 @@ const ROUTES: Record<string, Route> = {
 
 const ACCOUNT = /^\/v1\/(profile$|machines(\/|$))/;
 
-const routeOf = (entry: StubRequest): Route | undefined =>
-  ACCOUNT.test(entry.path)
-    ? ({ state, req }) => accountRoute(state, req, entry)
-    : ROUTES[`${entry.method} ${entry.path}`];
+const PLATFORM = /^\/api\/v1\/machines(\/|$)/;
+const PAT = /^\/account\/pat(\/|$)/;
+
+const routeOf = (entry: StubRequest): Route | undefined => {
+  if (ACCOUNT.test(entry.path)) return ({ state, req }) => accountRoute(state, req, entry);
+  if (PLATFORM.test(entry.path)) return ({ state, req }) => platformRoute(state, req, entry);
+  if (PAT.test(entry.path)) return ({ state, req }) => patRoute(state, req, entry);
+  return ROUTES[`${entry.method} ${entry.path}`];
+};
 
 // Logged on arrival, so a request the site never answers still shows (status 0).
 const dispatch = async (state: StubState, req: IncomingMessage, res: ServerResponse) => {

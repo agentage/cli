@@ -116,6 +116,29 @@ describe('gatherStatus', () => {
     expect(report.auth).toEqual({ signedIn: true, tokenExpiresAt: 'x', pat: true });
   });
 
+  it('judges a JWT PAT by its exp, never introspecting it or calling it an expired session', async () => {
+    const fetch = vi.fn(async () => jsonResponse(200, null));
+    useFetch(fetch);
+    const jwt = (exp: number) =>
+      `aga_h.${Buffer.from(JSON.stringify({ exp })).toString('base64url')}.s`;
+    const at = (exp: number): AuthState => ({
+      ...auth,
+      kind: 'pat',
+      tokens: { accessToken: jwt(exp) },
+    });
+    const live = Math.floor(Date.now() / 1000) + 3600;
+    const report = await gatherStatus(at(live), 'dev.agentage.io');
+    expect(report.auth).toEqual({
+      signedIn: true,
+      tokenExpiresAt: new Date(live * 1000).toISOString(),
+      pat: true,
+    });
+    const dead = await gatherStatus(at(live - 7200), 'dev.agentage.io');
+    expect(dead.auth).toMatchObject({ signedIn: false, pat: true });
+    expect(dead.auth.note).not.toMatch(/session expired/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('refreshes on a 200 + null session and reports signed-in', async () => {
     useFetch(
       vi.fn((url: string, init?: RequestInit) => {

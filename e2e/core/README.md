@@ -45,7 +45,9 @@ the one file that proves it.
   `extension install`; `plan.test.ts` - the plan: `setup --dry-run`, `setup --check`, the drift in
   `extension list` and `status`, integrity drift; `cloud.test.ts` - the profile in your account
   (pull, create, push, the replay on a conflict, the account check); `machines.test.ts` - this
-  machine in your account (register, seen, disconnected; failures change nothing).
+  machine in your account (register, seen, disconnected; failures change nothing);
+  `platform-token.test.ts` - a site naming a platform (`cli.site.platform()`): the JWT PAT setup
+  mints with the session, reuses, replaces and revokes.
 
 Run: `npm run build && npx playwright test e2e/core`. Every spec is `@offline`: loopback only, no
 secrets.

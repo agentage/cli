@@ -3,6 +3,7 @@ import { authedFetch } from '../../lib/auth/api.js';
 import { resolveAuth } from '../../lib/auth/credentials.js';
 import { credentialLinks, detectEnvMismatch } from '../../lib/auth/env-match.js';
 import { introspectToken } from '../../lib/auth/introspect.js';
+import { platformFetch } from '../../lib/auth/platform-pat.js';
 import { discoverTarget } from '../../lib/net/discovery.js';
 import { apiOrigin, siteFqdn } from '../../lib/net/origins.js';
 
@@ -33,7 +34,10 @@ export const signedInAccount: AccountOf = async (opts = {}) => {
       );
   const platform = async () => (await found()).platform.url;
   const fetch = to(() => apiOrigin(fqdn));
-  const machines = to(async () => (await found()).platform.machines);
+  const machines: CloudFetch = async (path, { headers, timeoutMs, ...init } = {}) => {
+    const sent = { ...init, headers: { ...CLIENT, ...headers } };
+    return platformFetch(auth, target, await found(), path, sent, { timeoutMs });
+  };
   const id = () =>
     introspectToken(auth, target).then(
       (s) => s.userId ?? null,

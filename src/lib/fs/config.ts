@@ -10,6 +10,12 @@ export interface StoredTokens {
   expiresAt?: number;
 }
 
+export interface PlatformPat {
+  id: string;
+  token: string;
+  expiresAt: string;
+}
+
 export interface AuthState {
   siteFqdn: string;
   // The issuer origin the session came from; absent on credentials stored before 0.50.1.
@@ -20,6 +26,7 @@ export interface AuthState {
   // 'pat' marks a credential synthesized from a personal access token (AGENTAGE_TOKEN / --token):
   // it is never persisted, carries no refresh token, and must not attempt an OAuth refresh.
   kind?: 'pat';
+  platformPats?: Record<string, PlatformPat>;
 }
 
 export const getConfigDir = (): string =>

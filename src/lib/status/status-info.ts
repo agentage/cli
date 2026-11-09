@@ -1,4 +1,5 @@
 import { AuthRequiredError, introspectToken } from '../auth/api.js';
+import { jwtPatExpiry } from '../auth/credentials.js';
 import { detectEnvMismatch, type AuthEnvMismatch } from '../auth/env-match.js';
 import { type AuthState } from '../fs/config.js';
 import { fetchJsonUnref } from '../net/http.js';
@@ -92,6 +93,11 @@ export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promis
   }
   // Only carry `pat: true`; omit it for OAuth so existing exact-match reports stay unchanged.
   const patFlag = auth.kind === 'pat' ? { pat: true } : {};
+  // A JWT PAT is judged by its own expiry, never introspected as a session.
+  const exp = auth.kind === 'pat' ? jwtPatExpiry(auth.tokens.accessToken) : null;
+  if (exp && Date.parse(exp) > Date.now())
+    return { ...report, auth: { signedIn: true, tokenExpiresAt: exp, pat: true } };
+  if (exp) return { ...report, auth: { signedIn: false, pat: true, note: 'token expired' } };
   try {
     const session = await introspectToken(auth, target);
     report.auth = { signedIn: true, tokenExpiresAt: session.expiresAt, ...patFlag };
