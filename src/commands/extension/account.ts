@@ -34,14 +34,9 @@ export const signedInAccount: AccountOf = async (opts = {}) => {
       );
   const platform = async () => (await found()).platform.url;
   const fetch = to(() => apiOrigin(fqdn));
-  const oauthMachines = to(async () => (await found()).platform.machines);
-  // A discovered platform takes only JWT PATs: the session mints one, an env PAT goes as is.
-  const machines: CloudFetch = async (path, init = {}) => {
-    const { discovered, platform } = await found();
-    if (!discovered || auth.kind === 'pat') return oauthMachines(path, init);
-    const { headers, timeoutMs, ...rest } = init;
-    const sent = { ...rest, headers: { ...CLIENT, ...headers } };
-    return platformFetch(auth, target, `${platform.machines}${path}`, sent, { timeoutMs });
+  const machines: CloudFetch = async (path, { headers, timeoutMs, ...init } = {}) => {
+    const sent = { ...init, headers: { ...CLIENT, ...headers } };
+    return platformFetch(auth, target, await found(), path, sent, { timeoutMs });
   };
   const id = () =>
     introspectToken(auth, target).then(

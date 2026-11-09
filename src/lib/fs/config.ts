@@ -10,7 +10,6 @@ export interface StoredTokens {
   expiresAt?: number;
 }
 
-// A JWT personal access token for the platform, minted with this session (platform-pat.ts).
 export interface PlatformPat {
   id: string;
   token: string;
@@ -27,8 +26,7 @@ export interface AuthState {
   // 'pat' marks a credential synthesized from a personal access token (AGENTAGE_TOKEN / --token):
   // it is never persisted, carries no refresh token, and must not attempt an OAuth refresh.
   kind?: 'pat';
-  // Keyed by issuer; each entry is checked on read.
-  platformPats?: Record<string, unknown>;
+  platformPats?: Record<string, PlatformPat>;
 }
 
 export const getConfigDir = (): string =>

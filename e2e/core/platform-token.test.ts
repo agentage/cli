@@ -37,7 +37,7 @@ test.describe('the platform token @p0 @offline', () => {
     expect(cli.site.requests('/v1/machines')).toEqual([]);
   });
 
-  test('a platform token within a day of expiry, or refused (401), is replaced and the old one revoked', async ({
+  test('a platform token within a day of expiry, or refused (401), is replaced and the old one revoked; setup --disconnect revokes the last', async ({
     cli,
   }) => {
     const platform = cli.site.platform();
@@ -64,5 +64,7 @@ test.describe('the platform token @p0 @offline', () => {
       'DELETE /account/pat/tok_2 200',
     ]);
     expect(platform.pats.map((p) => p.revoked)).toEqual([true, true, false]);
+    expect((await cli.run('setup --disconnect')).code).toBe(0);
+    expect(platform.pats.map((p) => p.revoked)).toEqual([true, true, true]);
   });
 });

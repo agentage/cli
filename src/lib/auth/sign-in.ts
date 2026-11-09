@@ -6,6 +6,7 @@ import { AuthRequiredError } from './auth-errors.js';
 import { startCallbackServer, type CallbackServer } from './callback-server.js';
 import { credentialLinks, detectEnvMismatch, type AuthEnvMismatch } from './env-match.js';
 import { introspectToken } from './introspect.js';
+import { revokePlatformPats } from './platform-pat.js';
 import {
   buildAuthorizeUrl,
   exchangeCode,
@@ -95,7 +96,9 @@ export const signIn = async (
     const redirectUri = server.redirectUri;
     const res = await deps.exchange(authUrl, { clientId, code, redirectUri, verifier });
     const tokens = tokensFrom(res);
+    const old = readAuth();
     await mutateAuth(() => ({ siteFqdn: fqdn, issuer: authUrl, clientId, tokens }));
+    if (old) await revokePlatformPats(old, tokens.accessToken);
     deps.log(chalk.green('\nSigned in.\n'));
   } finally {
     server.close();
@@ -108,6 +111,7 @@ export const signOut = async (deps: SignInDeps = defaultDeps): Promise<void> => 
     deps.log('Nothing to disconnect.');
     return;
   }
+  await revokePlatformPats(auth);
   await deps.revoke(credentialLinks(auth).auth, auth.tokens.accessToken);
   await deleteAuth();
   deps.log('Disconnected - local credentials removed.');
