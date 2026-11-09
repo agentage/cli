@@ -40,8 +40,9 @@ export type ProfileStatus =
     };
 
 export interface ExtensionsStatus {
-  // `registered`, `status` only: whether the account knows this machine (null: not known).
-  machine: { id: string; name: string; registered?: boolean | null };
+  // `registered`, `status` only: whether the account knows this machine (null: not known);
+  // `platform`, `status` only: the URL its machines calls go to (null: not known).
+  machine: { id: string; name: string; registered?: boolean | null; platform?: string | null };
   profile: ProfileStatus;
   plan: PlanSummary;
   extensions: ExtensionRow[];

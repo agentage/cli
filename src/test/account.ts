@@ -8,6 +8,8 @@ import { type Account, type CloudFetch, type CloudInit } from '../core/profile/c
 import { type ConfigDir } from './config-dir.js';
 import { npmFromFixtures } from './npm-fixtures.js';
 
+export const PLATFORM = 'https://platform.test';
+
 type Doc = Record<string, unknown>;
 
 export interface FakeRequest {
@@ -78,7 +80,12 @@ export const fakeAccount = (id: string | null = 'user_1'): FakeAccount => {
   let count = 0;
   const failures = new Map<string, Failure>();
   const fake: FakeAccount = {
-    account: () => ({ fetch: fake.fetch, id: async () => id }),
+    account: () => ({
+      fetch: fake.fetch,
+      machines: (path, init) => fake.fetch(`/v1/machines${path}`, init),
+      platform: async () => PLATFORM,
+      id: async () => id,
+    }),
     requests: [],
     stored: null,
     conflicts: [],

@@ -99,12 +99,13 @@ const connect = async (account: Account): Promise<MachineFile> => {
 export const accountSetup = async (deps: EditDeps): Promise<void> => {
   const account = deps.account();
   if (account === null) return fromLocalCopy('not signed in', deps);
+  const platform = await account.platform();
   const machine = await connect(account);
-  const registered = registerMachine(account.fetch, machine);
+  const registered = registerMachine(account.machines, machine);
   try {
     await profileFrom(account, machine, deps);
   } finally {
-    await registered;
+    if (await registered) console.log(line('registered', `${machine.id} at ${platform}`));
   }
 };
 
@@ -112,7 +113,7 @@ export const accountSetup = async (deps: EditDeps): Promise<void> => {
 export const disconnect = async (deps: AccountSetupDeps): Promise<void> => {
   const machine = readMachine();
   const account = deps.account();
-  if (machine !== null && account !== null) await disconnectMachine(account.fetch, machine.id);
+  if (machine !== null && account !== null) await disconnectMachine(account.machines, machine.id);
   await deps.signOut();
   if (machine !== null) await forgetAccount();
 };

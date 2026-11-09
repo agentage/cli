@@ -12,7 +12,7 @@ interface Call {
   body?: object;
 }
 
-const routeOf = (id: string): string => `/v1/machines/${id}`;
+const routeOf = (id: string): string => `/${id}`;
 
 const debug = (text: string): void => {
   if (process.env['AGENTAGE_DEBUG'] === '1') console.error(`machines: ${text}`);
@@ -63,11 +63,12 @@ const registration = (machine: Pick<MachineFile, 'name'>) => ({
 export const registerMachine = async (
   fetch: CloudFetch,
   machine: Pick<MachineFile, 'id' | 'name'>
-): Promise<void> => {
+): Promise<boolean> => {
   const deadline = Date.now() + BUDGET_MS;
   const path = routeOf(machine.id);
-  await send(fetch, { method: 'PUT', path, body: registration(machine) });
+  const put = await send(fetch, { method: 'PUT', path, body: registration(machine) });
   await send(fetch, { method: 'POST', path: `${path}/seen` }, Math.max(1, deadline - Date.now()));
+  return put !== null && put.status >= 200 && put.status < 300;
 };
 
 // true when the account knows this machine, false on MACHINE_NOT_FOUND, null when it did not

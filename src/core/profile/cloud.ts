@@ -19,6 +19,10 @@ export type CloudFetch = (path: string, init?: CloudInit) => Promise<Response>;
 // The signed-in account as commands reach it.
 export interface Account {
   fetch: CloudFetch;
+  // The machines routes: a path under `<platform>/api/v1/machines`.
+  machines: CloudFetch;
+  // The platform URL the site's discovery document names; rejects when it names none.
+  platform: () => Promise<string>;
   // The account id (the OAuth subject); null when it could not be verified just now.
   id: () => Promise<string | null>;
 }
