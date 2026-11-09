@@ -75,7 +75,17 @@ export interface StubAccount {
   machines: Map<string, StubMachine>;
 }
 
+export interface StubPat {
+  id: string;
+  token: string;
+  expiresAt: string;
+  revoked: boolean;
+  body: unknown;
+}
+
 export interface StubState extends Required<StubOptions> {
+  // The discovered platform (platform.ts): off by default; its minted tokens and their lifetime.
+  platform: { on: boolean; expiresInS: number; pats: StubPat[] };
   // client_id -> registered redirect_uris
   clients: Map<string, string[]>;
   codes: StubCode[];
@@ -91,6 +101,7 @@ export const createState = (opts: StubOptions = {}): StubState => ({
   expiresIn: opts.expiresIn ?? 3600,
   transientGetSession: opts.transientGetSession ?? 0,
   denyAuthorize: opts.denyAuthorize ?? false,
+  platform: { on: false, expiresInS: 30 * 86_400, pats: [] },
   clients: new Map(),
   codes: [],
   tokens: [],

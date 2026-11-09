@@ -1,4 +1,5 @@
 import { AuthRequiredError, introspectToken } from '../auth/api.js';
+import { jwtPatExpiry } from '../auth/credentials.js';
 import { detectEnvMismatch, type AuthEnvMismatch } from '../auth/env-match.js';
 import { type AuthState } from '../fs/config.js';
 import { fetchJsonUnref } from '../net/http.js';
@@ -60,6 +61,12 @@ const mismatchAuth = (m: AuthEnvMismatch): StatusReport['auth'] => ({
     `run: agentage setup to sign into ${m.targetEnv}, or set AGENTAGE_SITE_FQDN=${m.credentialFqdn}`,
 });
 
+// The OAuth session is introspected; a JWT PAT is judged by its own expiry, never "session expired".
+const jwtPatAuth = (expiresAt: string): StatusReport['auth'] =>
+  Date.parse(expiresAt) > Date.now()
+    ? { signedIn: true, tokenExpiresAt: expiresAt, pat: true }
+    : { signedIn: false, pat: true, note: 'token expired - mint a new one in the dashboard' };
+
 // Discovery runs beside the derived probes, so a 404 costs no extra round trip.
 export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promise<StatusReport> => {
   const derived = links(fqdn);
@@ -92,6 +99,8 @@ export const gatherStatus = async (auth: AuthState | null, fqdn: string): Promis
   }
   // Only carry `pat: true`; omit it for OAuth so existing exact-match reports stay unchanged.
   const patFlag = auth.kind === 'pat' ? { pat: true } : {};
+  const jwtExpiry = auth.kind === 'pat' ? jwtPatExpiry(auth.tokens.accessToken) : null;
+  if (jwtExpiry) return { ...report, auth: jwtPatAuth(jwtExpiry) };
   try {
     const session = await introspectToken(auth, target);
     report.auth = { signedIn: true, tokenExpiresAt: session.expiresAt, ...patFlag };

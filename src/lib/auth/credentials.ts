@@ -52,6 +52,17 @@ export const patAuthState = (token: string, fqdn: string = siteFqdn()): AuthStat
   tokens: { accessToken: assertPatShape(token) },
 });
 
+// A JWT PAT (aga_<jwt>) is not introspectable: its exp is read here, the platform verifies it.
+export const jwtPatExpiry = (token: string): string | null => {
+  const payload = token.slice(PAT_PREFIX.length).split('.')[1] ?? '';
+  try {
+    const { exp } = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { exp?: unknown };
+    return typeof exp === 'number' ? new Date(exp * 1000).toISOString() : null;
+  } catch {
+    return null;
+  }
+};
+
 export const isPatAuth = (auth: AuthState | null): boolean => auth?.kind === 'pat';
 
 // Resolve the active credential with precedence flag > env PAT > stored OAuth. When a PAT is
