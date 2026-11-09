@@ -1,4 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import chalk from 'chalk';
@@ -37,6 +39,26 @@ const makeDeps = () => {
   };
   return { deps, close, logs };
 };
+
+const PAT = { id: 'tok_old', token: 't', expiresAt: '2099-01-01T00:00:00.000Z' };
+
+// An issuer taking only at-1 / at-2 on its PAT routes and refreshing rt-1 to at-2.
+const issuer = async (calls: string[]) => {
+  const server = createServer((req, res) => {
+    req.resume().on('end', () => {
+      const bearer = String(req.headers.authorization ?? '').replace('Bearer ', '');
+      calls.push(`${req.method} ${req.url} ${bearer}`.trim());
+      if (req.url === '/api/auth/mcp/token')
+        return void res.writeHead(200).end(JSON.stringify({ access_token: 'at-2' }));
+      res.writeHead(['at-1', 'at-2'].includes(bearer) ? 200 : 401).end();
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  servers.push(server);
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+};
+const servers: ReturnType<typeof createServer>[] = [];
+afterEach(() => void servers.splice(0).forEach((s) => s.close()));
 
 describe('sign-in flow', () => {
   let dir: string;
@@ -192,6 +214,18 @@ describe('sign-in flow', () => {
     expect(deps.introspect).not.toHaveBeenCalled();
   });
 
+  it("re-sign-in revokes the old token only at the new bearer's issuer", async () => {
+    const calls: string[] = [];
+    const [base, away] = [await issuer(calls), await issuer(calls)];
+    const platformPats = { [base]: PAT, [away]: { ...PAT, id: 'tok_away' } };
+    saveAuth({ ...existingAuth, issuer: away, platformPats });
+    const { deps } = makeDeps();
+    vi.mocked(deps.discover).mockResolvedValue({ ...links('x'), auth: base });
+    await ensureSignedIn({ reauth: true }, deps);
+    expect(calls).toEqual(['DELETE /account/pat/tok_old at-1']);
+    expect(readAuth()?.platformPats).toBeUndefined();
+  });
+
   it('closes the callback server when the exchange fails', async () => {
     const { deps, close } = makeDeps();
     vi.mocked(deps.exchange).mockRejectedValue(new Error('boom'));
@@ -208,6 +242,20 @@ describe('sign-in flow', () => {
       expect(deps.revoke).toHaveBeenCalledWith('https://auth.dev.agentage.io', 'old-at');
       expect(readAuth()).toBeNull();
       expect(logs).toEqual(['Disconnected - local credentials removed.']);
+    });
+
+    it('refreshes an expired session before revoking its platform token', async () => {
+      const calls: string[] = [];
+      const base = await issuer(calls);
+      const tokens = { accessToken: 'at-dead', refreshToken: 'rt-1' };
+      saveAuth({ ...existingAuth, issuer: base, tokens, platformPats: { [base]: PAT } });
+      await signOut(makeDeps().deps);
+      expect(calls).toEqual([
+        'DELETE /account/pat/tok_old at-dead',
+        'POST /api/auth/mcp/token',
+        'DELETE /account/pat/tok_old at-2',
+      ]);
+      expect(readAuth()).toBeNull();
     });
 
     it('is a no-op without credentials, including a malformed auth.json', async () => {

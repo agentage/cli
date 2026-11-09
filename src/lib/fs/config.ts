@@ -26,7 +26,7 @@ export interface AuthState {
   // 'pat' marks a credential synthesized from a personal access token (AGENTAGE_TOKEN / --token):
   // it is never persisted, carries no refresh token, and must not attempt an OAuth refresh.
   kind?: 'pat';
-  platformPats?: Record<string, PlatformPat>;
+  platformPats?: Record<string, unknown>;
 }
 
 export const getConfigDir = (): string =>

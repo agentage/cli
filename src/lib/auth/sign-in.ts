@@ -87,7 +87,8 @@ export const signIn = async (
   deps: SignInDeps = defaultDeps
 ): Promise<void> => {
   const fqdn = siteFqdn();
-  const authUrl = (await deps.discover(fqdn)).auth;
+  const to = await deps.discover(fqdn);
+  const authUrl = to.auth;
   ensureConfigDir();
   const state = randomState();
   const server = await deps.startServer(state);
@@ -98,7 +99,7 @@ export const signIn = async (
     const tokens = tokensFrom(res);
     const old = readAuth();
     await mutateAuth(() => ({ siteFqdn: fqdn, issuer: authUrl, clientId, tokens }));
-    if (old) await revokePlatformPats(old, tokens.accessToken);
+    if (old) await revokePlatformPats({ ...old, clientId, tokens }, to);
     deps.log(chalk.green('\nSigned in.\n'));
   } finally {
     server.close();
@@ -111,7 +112,7 @@ export const signOut = async (deps: SignInDeps = defaultDeps): Promise<void> => 
     deps.log('Nothing to disconnect.');
     return;
   }
-  await revokePlatformPats(auth);
+  await revokePlatformPats(auth, credentialLinks(auth));
   await deps.revoke(credentialLinks(auth).auth, auth.tokens.accessToken);
   await deleteAuth();
   deps.log('Disconnected - local credentials removed.');
