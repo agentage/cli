@@ -151,7 +151,7 @@ describe('agentage extension install', () => {
 describe('agentage extension install with a market', () => {
   const asking = (answer: { version: string; package: string | null } | null) => {
     const ids: string[] = [];
-    const market = { latest: async (id: string) => (ids.push(id), answer) };
+    const market = { down: () => false, latest: async (id: string) => (ids.push(id), answer) };
     return { ids, deps: { ...deps, market } };
   };
 

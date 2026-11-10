@@ -133,6 +133,7 @@ describe('agentage status', () => {
 
 describe('agentage extension list with a market', () => {
   const market = {
+    down: () => false,
     latest: async (id: string) => (id === 'hello' ? { version: '1.2.0', package: null } : null),
   };
 
@@ -145,6 +146,15 @@ describe('agentage extension list with a market', () => {
     expect(run.lines).toEqual([
       'hello  installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  latest 1.2.0  commands: hello',
       'world  installed  @agentage/fixture-world 1.0.0 (wants ^1)  latest -  commands: world',
+    ]);
+  });
+
+  test('leaves the column out when the market is down', async ({ dir }) => {
+    dir.profile({ extensions: { hello: '^1.0.0' } });
+    dir.tree('hello');
+    const down = { latest: async () => null, down: () => true };
+    expect((await output(() => runExtensionList({}, down))).lines).toEqual([
+      'hello  installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello',
     ]);
   });
 

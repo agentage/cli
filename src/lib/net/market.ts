@@ -13,6 +13,8 @@ export interface Latest {
 // `latest` is null for an id the market does not know, or when no market answers.
 export interface Market {
   latest: (id: string) => Promise<Latest | null>;
+  // True once a call failed to reach a market: the answers are not to be shown.
+  down: () => boolean;
 }
 
 const TIMEOUT_MS = 5_000;
@@ -57,5 +59,5 @@ export const openMarket = (fqdn: string = siteFqdn(), get: Get = timed): Market 
       return null;
     }
   };
-  return { latest };
+  return { latest, down: () => told };
 };

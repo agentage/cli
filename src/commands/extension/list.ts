@@ -33,12 +33,15 @@ export const printReport = (
 };
 
 // The market's newest version for each installed id it knows; unknown ids are null.
-const newest = async ({ status }: ExtensionsGather, market: Market): Promise<Latest> => {
+const newest = async (
+  { status }: ExtensionsGather,
+  market: Market
+): Promise<Latest | undefined> => {
   const ids = status.extensions.flatMap((row) => (row.id === null ? [] : [row.id]));
   const found = await Promise.all(
     ids.map(async (id) => [id, (await market.latest(id))?.version ?? null] as const)
   );
-  return new Map(found);
+  return market.down() ? undefined : new Map(found);
 };
 
 // The rows always print; an invalid profile.json then fails the step (exit 1).

@@ -55,6 +55,7 @@ describe('openMarket', () => {
     const market = openMarket('next.agentage.io', get);
     expect(await market.latest('probe')).toBeNull();
     expect(await market.latest('fixture')).toBeNull();
+    expect(market.down()).toBe(true);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith('market unavailable, versions not checked');
   });
