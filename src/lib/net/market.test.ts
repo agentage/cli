@@ -59,4 +59,42 @@ describe('openMarket', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith('market unavailable, versions not checked');
   });
+
+  it.each([
+    ['a foreign package', { version: '1.0.0', package: '@evil/probe' }],
+    ['another id', { version: '1.0.0', package: '@agentage/extension-other' }],
+    ['a URL as the package', { version: '1.0.0', package: 'https://evil.test/p.tgz' }],
+    ['a missing package', { version: '1.0.0' }],
+    ['a range *', { version: '*', package: '@agentage/extension-probe' }],
+    ['a range ^1.0.0', { version: '^1.0.0', package: '@agentage/extension-probe' }],
+    ['a dist-tag', { version: 'latest', package: '@agentage/extension-probe' }],
+    [
+      'a URL as the version',
+      { version: 'https://evil.test/p.tgz', package: 'agentage-extension-probe' },
+    ],
+    ['an empty version', { version: '', package: '@agentage/extension-probe' }],
+  ])('refuses %s on one clear line, never a package', async (_name, data) => {
+    const get = serving({ [DISCOVERY]: doc(named), [LATEST]: doc({ data }) });
+    await expect(openMarket('next.agentage.io', get).latest('probe')).rejects.toThrow(
+      /^market answer refused for probe: /
+    );
+  });
+
+  it('accepts the unscoped full name', async () => {
+    const data = { data: { version: '1.2.3-beta.1', package: 'agentage-extension-probe' } };
+    const get = serving({ [DISCOVERY]: doc(named), [LATEST]: doc(data) });
+    expect((await openMarket('next.agentage.io', get).latest('probe'))?.version).toBe(
+      '1.2.3-beta.1'
+    );
+  });
+
+  it.each(['http://market.test/', 'ftp://market.test/', 'market.test'])(
+    'treats the market address %s as no market',
+    async (url) => {
+      const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const get = serving({ [DISCOVERY]: doc({ markets: [url] }) });
+      expect(await openMarket('next.agentage.io', get).latest('probe')).toBeNull();
+      expect(warn).toHaveBeenCalledWith('market unavailable, versions not checked');
+    }
+  );
 });

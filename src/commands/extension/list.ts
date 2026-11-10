@@ -14,6 +14,14 @@ export interface ExtensionListOptions {
   json?: boolean;
 }
 
+const withLatest = (status: ExtensionsGather['status'], latest: Latest) => ({
+  ...status,
+  extensions: status.extensions.map((row) => ({
+    ...row,
+    latest: latest.get(row.id ?? '') ?? null,
+  })),
+});
+
 // The rows, or the whole report as JSON, on stdout; warnings on stderr.
 export const printReport = (
   { status, warnings }: ExtensionsGather,
@@ -22,12 +30,7 @@ export const printReport = (
 ): void => {
   const rows =
     status.extensions.length > 0 ? rowLines(status.extensions, latest) : ['no extensions'];
-  const withLatest = status.extensions.map((row) => ({
-    ...row,
-    latest: latest?.get(row.id ?? '') ?? null,
-  }));
-  if (json)
-    console.log(JSON.stringify(latest ? { ...status, extensions: withLatest } : status, null, 2));
+  if (json) console.log(JSON.stringify(latest ? withLatest(status, latest) : status, null, 2));
   else for (const text of rows) console.log(text);
   printWarnings(warnings);
 };

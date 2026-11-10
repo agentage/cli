@@ -1,5 +1,6 @@
 import { realpathSync } from 'node:fs';
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
+import { openMarket } from '../../lib/net/market.js';
 import { noAccount } from '../../test/account.js';
 import { fixture, MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
 import {
@@ -179,9 +180,31 @@ describe('agentage extension install with a market', () => {
     expect(dir.exists('profile.json')).toBe(false);
   });
 
-  test('an id the market does not know installs as today', async () => {
-    const { deps: withMarket } = asking(null);
-    const run = await output(() => runExtensionInstall({ name: pkg('hello') }, withMarket));
-    expect(run.error).toBeNull();
+  test('an id the market does not know is left to npm as before', async ({ dir }) => {
+    const { ids, deps: withMarket } = asking(null);
+    const run = await output(() => runExtensionInstall({ name: 'hello' }, withMarket));
+    expect(run.error).toMatch(/^hello: not found; tried @agentage\/extension-hello/);
+    expect(ids).toEqual(['hello']);
+    expect(dir.exists('profile.json')).toBe(false);
+  });
+
+  test('a market answer for a foreign package is refused and npm is never called', async ({
+    dir,
+  }) => {
+    const answer = { data: { version: '1.0.0', package: '@evil/x' } };
+    const get = async (url: string) =>
+      new Response(
+        JSON.stringify(url.endsWith('agentage.json') ? { markets: ['https://m.test'] } : answer)
+      );
+    const npm = vi.fn(npmFromFixtures);
+    const market = openMarket('agentage.io', get);
+    const run = await output(() =>
+      runExtensionInstall({ name: 'hello' }, { ...deps, npm, market })
+    );
+    expect(run.error).toBe(
+      'market answer refused for hello: package "@evil/x" is not an extension of that id'
+    );
+    expect(npm).not.toHaveBeenCalled();
+    expect(dir.exists('profile.json')).toBe(false);
   });
 });

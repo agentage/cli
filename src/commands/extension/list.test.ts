@@ -164,4 +164,12 @@ describe('agentage extension list with a market', () => {
     const json = JSON.parse((await output(() => runExtensionList({ json: true }, market))).stdout);
     expect(json.extensions.map((row: { latest: string }) => row.latest)).toEqual(['1.2.0']);
   });
+
+  test('--json stays clean and has no latest when the market is down', async ({ dir }) => {
+    dir.profile({ extensions: { hello: '^1.0.0' } });
+    dir.tree('hello');
+    const down = { latest: async () => null, down: () => true };
+    const json = JSON.parse((await output(() => runExtensionList({ json: true }, down))).stdout);
+    expect(json.extensions[0]).not.toHaveProperty('latest');
+  });
 });
