@@ -40,6 +40,15 @@ describe('printStatus', () => {
     expect(out).not.toContain('agentage.io (production) - unreachable');
   });
 
+  it('labels a non-default production site by its source, never as production', () => {
+    const out = captureLines({
+      ...baseReport,
+      target: { fqdn: 'next.agentage.io', env: 'production', reachable: true },
+    });
+    expect(out).toContain('next.agentage.io (from AGENTAGE_SITE_FQDN)');
+    expect(out).not.toContain('(production)');
+  });
+
   it('marks the target line unreachable with a cross when the site is down', () => {
     const out = captureLines({
       ...baseReport,

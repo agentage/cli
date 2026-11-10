@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
 import { resolveAuth } from '../../lib/auth/credentials.js';
-import { siteFqdn } from '../../lib/net/origins.js';
+import { DEFAULT_FQDN, siteFqdn } from '../../lib/net/origins.js';
 import { gatherStatus, type StatusReport } from '../../lib/status/status-info.js';
 import { INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
 import { signedInAccount } from '../extension/account.js';
@@ -47,7 +47,10 @@ export const printStatus = (report: StatusReport): void => {
   row('update', updateLine(report.update));
   const t = report.target;
   const targetSuffix = t.reachable ? '' : ' - unreachable';
-  row('target', `${mark(t.reachable)} ${t.fqdn} (${t.env})${targetSuffix}`);
+  // "production" is the default site only: any other production-shaped fqdn came from the override.
+  const source =
+    t.env === 'production' && t.fqdn !== DEFAULT_FQDN ? 'from AGENTAGE_SITE_FQDN' : t.env;
+  row('target', `${mark(t.reachable)} ${t.fqdn} (${source})${targetSuffix}`);
   row('auth', authLine(report.auth));
   row(
     'endpoint',

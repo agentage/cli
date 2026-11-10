@@ -90,9 +90,10 @@ export const platformFetch = async (
   opts: CliFetchOptions
 ): Promise<Response> => {
   const url = `${found.platform.machines}${path}`;
-  if (!found.discovered || auth.kind === 'pat') return authedFetch(auth, links, url, init, opts);
+  if (!found.discovered) return authedFetch(auth, links, url, init, opts);
   if (found.links.auth !== links.auth)
     throw refuse(links.auth, `platform token: the site's issuer is ${found.links.auth}`);
+  if (auth.kind === 'pat') return authedFetch(auth, links, url, init, opts);
   const prior = refused.get(links.auth);
   if (prior) throw prior;
   const call = async (renew: boolean) => {

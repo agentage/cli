@@ -7,7 +7,7 @@ export interface Links {
   auth: string;
 }
 
-const DEFAULT_FQDN = 'agentage.io';
+export const DEFAULT_FQDN = 'agentage.io';
 
 export const normalizeFqdn = (raw?: string): string => {
   const value = (raw ?? '')
