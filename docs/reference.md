@@ -330,7 +330,7 @@ form (see [Extension commands](#extension-commands)), one line says so after the
 With no version, a bare id (`probe`: a lower-case letter first, then letters, digits, `-`) asks the market for the
 newest version and installs `<package>@<version>` exactly. The answer is used only when `package`
 is `@agentage/extension-<id>` or `agentage-extension-<id>` and `version` is one exact version;
-anything else exits 1 with `market answer refused for <id>: <reason>`, nothing written. An id whose market entry is private
+anything else exits 1 with `market answer refused for <id>: <reason>`, nothing written (`extension list` instead shows `-` in `latest` for that row, prints that line on stderr and exits 0). An id whose market entry is private
 (`package: null`) exits 1 with `<id>: private entry, no npm package; it cannot be installed from
 npm`. A name with a scope, a range or a URL never asks the market. An id the market does not
 know installs as before, through npm.

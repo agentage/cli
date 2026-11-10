@@ -35,14 +35,24 @@ export const printReport = (
   printWarnings(warnings);
 };
 
-// The market's newest version for each installed id it knows; unknown ids are null.
+// A refused answer costs only its own row: one stderr line, no version.
+const versionOf = async (market: Market, id: string): Promise<string | null> => {
+  try {
+    return (await market.latest(id))?.version ?? null;
+  } catch (err) {
+    console.error((err as Error).message);
+    return null;
+  }
+};
+
+// The market's newest version for each installed id it knows; unknown or refused ids are null.
 const newest = async (
   { status }: ExtensionsGather,
   market: Market
 ): Promise<Latest | undefined> => {
   const ids = status.extensions.flatMap((row) => (row.id === null ? [] : [row.id]));
   const found = await Promise.all(
-    ids.map(async (id) => [id, (await market.latest(id))?.version ?? null] as const)
+    ids.map(async (id) => [id, await versionOf(market, id)] as const)
   );
   return market.down() ? undefined : new Map(found);
 };
