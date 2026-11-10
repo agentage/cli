@@ -130,3 +130,76 @@ describe('agentage status', () => {
     expect(extensions).toBe('extensions 3 (1 to add, 1 to remove)');
   });
 });
+
+describe('agentage extension list with a market', () => {
+  const market = {
+    down: () => false,
+    latest: async (id: string) => (id === 'hello' ? { version: '1.2.0', package: null } : null),
+  };
+
+  test('shows latest from the market per installed extension, - for an unknown one', async ({
+    dir,
+  }) => {
+    dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } });
+    dir.tree('hello', 'world');
+    const run = await output(() => runExtensionList({}, market));
+    expect(run.lines).toEqual([
+      'hello  installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  latest 1.2.0  commands: hello',
+      'world  installed  @agentage/fixture-world 1.0.0 (wants ^1)  latest -  commands: world',
+    ]);
+  });
+
+  test('leaves the column out when the market is down', async ({ dir }) => {
+    dir.profile({ extensions: { hello: '^1.0.0' } });
+    dir.tree('hello');
+    const down = { latest: async () => null, down: () => true };
+    expect((await output(() => runExtensionList({}, down))).lines).toEqual([
+      'hello  installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello',
+    ]);
+  });
+
+  test('--json adds latest to each row', async ({ dir }) => {
+    dir.profile({ extensions: { hello: '^1.0.0' } });
+    dir.tree('hello');
+    const json = JSON.parse((await output(() => runExtensionList({ json: true }, market))).stdout);
+    expect(json.extensions.map((row: { latest: string }) => row.latest)).toEqual(['1.2.0']);
+  });
+
+  test('--json stays clean and has no latest when the market is down', async ({ dir }) => {
+    dir.profile({ extensions: { hello: '^1.0.0' } });
+    dir.tree('hello');
+    const down = { latest: async () => null, down: () => true };
+    const json = JSON.parse((await output(() => runExtensionList({ json: true }, down))).stdout);
+    expect(json.extensions[0]).not.toHaveProperty('latest');
+  });
+
+  describe('one refused answer', () => {
+    const refused = {
+      down: () => false,
+      latest: async (id: string) => {
+        if (id === 'world') throw new Error('market answer refused for world: package "@evil/x"');
+        return { version: '1.2.0', package: null };
+      },
+    };
+
+    test('shows - for that row, one stderr line, and the full table', async ({ dir }) => {
+      dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } });
+      dir.tree('hello', 'world');
+      const run = await output(() => runExtensionList({}, refused));
+      expect(run.error).toBeNull();
+      expect(run.lines).toEqual([
+        'hello  installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  latest 1.2.0  commands: hello',
+        'world  installed  @agentage/fixture-world 1.0.0 (wants ^1)  latest -  commands: world',
+      ]);
+      expect(run.stderr).toBe('market answer refused for world: package "@evil/x"');
+    });
+
+    test('--json stdout still parses, latest null for that row', async ({ dir }) => {
+      dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } });
+      dir.tree('hello', 'world');
+      const run = await output(() => runExtensionList({ json: true }, refused));
+      const rows = JSON.parse(run.stdout).extensions;
+      expect(rows.map((r: { latest: string | null }) => r.latest)).toEqual(['1.2.0', null]);
+    });
+  });
+});

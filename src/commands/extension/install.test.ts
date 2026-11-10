@@ -1,5 +1,6 @@
 import { realpathSync } from 'node:fs';
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
+import { openMarket } from '../../lib/net/market.js';
 import { noAccount } from '../../test/account.js';
 import { fixture, MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
 import {
@@ -145,5 +146,65 @@ describe('agentage extension install', () => {
       'throws  failed     @agentage/fixture-throws 1.0.0 (wants ^1.0.0)  "boom"'
     );
     expect(run.error).toBe('1 extension failed to load: throws');
+  });
+});
+
+describe('agentage extension install with a market', () => {
+  const asking = (answer: { version: string; package: string | null } | null) => {
+    const ids: string[] = [];
+    const market = { down: () => false, latest: async (id: string) => (ids.push(id), answer) };
+    return { ids, deps: { ...deps, market } };
+  };
+
+  test('a bare id takes the version the market names', async ({ dir }) => {
+    const { ids, deps: withMarket } = asking({ version: '1.0.0', package: pkg('hello') });
+    const run = await output(() => runExtensionInstall({ name: 'hello' }, withMarket));
+    expect(run.error).toBeNull();
+    expect(ids).toEqual(['hello']);
+    expect(dir.json('profile.json').extensions).toEqual({ [pkg('hello')]: '1.0.0' });
+  });
+
+  test('an explicit version is unchanged and the market is not asked', async () => {
+    const { ids, deps: withMarket } = asking({ version: '9.9.9', package: pkg('hello') });
+    const run = await output(() => runExtensionInstall({ name: `${pkg('hello')}@^1` }, withMarket));
+    expect(run.error).toBeNull();
+    expect(ids).toEqual([]);
+  });
+
+  test('a private entry is refused on one line and nothing is written', async ({ dir }) => {
+    const { deps: withMarket } = asking({ version: '0.2.1', package: null });
+    const run = await output(() => runExtensionInstall({ name: 'fixture' }, withMarket));
+    expect(run.error).toBe(
+      'fixture: private entry, no npm package; it cannot be installed from npm'
+    );
+    expect(dir.exists('profile.json')).toBe(false);
+  });
+
+  test('an id the market does not know is left to npm as before', async ({ dir }) => {
+    const { ids, deps: withMarket } = asking(null);
+    const run = await output(() => runExtensionInstall({ name: 'hello' }, withMarket));
+    expect(run.error).toMatch(/^hello: not found; tried @agentage\/extension-hello/);
+    expect(ids).toEqual(['hello']);
+    expect(dir.exists('profile.json')).toBe(false);
+  });
+
+  test('a market answer for a foreign package is refused and npm is never called', async ({
+    dir,
+  }) => {
+    const answer = { data: { version: '1.0.0', package: '@evil/x' } };
+    const get = async (url: string) =>
+      new Response(
+        JSON.stringify(url.endsWith('agentage.json') ? { markets: ['https://m.test'] } : answer)
+      );
+    const npm = vi.fn(npmFromFixtures);
+    const market = openMarket('agentage.io', get);
+    const run = await output(() =>
+      runExtensionInstall({ name: 'hello' }, { ...deps, npm, market })
+    );
+    expect(run.error).toBe(
+      'market answer refused for hello: package "@evil/x" is not an extension of that id'
+    );
+    expect(npm).not.toHaveBeenCalled();
+    expect(dir.exists('profile.json')).toBe(false);
   });
 });
