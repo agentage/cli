@@ -125,6 +125,16 @@ describe('the platform token', () => {
     expect(calls).toEqual(['GET /m at_1']);
   });
 
+  test('an env token never reaches a platform whose issuer is not its own', async () => {
+    const calls: string[] = [];
+    const base = await site(calls, { platform: 204 });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const auth = { ...signedIn(base), kind: 'pat' } as AuthState;
+    await expect(go(auth, base, 'https://other.example')).rejects.toThrow('issuer');
+    expect(calls).toEqual([]);
+    expect((await go(auth, base)).status).toBe(204);
+  });
+
   test('a malformed stored entry is re-minted, never sent', async () => {
     const calls: string[] = [];
     const base = await site(calls);
