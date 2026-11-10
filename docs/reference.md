@@ -325,6 +325,19 @@ overwritten. It never signs in. When a command of a kit-built extension keeps on
 form (see [Extension commands](#extension-commands)), one line says so after the rows:
 `namespaced agentage pong ping (agentage ping is taken by extension probe)`.
 
+### The market
+
+With no version, a bare id (`probe`, lower-case letters, digits, `-`) asks the market for the
+newest version and installs `<package>@<version>` exactly. An id whose market entry is private
+(`package: null`) exits 1 with `<id>: private entry, no npm package; it cannot be installed from
+npm`. A name with a scope, a range or a URL never asks the market. An id the market does not
+know installs as above.
+
+The market address is the first entry of `markets` in the site's
+`/.well-known/agentage.json`, never kept in the CLI. With no market, or none answering in 5
+seconds, the command goes on without it and prints `market unavailable, versions not checked`
+once on stderr.
+
 ## extension remove
 
 ```bash
@@ -363,17 +376,18 @@ the tree holds but the profile no longer names is listed `installed` with `remov
 profile)` until `setup` removes it; it is never loaded. The drift
 column is left out when every row is blank.
 
-| Column   | JSON field  | Meaning                                                                                                         |
-| -------- | ----------- | --------------------------------------------------------------------------------------------------------------- |
-| id       | `id`        | `agentage.id` from the extension's `package.json`                                                               |
-| state    | `state`     | `installed`, `off`, `blocked`, `invalid` or `missing`                                                           |
-| drift    | `plan`      | `add`, `update` or `remove`; blank otherwise (`plan` is also `off`, `unchanged`, or `null` for a dev extension) |
-| package  | `package`   | package name; `mode` is `dev` for a local path in `machine.json`                                                |
-| version  | `installed` | version found in the installed tree                                                                             |
-| wants    | `wanted`    | range or `https:` URL from the profile's `extensions`                                                           |
-| commands | `commands`  | `agentage.contributes.commands`                                                                                 |
-| last run | `lastRun`   | `state/<id>.json`: `at`, `state` (`ok` or `failed`), `error`                                                    |
-| reason   | `error`     | why the extension is `invalid`, `blocked` or `missing`                                                          |
+| Column   | JSON field  | Meaning                                                                                                                               |
+| -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| id       | `id`        | `agentage.id` from the extension's `package.json`                                                                                     |
+| state    | `state`     | `installed`, `off`, `blocked`, `invalid` or `missing`                                                                                 |
+| drift    | `plan`      | `add`, `update` or `remove`; blank otherwise (`plan` is also `off`, `unchanged`, or `null` for a dev extension)                       |
+| package  | `package`   | package name; `mode` is `dev` for a local path in `machine.json`                                                                      |
+| version  | `installed` | version found in the installed tree                                                                                                   |
+| wants    | `wanted`    | range or `https:` URL from the profile's `extensions`                                                                                 |
+| latest   | `latest`    | the market's newest version for the id, `-` when it does not know it; left out when no market answers (see [The market](#the-market)) |
+| commands | `commands`  | `agentage.contributes.commands`                                                                                                       |
+| last run | `lastRun`   | `state/<id>.json`: `at`, `state` (`ok` or `failed`), `error`                                                                          |
+| reason   | `error`     | why the extension is `invalid`, `blocked` or `missing`                                                                                |
 
 An extension is `off` when this machine's `machines[<id>].off` in the profile lists it, `blocked`
 when an extension it peer-depends on is not `installed`, `invalid` when its manifest is wrong (a

@@ -130,3 +130,28 @@ describe('agentage status', () => {
     expect(extensions).toBe('extensions 3 (1 to add, 1 to remove)');
   });
 });
+
+describe('agentage extension list with a market', () => {
+  const market = {
+    latest: async (id: string) => (id === 'hello' ? { version: '1.2.0', package: null } : null),
+  };
+
+  test('shows latest from the market per installed extension, - for an unknown one', async ({
+    dir,
+  }) => {
+    dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } });
+    dir.tree('hello', 'world');
+    const run = await output(() => runExtensionList({}, market));
+    expect(run.lines).toEqual([
+      'hello  installed  @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  latest 1.2.0  commands: hello',
+      'world  installed  @agentage/fixture-world 1.0.0 (wants ^1)  latest -  commands: world',
+    ]);
+  });
+
+  test('--json adds latest to each row', async ({ dir }) => {
+    dir.profile({ extensions: { hello: '^1.0.0' } });
+    dir.tree('hello');
+    const json = JSON.parse((await output(() => runExtensionList({ json: true }, market))).stdout);
+    expect(json.extensions.map((row: { latest: string }) => row.latest)).toEqual(['1.2.0']);
+  });
+});

@@ -4,6 +4,7 @@ import { registryLookup, resolveName, type Resolved } from '../../core/installer
 import { addExtension } from '../../core/profile/edit.js';
 import { loadMachine, setDev } from '../../core/profile/machine.js';
 import { editableProfile } from '../../core/profile/profile.js';
+import { type Market } from '../../lib/net/market.js';
 import { type Profile } from '../../core/profile/schema.js';
 import { installAndLoad, line } from './install-load.js';
 import { finishEdit, pullForEdit, type EditDeps } from './sync.js';
@@ -16,6 +17,8 @@ export interface ExtensionInstallOptions {
 // npm reads what a name resolves to and installs the tree; the account gets the new profile.
 export interface ExtensionInstallDeps extends EditDeps {
   manifest: () => Promise<NpmManifest>;
+  // Asked only for a bare id with no version; absent means npm alone decides.
+  market?: Market;
 }
 
 type Package = Extract<Resolved, { kind: 'package' }>;
@@ -39,13 +42,27 @@ const addDev = async (target: Dev, off: boolean, deps: ExtensionInstallDeps) => 
   await installAndLoad(editableProfile(), deps.npm);
 };
 
+const ID = /^[a-z][a-z0-9-]*$/;
+
+// A bare id takes the version the market's /latest names; a private entry has no npm package.
+const marketName = async (name: string, market?: Market): Promise<string> => {
+  const latest = ID.test(name) ? await market?.latest(name) : null;
+  if (!latest) return name;
+  if (latest.package === null)
+    throw new Error(`${name}: private entry, no npm package; it cannot be installed from npm`);
+  return `${latest.package}@${latest.version}`;
+};
+
 // Never signs in: the name is looked up in the registries the local profile routes.
 export const runExtensionInstall = async (
   opts: ExtensionInstallOptions,
   deps: ExtensionInstallDeps
 ): Promise<void> => {
   const { registries } = editableProfile();
-  const target = await resolveName(opts.name, registryLookup(deps.manifest, registries));
+  const target = await resolveName(
+    await marketName(opts.name, deps.market),
+    registryLookup(deps.manifest, registries)
+  );
   if (target.kind === 'dev') await addDev(target, opts.off === true, deps);
   else await addPackage(target, opts.off === true, deps);
 };

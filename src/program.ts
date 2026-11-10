@@ -10,6 +10,7 @@ import {
 import { runExtensionCreate, type ExtensionCreateOptions } from './commands/extension/create.js';
 import { registerDelegates } from './commands/extension/delegate.js';
 import { runExtensionDoctor, type ExtensionDoctorOptions } from './commands/extension/doctor.js';
+import { openMarket } from './lib/net/market.js';
 import { runExtensionInstall, type ExtensionInstallOptions } from './commands/extension/install.js';
 import {
   registerExtension,
@@ -83,9 +84,13 @@ const defaultDeps: ProgramDeps = {
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
   extensionInstall: (opts) =>
-    runExtensionInstall(opts, { ...editDeps, manifest: () => prepareManifest() }),
+    runExtensionInstall(opts, {
+      ...editDeps,
+      manifest: () => prepareManifest(),
+      market: openMarket(),
+    }),
   extensionRemove: (opts) => runExtensionRemove(opts, { ...editDeps, io: terminalIo() }),
-  extensionList: (opts) => runExtensionList(opts),
+  extensionList: (opts) => runExtensionList(opts, openMarket()),
   extensionDoctor: (opts) => runExtensionDoctor(opts),
   extensionCreate: (opts) => runExtensionCreate(opts),
   extensionCheck: (opts) => runExtensionCheck(opts),

@@ -5,7 +5,8 @@ import { addCreate, type ExtensionCreateOptions } from './create.js';
 import { type ExtensionDoctorOptions } from './doctor.js';
 import { type ExtensionInstallOptions } from './install.js';
 import { type ExtensionRemoveOptions } from './remove.js';
-import { printWarnings, rowLines } from './row-lines.js';
+import { printWarnings, rowLines, type Latest } from './row-lines.js';
+import { type Market } from '../../lib/net/market.js';
 import { gatherExtensions, invalidProfileError, type ExtensionsGather } from './rows.js';
 import { addKitTools, type KitActions } from './up.js';
 
@@ -14,17 +15,39 @@ export interface ExtensionListOptions {
 }
 
 // The rows, or the whole report as JSON, on stdout; warnings on stderr.
-export const printReport = ({ status, warnings }: ExtensionsGather, json?: boolean): void => {
-  const rows = status.extensions.length > 0 ? rowLines(status.extensions) : ['no extensions'];
-  if (json) console.log(JSON.stringify(status, null, 2));
+export const printReport = (
+  { status, warnings }: ExtensionsGather,
+  json?: boolean,
+  latest?: Latest
+): void => {
+  const rows =
+    status.extensions.length > 0 ? rowLines(status.extensions, latest) : ['no extensions'];
+  const withLatest = status.extensions.map((row) => ({
+    ...row,
+    latest: latest?.get(row.id ?? '') ?? null,
+  }));
+  if (json)
+    console.log(JSON.stringify(latest ? { ...status, extensions: withLatest } : status, null, 2));
   else for (const text of rows) console.log(text);
   printWarnings(warnings);
 };
 
+// The market's newest version for each installed id it knows; unknown ids are null.
+const newest = async ({ status }: ExtensionsGather, market: Market): Promise<Latest> => {
+  const ids = status.extensions.flatMap((row) => (row.id === null ? [] : [row.id]));
+  const found = await Promise.all(
+    ids.map(async (id) => [id, (await market.latest(id))?.version ?? null] as const)
+  );
+  return new Map(found);
+};
+
 // The rows always print; an invalid profile.json then fails the step (exit 1).
-export const runExtensionList = async (opts: ExtensionListOptions = {}): Promise<void> => {
+export const runExtensionList = async (
+  opts: ExtensionListOptions = {},
+  market?: Market
+): Promise<void> => {
   const gathered = await gatherExtensions();
-  printReport(gathered, opts.json);
+  printReport(gathered, opts.json, market && (await newest(gathered, market)));
   const failure = invalidProfileError(gathered.status.profile);
   if (failure) throw failure;
 };

@@ -147,3 +147,41 @@ describe('agentage extension install', () => {
     expect(run.error).toBe('1 extension failed to load: throws');
   });
 });
+
+describe('agentage extension install with a market', () => {
+  const asking = (answer: { version: string; package: string | null } | null) => {
+    const ids: string[] = [];
+    const market = { latest: async (id: string) => (ids.push(id), answer) };
+    return { ids, deps: { ...deps, market } };
+  };
+
+  test('a bare id takes the version the market names', async ({ dir }) => {
+    const { ids, deps: withMarket } = asking({ version: '1.0.0', package: pkg('hello') });
+    const run = await output(() => runExtensionInstall({ name: 'hello' }, withMarket));
+    expect(run.error).toBeNull();
+    expect(ids).toEqual(['hello']);
+    expect(dir.json('profile.json').extensions).toEqual({ [pkg('hello')]: '1.0.0' });
+  });
+
+  test('an explicit version is unchanged and the market is not asked', async () => {
+    const { ids, deps: withMarket } = asking({ version: '9.9.9', package: pkg('hello') });
+    const run = await output(() => runExtensionInstall({ name: `${pkg('hello')}@^1` }, withMarket));
+    expect(run.error).toBeNull();
+    expect(ids).toEqual([]);
+  });
+
+  test('a private entry is refused on one line and nothing is written', async ({ dir }) => {
+    const { deps: withMarket } = asking({ version: '0.2.1', package: null });
+    const run = await output(() => runExtensionInstall({ name: 'fixture' }, withMarket));
+    expect(run.error).toBe(
+      'fixture: private entry, no npm package; it cannot be installed from npm'
+    );
+    expect(dir.exists('profile.json')).toBe(false);
+  });
+
+  test('an id the market does not know installs as today', async () => {
+    const { deps: withMarket } = asking(null);
+    const run = await output(() => runExtensionInstall({ name: pkg('hello') }, withMarket));
+    expect(run.error).toBeNull();
+  });
+});
