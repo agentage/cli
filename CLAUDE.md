@@ -43,30 +43,41 @@ the extension author guide in [docs/extensions.md](docs/extensions.md). Do not r
 - `src/program.ts` - `createProgram(deps)` factory + `run(argv): Promise<number>` (exit code,
   never `process.exit`); one `withAction` error path for every command, the update hint,
   `NO_COLOR`
-- `src/commands/` - thin command wiring; flow logic takes injected `Deps` for testability: `auth/`
-  (`setup` registration: its flags and help), `status/`, `update/`, `extension/` (`rows.ts` gathers the extension rows, `list.ts`
-  prints them and registers the `extension` group, `doctor.ts` loads once and reports, `row-lines.ts`
-  renders the rows and the `status` lines, `install-load.ts` is the install, load, print rows, fail
-  flow `setup`, `install` and `remove` end with, `create.ts` is `extension create` (a shallow clone of
-  the template, the other parts dropped, the word `template` rewritten to the id), `setup.ts` is the extensions `setup` flow (its only
-  deps are the network ones, npm and the account), `setup-cloud.ts` its signed-in half (account
-  check, machine registration, pull or create, `--disconnect`), `sync.ts` the edit path of
-  `install`, `remove` and `--off` (pull whole, change, install, load, push with one replay),
-  `latest.ts` is `setup --latest` (the diff and summary, the new tree loaded before it becomes
-  current, then the same push with the lock counting),
-  `account.ts` the account dependency (`signedInAccount`: bearer fetch to the API origin plus the account
-  id from introspection; null when signed out), `plan.ts` is `setup --dry-run` and `setup --check`,
-  `install.ts` adds one extension (npm is its only injected dependency; a kit-built working copy prints `linked`), `remove.ts` takes one out (`--purge` asks
-  through an `isTTY`/`prompt` injected dependency), `secrets-prompt.ts` asks for or lists missing secrets
-  (`isTTY`/`prompt` are its only injected dependencies), `delegate.ts` registers one stub per contributed command and
-  hands it to the extension), `build.ts` is `extension check` (`--write` over the kit's `writeContracts`) and `extension build`: thin commands over the kit's
-  `@agentage/extension/tool`, imported on use; `kit-tool.ts` is that one injected dependency (`check`, `checkLines`, `build`,
-  `buildLines`, `runCommand`, `checkCli`, `up`, `down`, `token`, `readManifest`, typed by the kit; `loadKitTool`,
-  `kitCheck`), `release.ts` is `extension release` (preflight, guard, `build --push`, the release
-  asset, npm publish or stage) over `release-guard.ts` (the guard and the bounded `execIn` injected dependency), `up.ts` is `extension up`, `down` and `token` over it, `kit-commands.ts` registers a
-  kit-built extension's `agentage {id}` group and top-level verbs (its `stub` is the one every
-  delegated command uses); `status/account-status.ts`
-  is what `status` asks the account (seen, the profile's etag)
+- `src/commands/` - thin command wiring. Flow logic takes injected `Deps` for testability.
+  - `auth/`: `setup` registration, its flags and help. `status/`: `status`, with
+    `account-status.ts` asking the account (seen, the profile's etag). `update/`: `update`.
+  - `extension/` holds the rest. `rows.ts` gathers the extension rows; `list.ts` prints them and
+    registers the `extension` group; `doctor.ts` loads once and reports; `row-lines.ts` renders
+    the rows and the `status` lines.
+  - `install-load.ts` is the flow `setup`, `install` and `remove` end with: install, load, print
+    rows, fail. `install.ts` adds one extension; npm is its only injected dependency, and a
+    kit-built working copy prints `linked`. `remove.ts` takes one out; `--purge` asks through an
+    injected `isTTY`/`prompt`.
+  - `create.ts` is `extension create`: a shallow clone of the template, the other parts dropped,
+    the word `template` rewritten to the id.
+  - `setup.ts` is the extensions `setup` flow; its only deps are the network ones, npm and the
+    account. `setup-cloud.ts` is its signed-in half: account check, machine registration, pull or
+    create, `--disconnect`. `plan.ts` is `setup --dry-run` and `setup --check`.
+  - `sync.ts` is the edit path of `install`, `remove` and `--off`: pull whole, change, install,
+    load, push with one replay. `latest.ts` is `setup --latest`: the diff and summary, the new
+    tree loaded before it becomes current, then the same push with the lock counting.
+  - `account.ts` is the account dependency. `signedInAccount` does a bearer fetch to the API
+    origin plus the account id from introspection, and gives null when signed out.
+  - `secrets-prompt.ts` asks for or lists missing secrets; `isTTY`/`prompt` are its only injected
+    dependencies. `delegate.ts` registers one stub per contributed command and hands it to the
+    extension.
+  - `build.ts` is `extension check` (`--write` over the kit's `writeContracts`) and
+    `extension build`. Both are thin commands over the kit's `@agentage/extension/tool`, imported
+    on use.
+  - `kit-tool.ts` is that one injected dependency (`check`, `checkLines`, `build`, `buildLines`,
+    `runCommand`, `checkCli`, `up`, `down`, `token`, `readManifest`, typed by the kit; `loadKitTool`,
+    `kitCheck`).
+  - `release.ts` is `extension release`: preflight, guard, `build --push`, the release asset, npm
+    publish or stage. It sits over `release-guard.ts`, the guard and the bounded `execIn`
+    injected dependency.
+  - `up.ts` is `extension up`, `down` and `token` over the kit. `kit-commands.ts` registers a
+    kit-built extension's `agentage {id}` group and top-level verbs; its `stub` is the one every
+    delegated command uses.
 - `src/lib/` - shared library, grouped by domain:
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,
@@ -166,13 +177,14 @@ Drives the built `dist/cli.js` as a subprocess. Tiers are tags in the test title
   `e2e/core/cli.ts` (see `e2e/core/README.md`).
   Run via `npm run build && npm run test:e2e -- --grep @offline`; `@smoke` runs by manual dispatch
   of `e2e.yml` with a target.
-  Before a publish, `release.yml` runs agentage/e2e's cli tier (`--project=cli --grep @smoke`, what
-  verify-prod runs on the published cli) against this commit through `_e2e-cli.yml`:
-  `scripts/candidate-registry.mjs` serves the packed tarball as npm `latest` on loopback and proxies
-  the rest; a red tier blocks the publish (fix, then dispatch `release.yml`; the tier reads prod
-  agentage.io, so a prod outage blocks it too). `e2e.yml` runs the same tier on every PR, not
-  required: a cli change the e2e tier pins (a help line, a renamed command) needs its agentage/e2e
-  test first, version-gated on the release that changes it, and is red on its PR until then.
+  Before a publish, `release.yml` runs agentage/e2e's cli tier against this commit through
+  `_e2e-cli.yml`. The tier is `--project=cli --grep @smoke`, what verify-prod runs on the published
+  cli. `scripts/candidate-registry.mjs` serves the packed tarball as npm `latest` on loopback and
+  proxies the rest. A red tier blocks the publish: fix, then dispatch `release.yml`. The tier reads
+  prod agentage.io, so a prod outage blocks it too.
+  `e2e.yml` runs the same tier on every PR, not required. A cli change the e2e tier pins (a help
+  line, a renamed command) needs its agentage/e2e test first, version-gated on the release that
+  changes it. Its PR is red until then.
 
 ## Conventions
 

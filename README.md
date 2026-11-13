@@ -2,10 +2,6 @@
 
 ![Connect this machine to agentage from the terminal](https://github.com/agentage/cli/raw/master/docs/banner.svg)
 
-For people who use agentage. Install this package once per machine to sign in to your
-[agentage](https://agentage.io) account and to install extensions. Extensions add commands to
-the CLI. Install, list, run and remove extensions needs no sign-in.
-
 ```bash
 npm install -g @agentage/cli && agentage setup
 ```
@@ -22,23 +18,21 @@ memory included, arrives as an extension the CLI installs for you.
 
 ## Get started
 
-Needs Node.js 22 or newer. `extension create`, `build`, `up` and `release` also need Docker and
-git (see [Extensions](#extensions)).
+Needs Node.js 22 or newer. Install, list, run and remove need nothing else. For your own
+extensions, `create` needs git; `build`, `up` and `release` need Docker and git (see
+[Write and run your own extension](#write-and-run-your-own-extension)).
 
 ```bash
 npm install -g @agentage/cli
 agentage setup
 ```
 
-`setup` opens your browser, you sign in, and the session is stored in `~/.agentage`. Then:
+`setup` opens your browser, you sign in, and the session is stored in `~/.agentage`. Check it
+with `agentage status`.
 
-```bash
-agentage --version
-agentage status
-```
-
-You can skip `setup` if you only want extensions: `agentage extension install probe` works
-without a sign-in. Sign-in adds your account's profile and the same extensions on every machine.
+You can skip `setup` if you only want extensions: installing, listing, running and removing them
+needs no sign-in, so `agentage extension install probe` works without one. Sign-in adds your
+account's profile and the same extensions on every machine.
 
 ### On a server or in CI (no browser)
 
@@ -49,12 +43,7 @@ AGENTAGE_TOKEN=aga_... agentage status   # or use a personal access token
 
 The sign-in URL sends the browser back to `http://localhost:<port>/callback` on this machine, so
 open it in a browser on this machine. On a server, use a personal access token instead. Create one
-in the dashboard under **Settings -> API tokens**. Plain `setup` ignores `AGENTAGE_TOKEN`.
-
-### Then
-
-- `agentage status --json` in scripts. `status` exits 0 even when signed out; read `auth.signedIn`.
-- `agentage update` whenever a newer version is published; `status` tells you when.
+in the dashboard under **Settings -> API tokens**. Plain `setup` does not sign in with `AGENTAGE_TOKEN`; only its final status step uses it.
 
 ## Commands
 
@@ -172,7 +161,8 @@ extension code loads.
 `extension create <id> [part...]` makes `./extension-<id>` from the template. A part is one piece
 of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`.
 
-1. Install Docker and git. `up`, `build` and `release` use Docker and need a git commit.
+1. Install git for `create`. `build`, `up` and `release` also need Docker, and `build` needs the
+   tree committed.
 2. Inside the extension folder, run `npx agentage extension up`. Use `npx agentage`, not the
    global `agentage`: the global one can be older than the version the project pins and lack
    the command.
@@ -187,19 +177,16 @@ of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`.
 
 Everything the CLI keeps is in the config directory, `~/.agentage` by default:
 
-| Path                            | What                                                                                           |
-| ------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `~/.agentage/auth.json`         | your sign-in, owner-only                                                                       |
-| `~/.agentage/profile.json`      | the profile: what this account wants                                                           |
-| `~/.agentage/machine.json`      | this machine's id, name, development extensions and account                                    |
-| `~/.agentage/extensions/`       | installed extensions: `package.json`, the lock, `trees/<hash>/`; `current` names the live tree |
-| `~/.agentage/state/`            | the last run of each extension                                                                 |
-| `~/.agentage/commands.json`     | which extension holds each top-level command                                                   |
-| `~/.agentage/update-check.json` | the cached result of the update check                                                          |
-| `~/.agentage/secrets.json`      | extension secrets, owner-only                                                                  |
-| `~/.agentage/logs/<id>.log`     | the log of each extension                                                                      |
-| `~/.agentage/data/<id>/`        | what each extension keeps                                                                      |
-| `~/.agentage/cache/<id>/`       | what each extension may rebuild                                                                |
+| Path                        | What                                                                                           |
+| --------------------------- | ---------------------------------------------------------------------------------------------- |
+| `~/.agentage/auth.json`     | your sign-in, owner-only                                                                       |
+| `~/.agentage/profile.json`  | the profile: what this account wants                                                           |
+| `~/.agentage/machine.json`  | this machine's id, name, development extensions and account                                    |
+| `~/.agentage/extensions/`   | installed extensions: `package.json`, the lock, `trees/<hash>/`; `current` names the live tree |
+| `~/.agentage/state/`        | the last run of each extension                                                                 |
+| `~/.agentage/commands.json` | which extension holds each top-level command                                                   |
+| `~/.agentage/secrets.json`  | extension secrets, owner-only                                                                  |
+| `~/.agentage/data/<id>/`    | what each extension keeps                                                                      |
 
 `status` writes `machine.json` even before you sign in.
 
