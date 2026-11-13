@@ -14,9 +14,11 @@ the extension author guide in [docs/extensions.md](docs/extensions.md). Do not r
 - Create, up and token of a kit-built extension, its ports: `README.md` "Write and run your own
   extension"; flags in `docs/reference.md` "extension up, down and token".
 - CI jobs and coverage floors: `.github/workflows/ci.yml`, `vitest.config.ts`.
-- Release and publish rules: `.github/workflows/release.yml`, `prepare-release.yml`.
+- Release and publish rules: `.github/workflows/release.yml`,
+  `.github/workflows/prepare-release.yml`.
 - e2e scenarios and tiers: `e2e/core/README.md`, `.github/workflows/e2e.yml`.
-- Read the file named here before you read `src/`.
+
+Read the file named here before you read `src/`.
 
 ## How the core works
 

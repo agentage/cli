@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Exec } from './release-guard.js';
 
-const LABEL = '{{.Label "com.docker.compose.project"}}';
+const FORMAT = '{{.Label "com.docker.compose.project"}}\t{{.Ports}}';
 const HERE = 'run agentage extension up here';
 
 // The compose project `up` rendered in this folder: agentage-{id}-{folder hash}.
@@ -16,9 +16,10 @@ const ownProject = async (dir: string): Promise<string | undefined> => {
 
 // The live signal: the compose project of the container that publishes the dev issuer's port.
 const issuerProject = async (exec: Exec): Promise<string> => {
-  const ran = await exec('docker', ['ps', '--filter', 'publish=4281', '--format', LABEL]);
+  const ran = await exec('docker', ['ps', '--format', FORMAT]);
   if (!ran.ok) throw new Error(`cannot ask docker which stack is up: ${ran.err}`);
-  return ran.out.trim().split('\n')[0] ?? '';
+  const row = ran.out.split('\n').find((line) => line.includes(':4281->'));
+  return row?.split('\t')[0] ?? '';
 };
 
 const named = (project: string): string => {

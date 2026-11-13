@@ -30,12 +30,13 @@ const fakeKit = (fail?: Error) => {
   return { tool: async () => tool as KitTool, calls };
 };
 
-// docker as a seam: the compose project of the container publishing 4281, '' for none.
+// docker as a seam: another container, then the one publishing 4281 ('' for none).
 const holding = (project: string, ok = true) => {
   const asked: string[][] = [];
   const exec: Exec = async (_cmd, args) => {
     asked.push(args);
-    return { ok, out: `${project}\n`, err: ok ? '' : 'Cannot connect to the Docker daemon' };
+    const rows = `other\t0.0.0.0:5432->5432/tcp\n${project ? `${project}\t127.0.0.1:4281->3000/tcp\n` : ''}`;
+    return { ok, out: rows, err: ok ? '' : 'Cannot connect to the Docker daemon' };
   };
   return { exec, asked };
 };
@@ -68,13 +69,19 @@ describe('extension up, down and token: thin commands over the kit tool', () => 
     const run = await output(() =>
       runExtensionToken({ scope: 'market:write', dir: dir.at('market') }, tool, exec)
     );
-    expect(asked[0]).toEqual(expect.arrayContaining(['ps', '--filter', 'publish=4281']));
+    expect(asked[0]?.slice(0, 2)).toEqual(['ps', '--format']);
     expect(calls).toEqual([['token', { scope: 'market:write' }]]);
     expect(run.stdout).toBe('eyJhbGciOi.dev.token');
   });
 
   test.for([
     ['another extension is up', 'market', 'agentage-probe-ab1613a3', OTHER],
+    [
+      'a legacy project is up',
+      'market',
+      'agentage-probe',
+      `the stack up is compose project agentage-probe, ${HERE}`,
+    ],
     [
       'this folder was never up',
       'fresh',
