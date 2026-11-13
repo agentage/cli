@@ -19,8 +19,8 @@ memory included, arrives as an extension the CLI installs for you.
 ## Get started
 
 Needs Node.js 22 or newer. Install, list, run and remove need nothing else. For your own
-extensions, `create` needs git; `build`, `up` and `release` need Docker and git (see
-[Write and run your own extension](#write-and-run-your-own-extension)).
+extensions, `create` needs git and network. `build` and `up` need Docker and git, and `release` also
+needs the `gh` CLI (see [Write and run your own extension](#write-and-run-your-own-extension)).
 
 ```bash
 npm install -g @agentage/cli
@@ -43,7 +43,7 @@ AGENTAGE_TOKEN=aga_... agentage status   # or use a personal access token
 
 The sign-in URL sends the browser back to `http://localhost:<port>/callback` on this machine, so
 open it in a browser on this machine. On a server, use a personal access token instead. Create one
-in the dashboard under **Settings -> API tokens**. Plain `setup` does not sign in with `AGENTAGE_TOKEN`; only its final status step uses it.
+in the dashboard under **Settings -> API tokens**. Plain `setup` does not sign in with `AGENTAGE_TOKEN`. Its account step and its status step use it.
 
 ## Commands
 
@@ -161,8 +161,8 @@ extension code loads.
 `extension create <id> [part...]` makes `./extension-<id>` from the template. A part is one piece
 of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`.
 
-1. Install git for `create`. `build`, `up` and `release` also need Docker, and `build` needs the
-   tree committed.
+1. Install git for `create`, which clones the template from GitHub. `build`, `up` and `release` also
+   need Docker. `build` needs a committed, clean tree. `up` needs one commit.
 2. Inside the extension folder, run `npx agentage extension up`. Use `npx agentage`, not the
    global `agentage`: the global one can be older than the version the project pins and lack
    the command.
