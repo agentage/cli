@@ -2,7 +2,8 @@
 
 The agentage CLI core. Commands: `setup` (OAuth sign-in), `status`, `update`, `extension`. Human
 docs are in [README.md](README.md); flags and exit codes in [docs/reference.md](docs/reference.md);
-the extension author guide in [docs/extensions.md](docs/extensions.md). Do not repeat them here.
+the extension author guide in [docs/extensions.md](docs/extensions.md); profiles in
+[docs/profiles.md](docs/profiles.md). Do not repeat them here.
 
 ## Where facts live
 
@@ -11,8 +12,10 @@ the extension author guide in [docs/extensions.md](docs/extensions.md). Do not r
 - Install, sign-in, the command list, the config dir layout: `README.md` "Get started",
   "Commands", "Where things live".
 - Writing an extension, `ctx`, lifecycle, kit-built packages: `docs/extensions.md`.
-- Create, up and token of a kit-built extension, its ports: `README.md` "Write and run your own
-  extension"; flags in `docs/reference.md` "extension up, down and token".
+- Create, up and token of a kit-built extension, its ports: `docs/extensions.md` "Run it locally"
+  (summary in `README.md` "Write and run your own extension"); flags in `docs/reference.md`
+  "extension up, down and token".
+- Profiles, extension states, the plan, short names, `setup --latest`: `docs/profiles.md`.
 - CI jobs and coverage floors: `.github/workflows/ci.yml`, `vitest.config.ts`.
 - Release and publish rules: `.github/workflows/release.yml`,
   `.github/workflows/prepare-release.yml`.

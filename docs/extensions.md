@@ -295,26 +295,27 @@ copy, and `agentage extension up` runs the whole package on Docker.
 
 ## Author commands
 
-| Command                                      | What it does                                                     |
-| -------------------------------------------- | ---------------------------------------------------------------- |
-| `agentage extension create <id> [part...]`   | New `./extension-<id>` from the template, only the parts named   |
-| `agentage extension check [dir] [--write]`   | Check that an extension package conforms (the six kit rules)     |
-| `agentage extension build [--push]`          | Build the part images of a committed tree; push with digests     |
-| `agentage extension release`                 | Release from a tag in CI: guard, images, record, npm package     |
-| `agentage extension up` / `down`             | Run an extension package on this machine with Docker, then stop  |
-| `agentage extension token --scope <scope>`   | Print a token from the dev issuer `extension up` started         |
+| Command                                                   | What it does                                                             |
+| --------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `agentage extension create <id> [part...]`                | New `./extension-<id>` from the template, only the parts named           |
+| `agentage extension check [dir] [--write]`                | Check that an extension package conforms (the six kit rules)             |
+| `agentage extension build [--push]`                       | Build the part images of a committed tree; push with digests             |
+| `agentage extension release`                              | Release from a tag in CI: guard, images, record, npm package             |
+| `agentage extension up` / `down`                          | Run an extension package on this machine with Docker, then stop          |
+| `agentage extension token --scope <scope> [--dir <path>]` | Print a token from the dev issuer `extension up` started for that folder |
 
 ## Run it locally
 
 `extension create <id> [part...]` makes `./extension-<id>` from the template. A part is one piece
-of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`. With fewer than all
-seven parts, `create` sets the CI floor `MIN_EXECUTED` to 1; set it to the gate's count after the
-first green run. When it cannot find that line, it says so and you set it by hand.
+of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`. With fewer than seven
+parts, `create` sets `MIN_EXECUTED` to 1. `MIN_EXECUTED` is the least number of e2e tests that CI
+must run. After the first green run, set it to the real count. When `create` cannot find that
+line, it says so and you set it by hand.
 
 1. Install git for `create`, which clones the template from GitHub. `build`, `up` and `release` also
    need Docker. `build` needs a committed, clean tree. `up` needs one commit.
 2. Inside the extension folder, run `npx agentage extension up`. Use `npx agentage`, not the
-   global `agentage`: the global one can be older than the version the project pins and lack
+   global `agentage`. The global one can be older than the version the project pins, and lack
    the command.
 3. `up` needs ports 4280 (gateway) and 4281 (token issuer) free. When another working copy holds
    them, `up` refuses and names its compose project. Run `npx agentage extension down` in that

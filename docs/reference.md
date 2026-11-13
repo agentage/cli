@@ -17,9 +17,9 @@ No passwords touch the terminal; tokens are stored in `~/.agentage/auth.json`
 (mode 0600). Running `setup` while signed in validates the session and prints status
 instead of starting a new sign-in; an expired session falls through to a fresh sign-in.
 
-The sign-in URL sends the browser back to `http://localhost:<port>/callback` on this machine, so
-open it in a browser on this machine. On a server, use a personal access token instead. Create one
-in the dashboard under **Settings -> API tokens**. Plain `setup` does not sign in with `AGENTAGE_TOKEN`. Its account step and its status step use it.
+After sign-in, the browser returns to `http://localhost:<port>/callback` on this machine. So
+open the sign-in URL in a browser on this same machine. On a server, use a personal access token
+instead (see [Token auth](#token-auth-ci-and-headless)).
 
 `setup` also installs extensions:
 
@@ -613,7 +613,8 @@ agentage update --check   # report whether an update is available, don't install
 
 Machines without a browser authenticate with a personal access token. Mint one in the
 dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or pass
-`--token aga_...` per command. A token takes precedence over a stored sign-in. Plain `setup` does not sign in with it; its account step and status step use it.
+`--token aga_...` per command. A token takes precedence over a stored sign-in. `setup` never
+signs in with `AGENTAGE_TOKEN`. It uses the token only to read your account and to show status.
 
 ## Exit codes
 

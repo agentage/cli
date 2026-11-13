@@ -1,13 +1,21 @@
 # Profiles and extensions on a machine
 
+A **profile** is the list of extensions your account wants: package names, version ranges, and
+which ones are off on which machine. The CLI brings each machine to its profile. This page
+explains how. Flags and exit codes are in [`reference.md`](reference.md).
+
+## The profile in your account
+
 Signed in, `setup` reads the profile your account holds, so every machine you set up gets the same
 extensions. `extension install` and `extension remove` save the change there. When your account
 has no profile, `setup` says so on one line and carries on. Each machine you run `setup` on
 appears in your account as one of its machines.
 
-Use `agentage extension install probe` for a short name: it means `@agentage/extension-probe`,
-else `agentage-extension-probe`. With a bare name, the command asks the market (the extension
-directory of the site) for the newest version. When the market does not answer, it prints
+## Install, run and remove
+
+Use `agentage extension install probe` for a short name. It means `@agentage/extension-probe`,
+else `agentage-extension-probe`. With a bare name, the command asks the market for the newest
+version. The market is the extension directory of the site. When the market does not answer, it prints
 `market unavailable, versions not checked` and installs through npm. That line is harmless.
 
 To run extension commands, use `agentage <command>` or `agentage <id> <command>`. Install is
@@ -23,10 +31,14 @@ agentage ping                                      # a command an installed exte
 agentage probe ping                                # the same, by its extension id
 ```
 
+## Command names
+
 An extension built on the extension kit (the `@agentage/extension` library) lists its commands in
-its manifest. Each runs as `agentage <command>` and always as `agentage <id> <command>`. When the
-name is a core command, an extension id or a command an earlier install took, only
-`agentage <id> <command>` runs it, and the install says so.
+its manifest. Each runs as `agentage <command>` and always as `agentage <id> <command>`. A command
+name can already be taken: by a core command, an extension id or another extension's earlier
+install. Then only `agentage <id> <command>` runs it. The install tells you when this happens.
+
+## States
 
 `extension list` shows one state per extension:
 
@@ -40,15 +52,21 @@ name is a core command, an extension id or a command an earlier install took, on
 
 `last run: ok` is the result of the last load, not the state.
 
+## The plan
+
 The plan is what `setup` would change, one line per extension (`+ add`, `~ update`, `- remove`,
 `o off`) and a summary such as `plan: 1 to add, 0 to update, 0 to remove, 0 off, 2 unchanged`.
-`setup --dry-run` prints it, `setup --check` exits 1 when anything would change, `extension list`
-shows it per extension and `status` sums it up, for example `extensions 2 (1 to add)`.
+`setup --dry-run` prints it. `setup --check` exits 1 when anything would change. `extension list`
+shows it per extension. `status` sums it up, for example `extensions 2 (1 to add)`.
+
+## Updates
 
 `setup --latest` moves each extension to the newest version its range allows and prints one line
-per change, such as `~ update @agentage/example 1.0.0 -> 1.0.1`. The new versions take over only
-after every extension loaded from them cleanly; until then the installed ones stay. A version
+per change, such as `~ update @agentage/example 1.0.0 -> 1.0.1`. The new versions are used only
+when every extension loads cleanly from them. Until then, the old versions stay in use. A version
 that needs a newer extension API than this CLI has is skipped, here and by `extension install`.
+
+## The profile file
 
 A profile is a JSON file that maps package names to version ranges. `registries` is optional.
 It routes a scope to another npm-compatible registry. Everything else comes from npm's public
