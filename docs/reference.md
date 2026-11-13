@@ -452,7 +452,7 @@ full commit sha: `COMMIT_SHA`, else `GITHUB_SHA`, else the checkout's `HEAD`) an
 `org.opencontainers.image.created`. `--push` pushes each image (run `docker login ghcr.io` first)
 and writes the build record `dist/agentage-extension.json` with every image by digest;
 `--registry <host/owner>` points at another registry. Prints one line per image, then the record
-path. Needs `docker`. Exits 1 when the manifest is invalid or a build or push fails.
+path. Needs `docker` and git, and a committed tree with no changes. Exits 1 when the manifest is invalid or a build or push fails.
 
 ## extension release
 
@@ -473,7 +473,7 @@ missing). Last, `npm publish --access public --provenance --ignore-scripts`, ski
 when the direct publish is not authorized, or `NPM_TOKEN` is set and the name is new, it runs `npm
 stage publish` instead. `GH_TOKEN` (or `GITHUB_TOKEN`) goes only to `gh` and `NPM_TOKEN` only to
 npm; both leave the environment first, so the image build and npm lifecycle scripts never see
-them. A package with `"private": true` skips npm entirely (no `npm --version`, `view` or `publish`) and prints `PASS npm: private package, not published`. Needs `docker login` to the registry first.
+them. A package with `"private": true` skips npm entirely (no `npm --version`, `view` or `publish`) and prints `PASS npm: private package, not published`. Needs git, `docker` and the `gh` CLI, and npm only for a package that is not private. Needs `docker login` to the registry first.
 
 ## extension up, down and token
 
@@ -493,7 +493,7 @@ it, the last once every part is healthy. `down` removes its containers, network 
 (`--keep-data` keeps the volume). `token --scope <scope> [--issuer <url>]` prints a token from
 the dev issuer `up` started (default `http://localhost:4281`), trusted only by `up`. Run `up` first: `token` reads whichever issuer holds that port; an issuer
 that is not an `http:` or `https:` URL is a usage error. Each exits 1 with the kit's message when
-its step fails. `up` needs ports 4280 and 4281 free and refuses when another working copy holds them.
+its step fails. `up` needs ports 4280 and 4281 free and refuses when another working copy holds them. It needs git with one commit, or `COMMIT_SHA` or `GITHUB_SHA` set. It does not need a clean tree.
 
 ## Extension commands
 
@@ -607,7 +607,7 @@ agentage update --check   # report whether an update is available, don't install
 
 Machines without a browser authenticate with a personal access token. Mint one in the
 dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or pass
-`--token aga_...` per command. A token takes precedence over a stored sign-in.
+`--token aga_...` per command. A token takes precedence over a stored sign-in. Plain `setup` does not sign in with it; its account step and status step use it.
 
 ## Exit codes
 
