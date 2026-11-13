@@ -18,8 +18,9 @@ arrives as an extension.
 
 ## Get started
 
-`agentage setup` opens your browser for sign-in. Check the session with `agentage status`. Extensions need no sign-in. Sign-in adds your account's profile, so every
-machine gets the same extensions.
+`agentage setup` opens your browser for sign-in. Check the session with `agentage status`.
+Extensions need no sign-in. Sign-in adds your account's profile, so every machine gets the same
+extensions.
 
 ### On a server or in CI (no browser)
 
