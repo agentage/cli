@@ -613,8 +613,8 @@ agentage update --check   # report whether an update is available, don't install
 
 Machines without a browser authenticate with a personal access token. Mint one in the
 dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or pass
-`--token aga_...` per command. A token takes precedence over a stored sign-in. `setup` never
-signs in with `AGENTAGE_TOKEN`. It uses the token only to read your account and to show status.
+`--token aga_...` per command. A token takes precedence over a stored sign-in. Plain `setup`
+never signs in with `AGENTAGE_TOKEN`. Its account step and its status step use the token.
 
 ## Exit codes
 

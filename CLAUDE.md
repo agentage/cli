@@ -10,7 +10,7 @@ the extension author guide in [docs/extensions.md](docs/extensions.md); profiles
 - Flags, exit codes, environment variables per command: `docs/reference.md` (one section per
   command, "Exit codes", "Environment").
 - Install, sign-in, the command list, the config dir layout: `README.md` "Get started",
-  "Commands", "Where things live".
+  "Commands", "Extensions", "Where things live".
 - Writing an extension, `ctx`, lifecycle, kit-built packages: `docs/extensions.md`.
 - Create, up and token of a kit-built extension, its ports: `docs/extensions.md` "Run it locally"
   (summary in `README.md` "Write and run your own extension"); flags in `docs/reference.md`

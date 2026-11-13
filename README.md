@@ -4,7 +4,7 @@
 
 The agentage CLI connects each machine you use to your agentage account, a shared place for your
 AI tools. Use it from a terminal, a server or CI. It also installs extensions: npm packages that
-add commands to `agentage`.
+add commands to `agentage`. You need Node.js 22 or newer.
 
 ```bash
 npm install -g @agentage/cli && agentage setup
@@ -13,20 +13,12 @@ npm install -g @agentage/cli && agentage setup
 ## What is this?
 
 The CLI stays **small**: sign-in, status, update and an extension manager. Sign-in uses OAuth 2.1
-with PKCE, so you type nothing secret into the terminal. Everything else, memory included,
+with PKCE: you type nothing secret. Everything else, memory included,
 arrives as an extension.
 
 ## Get started
 
-You need Node.js 22 or newer.
-
-```bash
-npm install -g @agentage/cli
-agentage setup
-```
-
-`setup` opens your browser for sign-in and stores the session in `~/.agentage`. Check it with
-`agentage status`. Extensions need no sign-in. Sign-in adds your account's profile, so every
+`agentage setup` opens your browser for sign-in. Check the session with `agentage status`. Extensions need no sign-in. Sign-in adds your account's profile, so every
 machine gets the same extensions.
 
 ### On a server or in CI (no browser)
@@ -53,38 +45,43 @@ More: [docs/reference.md](docs/reference.md#token-auth-ci-and-headless).
 | `agentage update`             | Install the latest published version (`--check` only reports)                 |
 | `agentage extension ...`      | Manage extensions, see [Extensions](#extensions)                              |
 
+More: [author commands](docs/extensions.md#author-commands).
+
 ## Extensions
 
-- A **profile** says what your account wants: which extensions, which version ranges, and which
-  are off on which machine.
-- `setup` installs what the profile names, loads each extension once and prints `ok` or why not.
+- A **profile** lists what your account wants: extensions, version ranges, and which are off
+  per machine.
+- `setup` installs the profile, loads each extension once and prints `ok` or why not.
 - `extension install` and `remove` edit the profile, then do the same.
-- Nothing runs on a timer. The state changes only when you run a command.
+- Nothing runs on a timer.
 
 ```bash
 agentage extension install probe        # short name for @agentage/extension-probe
-agentage extension list                 # state, version and commands of each extension
+agentage extension list                 # one row per extension
 agentage probe ping                     # run a command by its extension id
 agentage extension remove probe         # take it out again
+agentage extension doctor               # load each once, refresh states
+agentage setup --latest                 # newest versions the ranges allow
 agentage setup --profile profile.json   # install a profile file, no sign-in
 ```
 
-Extensions run in the CLI process with your privileges, so install only ones you trust. npm runs
-with `--ignore-scripts`. The account token leaves the environment before extension code loads.
+Extensions run with your privileges, so install only ones you trust. npm runs with
+`--ignore-scripts`. The account token leaves the environment before extension code loads.
 
 More: [docs/profiles.md](docs/profiles.md).
 
 ### Write and run your own extension
 
-`create` needs git and network: it clones the template from GitHub. `build` and `up` also need
-Docker, and `release` the `gh` CLI.
+`create` needs git and network to clone the template from GitHub. `build` and `up` also need
+Docker; `release` needs the `gh` CLI.
 
 ```bash
 agentage extension create example api   # makes ./extension-example with the api part
-cd extension-example
+cd extension-example && npm ci          # installs the CLI version the project pins
+git init -q && git add -A && git commit -qm init   # up needs one commit
 npx agentage extension up               # runs it on this machine with Docker
 npx agentage extension token --scope example:read
-npx agentage extension down             # removes the containers, network and store volume
+npx agentage extension down             # removes what up started
 ```
 
 In the extension folder, use `npx agentage`: the global one can be older than the project's.
@@ -93,7 +90,7 @@ More: [docs/extensions.md](docs/extensions.md#run-it-locally).
 
 ## Where things live
 
-The CLI keeps everything in the config directory, `~/.agentage` by default:
+Everything lives in the config directory, `~/.agentage` by default:
 
 | Path                        | What                                                |
 | --------------------------- | --------------------------------------------------- |
@@ -120,13 +117,13 @@ delete `~/.agentage`.
 
 ## Configuration
 
-| Env                       | Default               | Purpose                                                              |
-| ------------------------- | --------------------- | -------------------------------------------------------------------- |
-| `AGENTAGE_SITE_FQDN`      | `agentage.io`         | Target host                                                          |
-| `AGENTAGE_CONFIG_DIR`     | `~/.agentage`         | Config and credentials directory                                     |
-| `AGENTAGE_TOKEN`          | -                     | Personal access token for CI and headless machines                   |
-| `AGENTAGE_EXTENSIONS_DIR` | `<config>/extensions` | Where extensions are installed (`<config>` is `AGENTAGE_CONFIG_DIR`) |
-| `NO_COLOR`                | -                     | Disable colored output                                               |
+| Env                       | Default               | Purpose                                            |
+| ------------------------- | --------------------- | -------------------------------------------------- |
+| `AGENTAGE_SITE_FQDN`      | `agentage.io`         | Target host                                        |
+| `AGENTAGE_CONFIG_DIR`     | `~/.agentage`         | Config and credentials directory                   |
+| `AGENTAGE_TOKEN`          | -                     | Personal access token for CI and headless machines |
+| `AGENTAGE_EXTENSIONS_DIR` | `<config>/extensions` | Where extensions are installed                     |
+| `NO_COLOR`                | -                     | Disable colored output                             |
 
 ## Develop
 

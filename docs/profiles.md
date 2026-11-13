@@ -1,8 +1,8 @@
 # Profiles and extensions on a machine
 
 A **profile** is the list of extensions your account wants: package names, version ranges, and
-which ones are off on which machine. The CLI brings each machine to its profile. This page
-explains how. Flags and exit codes are in [`reference.md`](reference.md).
+which ones are off on which machine. The CLI brings each machine to its profile. Extensions
+are on by default. A machine whose profile names no extensions has none. Flags and exit codes are in [`reference.md`](reference.md).
 
 ## The profile in your account
 
