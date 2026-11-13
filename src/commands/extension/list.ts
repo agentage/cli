@@ -74,8 +74,9 @@ dev extension: kept in machine.json by its real path and loaded on this machine 
 of an installed copy of the same package; http:, file:, npm: and github: are refused; an https:
 tarball URL and a package name are used as written (a name without @<range> is pinned to ^ its
 newest version whose engines.agentage fits this CLI's extension API, or the kit's version for a
-package built on the extension kit, naming each newer version it skipped); a short name like
-memory is @agentage/extension-memory, else agentage-extension-memory. A package goes into
+package built on the extension kit, naming each newer version it skipped); a bare id like memory
+asks the market first and takes its latest version (a private entry has no npm package and is
+refused), else it is @agentage/extension-memory, then agentage-extension-memory. A package goes into
 profile.json (created from the default profile when absent), from the registry the profile
 names for its scope; --off keeps it from loading on this machine. Then installs and loads like
 setup, and exits 1 when an extension failed. Never signs in. On a machine whose profile comes
