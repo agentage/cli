@@ -104,6 +104,29 @@ describe('extension create', () => {
       expect(existsSync(join(root, 'extension-market', dir))).toBe(false);
   });
 
+  test('a subset whose ci.yml has no quoted MIN_EXECUTED line says to set it by hand', async () => {
+    const src = url.slice('file://'.length);
+    const unquoted = '        env:\n          MIN_EXECUTED: 25\n';
+    writeFileSync(join(src, '.github/workflows/ci.yml'), unquoted);
+    execFileSync('git', [
+      '-C',
+      src,
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'user.name=t',
+      'commit',
+      '-qam',
+      'x',
+    ]);
+    const printed = await create('market', ['api']);
+    expect(printed.error).toBeNull();
+    expect(printed.lines.at(-1)).toBe(
+      " ci        no MIN_EXECUTED line found in .github/workflows/ci.yml: set it by hand to the gate's count"
+    );
+    expect(read('.github/workflows/ci.yml')).toBe(unquoted);
+  });
+
   test('no parts keeps all seven, the store with its migrations and seeds', async () => {
     const printed = await create('market');
     expect(printed.lines[1]).toBe(` kept      ${PARTS.join(', ')}`);

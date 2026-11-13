@@ -41,7 +41,7 @@ export const runExtensionToken = async (
   tool: LoadKitTool = loadKitTool,
   exec: Exec = execIn('.', 10)
 ): Promise<void> => {
-  if (!opts.issuer) await assertOwnStack(dir, exec);
+  if (!opts.issuer) await assertOwnStack(dir, exec, tool);
   const { token } = await tool();
   console.log(await token(opts));
 };

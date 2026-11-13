@@ -161,7 +161,7 @@ extension code loads.
 `extension create <id> [part...]` makes `./extension-<id>` from the template. A part is one piece
 of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`. With fewer than all
 seven parts, `create` sets the CI floor `MIN_EXECUTED` to 1; set it to the gate's count after the
-first green run.
+first green run. When it cannot find that line, it says so and you set it by hand.
 
 1. Install git for `create`, which clones the template from GitHub. `build`, `up` and `release` also
    need Docker. `build` needs a committed, clean tree. `up` needs one commit.
@@ -173,6 +173,7 @@ first green run.
    folder, or find it with `docker ps`.
 4. `npx agentage extension token --scope <id>:read` prints a token from the stack `up` started in
    this folder. When the stack on localhost:4281 is another folder's, `token` refuses and names it.
+   It needs Docker unless `--issuer` is given.
 5. Run `npx agentage extension down` to remove the containers, network and store volume.
 
 ## Where things live

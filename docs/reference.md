@@ -491,9 +491,10 @@ Docker only: the part images built with the release recipe, the store with its m
 seeds, a dev token issuer and a local gateway, and prints one line per step as the kit reports
 it, the last once every part is healthy. `down` removes its containers, network and store volume
 (`--keep-data` keeps the volume). `token --scope <scope> [--dir <path>] [--issuer <url>]` prints a token from
-the dev issuer `up` started for the package in `--dir` (default `http://localhost:4281`), trusted
-only by `up`. It exits 1 when the stack holding that port is not this package's, and names the
-one that is; `--issuer` asks that issuer and skips this check. An issuer that is not an `http:` or `https:` URL is a usage error. Each exits 1 with the kit's message when
+the dev issuer `up` started for the package in `--dir`, trusted only by `up`. The issuer is
+`--issuer` (default `http://localhost:4281`). It exits 1 when the stack holding that port is not
+this package's, and names the one that is; `--issuer` asks that issuer and skips this check. It
+asks Docker which stack holds the port, so it needs Docker unless `--issuer` is given. An issuer that is not an `http:` or `https:` URL is a usage error. Each exits 1 with the kit's message when
 its step fails. `up` needs ports 4280 and 4281 free and refuses when another working copy holds them. It needs git with one commit, or `COMMIT_SHA` or `GITHUB_SHA` set. It does not need a clean tree.
 
 ## Extension commands

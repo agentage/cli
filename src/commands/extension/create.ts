@@ -100,17 +100,22 @@ const clone = async (url: string, from: string, dir: string): Promise<void> => {
 const CI = join('.github', 'workflows', 'ci.yml');
 const FLOOR = /MIN_EXECUTED: '\d+'/;
 
+const LOWERED =
+  " ci        MIN_EXECUTED is 1: after the first green run, set it to the gate's count";
+const BY_HAND = ` ci        no MIN_EXECUTED line found in ${CI}: set it by hand to the gate's count`;
+
 // The template's floor counts the gate's tests for all seven parts; a subset's count is unknown.
-const lowerFloor = (dir: string, kept: string[]): boolean => {
+const lowerFloor = (dir: string, kept: string[]): string | undefined => {
+  if (kept.length === PARTS.length) return undefined;
   const file = join(dir, CI);
-  if (kept.length === PARTS.length || !existsSync(file)) return false;
-  const text = readFileSync(file, 'utf8');
+  const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  if (!FLOOR.test(text)) return BY_HAND;
   writeFileSync(file, text.replace(FLOOR, "MIN_EXECUTED: '1'"));
-  return FLOOR.test(text);
+  return LOWERED;
 };
 
 // A half-made folder is removed, so a re-run is not refused as "exists".
-const shape = (dir: string, from: string, id: string, kept: string[]): boolean => {
+const shape = (dir: string, from: string, id: string, kept: string[]): string | undefined => {
   try {
     drop(dir, kept);
     rewrite(dir, id);
@@ -143,12 +148,9 @@ export const runExtensionCreate = async (
   if (refused) throw new Error(refused);
   const dir = `extension-${id}`;
   await clone(url(from), from, dir);
-  const lowered = shape(dir, from, id, kept);
+  const ci = shape(dir, from, id, kept);
   printNext(dir, from, id, kept);
-  if (lowered)
-    console.log(
-      " ci        MIN_EXECUTED is 1: after the first green run, set it to the gate's count"
-    );
+  if (ci) console.log(ci);
 };
 
 export const addCreate = (group: Command, create: (o: ExtensionCreateOptions) => Promise<void>) =>
