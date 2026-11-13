@@ -292,3 +292,34 @@ handlers are the declared commands, and running `agentage <command>` or `agentag
 hands the rest of the command line to the kit, which parses the args and runs the handler. The
 kit's own documentation covers writing one; `agentage extension install .` links your working
 copy, and `agentage extension up` runs the whole package on Docker.
+
+## Author commands
+
+| Command                                      | What it does                                                     |
+| -------------------------------------------- | ---------------------------------------------------------------- |
+| `agentage extension create <id> [part...]`   | New `./extension-<id>` from the template, only the parts named   |
+| `agentage extension check [dir] [--write]`   | Check that an extension package conforms (the six kit rules)     |
+| `agentage extension build [--push]`          | Build the part images of a committed tree; push with digests     |
+| `agentage extension release`                 | Release from a tag in CI: guard, images, record, npm package     |
+| `agentage extension up` / `down`             | Run an extension package on this machine with Docker, then stop  |
+| `agentage extension token --scope <scope>`   | Print a token from the dev issuer `extension up` started         |
+
+## Run it locally
+
+`extension create <id> [part...]` makes `./extension-<id>` from the template. A part is one piece
+of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`. With fewer than all
+seven parts, `create` sets the CI floor `MIN_EXECUTED` to 1; set it to the gate's count after the
+first green run. When it cannot find that line, it says so and you set it by hand.
+
+1. Install git for `create`, which clones the template from GitHub. `build`, `up` and `release` also
+   need Docker. `build` needs a committed, clean tree. `up` needs one commit.
+2. Inside the extension folder, run `npx agentage extension up`. Use `npx agentage`, not the
+   global `agentage`: the global one can be older than the version the project pins and lack
+   the command.
+3. `up` needs ports 4280 (gateway) and 4281 (token issuer) free. When another working copy holds
+   them, `up` refuses and names its compose project. Run `npx agentage extension down` in that
+   folder, or find it with `docker ps`.
+4. `npx agentage extension token --scope <id>:read` prints a token from the stack `up` started in
+   this folder. When the stack on localhost:4281 is another folder's, `token` refuses and names it.
+   It needs Docker unless `--issuer` is given.
+5. Run `npx agentage extension down` to remove the containers, network and store volume.

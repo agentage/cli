@@ -17,6 +17,10 @@ No passwords touch the terminal; tokens are stored in `~/.agentage/auth.json`
 (mode 0600). Running `setup` while signed in validates the session and prints status
 instead of starting a new sign-in; an expired session falls through to a fresh sign-in.
 
+The sign-in URL sends the browser back to `http://localhost:<port>/callback` on this machine, so
+open it in a browser on this machine. On a server, use a personal access token instead. Create one
+in the dashboard under **Settings -> API tokens**. Plain `setup` does not sign in with `AGENTAGE_TOKEN`. Its account step and its status step use it.
+
 `setup` also installs extensions:
 
 ```bash
