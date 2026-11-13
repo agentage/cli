@@ -482,7 +482,7 @@ agentage extension up                         # run the package in this folder o
 agentage extension up --dir ../my-ext         # another package folder
 agentage extension down                       # remove what up started
 agentage extension down --keep-data           # keep the store's volume for the next up
-agentage extension token --scope probe:write  # a dev token, alone on stdout
+agentage extension token --scope probe:write  # a dev token from this folder's stack, alone on stdout
 ```
 
 For extension authors: thin commands over the `@agentage/extension/tool` exports of the extension
@@ -490,9 +490,11 @@ kit, imported only when one of them runs. `up` runs the package the way a deploy
 Docker only: the part images built with the release recipe, the store with its migrations and
 seeds, a dev token issuer and a local gateway, and prints one line per step as the kit reports
 it, the last once every part is healthy. `down` removes its containers, network and store volume
-(`--keep-data` keeps the volume). `token --scope <scope> [--issuer <url>]` prints a token from
-the dev issuer `up` started (default `http://localhost:4281`), trusted only by `up`. Run `up` first: `token` reads whichever issuer holds that port; an issuer
-that is not an `http:` or `https:` URL is a usage error. Each exits 1 with the kit's message when
+(`--keep-data` keeps the volume). `token --scope <scope> [--dir <path>] [--issuer <url>]` prints a token from
+the dev issuer `up` started for the package in `--dir`, trusted only by `up`. The issuer is
+`--issuer` (default `http://localhost:4281`). It exits 1 when the stack holding that port is not
+this package's, and names the one that is; `--issuer` asks that issuer and skips this check. It
+asks Docker which stack holds the port, so it needs Docker unless `--issuer` is given. An issuer that is not an `http:` or `https:` URL is a usage error. Each exits 1 with the kit's message when
 its step fails. `up` needs ports 4280 and 4281 free and refuses when another working copy holds them. It needs git with one commit, or `COMMIT_SHA` or `GITHUB_SHA` set. It does not need a clean tree.
 
 ## Extension commands
@@ -619,7 +621,7 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 
 `setup`, `extension install`, `extension remove` and `extension doctor` also exit 1 when an
 extension failed to load or on integrity drift, `extension build` exits 1 when a build or push
-fails, `extension up`, `down` and `token` exit 1 when the kit's step fails, an extension command
+fails, `extension up`, `down` and `token` exit 1 when the kit's step fails (`token` also when the stack up is another folder's), an extension command
 exits 1 when its extension cannot load (a kit-built one exits with the kit's code), `setup --check` exits 1 when
 the machine is not converged, and `setup --latest` exits 1 when the new tree did not load clean.
 Signed in, `setup` also exits 1 when this machine is connected to another account; when your

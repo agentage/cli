@@ -97,16 +97,44 @@ const clone = async (url: string, from: string, dir: string): Promise<void> => {
   rmSync(join(dir, '.git'), { recursive: true, force: true });
 };
 
+const CI = join('.github', 'workflows', 'ci.yml');
+const FLOOR = /MIN_EXECUTED: '\d+'/;
+
+const LOWERED =
+  " ci        MIN_EXECUTED is 1: after the first green run, set it to the gate's count";
+const BY_HAND = ` ci        no MIN_EXECUTED line found in ${CI}: set it by hand to the gate's count`;
+
+// The template's floor counts the gate's tests for all seven parts; a subset's count is unknown.
+const lowerFloor = (dir: string, kept: string[]): string | undefined => {
+  if (kept.length === PARTS.length) return undefined;
+  const file = join(dir, CI);
+  const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  if (!FLOOR.test(text)) return BY_HAND;
+  writeFileSync(file, text.replace(FLOOR, "MIN_EXECUTED: '1'"));
+  return LOWERED;
+};
+
 // A half-made folder is removed, so a re-run is not refused as "exists".
-const shape = (dir: string, from: string, id: string, kept: string[]): void => {
+const shape = (dir: string, from: string, id: string, kept: string[]): string | undefined => {
   try {
     drop(dir, kept);
     rewrite(dir, id);
     renameLock(dir, id);
+    return lowerFloor(dir, kept);
   } catch (err) {
     rmSync(dir, { recursive: true, force: true });
     throw new Error(`template ${from}: ${(err as Error).message}`);
   }
+};
+
+const printNext = (dir: string, from: string, id: string, kept: string[]): void => {
+  const kit = String(
+    json(join(dir, 'package.json'))['dependencies']?.['@agentage/extension'] ?? '?'
+  );
+  console.log(` template  ${from} (default branch, kit ${kit.replace(/^[\^~]/, '')})`);
+  console.log(` kept      ${kept.join(', ')}`);
+  console.log(` id        ${id}  ·  host ${id}.next.agentage.io  ·  contract ${id}.mcpc.json`);
+  console.log(` next      cd ${dir} && npm ci && npm run build && agentage extension check`);
 };
 
 // Clones the template's default branch into ./extension-<id> as a new working copy, no history.
@@ -120,14 +148,9 @@ export const runExtensionCreate = async (
   if (refused) throw new Error(refused);
   const dir = `extension-${id}`;
   await clone(url(from), from, dir);
-  shape(dir, from, id, kept);
-  const kit = String(
-    json(join(dir, 'package.json'))['dependencies']?.['@agentage/extension'] ?? '?'
-  );
-  console.log(` template  ${from} (default branch, kit ${kit.replace(/^[\^~]/, '')})`);
-  console.log(` kept      ${kept.join(', ')}`);
-  console.log(` id        ${id}  ·  host ${id}.next.agentage.io  ·  contract ${id}.mcpc.json`);
-  console.log(` next      cd ${dir} && npm ci && npm run build && agentage extension check`);
+  const ci = shape(dir, from, id, kept);
+  printNext(dir, from, id, kept);
+  if (ci) console.log(ci);
 };
 
 export const addCreate = (group: Command, create: (o: ExtensionCreateOptions) => Promise<void>) =>

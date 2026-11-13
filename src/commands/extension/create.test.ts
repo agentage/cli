@@ -53,6 +53,7 @@ const templateRepo = (root: string): string => {
   put('openapi.json', '{ "title": "template", "pat": ["template:read"] }\n');
   put('CLAUDE.md', '# extension-template\nhost `template.next.agentage.io`, templates stay\n');
   put('package-lock.json', JSON.stringify(LOCK, null, 2));
+  put('.github/workflows/ci.yml', "        env:\n          MIN_EXECUTED: '25'\n");
   put('logo.png', Buffer.from([0, 116, 101, 109, 112, 108, 97, 116, 101]));
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
   git('init', '-q', '-b', 'master');
@@ -88,7 +89,9 @@ describe('extension create', () => {
       ' kept      mcp, api',
       ' id        market  ·  host market.next.agentage.io  ·  contract market.mcpc.json',
       ' next      cd extension-market && npm ci && npm run build && agentage extension check',
+      " ci        MIN_EXECUTED is 1: after the first green run, set it to the gate's count",
     ]);
+    expect(read('.github/workflows/ci.yml')).toContain("MIN_EXECUTED: '1'\n");
     const { agentage } = manifest();
     expect(agentage.parts).toEqual({ api: true, mcp: true });
     expect(agentage).not.toHaveProperty('commands');
@@ -101,9 +104,34 @@ describe('extension create', () => {
       expect(existsSync(join(root, 'extension-market', dir))).toBe(false);
   });
 
+  test('a subset whose ci.yml has no quoted MIN_EXECUTED line says to set it by hand', async () => {
+    const src = url.slice('file://'.length);
+    const unquoted = '        env:\n          MIN_EXECUTED: 25\n';
+    writeFileSync(join(src, '.github/workflows/ci.yml'), unquoted);
+    execFileSync('git', [
+      '-C',
+      src,
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'user.name=t',
+      'commit',
+      '-qam',
+      'x',
+    ]);
+    const printed = await create('market', ['api']);
+    expect(printed.error).toBeNull();
+    expect(printed.lines.at(-1)).toBe(
+      " ci        no MIN_EXECUTED line found in .github/workflows/ci.yml: set it by hand to the gate's count"
+    );
+    expect(read('.github/workflows/ci.yml')).toBe(unquoted);
+  });
+
   test('no parts keeps all seven, the store with its migrations and seeds', async () => {
     const printed = await create('market');
     expect(printed.lines[1]).toBe(` kept      ${PARTS.join(', ')}`);
+    expect(printed.lines).toHaveLength(4);
+    expect(read('.github/workflows/ci.yml')).toContain("MIN_EXECUTED: '25'\n");
     expect(manifest().agentage.parts).toEqual(MANIFEST.agentage.parts);
     expect(manifest().agentage.commands).toEqual(MANIFEST.agentage.commands);
     expect(read('migrations/001-ping.sql')).toBe('select 1;\n');

@@ -1,5 +1,7 @@
 import { InvalidArgumentError, type Command } from 'commander';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
+import { execIn, type Exec } from './release-guard.js';
+import { assertOwnStack } from './stack-owner.js';
 
 export interface ExtensionUpOptions {
   dir?: string;
@@ -9,7 +11,7 @@ export interface ExtensionDownOptions extends ExtensionUpOptions {
   keepData?: boolean;
 }
 
-export interface ExtensionTokenOptions {
+export interface ExtensionTokenOptions extends ExtensionUpOptions {
   scope: string;
   issuer?: string;
 }
@@ -35,9 +37,11 @@ export const runExtensionDown = async (
 
 // The token alone on stdout, so a script can take it as it is.
 export const runExtensionToken = async (
-  opts: ExtensionTokenOptions,
-  tool: LoadKitTool = loadKitTool
+  { dir = '.', ...opts }: ExtensionTokenOptions,
+  tool: LoadKitTool = loadKitTool,
+  exec: Exec = execIn('.', 10)
 ): Promise<void> => {
+  if (!opts.issuer) await assertOwnStack(dir, exec, tool);
   const { token } = await tool();
   console.log(await token(opts));
 };
@@ -69,9 +73,10 @@ containers, network and the store's volume; --keep-data keeps the volume. The li
 names the compose project it removed. Exits 1 when that fails.`;
 
 const TOKEN_HELP = `
-Prints a token from the dev issuer agentage extension up started, alone on stdout, for calling
-/api/v1/ and /mcp by hand or from tests. Only up trusts it. Exits 1 when the issuer refuses or
-does not answer within 5 s.`;
+Prints a token from the dev issuer agentage extension up started for the package in --dir,
+alone on stdout, for calling /api/v1/ and /mcp by hand or from tests. Only up trusts it. Exits 1
+when the stack on localhost:4281 is not this package's (it names the one that is), or when the
+issuer refuses or does not answer within 5 s. --issuer asks that issuer and skips the check.`;
 
 export interface KitActions {
   up: (opts: ExtensionUpOptions) => Promise<void>;
@@ -106,6 +111,7 @@ const addToken = (group: Command, token: KitActions['token']): void => {
     .command('token')
     .description('Print a token from the dev issuer extension up started')
     .requiredOption('--scope <scope>', 'the scope the token carries, e.g. probe:write')
+    .option(DIR, DIR_TEXT)
     .option('--issuer <url>', 'the dev issuer (default: http://localhost:4281)', issuerUrl)
     .addHelpText('after', TOKEN_HELP)
     .action(token);
