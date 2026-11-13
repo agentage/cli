@@ -491,9 +491,9 @@ Docker only: the part images built with the release recipe, the store with its m
 seeds, a dev token issuer and a local gateway, and prints one line per step as the kit reports
 it, the last once every part is healthy. `down` removes its containers, network and store volume
 (`--keep-data` keeps the volume). `token --scope <scope> [--issuer <url>]` prints a token from
-the dev issuer `up` started (default `http://localhost:4281`), trusted only by `up`; an issuer
+the dev issuer `up` started (default `http://localhost:4281`), trusted only by `up`. Run `up` first: `token` reads whichever issuer holds that port; an issuer
 that is not an `http:` or `https:` URL is a usage error. Each exits 1 with the kit's message when
-its step fails.
+its step fails. `up` needs ports 4280 and 4281 free and refuses when another working copy holds them.
 
 ## Extension commands
 

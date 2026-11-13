@@ -1,32 +1,43 @@
 # CLAUDE.md - @agentage/cli
 
-The agentage CLI core. Commands: `setup` (OAuth sign-in), `status`, `update`.
-Extensions extend it through `src/core/`, always on (no env switch): `setup --profile` installs
-and loads them, `setup --latest` moves them to the newest versions their ranges allow (`npm update`
-in a staged tree, the new tree current only after a clean load), `extension install` and
-`extension remove` add or take out one at a time, `extension list` and `extension doctor` show
-them (`extension check [dir]` is the kit's conformance check of a working copy), and the commands they contribute run
-as `agentage <command>`. Two manifest kinds: the 1.0 API (`register(ctx)`, `engines.agentage`
-over `EXTENSION_API_VERSION`) and kit-shaped (`agentage.parts`; `engines.agentage` over the kit's
-version; never register-loaded: the kit's `checkCli` checks it, its `runCommand` runs
-`agentage {command}` and `agentage {id} {command}`, its exit code is the CLI's; a verb a core
-command, an extension id or an earlier install has stays namespaced, `commands.json` keeps who
-holds each verb). Without a range, `extension
-install` pins the newest release whose `engines.agentage` fits `EXTENSION_API_VERSION`. After a
-successful install only the tree `extensions/current` names is kept. The model: the profile is the
-desired state, the installed tree (plus
-`state/<id>.json`) the current one; `setup` converges them, the plan (`setup --dry-run`,
-`setup --check`, the `extension list` drift column, the `status` count) says what it would change.
-Signed in, the profile lives in the account (`/v1/profile`, one ETag over profile, lock and npm
-major): plain `setup` pulls it (creating it on a `404 PROFILE_NOT_FOUND`; any other failure, or
-any other 404, uses the local profile.json, or installs nothing and says so on one dim line when
-there is none) and never pushes; `extension install`, `remove`, `--off` and `setup --latest` push
-after the new tree loaded, replaying once on a 412; `setup`, `status` and
-`setup --disconnect` register the machine at `/v1/machines` (fire and forget).
-memory, vault, daemon, sync and MCP code lives in git history up to v0.37.2 and returns as
-extensions.
+The agentage CLI core. Commands: `setup` (OAuth sign-in), `status`, `update`, `extension`. Human
+docs are in [README.md](README.md); flags and exit codes in [docs/reference.md](docs/reference.md);
+the extension author guide in [docs/extensions.md](docs/extensions.md). Do not repeat them here.
+
+## How the core works
+
+- **Extensions** extend the CLI through `src/core/`, always on (no env switch).
+- **Profile** is the desired state. The installed tree plus `state/<id>.json` is the current state.
+  `setup` converges them. The plan (`setup --dry-run`, `setup --check`, the `extension list` drift
+  column, the `status` count) says what it would change.
+- **Commands:** `setup --profile` installs and loads a profile file. `setup --latest` runs
+  `npm update` in a staged tree and makes the new tree current only after a clean load.
+  `extension install` and `remove` change one extension. `extension list` and `doctor` show them.
+  `extension check [dir]` is the kit's conformance check of a working copy.
+- **Two manifest kinds:**
+  - The 1.0 API: `register(ctx)`, with `engines.agentage` over `EXTENSION_API_VERSION`.
+  - Kit-shaped: `agentage.parts`, with `engines.agentage` over the kit's version. It is never
+    loaded with `register`. The kit's `checkCli` checks it and its `runCommand` runs
+    `agentage {command}` and `agentage {id} {command}`. Its exit code is the CLI's.
+- **Verbs:** a verb that a core command, an extension id or an earlier install has stays
+  namespaced. `commands.json` keeps who holds each verb.
+- **Versions:** without a range, `extension install` pins the newest release whose
+  `engines.agentage` fits `EXTENSION_API_VERSION`. After a successful install only the tree that
+  `extensions/current` names is kept.
+- **Account sync** (signed in): the profile lives in the account at `/v1/profile`, under one ETag
+  over profile, lock and npm major.
+  - Plain `setup` pulls it and never pushes. On `404 PROFILE_NOT_FOUND` it creates it. After any
+    other failure or 404 it uses the local `profile.json`, or installs nothing and prints one dim
+    line.
+  - `extension install`, `remove`, `--off` and `setup --latest` push after the new tree loaded,
+    and replay once on a 412.
+  - `setup`, `status` and `setup --disconnect` register the machine at `/v1/machines` (fire and
+    forget).
+- Memory, vault, daemon, sync and MCP code lives in git history up to v0.37.2 and returns as
+  extensions.
 
 ## Layout
+
 - `src/cli.ts` - the bin: Node version guard, then a dynamic import of `program.ts` (excluded
   from coverage; keep logic out of it)
 - `src/program.ts` - `createProgram(deps)` factory + `run(argv): Promise<number>` (exit code,
@@ -43,16 +54,16 @@ extensions.
   `install`, `remove` and `--off` (pull whole, change, install, load, push with one replay),
   `latest.ts` is `setup --latest` (the diff and summary, the new tree loaded before it becomes
   current, then the same push with the lock counting),
-  `account.ts` the account seam (`signedInAccount`: bearer fetch to the API origin plus the account
+  `account.ts` the account dependency (`signedInAccount`: bearer fetch to the API origin plus the account
   id from introspection; null when signed out), `plan.ts` is `setup --dry-run` and `setup --check`,
-  `install.ts` adds one extension (npm is its only seam; a kit-built working copy prints `linked`), `remove.ts` takes one out (`--purge` asks
-  through an `isTTY`/`prompt` seam), `secrets-prompt.ts` asks for or lists missing secrets
-  (`isTTY`/`prompt` are its only seam), `delegate.ts` registers one stub per contributed command and
+  `install.ts` adds one extension (npm is its only injected dependency; a kit-built working copy prints `linked`), `remove.ts` takes one out (`--purge` asks
+  through an `isTTY`/`prompt` injected dependency), `secrets-prompt.ts` asks for or lists missing secrets
+  (`isTTY`/`prompt` are its only injected dependencies), `delegate.ts` registers one stub per contributed command and
   hands it to the extension), `build.ts` is `extension check` (`--write` over the kit's `writeContracts`) and `extension build`: thin commands over the kit's
-  `@agentage/extension/tool`, imported on use; `kit-tool.ts` is that one seam (`check`, `checkLines`, `build`,
+  `@agentage/extension/tool`, imported on use; `kit-tool.ts` is that one injected dependency (`check`, `checkLines`, `build`,
   `buildLines`, `runCommand`, `checkCli`, `up`, `down`, `token`, `readManifest`, typed by the kit; `loadKitTool`,
   `kitCheck`), `release.ts` is `extension release` (preflight, guard, `build --push`, the release
-  asset, npm publish or stage) over `release-guard.ts` (the guard and the bounded `execIn` seam), `up.ts` is `extension up`, `down` and `token` over it, `kit-commands.ts` registers a
+  asset, npm publish or stage) over `release-guard.ts` (the guard and the bounded `execIn` injected dependency), `up.ts` is `extension up`, `down` and `token` over it, `kit-commands.ts` registers a
   kit-built extension's `agentage {id}` group and top-level verbs (its `stub` is the one every
   delegated command uses); `status/account-status.ts`
   is what `status` asks the account (seen, the profile's etag)
@@ -73,7 +84,7 @@ extensions.
     the default profile, `machine.json` incl. dev paths, `accountId` and `profileEtag`,
     install/load set merge, `edit.ts`: one extension in or out of the profile, `cloud.ts`: the
     `/v1/profile` wire (conditional GET, PUT with `If-Match` or `If-None-Match: *`; the `CloudFetch`
-    seam), `push.ts`: push with one replay on 412 and the npm-major lock rule (`lockCounts`: a new
+    injected dependency), `push.ts`: push with one replay on 412 and the npm-major lock rule (`lockCounts`: a new
     lock alone is a change, for `setup --latest`), `register.ts`: the
     `/v1/machines` calls, 2 s, never throwing, `AGENTAGE_DEBUG=1` prints one line each)
   - `kit-version.ts` - the kit's version read from its `package.json`, so startup never imports
@@ -90,8 +101,8 @@ extensions.
     `ctx.ts` (one revocable `ctx` per attempt, staged commands and subscriptions), `use.ts` (frozen
     facade), `dispose.ts` (5 s, SIGINT/SIGTERM), `secrets.ts` (`secrets.json` 0600), `log.ts`
     (`logs/<id>.log`)
-  - `installer/` - `npm.ts` (`node npm-cli.js`, scrubbed env, `--registry` default; the `Npm` seam
-    for `ci`, `install` and `update`, the `NpmManifest` seam for `pack` and `view`),
+  - `installer/` - `npm.ts` (`node npm-cli.js`, scrubbed env, `--registry` default; the `Npm` injected dependency
+    for `ci`, `install` and `update`, the `NpmManifest` injected dependency for `pack` and `view`),
     `tree.ts` (deterministic `package.json` and per-scope `.npmrc`, staged
     `extensions/trees/<hash>/` + `.complete` + `extensions/current`, `install.lock` with a
     heartbeat, `collectTrees`: every tree but `current` removed after a success, staging dirs left
@@ -119,7 +130,7 @@ extensions.
   `npmFromFixtures` playing npm installs and updates (`npmPublishing(more)` with versions a test
   publishes) and `manifestFromFixtures(more)` playing `npm pack --dry-run` and `npm view`;
   `src/test/account.ts` is an account in memory (`fakeAccount`: `/v1/profile` with ETags, 304, 404,
-  412 and creation, `/v1/machines`, a request log, `fail` per route) for the `account` seam; all
+  412 and creation, `/v1/machines`, a request log, `fail` per route) for the `account` injected dependency; all
   excluded from the build and from coverage
 - `docs/extensions.md` - "Writing an extension": the author guide (manifest, lifecycle, `ctx`);
   keep it true to `src/extension.ts` and `src/core/loader/`
@@ -131,6 +142,7 @@ extensions.
   the kit's server stack, and `express` is an optional peer the cli does not install)
 
 ## Auth model
+
 Fresh DCR public client per `setup` run (the redirect URI binds the ephemeral callback
 port); `client_id` stored in auth.json for the refresh grant. Tokens are opaque; `status`
 validates them via the OAuth introspection endpoint (`/api/auth/mcp/get-session`).
@@ -138,7 +150,9 @@ validates them via the OAuth introspection endpoint (`/api/auth/mcp/get-session`
 only, not OAuth bearers.
 
 ## E2E (`./e2e`, Playwright)
+
 Drives the built `dist/cli.js` as a subprocess. Tiers are tags in the test titles:
+
 - `@offline` - the PR tier (`e2e.yml` on every PR): hermetic, no live stack, no secrets; the
   CLI talks only to loopback stubs (`e2e/stub/` site + auth server + the account routes
   `/v1/profile` and `/v1/machines`, `e2e/registry/` npm)
@@ -148,23 +162,27 @@ Drives the built `dist/cli.js` as a subprocess. Tiers are tags in the test title
   fetch; also tagged `@offline`, so it runs on every PR
 - `@smoke` - the read-only live tier: version + degraded signed-out status against the
   target (`AGENTAGE_SITE_FQDN`, default `agentage.io`); nothing signs in or writes
-`e2e/core/` holds the extension scenarios, one requirement per test, on the `cli` kit in
-`e2e/core/cli.ts` (see `e2e/core/README.md`).
-Run via `npm run build && npm run test:e2e -- --grep @offline`; `@smoke` runs by manual dispatch
-of `e2e.yml` with a target.
-Before a publish, `release.yml` runs agentage/e2e's cli tier (`--project=cli --grep @smoke`, what
-verify-prod runs on the published cli) against this commit through `_e2e-cli.yml`:
-`scripts/candidate-registry.mjs` serves the packed tarball as npm `latest` on loopback and proxies
-the rest; a red tier blocks the publish (fix, then dispatch `release.yml`; the tier reads prod
-agentage.io, so a prod outage blocks it too). `e2e.yml` runs the same tier on every PR, not
-required: a cli change the e2e tier pins (a help line, a renamed command) needs its agentage/e2e
-test first, version-gated on the release that changes it, and is red on its PR until then.
+  `e2e/core/` holds the extension scenarios, one requirement per test, on the `cli` kit in
+  `e2e/core/cli.ts` (see `e2e/core/README.md`).
+  Run via `npm run build && npm run test:e2e -- --grep @offline`; `@smoke` runs by manual dispatch
+  of `e2e.yml` with a target.
+  Before a publish, `release.yml` runs agentage/e2e's cli tier (`--project=cli --grep @smoke`, what
+  verify-prod runs on the published cli) against this commit through `_e2e-cli.yml`:
+  `scripts/candidate-registry.mjs` serves the packed tarball as npm `latest` on loopback and proxies
+  the rest; a red tier blocks the publish (fix, then dispatch `release.yml`; the tier reads prod
+  agentage.io, so a prod outage blocks it too). `e2e.yml` runs the same tier on every PR, not
+  required: a cli change the e2e tier pins (a help line, a renamed command) needs its agentage/e2e
+  test first, version-gated on the release that changes it, and is red on its PR until then.
 
 ## Conventions
+
 - `AGENTAGE_SITE_FQDN` selects the target host (production default); `AGENTAGE_CONFIG_DIR`
   overrides the config dir - e2e isolation depends on it, never remove
 - `npm run verify` before any push; CI also runs `test:coverage` (global 65/70/70/70, `src/lib/**`
   and `src/core/**` have higher floors in `vitest.config.ts`)
+- Headless: `setup --no-browser` (`src/commands/auth/setup.ts`) and `AGENTAGE_TOKEN=aga_...`
+  (`src/lib/auth/credentials.ts`); plain `setup` ignores the token. Install, list, run and
+  remove of extensions need no sign-in.
 - Exit codes: 0 ok (incl. `--help`/`--version`) / 1 step failed / 2 usage; errors on stderr
 - Every network call in `lib/auth` goes through `cliFetch`; no bare `fetch`
 - Conventional commits; publish only via the release workflow, never local `npm publish`
