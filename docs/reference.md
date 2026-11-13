@@ -222,7 +222,7 @@ What they keep, and what the CLI keeps about them, lives in the config directory
 The installer runs npm 10 or newer as `node npm-cli.js` (no shell, `--ignore-scripts`,
 `npm_config_*` and `NODE_OPTIONS` removed from its environment, at most 10 minutes per run) into
 a staged tree under the extensions directory (`AGENTAGE_EXTENSIONS_DIR`, default
-`~/.agentage/extensions`):
+`extensions` in the config directory):
 
 | Path                                | What                                                               |
 | ----------------------------------- | ------------------------------------------------------------------ |
@@ -633,11 +633,17 @@ Errors go to stderr; stdout carries only command output (`status --json` stays p
 
 ## Environment
 
-| Variable                  | Purpose                                                              | Default                  |
-| ------------------------- | -------------------------------------------------------------------- | ------------------------ |
-| `AGENTAGE_SITE_FQDN`      | Target host                                                          | `agentage.io`            |
-| `AGENTAGE_CONFIG_DIR`     | Config and credentials directory (`auth.json`)                       | `~/.agentage`            |
-| `AGENTAGE_TOKEN`          | Personal access token for CI and headless machines                   | unset                    |
-| `NO_COLOR`                | Disable colored output (any non-empty value)                         | unset                    |
-| `AGENTAGE_EXTENSIONS_DIR` | Extensions directory (trees, lock, `current`)                        | `~/.agentage/extensions` |
-| `AGENTAGE_DEBUG`          | `1` prints one stderr line for each call that registers this machine | unset                    |
+The extensions directory is `AGENTAGE_EXTENSIONS_DIR` when that variable is set and not empty.
+Otherwise it is `extensions` inside the config directory. The config directory is
+`AGENTAGE_CONFIG_DIR` when set and not empty. Otherwise it is `.agentage` in the home directory
+(`$HOME`). So `AGENTAGE_CONFIG_DIR` moves the extensions directory too, unless
+`AGENTAGE_EXTENSIONS_DIR` is set. `<config>` below means the config directory.
+
+| Variable                  | Purpose                                                              | Default               |
+| ------------------------- | -------------------------------------------------------------------- | --------------------- |
+| `AGENTAGE_SITE_FQDN`      | Target host                                                          | `agentage.io`         |
+| `AGENTAGE_CONFIG_DIR`     | Config and credentials directory (`auth.json`)                       | `$HOME/.agentage`     |
+| `AGENTAGE_TOKEN`          | Personal access token for CI and headless machines                   | unset                 |
+| `NO_COLOR`                | Disable colored output (any non-empty value)                         | unset                 |
+| `AGENTAGE_EXTENSIONS_DIR` | Extensions directory (trees, lock, `current`)                        | `<config>/extensions` |
+| `AGENTAGE_DEBUG`          | `1` prints one stderr line for each call that registers this machine | unset                 |
