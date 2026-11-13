@@ -4,6 +4,15 @@ An extension is an npm package that adds to the `agentage` CLI, for example new 
 page is for people who write them. Extensions are part of every `agentage` install; there is
 nothing to turn on. Flags and exit codes are in [`reference.md`](reference.md).
 
+## Two shapes
+
+- **`register(ctx)`**: an entry that exports `register(ctx)`. Described below.
+- **Kit-shaped**: `agentage.parts` in `package.json`, built with `@agentage/extension`, created by
+  `agentage extension create <id> [part...]`. The CLI never loads it with `register`; see "Built on the extension kit".
+
+`extension create`, `check`, `build`, `up`, `down`, `token` and `release` serve kit-shaped packages. `extension
+install`, `list` and `remove` act on the profile, for both shapes.
+
 ## What an extension is
 
 A package with an `agentage` block in `package.json` and an entry that exports `register(ctx)`.
@@ -82,10 +91,12 @@ agentage extension doctor                 # load everything once, refresh the ru
 ```
 
 `extension install` takes a package name with an optional range (`@acme/example@~1.2`), an
-`https:` tarball URL, or a short name such as `example`, which stands for
-`@agentage/extension-example`, else `agentage-extension-example`. Without a range it pins `^` the
-newest published version whose `engines.agentage` the extension API satisfies, and prints a
-`skipped` line for each newer version that needs another API. It writes the profile, then
+`https:` tarball URL, or a bare id such as `example`. A bare id asks the market first: the
+version is the market's `latest`, and a private entry has no npm package, so install refuses it.
+A market answer with a bad version or another package's name fails the install. An id the market does not know, or with no market answering, is looked up on npm as
+`@agentage/extension-example`, else `agentage-extension-example`. Other names without a range
+pin `^` the newest published version whose `engines.agentage` the extension API satisfies, and
+print a `skipped` line for each newer version that needs another API. It writes the profile, then
 installs and loads like `setup`. `--off` installs the package but leaves it `off` on this
 machine. A `./path` is a dev extension, see Developing locally.
 
