@@ -7,21 +7,24 @@ the extension author guide in [docs/extensions.md](docs/extensions.md); profiles
 
 ## Where facts live
 
-- Flags, exit codes, environment variables per command: `docs/reference.md` (one section per
-  command, "Exit codes", "Environment").
-- Install, sign-in, the command list, the config dir layout: `README.md` "Get started",
-  "Commands", "Extensions", "Where things live".
-- Writing an extension, `ctx`, lifecycle, kit-built packages: `docs/extensions.md`.
-- Create, up and token of a kit-built extension, its ports: `docs/extensions.md` "Run it locally"
-  (summary in `README.md` "Write and run your own extension"); flags in `docs/reference.md`
-  "extension up, down and token".
-- Profiles, extension states, the plan, short names, `setup --latest`: `docs/profiles.md`.
-- CI jobs and coverage floors: `.github/workflows/ci.yml`, `vitest.config.ts`.
-- Release and publish rules: `.github/workflows/release.yml`,
-  `.github/workflows/prepare-release.yml`.
-- e2e scenarios and tiers: `e2e/core/README.md`, `.github/workflows/e2e.yml`.
+- Install, sign-in, command list, config dir: `README.md` "Get started", "Commands", "Where things
+  live"; `src/program.ts`, `src/lib/fs/config.ts`.
+- `setup` (account profile, `--latest`, the plan), `status`, `update`: `docs/reference.md` sections
+  of those names; `src/commands/auth/`, `status/`, `update/`, `extension/setup.ts`.
+- Every `extension` subcommand (install, market, remove, list, doctor, check, build, release,
+  up/down/token): `docs/reference.md` section of that name; `src/commands/extension/` (`check` in
+  `build.ts`, `down`/`token` in `up.ts`), `src/lib/net/market.ts`.
+- Extension commands and context, exit codes, environment: `docs/reference.md` headings of those
+  names; `src/commands/extension/delegate.ts`, `src/program.ts`.
+- Profiles, states, the plan, short names, updates, profile file: `docs/profiles.md`;
+  `src/core/installer/`, `src/core/loader/states.ts`.
+- Writing an extension, `ctx`, lifecycle, peers, author commands, run it locally, ports:
+  `docs/extensions.md`; `src/extension.ts`, `src/core/loader/`, `src/commands/extension/up.ts`.
+- CLI release: `README.md` "Release"; `.github/workflows/release.yml`, `prepare-release.yml`.
+- e2e scenarios and tiers: `e2e/core/README.md`; `.github/workflows/e2e.yml`.
+- CI jobs and coverage floors (no doc): `.github/workflows/ci.yml`, `vitest.config.ts`.
 
-Read the file named here before you read `src/`.
+Each row names the doc first, then the code that proves it. Read the doc before `src/`.
 
 ## How the core works
 

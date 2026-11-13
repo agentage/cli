@@ -473,8 +473,9 @@ and record (`dist/agentage-extension.json` is downloaded) and only npm is retrie
 another commit, or an image already pushed without a record, is refused; a GitHub or registry
 call that fails or outlasts `--timeout` (default 60 s) stops the release. A new version runs
 `build --push` and attaches `agentage-extension.json` to the tag's GitHub release (created when
-missing). Last, `npm publish --access public --provenance --ignore-scripts`, skipped when the version is on npm;
-when the direct publish is not authorized, or `NPM_TOKEN` is set and the name is new, it runs `npm
+missing). Last, `npm publish --access public --provenance --ignore-scripts`, skipped when the version is on npm.
+Only an `E404` from `npm view` counts as not on npm; any other `npm view` error stops the release.
+When the direct publish is not authorized, or `NPM_TOKEN` is set and the name is new, it runs `npm
 stage publish` instead. `GH_TOKEN` (or `GITHUB_TOKEN`) goes only to `gh` and `NPM_TOKEN` only to
 npm; both leave the environment first, so the image build and npm lifecycle scripts never see
 them. A package with `"private": true` skips npm entirely (no `npm --version`, `view` or `publish`) and prints `PASS npm: private package, not published`. Needs git, `docker` and the `gh` CLI, and npm only for a package that is not private. Needs `docker login` to the registry first.
