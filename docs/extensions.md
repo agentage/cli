@@ -10,7 +10,7 @@ nothing to turn on. Flags and exit codes are in [`reference.md`](reference.md).
 - **Kit-shaped**: `agentage.parts` in `package.json`, built with `@agentage/extension`, created by
   `agentage extension create <id> [part...]`. The CLI never loads it with `register`; see "Built on the extension kit".
 
-`extension create`, `check`, `up`, `down` and `token` serve kit-shaped packages. `extension
+`extension create`, `check`, `build`, `up`, `down`, `token` and `release` serve kit-shaped packages. `extension
 install`, `list` and `remove` act on the profile, for both shapes.
 
 ## What an extension is
@@ -93,7 +93,7 @@ agentage extension doctor                 # load everything once, refresh the ru
 `extension install` takes a package name with an optional range (`@acme/example@~1.2`), an
 `https:` tarball URL, or a bare id such as `example`. A bare id asks the market first: the
 version is the market's `latest`, and a private entry has no npm package, so install refuses it.
-An id the market does not know, or with no market answering, is looked up on npm as
+A market answer with a bad version or another package's name fails the install. An id the market does not know, or with no market answering, is looked up on npm as
 `@agentage/extension-example`, else `agentage-extension-example`. Other names without a range
 pin `^` the newest published version whose `engines.agentage` the extension API satisfies, and
 print a `skipped` line for each newer version that needs another API. It writes the profile, then
