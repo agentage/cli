@@ -4,6 +4,20 @@ The agentage CLI core. Commands: `setup` (OAuth sign-in), `status`, `update`, `e
 docs are in [README.md](README.md); flags and exit codes in [docs/reference.md](docs/reference.md);
 the extension author guide in [docs/extensions.md](docs/extensions.md). Do not repeat them here.
 
+## Where facts live
+
+- Flags, exit codes, environment variables per command: `docs/reference.md` (one section per
+  command, "Exit codes", "Environment").
+- Install, sign-in, the command list, the config dir layout: `README.md` "Get started",
+  "Commands", "Where things live".
+- Writing an extension, `ctx`, lifecycle, kit-built packages: `docs/extensions.md`.
+- Create, up and token of a kit-built extension, its ports: `README.md` "Write and run your own
+  extension"; flags in `docs/reference.md` "extension up, down and token".
+- CI jobs and coverage floors: `.github/workflows/ci.yml`, `vitest.config.ts`.
+- Release and publish rules: `.github/workflows/release.yml`, `prepare-release.yml`.
+- e2e scenarios and tiers: `e2e/core/README.md`, `.github/workflows/e2e.yml`.
+- Read the file named here before you read `src/`.
+
 ## How the core works
 
 - **Extensions** extend the CLI through `src/core/`, always on (no env switch).
@@ -75,7 +89,8 @@ the extension author guide in [docs/extensions.md](docs/extensions.md). Do not r
   - `release.ts` is `extension release`: preflight, guard, `build --push`, the release asset, npm
     publish or stage. It sits over `release-guard.ts`, the guard and the bounded `execIn`
     injected dependency.
-  - `up.ts` is `extension up`, `down` and `token` over the kit. `kit-commands.ts` registers a
+  - `up.ts` is `extension up`, `down` and `token` over the kit; `stack-owner.ts` lets `token`
+    ask only this folder's stack. `kit-commands.ts` registers a
     kit-built extension's `agentage {id}` group and top-level verbs; its `stub` is the one every
     delegated command uses.
 - `src/lib/` - shared library, grouped by domain:

@@ -159,7 +159,9 @@ extension code loads.
 ### Write and run your own extension
 
 `extension create <id> [part...]` makes `./extension-<id>` from the template. A part is one piece
-of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`.
+of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`. With fewer than all
+seven parts, `create` sets the CI floor `MIN_EXECUTED` to 1; set it to the gate's count after the
+first green run.
 
 1. Install git for `create`, which clones the template from GitHub. `build`, `up` and `release` also
    need Docker. `build` needs a committed, clean tree. `up` needs one commit.
@@ -169,8 +171,8 @@ of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`.
 3. `up` needs ports 4280 (gateway) and 4281 (token issuer) free. When another working copy holds
    them, `up` refuses and names its compose project. Run `npx agentage extension down` in that
    folder, or find it with `docker ps`.
-4. `npx agentage extension token --scope <id>:read` prints a token. Run `up` first: `token` only
-   asks localhost:4281 and returns a token from whichever stack holds it.
+4. `npx agentage extension token --scope <id>:read` prints a token from the stack `up` started in
+   this folder. When the stack on localhost:4281 is another folder's, `token` refuses and names it.
 5. Run `npx agentage extension down` to remove the containers, network and store volume.
 
 ## Where things live

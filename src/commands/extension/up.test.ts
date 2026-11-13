@@ -1,6 +1,7 @@
 import { describe, expect } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { type KitTool } from './kit-tool.js';
+import { type Exec } from './release-guard.js';
 import { issuerUrl, runExtensionDown, runExtensionToken, runExtensionUp } from './up.js';
 
 // The kit tool as a seam: what each call got, the lines it reports, or the error it throws.
@@ -29,6 +30,20 @@ const fakeKit = (fail?: Error) => {
   return { tool: async () => tool as KitTool, calls };
 };
 
+// docker as a seam: the compose project of the container publishing 4281, '' for none.
+const holding = (project: string, ok = true) => {
+  const asked: string[][] = [];
+  const exec: Exec = async (_cmd, args) => {
+    asked.push(args);
+    return { ok, out: `${project}\n`, err: ok ? '' : 'Cannot connect to the Docker daemon' };
+  };
+  return { exec, asked };
+};
+
+const OWN = 'agentage-market-0a1b2c3d';
+const HERE = 'not this folder: run agentage extension up here';
+const OTHER = `the stack up is extension probe (agentage-probe-ab1613a3), ${HERE}`;
+
 describe('extension up, down and token: thin commands over the kit tool', () => {
   test('up hands --dir to the kit and prints each line as it comes', async () => {
     const { tool, calls } = fakeKit();
@@ -44,12 +59,65 @@ describe('extension up, down and token: thin commands over the kit tool', () => 
     expect(run.lines).toEqual(['removed  6 containers']);
   });
 
-  test('token prints the token alone on stdout', async () => {
+  test("token prints the token alone on stdout when the stack up is this folder's", async ({
+    dir,
+  }) => {
+    dir.write('market/.agentage/compose.json', { name: OWN });
     const { tool, calls } = fakeKit();
-    const opts = { scope: 'probe:write', issuer: 'http://localhost:4281' };
-    const run = await output(() => runExtensionToken(opts, tool));
-    expect(calls).toEqual([['token', opts]]);
+    const { exec, asked } = holding(OWN);
+    const run = await output(() =>
+      runExtensionToken({ scope: 'market:write', dir: dir.at('market') }, tool, exec)
+    );
+    expect(asked[0]).toEqual(expect.arrayContaining(['ps', '--filter', 'publish=4281']));
+    expect(calls).toEqual([['token', { scope: 'market:write' }]]);
     expect(run.stdout).toBe('eyJhbGciOi.dev.token');
+  });
+
+  test.for([
+    ['another extension is up', 'market', 'agentage-probe-ab1613a3', OTHER],
+    [
+      'this folder was never up',
+      'fresh',
+      OWN,
+      `the stack up is extension market (${OWN}), ${HERE}`,
+    ],
+    [
+      'nothing is up',
+      'market',
+      '',
+      'no stack is up on localhost:4281: run agentage extension up here',
+    ],
+  ])(
+    'token refuses when %s, before asking the issuer',
+    async ([, folder, holder, error], { dir }) => {
+      dir.write('market/.agentage/compose.json', { name: OWN });
+      dir.write('fresh/package.json', '{}');
+      const { tool, calls } = fakeKit();
+      const opts = { scope: 'market:read', dir: dir.at(folder ?? '') };
+      const run = await output(() => runExtensionToken(opts, tool, holding(holder ?? '').exec));
+      expect(run).toMatchObject({ error, stdout: '' });
+      expect(calls).toEqual([]);
+    }
+  );
+
+  test('token says so when docker cannot tell which stack is up', async () => {
+    const { tool } = fakeKit();
+    const run = await output(() =>
+      runExtensionToken({ scope: 'm:read' }, tool, holding('', false).exec)
+    );
+    expect(run.error).toBe(
+      'cannot ask docker which stack is up: Cannot connect to the Docker daemon'
+    );
+  });
+
+  test('token with --issuer asks that issuer and skips the local stack check', async () => {
+    const { tool, calls } = fakeKit();
+    const { exec, asked } = holding('');
+    const opts = { scope: 'probe:write', issuer: 'http://localhost:4281' };
+    expect((await output(() => runExtensionToken(opts, tool, exec))).stdout).toBe(
+      'eyJhbGciOi.dev.token'
+    );
+    expect([asked, calls]).toEqual([[], [['token', opts]]]);
   });
 
   test('a failing step fails the command with the kit message', async () => {
@@ -57,7 +125,7 @@ describe('extension up, down and token: thin commands over the kit tool', () => 
     for (const step of [
       () => runExtensionUp({}, tool),
       () => runExtensionDown({}, tool),
-      () => runExtensionToken({ scope: 'probe:write' }, tool),
+      () => runExtensionToken({ scope: 'probe:write', issuer: 'http://localhost:4281' }, tool),
     ])
       expect(await output(step)).toMatchObject({ error: 'docker is not running', lines: [] });
   });
