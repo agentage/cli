@@ -17,6 +17,10 @@ No passwords touch the terminal; tokens are stored in `~/.agentage/auth.json`
 (mode 0600). Running `setup` while signed in validates the session and prints status
 instead of starting a new sign-in; an expired session falls through to a fresh sign-in.
 
+After sign-in, the browser returns to `http://localhost:<port>/callback` on this machine. So
+open the sign-in URL in a browser on this same machine. On a server, use a personal access token
+instead (see [Token auth](#token-auth-ci-and-headless)).
+
 `setup` also installs extensions:
 
 ```bash
@@ -469,8 +473,9 @@ and record (`dist/agentage-extension.json` is downloaded) and only npm is retrie
 another commit, or an image already pushed without a record, is refused; a GitHub or registry
 call that fails or outlasts `--timeout` (default 60 s) stops the release. A new version runs
 `build --push` and attaches `agentage-extension.json` to the tag's GitHub release (created when
-missing). Last, `npm publish --access public --provenance --ignore-scripts`, skipped when the version is on npm;
-when the direct publish is not authorized, or `NPM_TOKEN` is set and the name is new, it runs `npm
+missing). Last, `npm publish --access public --provenance --ignore-scripts`, skipped when the version is on npm.
+Only an `E404` from `npm view` counts as not on npm; any other `npm view` error stops the release.
+When the direct publish is not authorized, or `NPM_TOKEN` is set and the name is new, it runs `npm
 stage publish` instead. `GH_TOKEN` (or `GITHUB_TOKEN`) goes only to `gh` and `NPM_TOKEN` only to
 npm; both leave the environment first, so the image build and npm lifecycle scripts never see
 them. A package with `"private": true` skips npm entirely (no `npm --version`, `view` or `publish`) and prints `PASS npm: private package, not published`. Needs git, `docker` and the `gh` CLI, and npm only for a package that is not private. Needs `docker login` to the registry first.
@@ -609,7 +614,8 @@ agentage update --check   # report whether an update is available, don't install
 
 Machines without a browser authenticate with a personal access token. Mint one in the
 dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or pass
-`--token aga_...` per command. A token takes precedence over a stored sign-in. Plain `setup` does not sign in with it; its account step and status step use it.
+`--token aga_...` per command. A token takes precedence over a stored sign-in. Plain `setup`
+never signs in with `AGENTAGE_TOKEN`. Its account step and its status step use the token.
 
 ## Exit codes
 
