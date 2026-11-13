@@ -304,6 +304,9 @@ copy, and `agentage extension up` runs the whole package on Docker.
 | `agentage extension up` / `down`                          | Run an extension package on this machine with Docker, then stop          |
 | `agentage extension token --scope <scope> [--dir <path>]` | Print a token from the dev issuer `extension up` started for that folder |
 
+`token --dir` is on master and needs a cli newer than 0.51.0. A new project pins the template's cli
+version, so check that version first.
+
 ## Run it locally
 
 `extension create <id> [part...]` makes `./extension-<id>` from the template. A part is one piece
@@ -322,5 +325,6 @@ line, it says so and you set it by hand.
    folder, or find it with `docker ps`.
 4. `npx agentage extension token --scope <id>:read` prints a token from the stack `up` started in
    this folder. When the stack on localhost:4281 is another folder's, `token` refuses and names it.
-   It needs Docker unless `--issuer` is given.
+   It needs Docker unless `--issuer` is given. This stack-owner check is on master and needs a cli
+   newer than 0.51.0. A new project pins the template's cli version.
 5. Run `npx agentage extension down` to remove the containers, network and store volume.

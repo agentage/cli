@@ -13,14 +13,14 @@ npm install -g @agentage/cli && agentage setup
 ## What is this?
 
 The CLI stays **small**: sign-in, status, update and an extension manager. Sign-in uses OAuth 2.1
-with PKCE: you type nothing secret. Everything else, memory included,
-arrives as an extension.
+with PKCE: you type nothing into the terminal. Everything else, memory included, arrives as an
+extension.
 
 ## Get started
 
 `agentage setup` opens your browser for sign-in. Check the session with `agentage status`.
-Extensions need no sign-in. Sign-in adds your account's profile, so every machine gets the same
-extensions.
+Installing and running extensions needs no sign-in. Sign-in adds your account's profile, so every
+machine gets the same extensions.
 
 ### On a server or in CI (no browser)
 
@@ -54,7 +54,7 @@ More: [author commands](docs/extensions.md#author-commands).
   per machine.
 - `setup` installs the profile, loads each extension once and prints `ok` or why not.
 - `extension install` and `remove` edit the profile, then do the same.
-- Nothing runs on a timer.
+- Nothing installs on a timer: the machine changes only when you run a command.
 
 ```bash
 agentage extension install probe        # short name for @agentage/extension-probe
@@ -66,26 +66,26 @@ agentage setup --latest                 # newest versions the ranges allow
 agentage setup --profile profile.json   # install a profile file, no sign-in
 ```
 
-Extensions run with your privileges, so install only ones you trust. npm runs with
+Extensions run in the CLI process with your privileges, so install only ones you trust. npm runs with
 `--ignore-scripts`. The account token leaves the environment before extension code loads.
 
 More: [docs/profiles.md](docs/profiles.md).
 
 ### Write and run your own extension
 
-`create` needs git and network to clone the template from GitHub. `build` and `up` also need
+`create` needs git and network. `build` and `up` also need
 Docker; `release` needs the `gh` CLI.
 
 ```bash
 agentage extension create example api   # makes ./extension-example with the api part
-cd extension-example && npm ci          # installs the CLI version the project pins
+cd extension-example && npm ci          # installs the pinned cli
 git init -q && git add -A && git commit -qm init   # up needs one commit
-npx agentage extension up               # runs it on this machine with Docker
+npx agentage extension up               # runs it with Docker
 npx agentage extension token --scope example:read
 npx agentage extension down             # removes what up started
 ```
 
-In the extension folder, use `npx agentage`: the global one can be older than the project's.
+In the extension folder, use `npx agentage`: the project's pinned cli and the global one can differ.
 
 More: [docs/extensions.md](docs/extensions.md#run-it-locally).
 
@@ -114,7 +114,7 @@ delete `~/.agentage`.
 - `setup` registers a one-off OAuth client and waits for the browser on a localhost callback.
 - Tokens land in `~/.agentage/auth.json` (owner-only) and refresh automatically.
 - `status` checks the session against the account's introspection endpoint.
-- Nothing runs in the background. Nothing else installs unless your profile names extensions.
+- Nothing runs in the background.
 
 ## Configuration
 
