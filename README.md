@@ -210,13 +210,13 @@ nothing is installed beyond this package unless your profile names extensions.
 
 ## Configuration
 
-| Env                       | Default               | Purpose                                            |
-| ------------------------- | --------------------- | -------------------------------------------------- |
-| `AGENTAGE_SITE_FQDN`      | `agentage.io`         | Target host                                        |
-| `AGENTAGE_CONFIG_DIR`     | `~/.agentage`         | Config and credentials directory                   |
-| `AGENTAGE_TOKEN`          | -                     | Personal access token for CI and headless machines |
-| `AGENTAGE_EXTENSIONS_DIR` | `<config>/extensions` | Where extensions are installed                     |
-| `NO_COLOR`                | -                     | Disable colored output                             |
+| Env                       | Default               | Purpose                                                              |
+| ------------------------- | --------------------- | -------------------------------------------------------------------- |
+| `AGENTAGE_SITE_FQDN`      | `agentage.io`         | Target host                                                          |
+| `AGENTAGE_CONFIG_DIR`     | `~/.agentage`         | Config and credentials directory                                     |
+| `AGENTAGE_TOKEN`          | -                     | Personal access token for CI and headless machines                   |
+| `AGENTAGE_EXTENSIONS_DIR` | `<config>/extensions` | Where extensions are installed (`<config>` is `AGENTAGE_CONFIG_DIR`) |
+| `NO_COLOR`                | -                     | Disable colored output                                               |
 
 ## Develop
 
