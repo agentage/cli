@@ -61,9 +61,6 @@ agentage extension install probe        # short name for @agentage/extension-pro
 agentage extension list                 # one row per extension
 agentage probe ping                     # run a command by its extension id
 agentage extension remove probe         # take it out again
-agentage extension doctor               # load each once, refresh states
-agentage setup --latest                 # newest versions the ranges allow
-agentage setup --profile profile.json   # install a profile file, no sign-in
 ```
 
 Extensions run in the CLI process with your privileges, so install only ones you trust. npm runs with
@@ -81,7 +78,7 @@ agentage extension create example api   # makes ./extension-example with the api
 cd extension-example && npm ci          # installs the pinned cli
 git init -q && git add -A && git commit -qm init   # up needs one commit
 npx agentage extension up               # runs it with Docker
-npx agentage extension token --scope example:read
+npx agentage extension token --scope example:read   # prints a dev token with that scope
 npx agentage extension down             # removes what up started
 ```
 
