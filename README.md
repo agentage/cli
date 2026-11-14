@@ -46,7 +46,7 @@ More: [docs/reference.md](docs/reference.md#token-auth-ci-and-headless).
 | `agentage update`             | Install the latest published version (`--check` only reports)                 |
 | `agentage extension ...`      | Manage extensions, see [Extensions](#extensions)                              |
 
-More: [author commands](docs/extensions.md#author-commands).
+More: [author commands](docs/extensions.md#author-commands) and [the lifecycle](docs/extensions.md#lifecycle).
 
 ## Extensions
 
