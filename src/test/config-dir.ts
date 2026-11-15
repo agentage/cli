@@ -31,7 +31,7 @@ export const pkg = (name: string): string =>
 
 // The fixture folder behind a short or full name, e.g. a dev path or what npm would unpack.
 export const fixture = (name: string): string =>
-  join(FIXTURES, `extension-${pkg(name).replace('@agentage/fixture-', '')}`);
+  join(FIXTURES, `extension-${pkg(name).replace(/^@agentage\/(fixture|extension)-/, '')}`);
 
 const expand = (map: Record<string, string>): Record<string, string> =>
   Object.fromEntries(Object.entries(map).map(([name, value]) => [pkg(name), value]));

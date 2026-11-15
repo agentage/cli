@@ -183,6 +183,34 @@ describe('finding extensions on disk', () => {
     });
   });
 
+  // The kit 0.12 range is a warning; every other check still runs for such a package.
+  test('a package on kit 0.12 keeps the entry and duplicate checks; a clean one only warns', ({
+    dir,
+  }) => {
+    const kitPkg = (name: string, id: string, extra: Record<string, unknown> = {}) => ({
+      name,
+      engines: { agentage: '^0.12' },
+      agentage: { id, parts: { api: true } },
+      ...extra,
+    });
+    const cli = (entry: string) => ({ parts: { cli: { entry } }, commands: [] });
+    place(
+      dir,
+      '@test/esc',
+      kitPkg('@test/esc', 'esc', { agentage: { id: 'esc', ...cli('../x.js') } })
+    );
+    place(dir, '@test/one', kitPkg('@test/one', 'twin'));
+    place(dir, '@test/two', kitPkg('@test/two', 'twin'));
+    place(dir, '@test/ok', kitPkg('@test/ok', 'ok'));
+    const found = find(['@test/esc', '@test/one', '@test/two', '@test/ok']).extensions;
+    expect(found.map((e) => [e.id, e.problem, e.warning])).toEqual([
+      ['esc', 'entry ../x.js is outside the package', 'built on kit 0.12, update the extension'],
+      ['twin', 'duplicate id "twin" (also @test/two)', 'built on kit 0.12, update the extension'],
+      ['twin', 'duplicate id "twin" (also @test/one)', 'built on kit 0.12, update the extension'],
+      ['ok', null, 'built on kit 0.12, update the extension'],
+    ]);
+  });
+
   test('a kit-shaped package without its built command entry is invalid, naming the entry', ({
     dir,
   }) => {

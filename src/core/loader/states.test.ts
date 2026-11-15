@@ -22,6 +22,7 @@ const found = (name: string, extra: Partial<DiscoveredExtension> = {}): Discover
   secrets: [],
   descriptions: {},
   problem: null,
+  warning: null,
   missing: false,
   ...extra,
 });

@@ -1,6 +1,8 @@
 import { type HostRow } from '../../lib/daemon/host-client.js';
 import { CliError, WithMeta } from '../../lib/json-output.js';
 import { type Listing, type Market } from '../../lib/net/market.js';
+import { fromNpmLine, noSiteMarket } from '../../lib/net/market-error.js';
+import { siteFqdn } from '../../lib/net/origins.js';
 import { pruneUnused, type LifecycleDeps } from './lifecycle.js';
 
 export interface ListOptions {
@@ -17,6 +19,8 @@ export interface ExtensionUpdateOptions {
 export interface ListDeps extends LifecycleDeps {
   available: () => Promise<Listing>;
   market: () => Market;
+  // A site with no market: the newest version on npm, by the 0.51 names.
+  npmNewest: (id: string) => Promise<string>;
 }
 
 // The daemon's rows as they are; a folder entry says `folder` and keeps its path.
@@ -62,14 +66,22 @@ interface Move {
   to: string;
 }
 
-const movesOf = async (rows: HostRow[], market: Market): Promise<Move[]> => {
+const newestOf = async (id: string, market: Market, deps: ListDeps): Promise<string | null> => {
+  const to = (await market.latest(id))?.version;
+  if (to || !noSiteMarket(market.down())) return to ?? null;
+  return deps.npmNewest(id);
+};
+
+const movesOf = async (rows: HostRow[], deps: ListDeps): Promise<Move[]> => {
+  const market = deps.market();
   const moves: Move[] = [];
   for (const row of rows) {
-    const to = (await market.latest(row.id))?.version;
+    const to = await newestOf(row.id, market, deps);
     if (to && to !== row.version) moves.push({ id: row.id, from: row.version, to });
   }
   const down = market.down();
-  if (down) throw down;
+  if (down && !noSiteMarket(down)) throw down;
+  if (down && rows.length > 0) console.error(fromNpmLine(siteFqdn(), 'newest versions'));
   return moves;
 };
 
@@ -83,7 +95,7 @@ const marketRows = async (opts: ExtensionUpdateOptions, rows: HostRow[]): Promis
 // The market's newest version for each extension it installed (or one); --check changes nothing.
 export const runUpdate = async (opts: ExtensionUpdateOptions, deps: ListDeps) => {
   const host = await deps.host();
-  const moves = await movesOf(await marketRows(opts, await host.list()), deps.market());
+  const moves = await movesOf(await marketRows(opts, await host.list()), deps);
   for (const { id, from, to } of moves) {
     if (!opts.check) await host.change(id, { version: to }).then(() => pruneUnused(id));
     console.log(`${id} ${from} to ${to}${opts.check ? ' (available)' : ''}`);

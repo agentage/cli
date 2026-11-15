@@ -37,6 +37,19 @@ describe('extension install', () => {
     expect(run.lines).toEqual(['probe 0.7.0 running']);
   });
 
+  test('a site with no market: a bare id says it came from npm on stderr; id@version does not', async () => {
+    const { deps } = fakeHost();
+    const noMarket = vi.fn(async () => true);
+    const run = await output(() => runInstall({ name: 'probe' }, { ...deps, noMarket }));
+    expect(run.lines).toEqual(['probe 0.7.0 running']);
+    expect(run.stderr).toBe(
+      'agentage.io has no extension market; probe 0.7.0 came from npm, as cli 0.51 did'
+    );
+    const pinned = await output(() => runInstall({ name: 'probe@0.7.0' }, { ...deps, noMarket }));
+    expect(pinned.stderr).toBe('');
+    expect(noMarket).toHaveBeenCalledOnce();
+  });
+
   test('installed: another version is a PATCH (go back keeps the data); the same is no change', async () => {
     const { host, deps } = fakeHost([marketRow('probe', '0.7.0')]);
     await output(() => runInstall({ name: 'probe@0.6.2' }, deps));

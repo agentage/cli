@@ -8,6 +8,8 @@ import { editableProfile } from '../../core/profile/profile.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type CliError, messageOf } from '../../lib/json-output.js';
 import { type Market } from '../../lib/net/market.js';
+import { fromNpmLine, noSiteMarket } from '../../lib/net/market-error.js';
+import { siteFqdn } from '../../lib/net/origins.js';
 
 export interface InstallerDeps {
   npm: () => Promise<Npm>;
@@ -22,15 +24,9 @@ type Registry = ReturnType<typeof registryLookup>;
 export const installError = (code: string, status: 400 | 404 | 502, message: string): Error =>
   Object.assign(new Error(message), { code, status });
 
-// The daemon reads the site once, when it starts: another site needs a restart with it set.
-const RESTART = 'then agentage daemon restart (the daemon reads the site at its start)';
-
-// The market's own reason, in the daemon's case (no_market is NO_MARKET); a restart helps only
-// when the site itself has no market.
-const marketDown = (id: string, why: CliError): Error => {
-  const restart = why.code === 'no_discovery' || why.code === 'no_market' ? `, ${RESTART}` : '';
-  return installError(why.code.toUpperCase(), 502, `${id}: ${why.message}${restart}`);
-};
+// The market's own reason, in the daemon's case (market_failed is MARKET_FAILED).
+const marketDown = (id: string, why: CliError): Error =>
+  installError(why.code.toUpperCase(), 502, `${id}: ${why.message}`);
 
 // The market names the package and its newest version; without it npm alone decides.
 const inputOf = async (id: string, version: string | undefined, market: Market) => {
@@ -39,7 +35,8 @@ const inputOf = async (id: string, version: string | undefined, market: Market) 
     throw installError('PRIVATE_ENTRY', 400, `${id}: private entry, no npm package to install`);
   if (latest) return `${latest.package}@${version ?? latest.version}`;
   const down = market.down();
-  if (!version && down) throw marketDown(id, down);
+  if (!version && down && !noSiteMarket(down)) throw marketDown(id, down);
+  if (!version && down) console.error(fromNpmLine(siteFqdn(), `${id} resolves`));
   return version ? `${id}@${version}` : id;
 };
 
@@ -94,3 +91,9 @@ export const cliInstaller =
     checkId(dir, id);
     return { id, version: found.version, dir };
   };
+
+// The newest version npm has that this cli can run, by the 0.51 names (for update on such a site).
+export const npmNewest =
+  (manifest: () => Promise<NpmManifest>) =>
+  async (id: string): Promise<string> =>
+    (await exact(id, registryLookup(manifest, editableProfile().registries))).version;

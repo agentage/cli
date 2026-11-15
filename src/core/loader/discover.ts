@@ -5,7 +5,13 @@ import { type ConfigMap } from '../profile/schema.js';
 import { checkConfig } from './config.js';
 import { unsafeDevPath } from './dev-path.js';
 import { type KitCommand } from './kit-manifest.js';
-import { manifestInfo, manifestProblem, type ManifestInfo, type ManifestKind } from './manifest.js';
+import {
+  kitWarning,
+  manifestInfo,
+  manifestProblem,
+  type ManifestInfo,
+  type ManifestKind,
+} from './manifest.js';
 
 export type ExtensionSource = 'tree' | 'dev';
 
@@ -31,6 +37,8 @@ export interface DiscoveredExtension {
   // Declared `description` by key, shown when setup asks for a secret.
   descriptions: Record<string, string>;
   problem: string | null;
+  // Shown by status and doctor, never a refusal: built on the previous kit minor.
+  warning: string | null;
   missing: boolean;
 }
 
@@ -111,6 +119,7 @@ const blank = (pkg: string, source: ExtensionSource, dir: string): DiscoveredExt
   secrets: [],
   descriptions: {},
   problem: null,
+  warning: null,
   missing: false,
 });
 
@@ -137,7 +146,7 @@ export const inspect = (
   const unsafe = source === 'dev' ? unsafeDevPath(dir, process.getuid?.()) : null;
   const problem = unsafe ?? manifestProblem(pkg, info) ?? entryProblem(info, entry) ?? badConfig;
   const read = { kind, version, id, entry, commands, kitCommands, peers, optionalPeers };
-  return { ...base, ...read, ...declared, problem };
+  return { ...base, ...read, ...declared, problem, warning: kitWarning(info) };
 };
 
 // Every claimant of a shared id is invalid; a dev copy of the same package never reaches here.

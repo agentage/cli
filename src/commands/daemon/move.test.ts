@@ -1,5 +1,7 @@
+import { join } from 'node:path';
 import { describe, expect } from 'vitest';
 import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
+import { writeKitExtension } from '../../test/kit-fixture.js';
 import { runDaemonStatus } from './daemon.js';
 import { MOVE_REPORT, MOVED_MARKER, moveOldLists } from './move.js';
 
@@ -64,6 +66,24 @@ describe('the one-time move of the old lists (D6)', () => {
       hello: { greeting: 'new', mode: 'a' },
       world: { x: 1 },
     });
+  });
+
+  test('two kit 0.12 folders with one id: both are skipped and listed, neither runs', async ({
+    dir,
+  }) => {
+    const a = writeKitExtension(dir.at('dev/a'), 'twin', '0.1.0', '^0.12');
+    const b = writeKitExtension(dir.at('dev/b'), 'twin', '0.1.0', '^0.12');
+    const pkgB = '@agentage/extension-twin-b';
+    const json = dir.json(join('dev/b', 'package.json'));
+    dir.write(join('dev/b', 'package.json'), { ...json, name: pkgB });
+    dir.machine({ '@agentage/extension-twin': a, [pkgB]: b });
+    await output(() => moveOldLists());
+    expect(dir.exists('installation.json')).toBe(false);
+    const reasons = (dir.json(MOVE_REPORT)['skipped'] as { reason: string }[]).map((s) => s.reason);
+    expect(reasons).toEqual([
+      `duplicate id "twin" (also ${pkgB})`,
+      'duplicate id "twin" (also @agentage/extension-twin)',
+    ]);
   });
 
   test('a new machine writes only the marker', async ({ dir }) => {

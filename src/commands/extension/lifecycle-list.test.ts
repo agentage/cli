@@ -7,16 +7,20 @@ import { runList, runUpdate, table } from './lifecycle-list.js';
 
 const NO_MARKET = new CliError('no_market', 'agentage.io has no extension market');
 
-const market = (latest: Record<string, string>, down = false): Market => ({
+const UNREACHABLE = new CliError('market_unreachable', 'cannot reach https://agentage.io');
+
+const market = (latest: Record<string, string>, down: CliError | null = null): Market => ({
   latest: vi.fn(async (id: string) => (latest[id] ? { version: latest[id], package: null } : null)),
-  down: () => (down ? NO_MARKET : null),
+  down: () => down,
 });
 
 const listDeps = (rows = [marketRow('probe', '0.6.2')], latest: Record<string, string> = {}) => {
   const fake = fakeHost(rows);
   const listing: Listing = { offered: [{ id: 'notes', version: '1.2.0' }], skipped: [] };
   const available = vi.fn(async () => listing);
-  return { ...fake, deps: { ...fake.deps, available, market: () => market(latest) } };
+  const npmNewest = vi.fn(async (id: string) => (id === 'probe' ? '0.7.0' : '1.0.0'));
+  const deps = { ...fake.deps, available, market: () => market(latest), npmNewest };
+  return { ...fake, deps };
 };
 
 describe('extension list', () => {
@@ -120,16 +124,28 @@ describe('extension update', () => {
     expect(host.change).toHaveBeenCalledOnce();
   });
 
-  test('nothing newer says so; an id not from the market, or a silent market, fails', async () => {
+  test('nothing newer says so; an id not from the market, or an unreachable market, fails', async () => {
     const { deps } = listDeps(rows(), {});
     expect((await output(() => runUpdate({}, deps))).lines).toEqual([
       'every extension is at its newest version',
     ]);
     expect((await output(() => runUpdate({ id: 'demo' }, deps))).code).toBe('not_installed');
-    const down = { ...deps, market: () => market({}, true) };
+    const down = { ...deps, market: () => market({}, UNREACHABLE) };
     expect(await output(() => runUpdate({}, down))).toMatchObject({
-      code: 'no_market',
-      error: NO_MARKET.message,
+      code: 'market_unreachable',
+      error: UNREACHABLE.message,
     });
+    expect(deps.npmNewest).not.toHaveBeenCalled();
+  });
+
+  test('a site with no market: the newest versions come from npm, as 0.51, with one line', async () => {
+    const { deps, host } = listDeps(rows(), {});
+    const none = { ...deps, market: () => market({}, NO_MARKET) };
+    const run = await output(() => runUpdate({}, none));
+    expect(vi.mocked(host.change).mock.calls).toEqual([['probe', { version: '0.7.0' }]]);
+    expect(run.lines).toEqual(['probe 0.6.2 to 0.7.0']);
+    expect(run.stderr).toBe(
+      'agentage.io has no extension market; newest versions from npm, as cli 0.51 did'
+    );
   });
 });
