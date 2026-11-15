@@ -17,6 +17,7 @@ import { installThroughDaemon } from './setup-install.js';
 import { type HostClient } from '../../lib/daemon/host-client.js';
 import { daemonOff } from '../../lib/daemon/daemon-file.js';
 import { type EditDeps } from './sync.js';
+import { CliError } from '../../lib/json-output.js';
 
 // Sign-in and status reach the site; npm and the account are the other seams.
 export interface ExtensionSetupDeps extends SetupDeps, EditDeps {
@@ -24,17 +25,21 @@ export interface ExtensionSetupDeps extends SetupDeps, EditDeps {
   host: () => Promise<HostClient>;
   // `extension update`, which --latest now runs.
   updateExtensions: () => Promise<unknown>;
+  // The daemon installs an off entry disabled in one step (kit capability installDisabled).
+  installsDisabled?: () => Promise<boolean>;
 }
 
 interface Source {
   profile: Profile;
   warnings: string[];
+  // The file it was read from, for the plan's `from` line.
+  from: string;
 }
 
 const sourceOf = (label: string, parsed: ProfileParse): Source => {
   if (!parsed.ok)
-    throw new Error(`${label} is invalid:\n${parsed.errors.map((e) => `  ${e}`).join('\n')}`);
-  return { profile: parsed.profile, warnings: parsed.warnings };
+    throw new CliError('profile_invalid', `${label} is invalid: ${parsed.errors.join('; ')}`);
+  return { profile: parsed.profile, warnings: parsed.warnings, from: label };
 };
 
 const fileSource = (file: string): Source => {
@@ -53,14 +58,15 @@ const fileSource = (file: string): Source => {
 const localSource = (): Source => {
   const parsed = readProfile();
   if (parsed !== null) return sourceOf('profile.json', parsed);
-  return { profile: defaultProfile(), warnings: [] };
+  return { profile: defaultProfile(), warnings: [], from: 'the built-in default profile' };
 };
 
 // --check and --dry-run read only and never sign in.
 const readOnly = (source: Source, opts: SetupOptions, file: boolean): void => {
   printWarnings(source.warnings);
-  if (opts.check) runSetupCheck(source.profile, { ...opts, file });
-  else printDryRun(source.profile, { ...opts, file });
+  const plan = { ...opts, file, from: source.from };
+  if (opts.check) runSetupCheck(source.profile, plan);
+  else printDryRun(source.profile, plan);
 };
 
 const noDaemon = (opts: SetupOptions): boolean => opts.daemon === false || daemonOff();
@@ -74,6 +80,7 @@ const fromFile = async (source: Source, opts: SetupOptions, deps: ExtensionSetup
     host: deps.host,
     daemonOff: noDaemon(opts),
     from: 'file',
+    installsDisabled: deps.installsDisabled,
   });
 };
 
@@ -87,7 +94,12 @@ const startDaemon = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promis
 const profileDeps = (opts: SetupOptions, deps: ExtensionSetupDeps) => ({
   ...deps,
   installProfile: (profile: Profile) =>
-    installThroughDaemon(profile, { host: deps.host, daemonOff: noDaemon(opts), from: 'account' }),
+    installThroughDaemon(profile, {
+      host: deps.host,
+      daemonOff: noDaemon(opts),
+      from: 'account',
+      installsDisabled: deps.installsDisabled,
+    }),
 });
 
 // A token is the headless credential: no browser and no callback, so --reauth has nothing to do.

@@ -12,6 +12,9 @@ const PACKAGE_ID = /^(?:@agentage\/extension-|agentage-extension-)([a-z][a-z0-9-
 export const profileMarkerPath = (): string => join(getConfigDir(), 'setup.profile-installed');
 export const accountProfileInstalled = (): boolean => existsSync(profileMarkerPath());
 
+// A profile entry the daemon can never install: said once, never a change to make.
+export const NOT_EXTENSION = 'not an extension, skipped';
+
 export interface ProfileEntry {
   name: string;
   range: string;
@@ -36,17 +39,28 @@ const verbOf = (entry: ProfileEntry, have: Set<string>, done: boolean): PlanVerb
   return entry.off ? 'off' : 'add';
 };
 
+// skipped: the entries that are no extension (no @agentage/extension- prefix), never installed.
+export type ProfilePlan = Plan & { skipped: string[] };
+
 // What setup would send to the daemon: add, add disabled (off), or nothing (unchanged). Reads
 // installation.json only; `done` is a plain setup that installed the account profile already.
-export const profilePlan = (profile: Profile, done: boolean): Plan => {
+export const profilePlan = (profile: Profile, done: boolean): ProfilePlan => {
   const rows = new Map(installationRows().map((row) => [row.id, row]));
-  const extensions: PlanEntry[] = profileEntries(profile).map((entry) => ({
-    verb: verbOf(entry, new Set(rows.keys()), done),
-    name: entry.name,
-    wanted: entry.range,
-    current: entry.id !== null && rows.has(entry.id) ? 'installed' : null,
-  }));
+  const entries = profileEntries(profile);
+  const extensions: PlanEntry[] = entries.flatMap((entry) =>
+    entry.id === null
+      ? []
+      : [
+          {
+            verb: verbOf(entry, new Set(rows.keys()), done),
+            name: entry.name,
+            wanted: entry.range,
+            current: rows.has(entry.id) ? 'installed' : null,
+          },
+        ]
+  );
   const summary = { add: 0, update: 0, remove: 0, off: 0, unchanged: 0 };
   for (const entry of extensions) summary[entry.verb] += 1;
-  return { extensions, summary };
+  const skipped = entries.filter((entry) => entry.id === null).map((entry) => entry.name);
+  return { extensions, summary, skipped };
 };

@@ -40,7 +40,7 @@ describe('agentage setup --profile', () => {
       /^cannot read profile .*gone\.json: ENOENT/
     );
     expect((await setup({ profile: dir.at('junk.json') })).error).toBe(
-      `${dir.at('junk.json')} is invalid:\n  not valid JSON`
+      `${dir.at('junk.json')} is invalid: not valid JSON`
     );
     expect((await setup({ profile: 'https://example.com/p.json' })).error).toBe(
       'https://example.com/p.json: profile URLs are not supported; pass a file path'
@@ -104,7 +104,8 @@ describe('agentage setup --profile installs through the daemon', () => {
       runExtensionSetup({ profile: file }, { ...deps, host: async () => daemon.host })
     );
     expect(run.lines).toContain('hello already installed');
-    expect(vi.mocked(daemon.host.add).mock.calls).toEqual([[{ id: 'world' }]]);
+    expect(vi.mocked(daemon.host.add).mock.calls).toEqual([[{ id: 'hello' }], [{ id: 'world' }]]);
+    expect(daemon.host.change).not.toHaveBeenCalled();
   });
 
   test('with the daemon off it installs nothing and says so', async ({ dir }) => {
