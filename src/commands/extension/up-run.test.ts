@@ -287,7 +287,7 @@ describe('extension down: the local run of this folder', () => {
 
   test('a record whose port refuses is stale and goes; no record is none', async ({ dir }) => {
     const demo = dir.at('ext');
-    writeRecord(demo, { pid: 1, port: await freeFrom(4400), id: 'demo', instance: 'x' });
+    writeRecord(demo, { pid: 2 ** 22 + 7, port: await freeFrom(4400), id: 'demo', instance: 'x' });
     expect(await stopLocal(demo)).toBe('stale');
     expect(dir.exists('ext/.agentage/up.json')).toBe(false);
     expect(await stopLocal(demo)).toBe('none');
