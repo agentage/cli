@@ -47,6 +47,92 @@ describe('the C5 client of the daemon', () => {
     await expect(host.list()).rejects.toMatchObject({ code: 'error', message: 'HTTP 500' });
   });
 
+  const env = (code: string, message: string, details?: object) => ({
+    success: false,
+    error: { code, message, ...(details && { details }) },
+  });
+  const STATUS = 'agentage daemon status';
+  const ANSWERS: [string, number, object, string, string][] = [
+    [
+      '409 installed: the details pass',
+      409,
+      env('CONFLICT', 'probe is installed', { id: 'probe', version: '0.6.2' }),
+      'CONFLICT',
+      'probe is installed',
+    ],
+    [
+      '409 the installer still runs',
+      409,
+      env('CONFLICT', 'the installer of probe still runs', {
+        op: 'install',
+        id: 'probe',
+        since: 't',
+        timedOut: true,
+      }),
+      'CONFLICT',
+      `the installer of probe still runs; ${STATUS} shows it under pending; try again when it ends`,
+    ],
+    [
+      '409 installation.json unreadable',
+      409,
+      env(
+        'INSTALLATION_UNREADABLE',
+        'installation.json cannot be read (EACCES): fix it; no change is written',
+        { reason: 'EACCES' }
+      ),
+      'INSTALLATION_UNREADABLE',
+      `installation.json cannot be read (EACCES): fix it; no change is written; ${STATUS} shows the reason`,
+    ],
+    [
+      '409 another daemon',
+      409,
+      env('DAEMON_RUNNING', 'a daemon (process 7) runs on /c: change it through it'),
+      'DAEMON_RUNNING',
+      'a daemon (process 7) runs on /c: change it through it',
+    ],
+    [
+      '503 a locked file',
+      503,
+      env('UNAVAILABLE', 'settings.json is locked by process 7: waited 5000 ms'),
+      'UNAVAILABLE',
+      'settings.json is locked by process 7: waited 5000 ms; try again',
+    ],
+    [
+      '503 the daemon stops',
+      503,
+      env('UNAVAILABLE', 'the daemon stops'),
+      'UNAVAILABLE',
+      'the daemon stops; try again',
+    ],
+    [
+      '503 a queue that waited: no second try again',
+      503,
+      env('UNAVAILABLE', 'other changes ran for 5 ms: try again'),
+      'UNAVAILABLE',
+      'other changes ran for 5 ms: try again',
+    ],
+    [
+      '504 the installer timed out',
+      504,
+      env('TIMEOUT', 'the installer did not answer in 600000 ms'),
+      'TIMEOUT',
+      `the installer did not answer in 600000 ms; it may still finish: ${STATUS} shows it under pending`,
+    ],
+  ];
+
+  it.each(ANSWERS)(
+    '%s: one honest line, the daemon code',
+    async (_name, status, body, code, message) => {
+      served = await serve(() => [status, body]);
+      const err = await hostClient(served.port)
+        .add({ id: 'probe' })
+        .catch((e: unknown) => e);
+      expect(err).toMatchObject({ code, message, status });
+      const details = (body as { error: { details?: object } }).error.details ?? {};
+      expect((err as { details: object }).details).toEqual(details);
+    }
+  );
+
   it('a daemon that does not answer is daemon_unavailable', async () => {
     served = await serve(() => [200, {}]);
     const { port } = served;
@@ -66,11 +152,11 @@ describe('the C5 client of the daemon', () => {
     });
     await expect(host.add({ id: 'probe' })).rejects.toMatchObject({
       code: 'timeout',
-      message: expect.stringMatching(/in 0\.2 s; the install may still run .* no row shows until/),
+      message: `the daemon on 127.0.0.1:${port} did not answer in 0.2 s; the install may still run in the daemon: agentage daemon status shows it under pending`,
     });
     await expect(host.change('probe', { enabled: false })).rejects.toMatchObject({
       message: expect.stringMatching(
-        /; the change may still finish; run agentage extension list again/
+        /; the change may still finish: agentage daemon status shows it under pending$/
       ),
     });
     silent.closeAllConnections();

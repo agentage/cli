@@ -32,6 +32,45 @@ describe('agentage daemon status | stop | restart', () => {
     expect(status).toEqual({ running: true, port: served.port, ...HEALTH, move: null });
   });
 
+  test('status: pending, unsynced and installation marks; degraded always says why', async ({
+    dir,
+  }) => {
+    const pending = [{ op: 'install', id: 'notes', since: '2026-11-15T10:00:00Z', timedOut: true }];
+    const marks = { pending, unsynced: ['probe'], installation: 'invalid' };
+    const extensions = [{ id: 'notes', version: '1.0.0', state: 'failed' }];
+    served = await serve(() => [200, { ...HEALTH, status: 'degraded', extensions, ...marks }]);
+    dir.write('daemon.json', { pid: process.pid, port: served.port });
+    let status: unknown;
+    const run = await output(async () => (status = await runDaemonStatus()));
+    const reasons = [
+      'notes is failed',
+      'a change of probe was not undone: its files disagree',
+      'installation.json had rows it refused: kept as installation.json.bad',
+    ];
+    expect(run.lines.slice(1)).toEqual([
+      '  notes 1.0.0 failed',
+      '  pending install notes since 2026-11-15T10:00:00Z, the daemon stopped waiting; it still runs',
+      ...reasons.map((r) => `  degraded: ${r}`),
+    ]);
+    expect(status).toMatchObject({ status: 'degraded', ...marks, reasons });
+  });
+
+  test('status: an unreadable installation.json names its reason; a bare degraded says none came', async ({
+    dir,
+  }) => {
+    const unreadable = { installation: 'unreadable', installationError: 'EACCES' };
+    const replies = [
+      { ...HEALTH, status: 'degraded', ...unreadable },
+      { ...HEALTH, status: 'degraded' },
+    ];
+    served = await serve(() => [200, replies.shift()]);
+    dir.write('daemon.json', { pid: process.pid, port: served.port });
+    const first = await output(() => runDaemonStatus());
+    expect(first.lines).toContain('  degraded: installation.json cannot be read (EACCES)');
+    const second = await output(() => runDaemonStatus());
+    expect(second.lines).toContain('  degraded: the daemon gave no reason');
+  });
+
   test('status: a live pid that does not answer is unresponsive; a stale file is not running', async ({
     dir,
   }) => {

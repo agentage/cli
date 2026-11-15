@@ -9,8 +9,6 @@ import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type HostClient, type HostSummary } from '../../lib/daemon/host-client.js';
 import { installFolder, installId } from './install-once.js';
 import { CliError, isJsonRun } from '../../lib/json-output.js';
-import { fromNpmLine } from '../../lib/net/market-error.js';
-import { siteFqdn } from '../../lib/net/origins.js';
 
 // Every lifecycle command is a client of the daemon; `host` starts it when none runs.
 export interface LifecycleDeps {
@@ -91,17 +89,9 @@ export const report = (done: HostSummary, note = ''): HostSummary => {
 };
 
 export interface InstallDeps extends LifecycleDeps {
-  // True when the site has no market, so a bare id came from npm.
-  noMarket?: (id: string) => Promise<boolean>;
+  // The stderr line when npm resolved a bare id (the site has no market, or its market lacks it).
+  fromNpm?: (id: string, what: string) => Promise<string | null>;
 }
-
-const sayFromNpm = async (
-  id: string,
-  version: string,
-  noMarket: (id: string) => Promise<boolean>
-) => {
-  if (await noMarket(id)) console.error(fromNpmLine(siteFqdn(), `${id} ${version} came`));
-};
 
 export const runInstall = async (opts: InstallOptions, deps: InstallDeps) => {
   const host = await deps.host();
@@ -111,7 +101,8 @@ export const runInstall = async (opts: InstallOptions, deps: InstallDeps) => {
     ? await installId(host, spec)
     : await installFolder(host, folderOf(opts.name));
   const bare = spec && !spec.version && !already;
-  if (bare && deps.noMarket) await sayFromNpm(spec.id, done.version, deps.noMarket);
+  const line = bare && (await deps.fromNpm?.(spec.id, `${spec.id} ${done.version} came`));
+  if (line) console.error(line);
   if (!opts.off) return report(done, already ? ' (already installed)' : '');
   console.error('install --off is now: agentage extension disable <id>');
   return report(await host.change(done.id, { enabled: false }));

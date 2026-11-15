@@ -39,15 +39,16 @@ describe('extension install', () => {
 
   test('a site with no market: a bare id says it came from npm on stderr; id@version does not', async () => {
     const { deps } = fakeHost();
-    const noMarket = vi.fn(async () => true);
-    const run = await output(() => runInstall({ name: 'probe' }, { ...deps, noMarket }));
+    const line = 'agentage.io has no extension market; probe 0.7.0 came from npm, as cli 0.51 did';
+    const fromNpm = vi.fn(async () => line);
+    const run = await output(() => runInstall({ name: 'probe' }, { ...deps, fromNpm }));
     expect(run.lines).toEqual(['probe 0.7.0 running']);
     expect(run.stderr).toBe(
       'agentage.io has no extension market; probe 0.7.0 came from npm, as cli 0.51 did'
     );
-    const pinned = await output(() => runInstall({ name: 'probe@0.7.0' }, { ...deps, noMarket }));
+    const pinned = await output(() => runInstall({ name: 'probe@0.7.0' }, { ...deps, fromNpm }));
     expect(pinned.stderr).toBe('');
-    expect(noMarket).toHaveBeenCalledOnce();
+    expect(fromNpm).toHaveBeenCalledExactlyOnceWith('probe', 'probe 0.7.0 came');
   });
 
   test('installed: another version is a PATCH (go back keeps the data); the same is no change', async () => {
@@ -80,12 +81,16 @@ describe('extension install', () => {
       code: 'already_installed',
       error: 'demo runs from the folder /work/extension-demo; agentage extension remove demo first',
     });
+    // The id comes from the 409 details (kit 0.14), not from the folder's package.json.
     const dir = mkdtempSync(join(tmpdir(), 'agentage-demo-'));
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ agentage: { id: 'demo' } }));
     expect(await output(() => runInstall({ name: dir }, deps))).toMatchObject({
       code: 'already_installed',
       error:
-        'demo is installed from the market or another folder; agentage extension remove demo first',
+        'demo is installed from the folder /work/extension-demo; agentage extension remove demo first',
+    });
+    const market = fakeHost([marketRow('demo', '0.1.0')]);
+    expect(await output(() => runInstall({ name: dir }, market.deps))).toMatchObject({
+      error: 'demo is installed from the market; agentage extension remove demo first',
     });
   });
 

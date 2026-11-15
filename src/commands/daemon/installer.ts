@@ -8,7 +8,7 @@ import { editableProfile } from '../../core/profile/profile.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type CliError, messageOf } from '../../lib/json-output.js';
 import { type Market } from '../../lib/net/market.js';
-import { fromNpmLine, noSiteMarket } from '../../lib/net/market-error.js';
+import { npmFallbackLine, noSiteMarket } from '../../lib/net/market-error.js';
 import { siteFqdn } from '../../lib/net/origins.js';
 
 export interface InstallerDeps {
@@ -36,7 +36,8 @@ const inputOf = async (id: string, version: string | undefined, market: Market) 
   if (latest) return `${latest.package}@${version ?? latest.version}`;
   const down = market.down();
   if (!version && down && !noSiteMarket(down)) throw marketDown(id, down);
-  if (!version && down) console.error(fromNpmLine(siteFqdn(), `${id} resolves`));
+  const line = version ? null : npmFallbackLine(siteFqdn(), id, `${id} resolves`, down);
+  if (line) console.error(line);
   return version ? `${id}@${version}` : id;
 };
 

@@ -78,9 +78,8 @@ each entry of the file that is not installed yet. Either way, an entry already i
 answer). Each `@agentage/extension-<id>` entry goes to the daemon by id
 (`POST /host/extensions`, as `extension install <id>` sends it): an exact version as it is, a
 range at the market's newest version; any other package is `<name>: not an extension, skipped`.
-An entry this machine's profile turns `off` is installed disabled in one step when the kit lists
-the capability `installDisabled` (`enabled: false` on the add); else it is installed, then
-disabled, and a disable that fails is reported as `installed but NOT disabled`. The daemon runs it; `setup` loads no extension
+An entry this machine's profile turns `off` is installed disabled in one step (`enabled: false`
+on the add): it never starts. The daemon runs the others; `setup` loads no extension
 itself, and nothing else installs. A failed entry is reported and does not stop the others;
 `setup` then exits 1 (`extension_failed`) naming each. With the daemon off (`--no-daemon`,
 `AGENTAGE_NO_DAEMON=1`) it prints `extensions the daemon is off, nothing installed` and writes no
@@ -339,7 +338,9 @@ in the config folder and runs each extension as its own process: its api at
   `@agentage/extension-<id>`, then `agentage-extension-<id>`, on the registry `profile.json`
   names for the scope (else npm's own), at the newest version whose `engines.agentage` fits;
   one stderr line says so (`<site> has no extension market; <id> <version> came from npm`). A
-  market that cannot be reached, answers 5xx or times out stays an error.
+  market that answers but does not know the id falls to npm the same way, with the line
+  `the market of <site> has no <id>; <id> <version> came from npm`. A market that cannot be
+  reached, answers 5xx or times out stays an error.
 
 - **list** prints the daemon's rows; a folder row shows `folder` and `--json` adds its `path`.
   `--available` reads the market (paged, 200 per page, at most 20 pages; past that it stops
@@ -348,9 +349,11 @@ in the config folder and runs each extension as its own process: its api at
   stderr line names each (`skipped <id> (<reason>)`), and the command exits 0. Only a failed
   discovery or list call fails it.
 - **update** compares each market row with the market's newest version and changes the ones that
-  differ; folders are left alone. On a site with no market the newest version comes from npm, by
-  the rule of install above, with one stderr line. `--check` only prints `<id> <from> to <to> (available)`. After a
-  change the folder of the old version goes (below).
+  differ; folders are left alone. On a site with no market, or for an id its market does not
+  know, the newest version comes from npm, by the rule of install above, with one stderr line.
+  An id npm cannot resolve is named and the others still update; the command then exits 1
+  (`extension_failed`, `no newest version found:` and each id with why). `--check` only prints
+  `<id> <from> to <to> (available)`. After a change the folder of the old version goes (below).
 - **disable** and **enable** stop and start the extension; data, settings and secrets stay.
 - **configure** sends `<key>=<value>` pairs as settings, or with `--secret` as secrets. Values
   are sent as text; the daemon turns each into the type the manifest declares (`5` for an
@@ -393,9 +396,10 @@ A moved version runs from the 0.51 tree as it is: no npm call, so the move works
 commands of each moved extension stay in `agentage --help`. An entry is skipped, never run, when
 its folder is gone, another user can write to it (the check of `install <path>`), its manifest is
 invalid, it has no `agentage.id`, or it is not in the 0.51 tree (a plain `setup` on a new machine
-installs those). A package whose `engines.agentage` only kit 0.12.x satisfies (the one previous
-kit minor, as each package 0.51 installed) moves and runs, with every other check above; `status`
-and `extension doctor` show `warning: <id>: built on kit 0.12, update the extension`. A range of
+installs those). A package whose `engines.agentage` only kit 0.12.x or 0.13.x satisfies (the
+older kit minors this kit hosts; each package 0.51 installed is on 0.12) moves and runs, with
+every other check above; `status` and `extension doctor` show
+`warning: <id>: built on kit <minor>, update the extension`. A range of
 an older or a newer kit, or no `engines.agentage`, is invalid. Two entries with one `agentage.id`
 are both skipped (`duplicate id`). Each skipped entry is listed in `installation.moved.json` beside the marker, in
 the daemon log and in `daemon status` (`move skipped <entry>: <reason>`). Secrets need no move:
@@ -466,7 +470,7 @@ writes the contracts the package commits (the kit's `writeContracts`, `@agentage
 agentage extension build                       # the package in this folder, no Docker
 agentage extension build --dir ../my-ext       # another package folder
 agentage extension build --docker              # one image per part, on this machine
-agentage extension build --container           # one image of the extension (needs a kit with it)
+agentage extension build --container           # one image of the extension
 agentage extension build --push                # one image per part, pushed, and the build record
 ```
 
@@ -477,8 +481,9 @@ the kit writes (`wrote <file>`, such as `{id}.mcpc.json` and `openapi.json`), th
 conform. `--json` answers `{ dir, built, contracts, conforms }`.
 
 `--container` hands `container: true` to the kit's `build`: one image,
-`ghcr.io/agentage/<id>:<version>`. Only a kit that has the one-image build does that; with this
-cli's kit (0.13) it exits 1 (`invalid_argument`) before anything runs and names the kit version.
+`ghcr.io/agentage/<id>:<version>` (`--registry` sets the prefix), whose command is the kit host on
+port 8080 (a local run: `docker run -p 8080:8080 -e AGENTAGE_HOST_AUTH=off <image>`; the kit's
+`docs/part-image.md` has the rest).
 `--docker` builds one image per server part from the kit recipe, on this machine; `--push`
 builds the same (`node:26-alpine`, production
 dependencies, non-root), tagged `ghcr.io/agentage/<id>-<part>:<version>` with the labels
@@ -530,8 +535,9 @@ so it first prints one line on stderr: `extension up now runs with no Docker; th
 with the kit host in the cli process on the first free port from 4244 on 127.0.0.1 (a port taken
 meanwhile is skipped), and prints
 `up        <id> <version> on http://127.0.0.1:<port>/api/<id>/ (Ctrl-C stops it)`. `/health` is on
-the same port. It answers only this machine's own pages: a request with another `Host`, a
-cross-site or same-site `Sec-Fetch-Site`, or a foreign `Origin` gets 403. It runs until Ctrl-C
+the same port. It answers only this machine's own pages (the kit's guard): a `Host` other than
+`127.0.0.1:<port>` or `localhost:<port>` (`[::1]` too), a cross-site or same-site
+`Sec-Fetch-Site`, or a foreign `Origin` gets 403. It runs until Ctrl-C
 (exit code 130) or SIGTERM (exit code 0, what `down` sends), then prints `stopped   <id> (SIGINT)`.
 It does not use the daemon and does not change `installation.json`; its store and its record
 (`up.json`: pid, port, instance) are in the folder's `.agentage/`, which `up` adds to the folder's
@@ -667,8 +673,18 @@ agentage daemon restart   # stop, then start
 
 The daemon is one process on `127.0.0.1` (port 4243, `AGENTAGE_DAEMON_PORT` for another). It
 runs each installed extension as a child process and serves `/api/{id}/*`, `/health` and
-`/host/extensions`; a request with another `Host` or `Origin` gets 403. It has no token.
+`/host/extensions`; a request with another `Host` (`[::1]` too) or `Origin` gets 403. It has no
+token.
 `setup` starts it, and so does each command that needs it.
+
+`daemon status` prints `daemon: <ok|degraded> on 127.0.0.1:<port>, pid <pid>, <version>`, then
+one line per extension, one `pending <op> <id> since <time>` line per change the daemon took and
+has not answered (`, the daemon stopped waiting; it still runs` after an install timed out), and,
+when degraded, one `degraded: <reason>` line per cause: an extension `starting` or `failed`, a
+change whose undo failed (`unsynced`), an `installation.json` that cannot be read or had rows the
+daemon refused. `--json` gives the `/health` fields (`pending`, `unsynced`, `installation`,
+`installationError`) and `reasons`. A second `daemon run` while a daemon owns the config folder
+exits 1 (`already_running`, naming its pid and port).
 
 A daemon counts as this machine's daemon only with proof: `/health` on the port of
 `<config>/daemon.json` answers `service: "agentage-daemon"` with the same `pid` as the file.
@@ -750,20 +766,20 @@ The cli's own codes:
 `usage`.
 <!-- /codes -->
 
-| Code                  | When                                                                                                                                                                                                                                |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `no_discovery`        | the site answers 404 for `/.well-known/agentage.json`                                                                                                                                                                               |
-| `no_market`           | the site's discovery document names no market                                                                                                                                                                                       |
-| `market_unreachable`  | the site or its market cannot be reached (refused, no DNS name, offline), or the site answers a redirect or a page that is no JSON object (a network's sign-in page): not the discovery document                                    |
-| `market_failed`       | the site or its market answered another 4xx or 5xx, or a market answer that is not JSON                                                                                                                                             |
-| `market_timeout`      | the market did not answer in 5 s                                                                                                                                                                                                    |
-| `network_unavailable` | another outbound call could not connect; the message names the host and why                                                                                                                                                         |
-| `timeout`             | another outbound call did not answer in its time. After an install, the daemon may still run it and shows no row until it ends: the message says so and names `agentage daemon status` (its `/health` names no install in progress) |
-| `permission_denied`   | a file or folder (the config folder, a log) may not be read or written                                                                                                                                                              |
-| `disk_full`           | a write failed: no space left on the disk, or over the quota                                                                                                                                                                        |
-| `already_installed`   | `install` of an id that the daemon runs from another folder                                                                                                                                                                         |
-| `stop_failed`         | `daemon stop` or `extension down`: the process still runs after the signals                                                                                                                                                         |
-| `build_failed`        | npm (the build script, `npm ci`) failed (`exited 3`, `exited by signal SIGINT`), did not finish in 10 min (SIGTERM, then SIGKILL after 5 s), or is not on the PATH                                                                  |
+| Code                  | When                                                                                                                                                                                                                   |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `no_discovery`        | the site answers 404 for `/.well-known/agentage.json`                                                                                                                                                                  |
+| `no_market`           | the site's discovery document names no market                                                                                                                                                                          |
+| `market_unreachable`  | the site or its market cannot be reached (refused, no DNS name, offline), or the site answers a redirect or a page that is no JSON object (a network's sign-in page): not the discovery document                       |
+| `market_failed`       | the site or its market answered another 4xx or 5xx, or a market answer that is not JSON                                                                                                                                |
+| `market_timeout`      | the market did not answer in 5 s                                                                                                                                                                                       |
+| `network_unavailable` | another outbound call could not connect; the message names the host and why                                                                                                                                            |
+| `timeout`             | another outbound call did not answer in its time. After an install, the daemon may still run it and shows no row until it ends: the message says so and names `agentage daemon status`, which lists it under `pending` |
+| `permission_denied`   | a file or folder (the config folder, a log) may not be read or written                                                                                                                                                 |
+| `disk_full`           | a write failed: no space left on the disk, or over the quota                                                                                                                                                           |
+| `already_installed`   | `install` of an id that the daemon runs from another folder                                                                                                                                                            |
+| `stop_failed`         | `daemon stop` or `extension down`: the process still runs after the signals                                                                                                                                            |
+| `build_failed`        | npm (the build script, `npm ci`) failed (`exited 3`, `exited by signal SIGINT`), did not finish in 10 min (SIGTERM, then SIGKILL after 5 s), or is not on the PATH                                                     |
 
 `no_discovery` and `no_market` name the site and say how to choose another one
 (`AGENTAGE_SITE_FQDN=<site>`). The other market
@@ -776,18 +792,21 @@ Until the cutover the default site `agentage.io` has no market, so `extension in
 
 The daemon's codes (the kit's envelope, and the cli's installer, which runs in the daemon):
 
-| Code                                                    | When                                                                       |
-| ------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `NOT_FOUND`                                             | no such extension (404); from the installer: no such id or version on npm  |
-| `VALIDATION_ERROR`                                      | a body the daemon refuses (400); the package's `agentage.id` is another id |
-| `INVALID_SETTING`                                       | `configure` of an undeclared key, or a value of the wrong type (400)       |
-| `START_FAILED`                                          | a change whose new child did not start; the old one runs on (400)          |
-| `CONFLICT`                                              | the id is installed (409); `install` turns it into "already installed"     |
-| `FORBIDDEN`                                             | a Host or Origin that is not this machine (403)                            |
-| `UNAVAILABLE`                                           | the daemon has no installer (501), or the extension is not running (503)   |
-| `INSTALL_FAILED`                                        | npm could not install it; the message holds npm's last lines (502)         |
-| `PRIVATE_ENTRY`                                         | the market entry has no npm package (400)                                  |
-| `MARKET_UNREACHABLE`, `MARKET_FAILED`, `MARKET_TIMEOUT` | the market codes above, from the installer (502), when no version is given |
+| Code                                                    | When                                                                                                                                                                                                     |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NOT_FOUND`                                             | no such extension (404); from the installer: no such id or version on npm                                                                                                                                |
+| `VALIDATION_ERROR`                                      | a body the daemon refuses (400); the package's `agentage.id` is another id                                                                                                                               |
+| `INVALID_SETTING`                                       | `configure` of an undeclared key, or a value of the wrong type (400)                                                                                                                                     |
+| `START_FAILED`                                          | a change whose new child did not start; the old one runs on (400)                                                                                                                                        |
+| `CONFLICT`                                              | the id is installed (409, the details name its id, version and folder); `install` turns it into "already installed". Or an install of that id still runs after a timeout: the line names `daemon status` |
+| `INSTALLATION_UNREADABLE`                               | `installation.json` cannot be read (409, `details.reason` such as `EACCES`); no change is written until it is fixed                                                                                      |
+| `DAEMON_RUNNING`                                        | another live daemon owns the config folder (409); a second `daemon run` exits 1 with `already_running`                                                                                                   |
+| `TIMEOUT`                                               | the installer did not answer in its time (504); it may still finish, and `daemon status` lists it under `pending`                                                                                        |
+| `FORBIDDEN`                                             | a Host or Origin that is not this machine (403)                                                                                                                                                          |
+| `UNAVAILABLE`                                           | the daemon has no installer (501), the extension is not running, a file of the daemon is locked by another process, other changes ran too long, or the daemon stops (503): try again                     |
+| `INSTALL_FAILED`                                        | npm could not install it; the message holds npm's last lines (502)                                                                                                                                       |
+| `PRIVATE_ENTRY`                                         | the market entry has no npm package (400)                                                                                                                                                                |
+| `MARKET_UNREACHABLE`, `MARKET_FAILED`, `MARKET_TIMEOUT` | the market codes above, from the installer (502), when no version is given                                                                                                                               |
 
 The installer runs in the daemon, so it uses the site the daemon had when it started: to install
 from another site, `AGENTAGE_SITE_FQDN=<site> agentage daemon restart`, then install.

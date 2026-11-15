@@ -6,7 +6,6 @@ import { setExit } from '../../lib/exit-code.js';
 import { CliError } from '../../lib/json-output.js';
 import { loadKitTool } from './kit-tool.js';
 import { buildPackage, type PackageBuild } from './package-build.js';
-import { loopbackOnly } from './up-guard.js';
 import {
   answerOf,
   dataDirOf,
@@ -18,24 +17,19 @@ import {
   writeRecord,
 } from './up-local.js';
 
-// The kit host; kitGuards: it mounts its own local-only guard (a host option), else the cli's.
+// The kit host with its own local-only guard on every route (Host, Origin, Sec-Fetch-Site).
 export interface KitHost {
   host: (dir: string, opts: HostOptions) => Promise<HostedExtension>;
-  kitGuards: boolean;
 }
 
-// The second of the two places that load the kit host as a value; feature checks on its exports.
-type KitModule = Record<string, unknown> & Pick<typeof KitHostModule, 'hostExtension'>;
+// The second of the two places that load the kit host as a value.
+type KitModule = Pick<typeof KitHostModule, 'hostExtension'>;
 
 export const loadKitHost = async (
   load: () => Promise<KitModule> = () => import('@agentage/extension/host')
 ): Promise<KitHost> => {
   const kit = await load();
-  const caps = Array.isArray(kit['capabilities']) ? (kit['capabilities'] as unknown[]) : [];
-  const option = caps.includes('localOnly');
-  const host = (dir: string, opts: HostOptions) =>
-    kit.hostExtension(dir, option ? ({ ...opts, localOnly: true } as HostOptions) : opts);
-  return { host, kitGuards: option };
+  return { host: (dir, opts) => kit.hostExtension(dir, { ...opts, localOnly: true }) };
 };
 
 export interface LocalUpDeps {
@@ -72,19 +66,8 @@ const warnProblems = async ({ report }: PackageBuild): Promise<void> => {
   for (const text of (await loadKitTool()).checkLines(report)) console.error(`check     ${text}`);
 };
 
-// The cli's guard in front of the kit app until the kit mounts its own (remove then).
-export const handlerOf = (
-  kit: Pick<KitHost, 'kitGuards'>,
-  app: RequestListener,
-  port: () => number
-): RequestListener => (kit.kitGuards ? app : loopbackOnly(app, port));
-
-const serve = async (kit: KitHost, hosted: HostedExtension): Promise<Server> => {
-  let port = 0;
-  const server = await listenFrom(handlerOf(kit, hosted.app as RequestListener, () => port));
-  port = portOf(server);
-  return server;
-};
+const serve = (hosted: HostedExtension): Promise<Server> =>
+  listenFrom(hosted.app as RequestListener);
 
 const close = async (server: Server | null, hosted: HostedExtension, dir: string) => {
   server?.closeAllConnections();
@@ -102,13 +85,12 @@ const ready = (hosted: HostedExtension, url: string, port: number, json: boolean
 const runHosted = async (
   dir: string,
   hosted: HostedExtension,
-  kit: KitHost,
   deps: LocalUpDeps,
   json: boolean
 ) => {
   let server: Server | null = null;
   try {
-    server = await serve(kit, hosted);
+    server = await serve(hosted);
     const port = portOf(server);
     const { instance } = (await hosted.health()).data;
     writeRecord(dir, { pid: process.pid, port, id: hosted.id, instance });
@@ -133,7 +115,7 @@ export const runLocalUp = async (
   delete process.env['AGENTAGE_TOKEN'];
   const kit = await deps.kit();
   const hosted = await kit.host(dir, { dataDir: dataDirOf(dir) });
-  const done = await runHosted(dir, hosted, kit, deps, json);
+  const done = await runHosted(dir, hosted, deps, json);
   console.log(`stopped   ${done.id} (${done.stoppedBy})`);
   if (done.stoppedBy === 'SIGINT') setExit(130);
   return done;

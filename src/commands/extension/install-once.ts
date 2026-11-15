@@ -1,6 +1,5 @@
 import { realpathSync } from 'node:fs';
-import { join } from 'node:path';
-import { isRecord, readJson } from '../../lib/fs/json-file.js';
+import { existingOf, type Existing } from '../../lib/daemon/daemon-answer.js';
 import { type HostClient, type HostRow, type HostSummary } from '../../lib/daemon/host-client.js';
 import { CliError, DaemonError } from '../../lib/json-output.js';
 
@@ -17,12 +16,16 @@ export interface Installed {
   already: boolean;
 }
 
-// The add itself is the check, so two cli runs cannot both add one id: the second gets CONFLICT.
-const added = (host: HostClient, body: AddBody): Promise<HostSummary | DaemonError> =>
+// The add itself is the check, so two cli runs cannot both add one id: the second gets CONFLICT,
+// whose details name the installed entry.
+const added = (host: HostClient, body: AddBody): Promise<HostSummary | Existing> =>
   host.add(body).catch((err: unknown) => {
-    if (err instanceof DaemonError && err.code === 'CONFLICT') return err;
+    const existing = err instanceof DaemonError ? existingOf(err) : null;
+    if (existing) return existing;
     throw err;
   });
+
+const isExisting = (got: HostSummary | Existing): got is Existing => !('state' in got);
 
 const elsewhere = (what: string, id: string): CliError =>
   new CliError('already_installed', `${what}; agentage extension remove ${id} first`);
@@ -30,7 +33,7 @@ const elsewhere = (what: string, id: string): CliError =>
 // The row of an id: added now, or the one the daemon has (removed in between: added again).
 export const addOnce = async (host: HostClient, spec: IdBody): Promise<Installed> => {
   const got = await added(host, spec);
-  if (!(got instanceof DaemonError)) return { row: got, already: false };
+  if (!isExisting(got)) return { row: got, already: false };
   const row = (await host.list()).find((r) => r.id === spec.id);
   return row ? { row, already: true } : { row: await host.add(spec), already: false };
 };
@@ -54,21 +57,16 @@ const real = (path: string): string => {
   }
 };
 
-// The daemon's CONFLICT carries no id field: the folder's own manifest names it.
-const folderId = (source: string): string | null => {
-  const pkg = readJson(join(source, 'package.json'), isRecord);
-  const id = isRecord(pkg?.['agentage']) ? pkg['agentage']['id'] : undefined;
-  return typeof id === 'string' ? id : null;
-};
-
 // A folder: the same folder again (by real path) is installed already; its id from elsewhere is
 // refused.
 export const installFolder = async (host: HostClient, source: string): Promise<Installed> => {
   const got = await added(host, { source });
-  if (!(got instanceof DaemonError)) return { row: got, already: false };
-  const here = real(source);
-  const row = (await host.list()).find((r) => r.source !== 'market' && real(r.source) === here);
+  if (!isExisting(got)) return { row: got, already: false };
+  const { id } = got;
+  const where = got.source ? `the folder ${got.source}` : 'the market';
+  if (!got.source || real(got.source) !== real(source))
+    throw elsewhere(`${id} is installed from ${where}`, id);
+  const row = (await host.list()).find((r) => r.id === id);
   if (row) return { row, already: true };
-  const id = folderId(source) ?? '<id>';
-  throw elsewhere(`${id} is installed from the market or another folder`, id);
+  return { row: await host.add({ source }), already: false };
 };

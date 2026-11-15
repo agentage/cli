@@ -1,5 +1,6 @@
 import { isRecord } from '../fs/json-file.js';
-import { CliError, DaemonError, messageOf } from '../json-output.js';
+import { CliError, messageOf } from '../json-output.js';
+import { daemonFailure } from './daemon-answer.js';
 
 // One row of GET /host/extensions (C5); the daemon may add fields, they pass through.
 export interface HostRow {
@@ -39,22 +40,12 @@ export interface HostClient {
 // An install runs npm (up to 10 min in the daemon), then starts the child: past that it is stuck.
 const WAITS = { read: 10_000, change: 12 * 60_000 };
 
-// The daemon's own codes (UPPER_SNAKE: NOT_FOUND, INVALID_SETTING) pass through unchanged.
-const failure = (status: number, body: unknown): DaemonError => {
-  const error = isRecord(body) && isRecord(body['error']) ? body['error'] : {};
-  const message = typeof error['message'] === 'string' ? error['message'] : `HTTP ${status}`;
-  const code = typeof error['code'] === 'string' && error['code'] ? error['code'] : 'error';
-  return new DaemonError(code, message);
-};
-
 // What the user can see after a timeout: the kit adds the row only once the install ends, and its
-// /health names no install in progress.
+// /health lists the change under pending until then.
 const LOOK: Record<string, string> = {
   GET: 'agentage daemon status',
-  POST:
-    'the install may still run in the daemon, and no row shows until it ends; ' +
-    'agentage daemon status says the daemon runs; run agentage extension list again in a few minutes',
-  PATCH: 'the change may still finish; run agentage extension list again in a few minutes',
+  POST: 'the install may still run in the daemon: agentage daemon status shows it under pending',
+  PATCH: 'the change may still finish: agentage daemon status shows it under pending',
 };
 
 // A timed-out change may still finish in the daemon: say how to look, never that it failed.
@@ -82,7 +73,7 @@ const sender =
     });
     const parsed: unknown = await res.json().catch(() => null);
     if (!res.ok || !isRecord(parsed) || parsed['success'] !== true)
-      throw failure(res.status, parsed);
+      throw daemonFailure(res.status, parsed);
     return parsed['data'] as T;
   };
 

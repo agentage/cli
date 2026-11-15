@@ -2,6 +2,14 @@ import { vi } from 'vitest';
 import { DaemonError } from '../lib/json-output.js';
 import { type HostClient, type HostRow } from '../lib/daemon/host-client.js';
 
+// The kit 0.14 409: the details name the installed entry (no source for a market one).
+const conflict = ({ id, version, source }: HostRow): DaemonError =>
+  new DaemonError('CONFLICT', `${id} is installed`, 409, {
+    id,
+    version,
+    ...(source !== 'market' && { source }),
+  });
+
 // A daemon in memory for the lifecycle commands: the rows it holds and what was asked of it.
 export const fakeHost = (rows: HostRow[] = []) => {
   const row = (id: string): HostRow => {
@@ -13,7 +21,8 @@ export const fakeHost = (rows: HostRow[] = []) => {
     list: vi.fn(async () => rows.map((r) => ({ ...r }))),
     add: vi.fn(async (body) => {
       const id = 'id' in body ? body.id : 'demo';
-      if (rows.some((r) => r.id === id)) throw new DaemonError('CONFLICT', `${id} is installed`);
+      const has = rows.find((r) => r.id === id);
+      if (has) throw conflict(has);
       const added: HostRow = {
         id,
         version: '0.7.0',

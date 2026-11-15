@@ -65,7 +65,13 @@ describe('the daemon installer', () => {
       status: 404,
     });
     const none = await installer(market(null));
-    await expect(none.install({ id: 'nosuch' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    const run = await output(async () => {
+      await expect(none.install({ id: 'nosuch' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+    // A market that answers without the id falls to npm, and says so as a site with none does.
+    expect(run.stderr).toBe(
+      'the market of agentage.io has no nosuch; nosuch resolves from npm, as cli 0.51 did'
+    );
   });
 
   test.each([

@@ -4,13 +4,7 @@ import { join } from 'node:path';
 import { kitVersion } from '../../core/kit-version.js';
 import { satisfies } from '../../core/semver-range.js';
 import { fixture } from '../../test/config-dir.js';
-import {
-  kitBuildsContainer,
-  kitCheck,
-  kitInstallsDisabled,
-  loadKitTool,
-  type KitTool,
-} from './kit-tool.js';
+import { kitCheck, loadKitTool, type KitTool } from './kit-tool.js';
 
 const USED = [
   'check',
@@ -97,19 +91,18 @@ describe('the kit tool library', () => {
   });
 });
 
-const listing = (capabilities?: unknown) => async () => ({ capabilities }) as unknown as KitTool;
-
+// The cli has no fallback for these: a kit range that lets in a kit without one is a bug.
 describe('the kit capability list', () => {
-  it('build --container only when the kit lists container; kit 0.13 lists nothing', async () => {
-    expect(await kitBuildsContainer(listing(['container']))).toBe(true);
-    expect(await kitBuildsContainer(listing(['localOnly']))).toBe(false);
-    expect(await kitBuildsContainer(listing())).toBe(false);
-    expect(await kitBuildsContainer()).toBe(false);
-  });
-
-  it('installDisabled names a daemon that installs an entry disabled; kit 0.13 has none', async () => {
-    expect(await kitInstallsDisabled(listing(['container', 'installDisabled']))).toBe(true);
-    expect(await kitInstallsDisabled(listing(['container']))).toBe(false);
-    expect(await kitInstallsDisabled()).toBe(false);
+  it('the bundled kit lists every capability the cli uses with no fallback', async () => {
+    const { capabilities } = await import('@agentage/extension/tool');
+    expect(capabilities).toEqual(
+      expect.arrayContaining([
+        'container',
+        'localOnly',
+        'installDisabled',
+        'updateInstallation',
+        'withFileLock',
+      ])
+    );
   });
 });

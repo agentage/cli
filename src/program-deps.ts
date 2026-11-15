@@ -21,7 +21,8 @@ import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { ensureDaemon } from './lib/daemon/daemon-client.js';
 import { hostClient } from './lib/daemon/host-client.js';
 import { listMarket, openMarket } from './lib/net/market.js';
-import { noSiteMarket } from './lib/net/market-error.js';
+import { npmFallbackLine } from './lib/net/market-error.js';
+import { siteFqdn } from './lib/net/origins.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { type ProgramDeps } from './program.js';
 
@@ -51,11 +52,11 @@ const listDeps = {
   npmNewest: npmNewest(() => prepareManifest()),
 };
 
-// After a bare-id install: did the site have no market (so npm resolved it)?
-const noMarket = async (id: string): Promise<boolean> => {
+// After a bare-id install: the line when npm resolved it (no market, or one without the id).
+const fromNpm = async (id: string, what: string): Promise<string | null> => {
   const market = openMarket();
-  await market.latest(id);
-  return noSiteMarket(market.down());
+  if (await market.latest(id)) return null;
+  return npmFallbackLine(siteFqdn(), id, what, market.down());
 };
 
 export const defaultDeps: ProgramDeps = {
@@ -68,7 +69,7 @@ export const defaultDeps: ProgramDeps = {
     }),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
-  extensionInstall: (opts) => runInstall(opts, { ...lifecycle, noMarket }),
+  extensionInstall: (opts) => runInstall(opts, { ...lifecycle, fromNpm }),
   extensionRemove: (opts) => runRemove(opts, { ...lifecycle, io: terminalIo() }),
   extensionList: (opts) => runList(opts, listDeps),
   extensionUpdate: (opts) => runExtensionUpdate(opts, listDeps),
