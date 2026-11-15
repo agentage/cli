@@ -24,6 +24,12 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     extensionUp: vi.fn(async () => undefined),
     extensionDown: vi.fn(async () => undefined),
     extensionToken: vi.fn(async () => undefined),
+    daemon: {
+      status: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      restart: vi.fn(async () => undefined),
+      run: vi.fn(async () => undefined),
+    },
     kitTool: vi.fn(async () => {
       throw new Error('no kit in these tests');
     }),
@@ -96,9 +102,9 @@ describe('run', () => {
     expect(await h.exec('status', '--json', '--token', 'aga_x')).toBe(0);
     expect(h.deps.status).toHaveBeenCalledWith({ json: true, token: 'aga_x' });
     expect(await h.exec('setup', '--no-browser', '--reauth')).toBe(0);
-    expect(h.deps.setup).toHaveBeenCalledWith({ browser: false, reauth: true });
+    expect(h.deps.setup).toHaveBeenCalledWith({ browser: false, daemon: true, reauth: true });
     expect(await h.exec('setup', '--latest')).toBe(0);
-    expect(h.deps.setup).toHaveBeenLastCalledWith({ browser: true, latest: true });
+    expect(h.deps.setup).toHaveBeenLastCalledWith({ browser: true, daemon: true, latest: true });
     expect(await h.exec('update', '--check')).toBe(0);
     expect(h.deps.update).toHaveBeenCalledWith({ check: true });
   });
@@ -167,8 +173,22 @@ describe('createProgram', () => {
       if (value === undefined) delete process.env['AGENTAGE_EXTENSIONS'];
       else process.env['AGENTAGE_EXTENSIONS'] = value;
       const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
-      expect(names, String(value)).toEqual(['setup', 'status', 'update', 'extension']);
+      expect(names, String(value)).toEqual(['setup', 'status', 'update', 'daemon', 'extension']);
     }
+  });
+
+  test('daemon status, stop and restart take --json; run is hidden; alone it prints help', async () => {
+    const h = makeDeps();
+    for (const name of ['status', 'stop', 'restart'] as const) {
+      expect(await h.exec('daemon', name, '--json')).toBe(0);
+      expect(h.deps.daemon[name]).toHaveBeenCalledWith({ json: true });
+    }
+    expect(await h.exec('daemon', 'run')).toBe(0);
+    expect(h.deps.daemon.run).toHaveBeenCalledOnce();
+    expect(await h.exec('daemon')).toBe(0);
+    expect(h.stdout()).toMatch(/status \[options\] +Show the daemon/);
+    expect(h.stdout()).not.toMatch(/^\s+run\b/m);
+    expect(await h.exec('daemon', 'nope')).toBe(2);
   });
 
   test('extension alone prints its help; list and doctor pass --json; an unknown subcommand is usage', async () => {

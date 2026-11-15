@@ -38,12 +38,13 @@ More: [docs/reference.md](docs/reference.md#token-auth-ci-and-headless).
 
 | Command                       | What it does                                                                  |
 | ----------------------------- | ----------------------------------------------------------------------------- |
-| `agentage setup`              | Sign in through your browser, install your account's profile, show status     |
+| `agentage setup`              | Sign in, install your account's profile, show status, start the daemon        |
 | `agentage setup --no-browser` | Print the sign-in URL instead of opening a browser                            |
 | `agentage setup --reauth`     | Force a fresh sign-in                                                         |
 | `agentage setup --disconnect` | Sign out and remove local credentials                                         |
 | `agentage status`             | Version, update, target, sign-in, endpoint, then machine, profile, extensions |
 | `agentage update`             | Install the latest published version (`--check` only reports)                 |
+| `agentage daemon status`      | The local daemon on 127.0.0.1:4243 (`stop`, `restart`); `setup` starts it     |
 | `agentage extension ...`      | Manage extensions, see [Extensions](#extensions)                              |
 | any command with `--json`     | One JSON object on stdout: `{ success, data }` or `{ success, error }`        |
 

@@ -14,6 +14,7 @@ describe('registerSetup', () => {
       '--disconnect',
       '--reauth',
       '--no-browser',
+      '--no-daemon',
       '--profile',
       '--dry-run',
       '--check',

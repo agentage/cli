@@ -1,49 +1,27 @@
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
-import { registerSetup, type SetupDeps, type SetupOptions } from './commands/auth/setup.js';
+import { registerSetup, type SetupOptions } from './commands/auth/setup.js';
+import { registerDaemon, type DaemonOptions } from './commands/daemon/daemon.js';
 import {
-  runExtensionBuild,
-  runExtensionCheck,
   type ExtensionBuildOptions,
   type ExtensionCheckOptions,
 } from './commands/extension/build.js';
-import { runExtensionCreate, type ExtensionCreateOptions } from './commands/extension/create.js';
+import { type ExtensionCreateOptions } from './commands/extension/create.js';
 import { registerDelegates } from './commands/extension/delegate.js';
-import { runExtensionDoctor, type ExtensionDoctorOptions } from './commands/extension/doctor.js';
-import { openMarket } from './lib/net/market.js';
-import { runExtensionInstall, type ExtensionInstallOptions } from './commands/extension/install.js';
-import {
-  registerExtension,
-  runExtensionList,
-  type ExtensionListOptions,
-} from './commands/extension/list.js';
-import {
-  runExtensionRemove,
-  terminalIo,
-  type ExtensionRemoveOptions,
-} from './commands/extension/remove.js';
-import { signedInAccount } from './commands/extension/account.js';
+import { type ExtensionDoctorOptions } from './commands/extension/doctor.js';
+import { type ExtensionInstallOptions } from './commands/extension/install.js';
+import { registerExtension, type ExtensionListOptions } from './commands/extension/list.js';
+import { type ExtensionRemoveOptions } from './commands/extension/remove.js';
 import { KIT_EXIT } from './commands/extension/kit-commands.js';
-import { loadKitTool, type LoadKitTool } from './commands/extension/kit-tool.js';
-import { runExtensionRelease, type ExtensionReleaseOptions } from './commands/extension/release.js';
-import { runExtensionSetup } from './commands/extension/setup.js';
+import { type LoadKitTool } from './commands/extension/kit-tool.js';
+import { type ExtensionReleaseOptions } from './commands/extension/release.js';
 import {
-  runExtensionDown,
-  runExtensionToken,
-  runExtensionUp,
   type ExtensionDownOptions,
   type ExtensionTokenOptions,
   type ExtensionUpOptions,
 } from './commands/extension/up.js';
-import {
-  registerStatus,
-  runStatus,
-  statusDeps,
-  type StatusOptions,
-} from './commands/status/status.js';
-import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
-import { npmMajor, prepareManifest, prepareNpm } from './core/installer/npm.js';
-import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
+import { registerStatus, type StatusOptions } from './commands/status/status.js';
+import { registerUpdate, type UpdateOptions } from './commands/update/update.js';
 import { messageOf, writeError } from './lib/json-output.js';
 import {
   ACTION_FAILED,
@@ -53,8 +31,10 @@ import {
   pinned,
   withAction,
 } from './lib/with-action.js';
-import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
+import { defaultDeps } from './program-deps.js';
 import { VERSION } from './utils/version.js';
+
+type Run<T> = (opts: T) => Promise<unknown>;
 
 export interface ProgramDeps {
   setup: (opts: SetupOptions) => Promise<unknown>;
@@ -71,6 +51,7 @@ export interface ProgramDeps {
   extensionUp: (opts: ExtensionUpOptions) => Promise<unknown>;
   extensionDown: (opts: ExtensionDownOptions) => Promise<unknown>;
   extensionToken: (opts: ExtensionTokenOptions) => Promise<unknown>;
+  daemon: Record<'status' | 'stop' | 'restart' | 'run', Run<DaemonOptions>>;
   // The kit's tool library, which runs the commands of kit-built extensions.
   kitTool: LoadKitTool;
   updateHint: () => string | null;
@@ -78,42 +59,6 @@ export interface ProgramDeps {
   writeOut: (text: string) => void;
   writeErr: (text: string) => void;
 }
-
-const setupDeps: SetupDeps = {
-  ensureSignedIn: (signInOpts) => ensureSignedIn(signInOpts),
-  signOut: () => signOut(),
-  printStatus: (opts) => runStatus(opts, statusDeps(false)),
-};
-
-// What a profile edit reaches: npm, and the account it syncs with when signed in.
-const editDeps = { npm: () => prepareNpm(), npmMajor: () => npmMajor(), account: signedInAccount };
-
-const defaultDeps: ProgramDeps = {
-  setup: (opts) => runExtensionSetup(opts, { ...setupDeps, ...editDeps }),
-  status: (opts) => runStatus(opts),
-  update: (opts) => runUpdate(opts),
-  extensionInstall: (opts) =>
-    runExtensionInstall(opts, {
-      ...editDeps,
-      manifest: () => prepareManifest(),
-      market: openMarket(),
-    }),
-  extensionRemove: (opts) => runExtensionRemove(opts, { ...editDeps, io: terminalIo() }),
-  extensionList: (opts) => runExtensionList(opts, openMarket()),
-  extensionDoctor: (opts) => runExtensionDoctor(opts),
-  extensionCreate: (opts) => runExtensionCreate(opts),
-  extensionCheck: (opts) => runExtensionCheck(opts),
-  extensionBuild: (opts) => runExtensionBuild(opts),
-  extensionRelease: (opts) => runExtensionRelease(opts),
-  extensionUp: (opts) => runExtensionUp(opts),
-  extensionDown: (opts) => runExtensionDown(opts),
-  extensionToken: (opts) => runExtensionToken(opts),
-  kitTool: loadKitTool,
-  updateHint,
-  refreshUpdateCache: () => refreshUpdateCache(),
-  writeOut: (text) => void process.stdout.write(text),
-  writeErr: (text) => void process.stderr.write(text),
-};
 
 // status and update report update state themselves; the hint never touches --json stdout.
 const hintAfter =
@@ -166,6 +111,13 @@ export const createProgram = (
   );
   registerStatus(program, withAction(deps, deps.status, '', pinned));
   registerUpdate(program, withAction(deps, deps.update));
+  const daemon = (fn: Run<DaemonOptions>) => withAction(deps, fn);
+  registerDaemon(program, {
+    status: daemon(deps.daemon.status),
+    stop: daemon(deps.daemon.stop),
+    restart: daemon(deps.daemon.restart),
+    run: daemon(deps.daemon.run),
+  });
   addExtensions(program, deps, argv);
   return program;
 };

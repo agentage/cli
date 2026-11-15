@@ -11,6 +11,7 @@ agentage setup                # browser OAuth 2.1 sign-in (PKCE), then prints st
 agentage setup --no-browser   # print the sign-in URL instead of opening a browser
 agentage setup --reauth       # force a fresh sign-in
 agentage setup --disconnect   # sign out and remove local credentials
+agentage setup --no-daemon    # do not start the daemon
 ```
 
 No passwords touch the terminal; tokens are stored in `~/.agentage/auth.json`
@@ -20,6 +21,10 @@ instead of starting a new sign-in; an expired session falls through to a fresh s
 After sign-in, the browser returns to `http://localhost:<port>/callback` on this machine. So
 open the sign-in URL in a browser on this same machine. On a server, use a personal access token
 instead (see [Token auth](#token-auth-ci-and-headless)).
+
+Plain `setup` ends by starting the [daemon](#daemon) when none runs and prints
+`daemon running on 127.0.0.1:<port>`. The daemon needs no account. `--no-daemon` or
+`AGENTAGE_NO_DAEMON=1` leave it off.
 
 `setup` also installs extensions:
 
@@ -601,6 +606,25 @@ await register(createTestContext({ id: 'world', program, use: { hello: { greet: 
 await program.parseAsync(['world'], { from: 'user' }); // prints "world heard: hi"
 ```
 
+## daemon
+
+```bash
+agentage daemon status    # running or not: pid, port, version, each extension and its state
+agentage daemon stop      # stop the daemon and every extension; returns once its pid is gone
+agentage daemon restart   # stop, then start
+```
+
+The daemon is one process on `127.0.0.1` (port 4243, `AGENTAGE_DAEMON_PORT` for another). It
+runs each installed extension as a child process and serves `/api/{id}/*`, `/health` and
+`/host/extensions`; a request with another `Host` or `Origin` gets 403. It has no token.
+`setup` starts it, and so does each command that needs it: the command reads
+`<config>/daemon.json`, removes it when its pid is gone or `/health` does not answer, then
+starts `agentage daemon run` detached, in its own process group, and waits for `/health` (30 s).
+The daemon writes its output to `<config>/logs/daemon.log`. A daemon that cannot bind its port
+exits 3, and the command fails with `daemon_unavailable`. `status`, `stop` and `restart` exit 0
+when no daemon runs. With `--json`, `data` is `{ running, pid, port, version, status,
+extensions }`, `{ stopped }` and `{ port }`.
+
 ## update
 
 ```bash
@@ -614,8 +638,9 @@ agentage update --check   # report whether an update is available, don't install
 
 Machines without a browser authenticate with a personal access token. Mint one in the
 dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or pass
-`--token aga_...` per command. A token takes precedence over a stored sign-in. Plain `setup`
-never signs in with `AGENTAGE_TOKEN`. Its account step and its status step use the token.
+`--token aga_...` per command. A token takes precedence over a stored sign-in. With
+`AGENTAGE_TOKEN` set, plain `setup` opens no browser sign-in: its account step and its status step
+use the token, then it starts the daemon.
 
 ## The --json envelope
 
@@ -630,7 +655,8 @@ and nothing else there (progress lines go to stderr), and never prompts:
 An error exits 1. `code` is snake_case and stable: `not_installed`, `needed_by_dependents`,
 `confirmation_required`, `extension_failed`, `profile_invalid`, `integrity_drift`,
 `invalid_argument`, `invalid_option`, `not_conforming`, `uncommitted_changes`, `release_refused`,
-`auth_required`, `auth_unavailable`, `not_pushed`, `token_request_failed`, `error` (any other).
+`auth_required`, `auth_unavailable`, `not_pushed`, `token_request_failed`, `daemon_unavailable`,
+`error` (any other).
 A usage error (exit 2) happens before the command runs and prints no object.
 
 | Command                                | `data`                                                         |
@@ -657,6 +683,7 @@ exit 1. A command an extension adds takes its own `--json`, which the extension 
 | Code | Meaning                                                                                             |
 | ---- | --------------------------------------------------------------------------------------------------- |
 | `0`  | Success, including `--help`, `--version`, and `status` while signed out                             |
+| `3`  | Only `daemon run` (the daemon process): its port is in use                                          |
 | `1`  | A step failed: sign-in, install or update failed, a refused or invalid profile, or an invalid token |
 | `2`  | Usage error: an unknown command or flag, a missing flag value, or no command                        |
 
@@ -688,3 +715,5 @@ Otherwise it is `extensions` inside the config directory. The config directory i
 | `NO_COLOR`                | Disable colored output (any non-empty value)                         | unset                 |
 | `AGENTAGE_EXTENSIONS_DIR` | Extensions directory (trees, lock, `current`)                        | `<config>/extensions` |
 | `AGENTAGE_DEBUG`          | `1` prints one stderr line for each call that registers this machine | unset                 |
+| `AGENTAGE_DAEMON_PORT`    | The daemon's port on 127.0.0.1                                       | `4243`                |
+| `AGENTAGE_NO_DAEMON`      | `1`: `setup` does not start the daemon                               | unset                 |

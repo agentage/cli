@@ -13,6 +13,7 @@ const deps: ExtensionSetupDeps = {
   },
   signOut: async () => console.log('(signed out)'),
   printStatus: async () => console.log('(status)'),
+  startDaemon: async () => 4243,
   npm: npmFromFixtures,
   ...noAccount,
 };
@@ -98,7 +99,28 @@ describe('agentage setup', () => {
       runExtensionSetup({ reauth: true, browser: false }, { ...deps, ensureSignedIn })
     );
     expect(run.lines[0]).toBe('(signed in {"reauth":true,"browser":false})');
-    expect(run.lines.at(-1)).toBe('(status)');
+    expect(run.lines.slice(-2)).toEqual(['(status)', 'daemon running on 127.0.0.1:4243']);
+  });
+
+  test('starts the daemon last; --no-daemon or AGENTAGE_NO_DAEMON=1 leave it off', async () => {
+    const started: number[] = [];
+    const startDaemon = async () => (started.push(1), 4243);
+    await output(() => runExtensionSetup({}, { ...deps, startDaemon }));
+    await output(() => runExtensionSetup({ daemon: false }, { ...deps, startDaemon }));
+    process.env['AGENTAGE_NO_DAEMON'] = '1';
+    const off = await output(() => runExtensionSetup({}, { ...deps, startDaemon }));
+    delete process.env['AGENTAGE_NO_DAEMON'];
+    expect(started).toHaveLength(1);
+    expect(off.lines).not.toContain('daemon running on 127.0.0.1:4243');
+  });
+
+  test('with AGENTAGE_TOKEN set, setup opens no sign-in and still starts the daemon', async () => {
+    process.env['AGENTAGE_TOKEN'] = 'aga_unit';
+    const run = await output(() => runExtensionSetup({ browser: false }, deps));
+    delete process.env['AGENTAGE_TOKEN'];
+    expect(run.error).toBeNull();
+    expect(run.lines).not.toContain('(signed in)');
+    expect(run.lines.at(-1)).toBe('daemon running on 127.0.0.1:4243');
   });
 
   test('a failed sign-in stops setup before the account or the status report', async ({ dir }) => {
@@ -127,7 +149,7 @@ describe('agentage setup', () => {
   }) => {
     dir.write('profile.json', { version: 0 });
     expect(await setup({})).toMatchObject({
-      lines: ['(signed in)', '(status)'],
+      lines: ['(signed in)', '(status)', 'daemon running on 127.0.0.1:4243'],
       error: 'profile.json is invalid:\n  version: must be 1 (got 0)',
     });
   });

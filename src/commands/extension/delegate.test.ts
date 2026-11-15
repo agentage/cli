@@ -25,6 +25,7 @@ const agentage = async (...args: string[]) => {
     extensionUp: notHere,
     extensionDown: notHere,
     extensionToken: notHere,
+    daemon: { status: notHere, stop: notHere, restart: notHere, run: notHere },
     kitTool: notHere as unknown as ProgramDeps['kitTool'],
     updateHint: () => null,
     refreshUpdateCache: async () => undefined,
@@ -74,7 +75,7 @@ describe('agentage <extension command>', () => {
     const nope = await agentage('nope');
     expect(nope.code).toBe(2);
     expect(nope.err).toBe(
-      "error: unknown command 'nope'\ncore: setup, status, update, extension\nhello: hello\nworld: world\n"
+      "error: unknown command 'nope'\ncore: setup, status, update, daemon, extension\nhello: hello\nworld: world\n"
     );
   });
 

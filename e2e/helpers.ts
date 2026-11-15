@@ -55,6 +55,8 @@ const machineEnv = (configDir: string, home: string, extra: NodeJS.ProcessEnv) =
   ...process.env,
   AGENTAGE_CONFIG_DIR: configDir,
   AGENTAGE_SITE_FQDN: TARGET_FQDN,
+  // setup would leave a daemon on 4243; the lifecycle tier of agentage/e2e owns the daemon cases.
+  AGENTAGE_NO_DAEMON: '1',
   NO_COLOR: '1',
   // Playwright's workers set FORCE_COLOR; beside NO_COLOR, Node warns about it on stderr.
   FORCE_COLOR: undefined,

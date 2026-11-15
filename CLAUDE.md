@@ -14,6 +14,9 @@ the extension author guide in [docs/extensions.md](docs/extensions.md); profiles
 - Every `extension` subcommand (install, market, remove, list, doctor, check, build, release,
   up/down/token): `docs/reference.md` section of that name; `src/commands/extension/` (`check` in
   `build.ts`, `down`/`token` in `up.ts`), `src/lib/net/market.ts`.
+- The daemon (`daemon status | stop | restart`, the start, the port, `setup --no-daemon`):
+  `docs/reference.md` "daemon"; `src/commands/daemon/`, `src/lib/daemon/`, the host in the kit
+  (`@agentage/extension/host`).
 - Extension commands and context, exit codes, environment: `docs/reference.md` headings of those
   names; `src/commands/extension/delegate.ts`, `src/program.ts`.
 - Profiles, states, the plan, short names, updates, profile file: `docs/profiles.md`;
@@ -55,8 +58,9 @@ Each row names the doc first, then the code that proves it. Read the doc before 
     and replay once on a 412.
   - `setup`, `status` and `setup --disconnect` register the machine at `/v1/machines` (fire and
     forget).
-- Memory, vault, daemon, sync and MCP code lives in git history up to v0.37.2 and returns as
-  extensions.
+- Memory, vault, sync and MCP code lives in git history up to v0.37.2 and returns as
+  extensions. The daemon is the kit's (`@agentage/extension/host`); the cli starts it and talks
+  HTTP to it.
 
 ## Layout
 
@@ -101,7 +105,14 @@ Each row names the doc first, then the code that proves it. Read the doc before 
     ask only this folder's stack. `kit-commands.ts` registers a
     kit-built extension's `agentage {id}` group and top-level verbs; its `stub` is the one every
     delegated command uses.
+- `src/commands/daemon/` - `daemon.ts`: `status`, `stop`, `restart` and the hidden `run`;
+  `run.ts` is the daemon process (the kit's `createDaemon`, imported on use, until SIGTERM);
+  `installer.ts` is its injected `Installer`: the market, then npm into one tree per version
+  (`core/installer/package-dir.ts`)
 - `src/lib/` - shared library, grouped by domain:
+  - `daemon/` - the daemon client, HTTP only: `daemon-file.ts` (`daemon.json`, the port),
+    `daemon-client.ts` (`ensureDaemon`: stale file, detached spawn, health wait),
+    `daemon-stop.ts`, `host-client.ts` (the `/host/extensions` routes, error code mapping)
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,
     `signIn`, `signOut`), credentials (PAT), env-match
@@ -173,7 +184,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
 - `scripts/bump-version.js` - release helper (`node scripts/bump-version.js patch|minor|major`)
 - `src/package-guard.test.ts` - CI guard: no product or agent-runtime imports; runtime deps stay
   exactly `@agentage/extension + chalk + commander + open` (the kit's tool only; it never loads
-  the kit's server stack, and `express` is an optional peer the cli does not install)
+  the kit's server stack outside the daemon process) plus `express` and `@electric-sql/pglite`,
+  which the kit daemon runs on; only `src/commands/daemon/run.ts` loads `@agentage/extension/host`
 
 ## Auth model
 
@@ -216,7 +228,7 @@ Drives the built `dist/cli.js` as a subprocess. Tiers are tags in the test title
 - `npm run verify` before any push; CI also runs `test:coverage` (global 65/70/70/70, `src/lib/**`
   and `src/core/**` have higher floors in `vitest.config.ts`)
 - Headless: `setup --no-browser` (`src/commands/auth/setup.ts`) and `AGENTAGE_TOKEN=aga_...`
-  (`src/lib/auth/credentials.ts`); plain `setup` ignores the token. Install, list, run and
+  (`src/lib/auth/credentials.ts`); with the token, plain `setup` opens no browser sign-in. Install, list, run and
   remove of extensions need no sign-in.
 - Exit codes: 0 ok (incl. `--help`/`--version`) / 1 step failed / 2 usage; errors on stderr
 - Every network call in `lib/auth` goes through `cliFetch`; no bare `fetch`

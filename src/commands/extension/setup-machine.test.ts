@@ -11,6 +11,7 @@ const setup = (account: FakeAccount, opts: SetupOptions = {}) =>
       ensureSignedIn: async () => 'already',
       signOut: async () => console.log('(signed out)'),
       printStatus: async () => undefined,
+      startDaemon: async () => 4243,
       ...editDeps(account),
     })
   );

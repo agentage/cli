@@ -22,6 +22,7 @@ const harness = (over: Partial<ProgramDeps> = {}) => {
     extensionUp: ok,
     extensionDown: ok,
     extensionToken: ok,
+    daemon: { status: ok, stop: ok, restart: ok, run: ok },
     kitTool: vi.fn(async () => {
       throw new Error('no kit');
     }),
