@@ -5,6 +5,7 @@ import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { installedDir } from '../installer/old-tree.js';
 import { type ConfigMap } from '../profile/schema.js';
 import { inspect, type DiscoveredExtension } from './discover.js';
+import { onlyKitRange } from './manifest.js';
 
 export const installationPath = (): string => join(getConfigDir(), 'installation.json');
 export const settingsPath = (): string => join(getConfigDir(), 'settings.json');
@@ -52,7 +53,8 @@ const discovered = (row: unknown, configs: ConfigMap): DiscoveredExtension[] => 
   const name = readJson(join(found.dir, 'package.json'), isRecord)?.['name'];
   const pkg = typeof name === 'string' ? name : String((row as Record<string, unknown>)['id']);
   const ext = inspect({ pkg, source: found.dev ? 'dev' : 'tree', dir: found.dir }, configs);
-  return ext.missing || ext.problem ? [] : [ext];
+  if (ext.missing || (ext.problem && !onlyKitRange(ext.problem))) return [];
+  return [{ ...ext, problem: null }];
 };
 
 // What installation.json runs, read from the files (no daemon is asked); null before the move.

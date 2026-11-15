@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import { installationPath, settingsPath } from '../../core/loader/installed.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
+import { onlyKitRange } from '../../core/loader/manifest.js';
 import { scan } from '../../core/loader/scan.js';
 import { NO_MACHINE, readMachine } from '../../core/profile/machine.js';
 import { machinePath } from '../../core/paths.js';
@@ -42,12 +43,13 @@ const invalidList = (): string | null => {
   return bad ? `${basename(bad)} does not parse` : null;
 };
 
-// Why an entry stays behind: never run a folder 0.51 refused, or a package that is not there.
+// Why an entry stays behind: never run a folder 0.51 refused, or a package that is not there. A
+// package built on an older kit moves: the daemon runs it, and a failed start shows in list.
 const reasonOf = (ext: DiscoveredExtension, id: string | undefined): string | null => {
   if (ext.missing)
     return ext.source === 'dev' ? 'folder missing' : 'not installed in the 0.51 tree';
   if (!id) return 'no agentage.id';
-  if (ext.problem) return ext.problem;
+  if (ext.problem && !onlyKitRange(ext.problem)) return ext.problem;
   return ext.source === 'tree' && !ext.version ? 'no exact version' : null;
 };
 

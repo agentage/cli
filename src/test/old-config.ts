@@ -11,15 +11,16 @@ const write = (path: string, value: unknown): void => {
   writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value, null, 2));
 };
 
-// The tree 0.51.1 installed: alpha 1.0.0 and beta 2.0.0, extensions/current naming it.
+// The tree 0.51.1 installed: alpha 1.0.0 (built on kit 0.12, as every package 0.51 had) and beta
+// 2.0.0, extensions/current naming it.
 const writeTree = (config: string): void => {
   const tree = join(config, 'extensions', 'trees', TREE);
   const deps = { [name('alpha')]: '1.0.0', [name('beta')]: '2.0.0' };
-  for (const [id, version] of [
-    ['alpha', '1.0.0'],
-    ['beta', '2.0.0'],
+  for (const [id, version, engine] of [
+    ['alpha', '1.0.0', '^0.12'],
+    ['beta', '2.0.0', '>=0.12'],
   ] as const)
-    writeKitExtension(join(tree, 'node_modules', name(id)), id, version);
+    writeKitExtension(join(tree, 'node_modules', name(id)), id, version, engine);
   write(join(tree, 'package.json'), {
     name: 'agentage-extensions',
     private: true,

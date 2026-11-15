@@ -118,6 +118,10 @@ const engineProblem = (engine: string, version: string, against: string): string
   return `engines.agentage "${engine}" does not match ${against} ${version}`;
 };
 
+// Only the kit range is wrong: the daemon has no such gate, so the D6 move keeps that entry.
+export const onlyKitRange = (problem: string | null): boolean =>
+  problem?.startsWith('engines.agentage "') === true && / does not match kit [^ ]+$/.test(problem);
+
 // A kit-shaped range is over the kit's version; it has no default.
 const kitProblem = (info: ManifestInfo, kit: string): string | null =>
   idProblem(info.id) ??
