@@ -6,14 +6,16 @@ const makeDeps = (status: UpdateInfo['status'], over: Partial<UpdateDeps> = {}) 
   const logs: string[] = [];
   const install = over.install ?? vi.fn(async () => {});
   const releaseLock = over.releaseLock ?? vi.fn(() => {});
+  const restartDaemon = over.restartDaemon ?? vi.fn(async () => true);
   const deps: UpdateDeps = {
+    restartDaemon,
     check: async () => ({ status, message: null }),
     install,
     acquireLock: over.acquireLock ?? (() => true),
     releaseLock,
     log: (m) => logs.push(m),
   };
-  return { deps, logs, install, releaseLock };
+  return { deps, logs, install, releaseLock, restartDaemon };
 };
 
 describe('update', () => {
@@ -23,6 +25,14 @@ describe('update', () => {
     expect(h.install).toHaveBeenCalledOnce();
     expect(h.logs.join()).toContain('Updated');
     expect(h.releaseLock).toHaveBeenCalledOnce();
+    expect(h.restartDaemon).toHaveBeenCalledOnce();
+  });
+
+  it('a daemon that cannot restart after the install fails nothing and says so', async () => {
+    const restartDaemon = vi.fn(async () => Promise.reject(new Error('port 4243 is in use')));
+    const h = makeDeps({ kind: 'update-available', latest: '0.0.9' }, { restartDaemon });
+    expect(await runUpdate({}, h.deps)).toMatchObject({ updated: true });
+    expect(h.logs).toContain('daemon not restarted: port 4243 is in use');
   });
 
   it('installs when the running version is unsupported', async () => {
@@ -35,6 +45,7 @@ describe('update', () => {
     const h = makeDeps({ kind: 'current' });
     await runUpdate({}, h.deps);
     expect(h.install).not.toHaveBeenCalled();
+    expect(h.restartDaemon).not.toHaveBeenCalled();
     expect(h.logs.join()).toContain('latest');
   });
 

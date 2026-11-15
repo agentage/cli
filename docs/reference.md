@@ -24,7 +24,9 @@ instead (see [Token auth](#token-auth-ci-and-headless)).
 
 Plain `setup` ends by starting the [daemon](#daemon) when none runs and prints
 `daemon running on 127.0.0.1:<port>`. The daemon needs no account. `--no-daemon` or
-`AGENTAGE_NO_DAEMON=1` leave it off.
+`AGENTAGE_NO_DAEMON=1` leave it off. When the daemon cannot start (for example `port_in_use`),
+`setup` has done the account step and the status report, then exits 1 with that error (with
+`--json`, the error envelope). With `AGENTAGE_TOKEN` set, `--reauth` does nothing and says so.
 
 `setup` also installs extensions:
 
@@ -617,13 +619,29 @@ agentage daemon restart   # stop, then start
 The daemon is one process on `127.0.0.1` (port 4243, `AGENTAGE_DAEMON_PORT` for another). It
 runs each installed extension as a child process and serves `/api/{id}/*`, `/health` and
 `/host/extensions`; a request with another `Host` or `Origin` gets 403. It has no token.
-`setup` starts it, and so does each command that needs it: the command reads
-`<config>/daemon.json`, removes it when its pid is gone or `/health` does not answer, then
-starts `agentage daemon run` detached, in its own process group, and waits for `/health` (30 s).
-The daemon writes its output to `<config>/logs/daemon.log`. A daemon that cannot bind its port
-exits 3, and the command fails with `daemon_unavailable`. `status`, `stop` and `restart` exit 0
-when no daemon runs. With `--json`, `data` is `{ running, pid, port, version, status,
-extensions }`, `{ stopped }` and `{ port }`.
+`setup` starts it, and so does each command that needs it.
+
+A daemon counts as this machine's daemon only with proof: `/health` on the port of
+`<config>/daemon.json` answers `service: "agentage-daemon"` with the same `pid` as the file.
+Requests go only to a proven daemon, and `stop` signals only a proven pid (SIGTERM, then SIGKILL
+after 30 s). The command reads `daemon.json` and then:
+
+| Found                                                        | What happens                                                                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| no file, or its pid is gone                                  | the stale file is removed and `agentage daemon run` starts detached, in its own process group; the command waits for `/health` (30 s) |
+| the pid lives, the port is another program or another pid    | the file is stale: it is removed, nothing is signalled, a new daemon starts                                                           |
+| the pid lives, `/health` does not answer (3 tries, 2 s each) | the file stays; `daemon_unresponsive`, exit 1                                                                                         |
+| a proven daemon of another cli version or protocol           | it is stopped and started again; one line on stderr (`daemon restarted: ...`)                                                         |
+| the port is held by another program at the start             | `port_in_use`, naming the port and `AGENTAGE_DAEMON_PORT`                                                                             |
+
+`agentage update` restarts a running daemon after the install. `AGENTAGE_NO_DAEMON=1` makes
+every command that needs the daemon fail with `daemon_disabled`; nothing starts.
+The daemon writes its output, and each extension's, to `<config>/logs/daemon.log`; at each start
+a log over 5 MB moves to `daemon.log.1` (one old file is kept). A daemon that cannot bind its port
+exits 3. `status`, `stop` and `restart` exit 0 when no daemon runs; `status` says when a pid does
+not answer, and `stop` says when it removed a stale `daemon.json`. With `--json`, `data` is
+`{ running, pid, port, version, status, extensions }` (or `{ running: false, unresponsive, pid,
+port }`), `{ stopped }` and `{ port }`.
 
 ## update
 
@@ -632,7 +650,8 @@ agentage update           # install the latest published version via npm
 agentage update --check   # report whether an update is available, don't install
 ```
 
-`update` needs npm 10 or newer and prints npm's last output lines if the install fails.
+`update` needs npm 10 or newer and prints npm's last output lines if the install fails. After
+an install it restarts a running daemon, so the daemon runs the new version.
 
 ## Token auth (CI and headless)
 
@@ -656,7 +675,7 @@ An error exits 1. `code` is snake_case and stable: `not_installed`, `needed_by_d
 `confirmation_required`, `extension_failed`, `profile_invalid`, `integrity_drift`,
 `invalid_argument`, `invalid_option`, `not_conforming`, `uncommitted_changes`, `release_refused`,
 `auth_required`, `auth_unavailable`, `not_pushed`, `token_request_failed`, `daemon_unavailable`,
-`error` (any other).
+`daemon_unresponsive`, `daemon_disabled`, `port_in_use`, `error` (any other).
 A usage error (exit 2) happens before the command runs and prints no object.
 
 | Command                                | `data`                                                         |
@@ -716,4 +735,4 @@ Otherwise it is `extensions` inside the config directory. The config directory i
 | `AGENTAGE_EXTENSIONS_DIR` | Extensions directory (trees, lock, `current`)                        | `<config>/extensions` |
 | `AGENTAGE_DEBUG`          | `1` prints one stderr line for each call that registers this machine | unset                 |
 | `AGENTAGE_DAEMON_PORT`    | The daemon's port on 127.0.0.1                                       | `4243`                |
-| `AGENTAGE_NO_DAEMON`      | `1`: `setup` does not start the daemon                               | unset                 |
+| `AGENTAGE_NO_DAEMON`      | `1`: no daemon is started or used (`daemon_disabled`)                | unset                 |

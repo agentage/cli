@@ -1,7 +1,8 @@
 import { type Command } from 'commander';
-import { ensureDaemon, health, type Health } from '../../lib/daemon/daemon-client.js';
-import { isAlive, readDaemonFile } from '../../lib/daemon/daemon-file.js';
-import { stopDaemon } from '../../lib/daemon/daemon-stop.js';
+import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
+import { isAlive, readDaemonFile, type DaemonFile } from '../../lib/daemon/daemon-file.js';
+import { probeRetry, proven, type Health } from '../../lib/daemon/daemon-probe.js';
+import { stopDaemon, type StopResult } from '../../lib/daemon/daemon-stop.js';
 import { addJson } from '../../lib/json-output.js';
 import { helpOrUnknown } from '../extension/list.js';
 
@@ -10,24 +11,40 @@ export interface DaemonOptions {
 }
 
 export type DaemonStatus =
-  { running: false } | ({ running: true; pid: number; port: number } & Health);
+  | { running: false }
+  | { running: false; unresponsive: true; pid: number; port: number }
+  | ({ running: true; port: number } & Health);
 
-export const runDaemonStatus = async (): Promise<DaemonStatus> => {
-  const file = readDaemonFile();
-  const live = file && isAlive(file.pid) ? await health(file.port) : null;
-  if (!file || !live) {
-    console.log('daemon: not running');
-    return { running: false };
-  }
-  console.log(`daemon: ${live.status} on 127.0.0.1:${file.port}, pid ${file.pid}, ${live.version}`);
+const report = (file: DaemonFile, live: Health): DaemonStatus => {
+  console.log(`daemon: ${live.status} on 127.0.0.1:${file.port}, pid ${live.pid}, ${live.version}`);
   for (const ext of live.extensions) console.log(`  ${ext.id} ${ext.version} ${ext.state}`);
-  return { running: true, pid: file.pid, port: file.port, ...live };
+  return { running: true, port: file.port, ...live };
 };
 
-export const runDaemonStop = async (): Promise<{ stopped: boolean }> => {
-  const pid = await stopDaemon();
-  console.log(pid === null ? 'daemon: not running' : `daemon: stopped (pid ${pid})`);
-  return { stopped: pid !== null };
+// Reads only: a stale daemon.json is left for the next start or stop to remove.
+export const runDaemonStatus = async (look = probeRetry): Promise<DaemonStatus> => {
+  const file = readDaemonFile();
+  const found = file && isAlive(file.pid) ? await look(file.port) : null;
+  if (file && found?.kind === 'silent') {
+    console.log(`daemon: pid ${file.pid} does not answer on 127.0.0.1:${file.port}`);
+    return { running: false, unresponsive: true, pid: file.pid, port: file.port };
+  }
+  const live = file && found ? proven(file, found) : null;
+  if (!file || !live) return (console.log('daemon: not running'), { running: false });
+  return report(file, live);
+};
+
+const STOPPED = (result: StopResult): string => {
+  if (result === null) return 'daemon: not running';
+  if ('stale' in result)
+    return `daemon: not running (daemon.json was stale; pid ${result.stale} not signalled)`;
+  return `daemon: stopped (pid ${result.stopped})`;
+};
+
+export const runDaemonStop = async (stop = () => stopDaemon()): Promise<{ stopped: boolean }> => {
+  const result = await stop();
+  console.log(STOPPED(result));
+  return { stopped: result !== null && 'stopped' in result };
 };
 
 export const runDaemonRestart = async (

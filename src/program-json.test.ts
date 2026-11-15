@@ -50,6 +50,21 @@ const NEW: [string, string[], keyof ProgramDeps][] = [
 ];
 
 describe('--json envelope', () => {
+  test('daemon status, stop and restart: one envelope each, success and failure', async () => {
+    for (const verb of ['status', 'stop', 'restart'] as const) {
+      const ok = harness();
+      expect(await ok.exec('daemon', verb, '--json')).toBe(0);
+      expect(JSON.parse(ok.stdout())).toEqual({ success: true, data: { answer: 42 } });
+      const fail = vi.fn(async () => {
+        throw new CliError('daemon_unresponsive', 'pid 9 does not answer');
+      });
+      const daemon = { status: fail, stop: fail, restart: fail, run: fail };
+      const bad = harness({ daemon });
+      expect(await bad.exec('daemon', verb, '--json')).toBe(1);
+      expect(JSON.parse(bad.stdout()).error.code).toBe('daemon_unresponsive');
+    }
+  });
+
   for (const [name, argv, dep] of NEW) {
     test(`${name}: one success object on stdout`, async () => {
       const h = harness();

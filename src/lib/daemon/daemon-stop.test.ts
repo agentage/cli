@@ -1,37 +1,74 @@
 import { spawn } from 'node:child_process';
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
 import { test } from '../../test/config-dir.js';
 import { isAlive } from './daemon-file.js';
+import { type Probe } from './daemon-probe.js';
 import { stopDaemon } from './daemon-stop.js';
 
+const ours = (pid: number): Probe => ({
+  kind: 'ours',
+  health: {
+    status: 'ok',
+    service: 'agentage-daemon',
+    pid,
+    version: '0',
+    protocol: 1,
+    extensions: [],
+  },
+});
+const deps = (found: Probe, timeoutMs = 30_000) => ({ probe: vi.fn(async () => found), timeoutMs });
+
+// Spawns one node process; a sandbox that kills children fails these tests, they are not skipped.
+const child = (code = 'setInterval(() => {}, 1000)') =>
+  spawn(process.execPath, ['-e', code], { stdio: 'ignore' });
+
 describe('daemon stop', () => {
-  test('no daemon.json, or a dead pid: nothing to stop, a stale file is removed', async ({
-    dir,
-  }) => {
-    expect(await stopDaemon()).toBeNull();
+  test('no daemon.json: nothing to stop; a dead pid: the stale file goes', async ({ dir }) => {
+    expect(await stopDaemon(deps({ kind: 'none' }))).toBeNull();
     dir.write('daemon.json', { pid: 2 ** 22 + 7, port: 4243 });
-    expect(await stopDaemon()).toBeNull();
+    expect(await stopDaemon(deps({ kind: 'none' }))).toEqual({ stale: 2 ** 22 + 7 });
     expect(dir.exists('daemon.json')).toBe(false);
   });
 
-  // Spawns one node process; a sandbox that kills children fails this test, it is not skipped.
-  test('a live daemon gets SIGTERM; stop returns once the pid is gone', async ({ dir }) => {
-    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
-      stdio: 'ignore',
+  test('a live pid that is not the daemon is never signalled; only the file goes', async ({
+    dir,
+  }) => {
+    const other = child();
+    dir.write('daemon.json', { pid: other.pid, port: 4243 });
+    for (const found of [{ kind: 'foreign' }, { kind: 'none' }, ours(1)] as Probe[]) {
+      dir.write('daemon.json', { pid: other.pid, port: 4243 });
+      expect(await stopDaemon(deps(found))).toEqual({ stale: other.pid });
+      expect(dir.exists('daemon.json')).toBe(false);
+    }
+    expect(isAlive(other.pid ?? 0)).toBe(true);
+    other.kill();
+  });
+
+  test('a silent port with a live pid keeps the file and signals nothing', async ({ dir }) => {
+    const other = child();
+    dir.write('daemon.json', { pid: other.pid, port: 4243 });
+    await expect(stopDaemon(deps({ kind: 'silent' }))).rejects.toMatchObject({
+      code: 'daemon_unresponsive',
     });
-    const pid = child.pid ?? 0;
+    expect(dir.exists('daemon.json')).toBe(true);
+    expect(isAlive(other.pid ?? 0)).toBe(true);
+    other.kill();
+  });
+
+  test('the proven daemon gets SIGTERM; stop returns once the pid is gone', async ({ dir }) => {
+    const pid = child().pid ?? 0;
     dir.write('daemon.json', { pid, port: 4243 });
-    expect(await stopDaemon()).toBe(pid);
+    expect(await stopDaemon(deps(ours(pid)))).toEqual({ stopped: pid });
     expect(isAlive(pid)).toBe(false);
     expect(dir.exists('daemon.json')).toBe(false);
   });
 
-  test('a daemon that ignores SIGTERM is killed after the wait', async ({ dir }) => {
-    const code = "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)";
-    const child = spawn(process.execPath, ['-e', code], { stdio: 'ignore' });
+  test('a proven daemon that ignores SIGTERM is killed after the wait', async ({ dir }) => {
+    const deaf = child("process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)");
     await new Promise((resolve) => setTimeout(resolve, 300));
-    dir.write('daemon.json', { pid: child.pid, port: 4243 });
-    expect(await stopDaemon(200)).toBe(child.pid);
-    expect(isAlive(child.pid ?? 0)).toBe(false);
+    const pid = deaf.pid ?? 0;
+    dir.write('daemon.json', { pid, port: 4243 });
+    expect(await stopDaemon(deps(ours(pid), 200))).toEqual({ stopped: pid });
+    expect(isAlive(pid)).toBe(false);
   });
 });

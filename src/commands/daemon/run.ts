@@ -1,5 +1,5 @@
 import { CommanderError } from 'commander';
-import { type Installer } from '@agentage/extension/host';
+import type { Installer } from '@agentage/extension/host';
 import { daemonPort, EADDRINUSE_EXIT } from '../../lib/daemon/daemon-file.js';
 import { getConfigDir } from '../../lib/fs/config.js';
 import { VERSION } from '../../utils/version.js';
@@ -26,12 +26,14 @@ const busy = (err: unknown): never => {
 
 // The daemon process (hidden `daemon run`): the kit's daemon until SIGTERM, then every child stops.
 export const runDaemon = async (deps: DaemonRunDeps): Promise<void> => {
+  // Attached first: a stop during the move or the boot is kept and served once the boot ends.
+  const stopping = signalled();
   await deps.before?.();
   const { createDaemon } = await import('@agentage/extension/host');
   const opts = { configDir: getConfigDir(), port: daemonPort(), version: VERSION };
   const daemon = await createDaemon({ ...opts, install: deps.installer(), startedBy: 'cli' }).catch(
     busy
   );
-  await signalled();
+  await stopping;
   await daemon.stop();
 };

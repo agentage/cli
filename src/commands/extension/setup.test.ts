@@ -1,3 +1,4 @@
+import { CliError } from '../../lib/json-output.js';
 import { describe, expect } from 'vitest';
 import { noAccount } from '../../test/account.js';
 import { MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
@@ -121,6 +122,22 @@ describe('agentage setup', () => {
     expect(run.error).toBeNull();
     expect(run.lines).not.toContain('(signed in)');
     expect(run.lines.at(-1)).toBe('daemon running on 127.0.0.1:4243');
+    process.env['AGENTAGE_TOKEN'] = 'aga_unit';
+    const reauth = await output(() => runExtensionSetup({ reauth: true }, deps));
+    delete process.env['AGENTAGE_TOKEN'];
+    expect(reauth.stderr).toContain('--reauth does nothing: AGENTAGE_TOKEN is set');
+  });
+
+  test('a daemon that cannot start fails setup (exit 1) after the account step, with its code', async () => {
+    const startDaemon = async (): Promise<never> => {
+      throw new CliError('port_in_use', 'port 4243 is in use by another program');
+    };
+    const run = await output(() => runExtensionSetup({}, { ...deps, startDaemon }));
+    expect(run).toMatchObject({
+      code: 'port_in_use',
+      error: 'port 4243 is in use by another program',
+    });
+    expect(run.lines).toContain('(status)');
   });
 
   test('a failed sign-in stops setup before the account or the status report', async ({ dir }) => {

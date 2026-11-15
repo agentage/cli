@@ -71,6 +71,14 @@ const startDaemon = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promis
   console.log(`daemon running on 127.0.0.1:${await deps.startDaemon()}`);
 };
 
+// A token is the headless credential: no browser and no callback, so --reauth has nothing to do.
+const signIn = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
+  if (!rawPatToken())
+    return void (await deps.ensureSignedIn({ reauth: opts.reauth, browser: opts.browser }));
+  if (opts.reauth)
+    console.error('--reauth does nothing: AGENTAGE_TOKEN is set and is the credential');
+};
+
 const setupFlow = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
   if (opts.disconnect) return disconnect(deps);
   const file = opts.profile === undefined ? null : fileSource(opts.profile);
@@ -78,8 +86,7 @@ const setupFlow = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<
   if (file) return fromFile(file, deps);
   if (opts.latest) return runSetupLatest(deps);
   const token = process.env['AGENTAGE_TOKEN'];
-  // A token is the headless credential: no browser and no callback.
-  if (!rawPatToken()) await deps.ensureSignedIn({ reauth: opts.reauth, browser: opts.browser });
+  await signIn(opts, deps);
   const failure = await accountSetup(deps).then(
     () => null,
     (error: unknown) => error

@@ -56,16 +56,13 @@ describe('package guard (the core)', () => {
     }
   });
 
-  // The daemon client folder talks HTTP only; the kit host loads in the daemon process alone.
-  it('only src/commands/daemon/run.ts loads the kit host; other files import its types', () => {
+  // `import { type X }` still emits `import {}` and loads the module; only `import type` is erased.
+  it('only src/commands/daemon/run.ts loads the kit host; every other import of it is `import type`', () => {
     const files = sourceFiles(SRC).map((file) => [file, readFileSync(file, 'utf-8')] as const);
     const loaders = files.filter(([, text]) => text.includes("import('@agentage/extension/host')"));
     expect(loaders.map(([file]) => file.slice(SRC.length + 1))).toEqual(['commands/daemon/run.ts']);
-    const values = /import \{([^}]*)\} from '@agentage\/extension\/host'/g;
-    for (const [file, text] of files)
-      for (const [, names = ''] of text.matchAll(values))
-        for (const name of names.split(',').filter((n) => n.trim()))
-          expect(name.trim(), file).toMatch(/^type /);
+    const statics = /^(?:import|export)\b(?!\s+type\b)[^;]*?from '@agentage\/extension\/host'/gm;
+    for (const [file, text] of files) expect(text.match(statics), file).toBeNull();
   });
 
   it('exposes the extension contract and its test context as subpath exports', () => {

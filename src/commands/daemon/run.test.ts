@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:net';
 import { type AddressInfo } from 'node:net';
 import { describe, expect, vi } from 'vitest';
-import { health } from '../../lib/daemon/daemon-client.js';
+import { probe } from '../../lib/daemon/daemon-probe.js';
 import { readDaemonFile } from '../../lib/daemon/daemon-file.js';
 import { test } from '../../test/config-dir.js';
 import { runDaemon } from './run.js';
@@ -26,11 +26,25 @@ describe('daemon run: the daemon process', () => {
     vi.stubEnv('AGENTAGE_DAEMON_PORT', String(port));
     const before = vi.fn(async () => undefined);
     const running = runDaemon({ installer: noInstaller, before });
-    await vi.waitFor(async () => expect(await health(port)).not.toBeNull(), { timeout: 10_000 });
+    await vi.waitFor(async () => expect((await probe(port)).kind).not.toBe('none'), {
+      timeout: 10_000,
+    });
     expect(readDaemonFile()).toMatchObject({ pid: process.pid, port, startedBy: 'cli' });
     expect(before).toHaveBeenCalledOnce();
     process.emit('SIGTERM');
     await running;
+    expect(dir.exists('daemon.json')).toBe(false);
+    vi.unstubAllEnvs();
+  });
+
+  test('a stop that comes during the boot still stops the daemon and removes daemon.json', async ({
+    dir,
+  }) => {
+    const free = await listening();
+    vi.stubEnv('AGENTAGE_DAEMON_PORT', String(portOf(free)));
+    await new Promise((resolve) => free.close(resolve));
+    const before = vi.fn(async () => void process.emit('SIGTERM'));
+    await runDaemon({ installer: noInstaller, before });
     expect(dir.exists('daemon.json')).toBe(false);
     vi.unstubAllEnvs();
   });

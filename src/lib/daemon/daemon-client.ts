@@ -1,55 +1,48 @@
 import { spawn } from 'node:child_process';
-import { mkdirSync, openSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getConfigDir } from '../fs/config.js';
-import { isRecord } from '../fs/json-file.js';
 import { CliError } from '../json-output.js';
+import { VERSION } from '../../utils/version.js';
 import {
   daemonPort,
   EADDRINUSE_EXIT,
   isAlive,
   readDaemonFile,
   removeDaemonFile,
+  type DaemonFile,
 } from './daemon-file.js';
-
-export interface Health {
-  status: string;
-  version: string;
-  extensions: { id: string; version: string; state: string }[];
-}
+import {
+  portInUse,
+  probe,
+  probeRetry,
+  PROTOCOL,
+  proven,
+  sleep,
+  unresponsive,
+  type Probe,
+} from './daemon-probe.js';
+import { stopDaemon, type StopResult } from './daemon-stop.js';
 
 export type SpawnOutcome = 'ok' | 'port-in-use' | 'unreachable';
 
 export interface EnsureDeps {
-  health: (port: number) => Promise<Health | null>;
+  probe: (port: number) => Promise<Probe>;
   spawn: (port: number) => Promise<SpawnOutcome>;
+  stop: () => Promise<StopResult>;
   log: (line: string) => void;
 }
 
 const START_MS = 30_000;
 const POLL_MS = 100;
-
-export const health = async (port: number, timeoutMs = 1000): Promise<Health | null> => {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, {
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    const body: unknown = res.ok ? await res.json() : null;
-    return isRecord(body) && typeof body['status'] === 'string'
-      ? (body as unknown as Health)
-      : null;
-  } catch {
-    return null;
-  }
-};
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+// Over this the log moves to daemon.log.1 at the next start; one old file is kept.
+export const LOG_CAP = 5 * 1024 * 1024;
 
 export const waitForHealth = async (port: number, timeoutMs = START_MS): Promise<boolean> => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (await health(port, 500)) return true;
+    if ((await probe(port, 500)).kind === 'ours') return true;
     await sleep(POLL_MS);
   }
   return false;
@@ -57,11 +50,15 @@ export const waitForHealth = async (port: number, timeoutMs = START_MS): Promise
 
 const CLI_ENTRY = fileURLToPath(new URL('../../cli.js', import.meta.url));
 
-// The daemon's own output, so a start that fails can be read later.
-const logFile = (): number => {
-  const dir = join(getConfigDir(), 'logs');
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  return openSync(join(dir, 'daemon.log'), 'a', 0o600);
+export const daemonLogPath = (): string => join(getConfigDir(), 'logs', 'daemon.log');
+
+// The daemon's own output (each child's too), so a start that fails can be read later.
+export const openDaemonLog = (cap = LOG_CAP): number => {
+  const path = daemonLogPath();
+  mkdirSync(join(getConfigDir(), 'logs'), { recursive: true, mode: 0o700 });
+  const size = statSync(path, { throwIfNoEntry: false })?.size ?? 0;
+  if (size > cap) renameSync(path, `${path}.1`);
+  return openSync(path, 'a', 0o600);
 };
 
 // The token never reaches the daemon: it needs no account.
@@ -73,12 +70,13 @@ const daemonEnv = (port: number): NodeJS.ProcessEnv => {
 
 // Detached in its own process group, so it outlives this cli; the first to exit or answer wins.
 export const spawnDaemon = async (port: number, entry = CLI_ENTRY): Promise<SpawnOutcome> => {
-  const out = logFile();
+  const out = openDaemonLog();
   const child = spawn(process.execPath, [entry, 'daemon', 'run'], {
     detached: true,
     stdio: ['ignore', out, out],
     env: daemonEnv(port),
   });
+  closeSync(out);
   const exited = new Promise<SpawnOutcome>((resolve) =>
     child.once('exit', (code) => resolve(code === EADDRINUSE_EXIT ? 'port-in-use' : 'unreachable'))
   );
@@ -87,34 +85,55 @@ export const spawnDaemon = async (port: number, entry = CLI_ENTRY): Promise<Spaw
   return Promise.race([healthy, exited]);
 };
 
-const defaultDeps: EnsureDeps = {
-  health: (port) => health(port),
+export const defaultEnsureDeps: EnsureDeps = {
+  probe: (port) => probeRetry(port),
   spawn: (port) => spawnDaemon(port),
+  stop: () => stopDaemon(),
   log: (line) => console.error(line),
 };
 
-// The port of a live daemon: the one daemon.json names, else a new one; a stale file is removed.
-const livePort = async (deps: EnsureDeps): Promise<number | null> => {
-  const file = readDaemonFile();
-  if (file && isAlive(file.pid) && (await deps.health(file.port))) return file.port;
-  if (file) removeDaemonFile();
-  return null;
-};
-
-// Another cli started one on the same port at the same time: that one serves.
-const started = async (deps: EnsureDeps, port: number): Promise<boolean> => {
+// Another cli may have started one on the same port at the same time: that one serves.
+const start = async (deps: EnsureDeps, port: number): Promise<number> => {
   const outcome = await deps.spawn(port);
-  if (outcome === 'ok') return true;
-  if (outcome === 'port-in-use' && (await deps.health(port))) return true;
-  const why = outcome === 'port-in-use' ? `port ${port} is in use` : 'it did not answer';
-  throw new CliError('daemon_unavailable', `the daemon did not start: ${why}`);
-};
-
-export const ensureDaemon = async (deps: EnsureDeps = defaultDeps): Promise<number> => {
-  const live = await livePort(deps);
-  if (live !== null) return live;
-  const port = daemonPort();
-  await started(deps, port);
+  if (outcome === 'port-in-use') {
+    if ((await deps.probe(port)).kind === 'ours') return port;
+    throw portInUse(port);
+  }
+  if (outcome !== 'ok') {
+    const why = 'it did not answer (see logs/daemon.log in the config folder)';
+    throw new CliError('daemon_unavailable', `the daemon did not start: ${why}`);
+  }
   deps.log(`daemon started on 127.0.0.1:${port}`);
   return port;
+};
+
+// daemon.json's daemon when proven; a dead pid or another program there means the file is stale.
+const fromFile = async (file: DaemonFile, deps: EnsureDeps): Promise<number | null> => {
+  if (!isAlive(file.pid)) return (removeDaemonFile(), null);
+  const found = await deps.probe(file.port);
+  if (found.kind === 'silent') throw unresponsive(file);
+  const health = proven(file, found);
+  if (!health) return (removeDaemonFile(), null);
+  if (health.version === VERSION && health.protocol === PROTOCOL) return file.port;
+  await deps.stop();
+  const port = await start({ ...deps, log: () => undefined }, daemonPort());
+  deps.log(`daemon restarted: it ran ${health.version}, this cli is ${VERSION}`);
+  return port;
+};
+
+export const ensureDaemon = async (deps: EnsureDeps = defaultEnsureDeps): Promise<number> => {
+  if (process.env['AGENTAGE_NO_DAEMON'] === '1')
+    throw new CliError('daemon_disabled', 'AGENTAGE_NO_DAEMON=1 is set: no daemon is used');
+  const file = readDaemonFile();
+  const live = file ? await fromFile(file, deps) : null;
+  return live ?? start(deps, daemonPort());
+};
+
+// After `agentage update`: a daemon that ran stops and starts again from the new files.
+export const restartIfRunning = async (deps: EnsureDeps = defaultEnsureDeps): Promise<boolean> => {
+  const result = await deps.stop();
+  if (result === null || !('stopped' in result)) return false;
+  await start({ ...deps, log: () => undefined }, daemonPort());
+  deps.log(`daemon restarted on 127.0.0.1:${daemonPort()}`);
+  return true;
 };
