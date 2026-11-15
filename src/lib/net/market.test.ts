@@ -143,6 +143,17 @@ describe('listMarket: extension list --available', () => {
     ]);
   });
 
+  it('a row whose /latest fails fails the listing, never drops the row', async () => {
+    const get = serving({
+      [DISCOVERY]: doc(named),
+      [LIST]: doc({ success: true, data: [row('notes', '1.2.0'), row('probe')] }),
+      [LATEST]: doc({}, 503),
+    });
+    await expect(listMarket('next.agentage.io', get)).rejects.toMatchObject({
+      code: 'market_failed',
+    });
+  });
+
   it('no market: it throws, so the command fails', async () => {
     await expect(listMarket('next.agentage.io', serving({}))).rejects.toMatchObject({
       code: 'no_discovery',

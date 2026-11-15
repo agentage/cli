@@ -141,5 +141,8 @@ export const listMarket = async (fqdn: string = siteFqdn(), get: Get = timed) =>
   const rows = await pages(get, `${base}/api/v1/extensions`);
   const market = openMarket(fqdn, get);
   const found = await Promise.all(rows.map((row) => offered(row, market)));
+  // A row whose /latest failed is not dropped in silence: the listing fails with the reason.
+  const down = market.down();
+  if (down) throw down;
   return found.filter((row): row is Offered => row !== null);
 };
