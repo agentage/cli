@@ -626,13 +626,14 @@ A daemon counts as this machine's daemon only with proof: `/health` on the port 
 Requests go only to a proven daemon, and `stop` signals only a proven pid (SIGTERM, then SIGKILL
 after 30 s). The command reads `daemon.json` and then:
 
-| Found                                                        | What happens                                                                                                                                                                                                                       |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| no file, or its pid is gone                                  | the stale file is removed and `agentage daemon run` starts detached, in its own process group; the command waits for `/health` (30 s)                                                                                              |
-| the pid lives, the port is another program or another pid    | it waits 5 s for that pid to exit (a daemon that stops); then the file goes and a daemon starts, else `daemon_unavailable`: no second daemon starts beside a live pid, and `agentage daemon stop` clears the file without a signal |
-| the pid lives, `/health` does not answer (3 tries, 2 s each) | the file stays; `daemon_unresponsive`, exit 1                                                                                                                                                                                      |
-| a proven daemon of another protocol, or an older version     | it is stopped and started again; one line on stderr (`daemon restarted: ...`); a newer daemon serves as it is, never downgraded                                                                                                    |
-| the port is held by another program at the start             | `port_in_use`, naming the port and `AGENTAGE_DAEMON_PORT`                                                                                                                                                                          |
+| Found                                                        | What happens                                                                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| no file, or its pid is gone                                  | the stale file is removed and `agentage daemon run` starts detached, in its own process group; the command waits for `/health` (30 s) |
+| the pid lives, its port refuses the connection               | a reused pid (`daemon.json` is written after the daemon listens): the file goes, nothing is signalled, a daemon starts                |
+| the pid lives, the port answers but not as that daemon       | `port_in_use`, naming the port and `AGENTAGE_DAEMON_PORT`; nothing starts                                                             |
+| the pid lives, `/health` does not answer (3 tries, 2 s each) | the file stays; `daemon_unresponsive`, exit 1                                                                                         |
+| a proven daemon of another protocol, or an older version     | it is stopped and started again; one line on stderr (`daemon restarted: ...`); a newer daemon serves as it is, never downgraded       |
+| the port is held by another program at the start             | `port_in_use`, naming the port and `AGENTAGE_DAEMON_PORT`                                                                             |
 
 A start that waits over 3 s, and a stop that waits over 3 s, print one line on stderr (never on
 stdout, so `--json` stays one object). A start that times out checks `daemon.json` and `/health`

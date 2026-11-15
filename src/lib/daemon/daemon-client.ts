@@ -34,13 +34,10 @@ export interface EnsureDeps {
   spawn: (port: number) => Promise<SpawnOutcome>;
   stop: () => Promise<StopResult>;
   log: (line: string) => void;
-  exitWaitMs?: number;
 }
 
 const START_MS = 30_000;
 const POLL_MS = 100;
-// A pid that lives on with its port closed is a daemon that is stopping: wait this long for it.
-const EXIT_WAIT_MS = 5_000;
 // Over this the log moves to daemon.log.1 at the next start; one old file is kept.
 export const LOG_CAP = 5 * 1024 * 1024;
 
@@ -129,34 +126,19 @@ const start = async (deps: EnsureDeps, port: number): Promise<number> => {
   return port;
 };
 
-const exited = async (pid: number, timeoutMs = EXIT_WAIT_MS): Promise<boolean> => {
-  const deadline = Date.now() + timeoutMs;
-  while (isAlive(pid) && Date.now() < deadline) await sleep(POLL_MS);
-  return !isAlive(pid);
-};
-
-// The pid of daemon.json lives and is not proven: a second daemon never starts beside it.
-const stillAlive = (file: DaemonFile): CliError =>
-  new CliError(
-    'daemon_unavailable',
-    `daemon.json names pid ${file.pid}, which is alive, but no daemon answers as it on port ` +
-      `${file.port}; when that pid is not the daemon, agentage daemon stop clears daemon.json`
-  );
-
 // Restart only for another protocol or an older daemon: a newer one serves as it is.
 const outdated = (health: { version: string; protocol: number }): boolean =>
   health.protocol !== PROTOCOL || compareVersions(health.version, VERSION) < 0;
 
-// daemon.json's daemon when proven; a dead pid or another program there means the file is stale.
+// daemon.json's daemon when proven; a dead pid, or a live one whose port refuses, is a stale file.
 const fromFile = async (file: DaemonFile, deps: EnsureDeps): Promise<number | null> => {
   if (!isAlive(file.pid)) return (removeDaemonFile(), null);
   const found = await deps.probe(file.port);
   if (found.kind === 'silent') throw unresponsive(file);
+  // daemon.json is written after the daemon listens: a refused port means a reused pid.
+  if (found.kind === 'none') return (removeDaemonFile(), null);
   const health = proven(file, found);
-  if (!health) {
-    if (!(await exited(file.pid, deps.exitWaitMs))) throw stillAlive(file);
-    return (removeDaemonFile(), null);
-  }
+  if (!health) throw portInUse(file.port);
   if (!outdated(health)) return file.port;
   await deps.stop();
   const port = await start({ ...deps, log: () => undefined }, daemonPort());

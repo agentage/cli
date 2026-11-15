@@ -50,15 +50,27 @@ describe('the daemon start', () => {
     }
   });
 
-  test('a live pid that is not the daemon on its port: nothing spawns beside it', async ({
+  test('a live pid whose port refuses: a reused pid, the file goes, nothing signalled, one spawns', async ({
     dir,
   }) => {
-    for (const found of [ours(1), { kind: 'foreign' }, { kind: 'none' }] as Probe[]) {
+    vi.stubEnv('AGENTAGE_DAEMON_PORT', '4555');
+    dir.write('daemon.json', { pid: process.pid, port: 4556 });
+    const d = deps({ probe: vi.fn(async (): Promise<Probe> => ({ kind: 'none' })) });
+    expect(await ensureDaemon(d)).toBe(4555);
+    expect(dir.exists('daemon.json')).toBe(false);
+    expect(d.stop).not.toHaveBeenCalled();
+    expect(d.spawn).toHaveBeenCalledWith(4555);
+  });
+
+  test('a live pid whose port answers, but not as that daemon: port_in_use, nothing starts', async ({
+    dir,
+  }) => {
+    for (const found of [ours(1), { kind: 'foreign' }] as Probe[]) {
       dir.write('daemon.json', { pid: process.pid, port: 4556 });
-      const d = deps({ probe: vi.fn(async () => found), exitWaitMs: 50 });
+      const d = deps({ probe: vi.fn(async () => found) });
       await expect(ensureDaemon(d)).rejects.toMatchObject({
-        code: 'daemon_unavailable',
-        message: expect.stringContaining(`pid ${process.pid}, which is alive`),
+        code: 'port_in_use',
+        message: expect.stringContaining('4556'),
       });
       expect(dir.exists('daemon.json')).toBe(true);
       expect(d.spawn).not.toHaveBeenCalled();
