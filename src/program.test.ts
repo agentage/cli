@@ -223,6 +223,10 @@ describe('createProgram', () => {
     const h = makeDeps();
     expect(await h.exec('extension', 'up', '--dir', 'probe')).toBe(0);
     expect(h.deps.extensionUp).toHaveBeenLastCalledWith({ dir: 'probe' });
+    expect(await h.exec('extension', 'up', '--docker')).toBe(0);
+    expect(h.deps.extensionUp).toHaveBeenLastCalledWith({ docker: true });
+    expect(await h.exec('extension', 'up', '--local')).toBe(0);
+    expect(h.deps.extensionUp).toHaveBeenLastCalledWith({ local: true });
     expect(await h.exec('extension', 'down', '--keep-data')).toBe(0);
     expect(h.deps.extensionDown).toHaveBeenLastCalledWith({ keepData: true });
     const issuer = ['--issuer', 'http://localhost:4281'];
@@ -274,9 +278,21 @@ describe('createProgram', () => {
       id: 'market',
       parts: ['mcp', 'api'],
       from: 'x/y',
+      install: true,
     });
-    expect(await h.exec('extension', 'create', 'market')).toBe(0);
-    expect(h.deps.extensionCreate).toHaveBeenLastCalledWith({ id: 'market', parts: [] });
+    expect(await h.exec('extension', 'create', 'market', '--yes')).toBe(0);
+    expect(h.deps.extensionCreate).toHaveBeenLastCalledWith({
+      id: 'market',
+      parts: [],
+      install: true,
+      yes: true,
+    });
+    expect(await h.exec('extension', 'create', 'market', '--no-install')).toBe(0);
+    expect(h.deps.extensionCreate).toHaveBeenLastCalledWith({
+      id: 'market',
+      parts: [],
+      install: false,
+    });
     expect(await h.exec('extension', 'create')).toBe(2);
   });
 
@@ -292,6 +308,10 @@ describe('createProgram', () => {
       dir: 'ext',
       registry: 'r/o',
     });
+    expect(await h.exec('extension', 'build', '--container')).toBe(0);
+    expect(h.deps.extensionBuild).toHaveBeenLastCalledWith({ container: true });
+    expect(await h.exec('extension', 'build', '--docker')).toBe(0);
+    expect(h.deps.extensionBuild).toHaveBeenLastCalledWith({ docker: true });
     expect(await h.exec('extension', 'build', '--dir')).toBe(2);
     const failing = makeDeps({ extensionBuild: boom });
     expect(await failing.exec('extension', 'build')).toBe(1);

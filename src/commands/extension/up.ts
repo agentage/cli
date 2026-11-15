@@ -1,8 +1,12 @@
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { InvalidArgumentError, type Command } from 'commander';
-import { addJson, omitJson } from '../../lib/json-output.js';
+import { addJson, CliError, omitJson } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { execIn, type Exec } from './release-guard.js';
 import { assertOwnStack } from './stack-owner.js';
+import { stopLocal, type LocalDown } from './up-local.js';
+import { runLocalUp } from './up-run.js';
 
 export interface ExtensionUpOptions {
   dir?: string;
@@ -24,25 +28,72 @@ const printed = (): { lines: string[]; onLine: (line: string) => void } => {
   return { lines, onLine: (line) => void (console.log(line), lines.push(line)) };
 };
 
-// Each step's line as the kit reports it, the ready line last.
+export interface ExtensionUpFlags extends ExtensionUpOptions {
+  docker?: boolean;
+  local?: boolean;
+}
+
+export const UP_CHANGED =
+  'extension up now runs with no Docker; the Docker stack is `extension up --docker`';
+
+// CI=false, 0 or empty is not CI.
+const inCi = (env: NodeJS.ProcessEnv): boolean =>
+  !['', 'false', '0', undefined].includes(env['CI']);
+
+// 0.51's up was Docker: a CI script with neither flag asked for that, so it stops instead.
+const noticeChange = ({ local }: ExtensionUpFlags, env: NodeJS.ProcessEnv, tty: boolean) => {
+  if (local) return;
+  if (inCi(env) && !tty) throw new CliError('invalid_argument', `${UP_CHANGED}; or --local`);
+  console.error(UP_CHANGED);
+};
+
+type LocalRun = (dir: string | undefined, json: boolean) => Promise<unknown>;
+
+// No Docker: the working copy in this terminal (D7). --docker: the kit's path, a line per step.
 export const runExtensionUp = async (
-  opts: ExtensionUpOptions = {},
-  tool: LoadKitTool = loadKitTool
+  { docker, local: asked, ...opts }: ExtensionUpFlags = {},
+  tool: LoadKitTool = loadKitTool,
+  local: LocalRun = (dir, json) => runLocalUp(dir, undefined, json),
+  env: NodeJS.ProcessEnv = process.env,
+  tty = process.stdin.isTTY === true
 ): Promise<unknown> => {
+  if (docker && asked) throw new CliError('invalid_argument', '--docker and --local: pick one');
+  if (!docker) {
+    noticeChange({ local: asked }, env, tty);
+    return local(opts.dir, opts.json === true);
+  }
   const { up } = await tool();
   const { lines, onLine } = printed();
   await up({ ...omitJson(opts), onLine });
   return { lines };
 };
 
+const dockerDown = async (opts: ExtensionDownOptions, tool: LoadKitTool, lines: string[]) => {
+  const { down } = await tool();
+  await down({ ...omitJson(opts), onLine: (line) => void (console.log(line), lines.push(line)) });
+};
+
+const LOCAL_LINES: Record<LocalDown, string> = {
+  stopped: 'stopped   extension up in this folder',
+  stale: 'removed   a stale extension up record (its port no longer answers as it)',
+  none: '',
+};
+
+// A local up of the folder stops; a Docker stack up --docker started there goes too.
 export const runExtensionDown = async (
   opts: ExtensionDownOptions = {},
   tool: LoadKitTool = loadKitTool
 ): Promise<unknown> => {
-  const { down } = await tool();
-  const { lines, onLine } = printed();
-  await down({ ...omitJson(opts), onLine });
-  return { lines };
+  const dir = opts.dir ?? '.';
+  const local = await stopLocal(dir);
+  const lines = local === 'none' ? [] : [LOCAL_LINES[local]];
+  for (const line of lines) console.log(line);
+  if (existsSync(join(dir, '.agentage', 'compose.json'))) await dockerDown(opts, tool, lines);
+  if (lines.length === 0) {
+    lines.push(`nothing runs for ${resolve(dir)}`);
+    console.log(lines[0]);
+  }
+  return { local, lines };
 };
 
 // The token alone on stdout, so a script can take it as it is.
@@ -72,18 +123,22 @@ export const issuerUrl = (value: string): string => {
 };
 
 const UP_HELP = `
-Runs the extension package in --dir (default: the current folder) on this machine with Docker
-only, the way a deployment runs it: the part images built with the release recipe, the store
-with its migrations and seeds, a dev token issuer and a local gateway. Each working copy is its
-own compose project; up refuses while another one holds localhost:4280 or 4281 and names it, and
-on a kept store says what was already applied. Prints one line per step as the kit reports it,
-the last one once every part is healthy. Needs docker; every docker call has a timeout. Exits 1
-when a step fails, with the kit's message.`;
+With no Docker (the default): builds the package in --dir (default: the current folder) as
+extension build does, prints what check refuses without stopping, and runs it in this terminal
+with the kit host on the first free port from 4244 (127.0.0.1). It prints the URL and runs until
+Ctrl-C. It does not use the daemon and does not change installation.json; its store is in
+.agentage/data of the folder.
+
+--docker runs the package the way a deployment runs it: the part images built with the release
+recipe, the store with its migrations and seeds, a dev token issuer and a local gateway. Each
+working copy is its own compose project; up refuses while another one holds localhost:4280 or
+4281 and names it. Prints one line per step as the kit reports it. Exits 1 when a step fails.`;
 
 const DOWN_HELP = `
-Removes what agentage extension up started for the package in --dir, and nothing else: its
-containers, network and the store's volume; --keep-data keeps the volume. The line it prints
-names the compose project it removed. Exits 1 when that fails.`;
+Stops what agentage extension up started for the package in --dir, and nothing else: the local
+run of this folder (only when its port still answers as it), and the Docker stack up --docker
+started there (its containers, network and the store's volume; --keep-data keeps the volume).
+It says so when nothing runs. Exits 1 when that fails.`;
 
 const TOKEN_HELP = `
 Prints a token from the dev issuer agentage extension up started for the package in --dir,
@@ -92,7 +147,7 @@ when the stack on localhost:4281 is not this package's (it names the one that is
 issuer refuses or does not answer within 5 s. --issuer asks that issuer and skips the check.`;
 
 export interface KitActions {
-  up: (opts: ExtensionUpOptions) => Promise<void>;
+  up: (opts: ExtensionUpFlags) => Promise<void>;
   down: (opts: ExtensionDownOptions) => Promise<void>;
   token: (opts: ExtensionTokenOptions) => Promise<void>;
 }
@@ -104,8 +159,10 @@ const addUp = (group: Command, up: KitActions['up']): void => {
   addJson(
     group
       .command('up')
-      .description('Run the extension package on this machine: images, store, issuer, gateway')
+      .description('Run the working copy in this terminal until Ctrl-C; --docker = on Docker')
       .option(DIR, DIR_TEXT)
+      .option('--docker', 'the images, store, issuer and gateway on Docker')
+      .option('--local', 'the run with no Docker, asked for on purpose (no notice; for CI)')
   )
     .addHelpText('after', UP_HELP)
     .action(up);
@@ -115,7 +172,7 @@ const addDown = (group: Command, down: KitActions['down']): void => {
   addJson(
     group
       .command('down')
-      .description('Remove what extension up started; --keep-data keeps the store')
+      .description('Stop what extension up started here; --keep-data keeps the Docker store')
       .option(DIR, DIR_TEXT)
       .option('--keep-data', "keep the store's volume")
   )

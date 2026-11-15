@@ -4,7 +4,13 @@ import { output, test } from '../../test/config-dir.js';
 import { type KitTool } from './kit-tool.js';
 import { type Exec } from './release-guard.js';
 import { ownProject } from './stack-owner.js';
-import { issuerUrl, runExtensionDown, runExtensionToken, runExtensionUp } from './up.js';
+import {
+  issuerUrl,
+  runExtensionDown,
+  runExtensionToken,
+  runExtensionUp,
+  UP_CHANGED,
+} from './up.js';
 
 // The kit tool as a seam: what each call got, the lines it reports, or the error it throws.
 const fakeKit = (fail?: Error) => {
@@ -76,26 +82,60 @@ const HERE = 'not this folder: run agentage extension up here';
 const PROBE = 'agentage-probe-ab1613a3';
 
 describe('extension up, down and token: thin commands over the kit tool', () => {
-  test('up hands --dir to the kit and prints each line as it comes', async () => {
+  test('up --docker hands --dir to the kit and prints each line as it comes', async () => {
     const { tool, calls } = fakeKit();
-    const run = await output(() => runExtensionUp({ dir: 'probe' }, tool));
+    const run = await output(() => runExtensionUp({ dir: 'probe', docker: true }, tool));
     expect(calls).toEqual([['up', { dir: 'probe', onLine: 'function' }]]);
     expect(run.lines).toEqual(['store    postgres:18-alpine', 'ready    7 parts healthy']);
   });
 
-  test('down hands --dir and --keep-data to the kit and prints its lines', async () => {
+  test('up with no --docker runs the folder locally, never asks the kit tool, and says up changed', async () => {
     const { tool, calls } = fakeKit();
-    const run = await output(() => runExtensionDown({ keepData: true }, tool));
-    expect(calls).toEqual([['down', { keepData: true, onLine: 'function' }]]);
+    const local: [string, boolean][] = [];
+    const run = (dir: string | undefined, json: boolean) => (
+      local.push([dir ?? '.', json]),
+      Promise.resolve({ id: 'probe' })
+    );
+    const printed = await output(() => runExtensionUp({ dir: 'probe' }, tool, run, {}, true));
+    expect(printed.stderr.trim()).toBe(UP_CHANGED);
+    expect(await runExtensionUp({ local: true, json: true }, tool, run, {}, true)).toEqual({
+      id: 'probe',
+    });
+    expect(local).toEqual([
+      ['probe', false],
+      ['.', true],
+    ]);
+    expect(calls).toEqual([]);
+  });
+
+  test('in CI with no terminal, up needs --local or --docker; both at once is refused', async () => {
+    const { tool } = fakeKit();
+    const run = async () => ({ id: 'probe' });
+    for (const CI of ['false', '0', ''])
+      expect((await output(() => runExtensionUp({}, tool, run, { CI }, false))).error).toBeNull();
+    const ci = await output(() => runExtensionUp({}, tool, run, { CI: 'true' }, false));
+    expect(ci).toMatchObject({ code: 'invalid_argument', error: `${UP_CHANGED}; or --local` });
+    expect(
+      (await output(() => runExtensionUp({ local: true }, tool, run, { CI: 'true' }, false))).error
+    ).toBeNull();
+    const both = await output(() => runExtensionUp({ local: true, docker: true }, tool, run));
+    expect(both.error).toBe('--docker and --local: pick one');
+  });
+
+  test('down with a Docker stack here hands --dir and --keep-data to the kit', async ({ dir }) => {
+    dir.write('ext/.agentage/compose.json', { name: 'agentage-ext' });
+    const { tool, calls } = fakeKit();
+    const run = await output(() => runExtensionDown({ dir: dir.at('ext'), keepData: true }, tool));
+    expect(calls).toEqual([['down', { dir: dir.at('ext'), keepData: true, onLine: 'function' }]]);
     expect(run.lines).toEqual(['removed  6 containers']);
   });
 
-  test('up and down return their lines for --json; token returns itself and prints nothing', async () => {
-    const { tool } = fakeKit();
-    const up = await output(() => runExtensionUp({ json: true }, tool));
-    expect(up.error).toBeNull();
-    const result = await runExtensionDown({ json: true }, tool);
-    expect(result).toEqual({ lines: ['removed  6 containers'] });
+  test('down with nothing running says so, asks no kit, and --json carries it', async ({ dir }) => {
+    dir.write('ext/package.json', MANIFEST);
+    const { tool, calls } = fakeKit();
+    const result = await runExtensionDown({ dir: dir.at('ext'), json: true }, tool);
+    expect(result).toEqual({ local: 'none', lines: [`nothing runs for ${dir.at('ext')}`] });
+    expect(calls).toEqual([]);
     const token = await output(() =>
       runExtensionToken({ scope: 'a:b', issuer: 'http://localhost:4281', json: true }, tool)
     );
@@ -193,11 +233,12 @@ describe('extension up, down and token: thin commands over the kit tool', () => 
     expect([asked, calls]).toEqual([[], [['token', opts]]]);
   });
 
-  test('a failing step fails the command with the kit message', async () => {
+  test('a failing Docker step fails the command with the kit message', async ({ dir }) => {
     const { tool } = fakeKit(new Error('docker is not running'));
+    dir.write('ext/.agentage/compose.json', { name: 'agentage-ext' });
     for (const step of [
-      () => runExtensionUp({}, tool),
-      () => runExtensionDown({}, tool),
+      () => runExtensionUp({ docker: true }, tool),
+      () => runExtensionDown({ dir: dir.at('ext') }, tool),
       () => runExtensionToken({ scope: 'probe:write', issuer: 'http://localhost:4281' }, tool),
     ])
       expect(await output(step)).toMatchObject({ error: 'docker is not running', lines: [] });

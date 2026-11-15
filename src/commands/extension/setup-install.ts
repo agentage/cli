@@ -28,14 +28,33 @@ const KEPT =
 const bodyOf = (id: string, range: string): { id: string; version?: string } =>
   EXACT.test(range) ? { id, version: range } : { id };
 
+// install: it is not installed; disable: an off entry installed, but its disable failed.
+interface Problem {
+  kind: 'install' | 'disable';
+  text: string;
+}
+const failed = (text: string): Problem => ({ kind: 'install', text });
+
+const disable = (host: HostClient, id: string) =>
+  host.change(id, { enabled: false }).then(
+    (row) => ({ row, notDisabled: null }),
+    (err: unknown) => ({ row: null, notDisabled: messageOf(err) })
+  );
+
 // One entry through POST /host/extensions, as `extension install <id>` sends it; off: then disabled.
 const installOne = async (host: HostClient, entry: ProfileEntry & { id: string }) => {
   const added = await host.add(bodyOf(entry.id, entry.range));
-  return entry.off ? host.change(entry.id, { enabled: false }) : added;
+  if (!entry.off) return added;
+  const { row, notDisabled } = await disable(host, entry.id);
+  return row ?? { ...added, notDisabled };
 };
 
-const tryOne = async (host: HostClient, entry: ProfileEntry, have: Set<string>) => {
-  if (entry.id === null) return `${entry.name}: not an @agentage/extension-<id> package`;
+const tryOne = async (
+  host: HostClient,
+  entry: ProfileEntry,
+  have: Set<string>
+): Promise<Problem | null> => {
+  if (entry.id === null) return failed(`${entry.name}: not an @agentage/extension-<id> package`);
   if (have.has(entry.id)) {
     console.log(`${entry.id} already installed`);
     return null;
@@ -45,9 +64,26 @@ const tryOne = async (host: HostClient, entry: ProfileEntry, have: Set<string>) 
     id,
     error: messageOf(err),
   }));
-  if ('error' in row && !('state' in row)) return `${id}: ${row.error}`;
+  if ('error' in row && !('state' in row)) return failed(`${id}: ${row.error}`);
   console.log(`${row.id} ${row.version} ${row.state}`);
-  return row.state === 'failed' ? `${id}: ${row.error ?? 'failed'}` : null;
+  if ('notDisabled' in row && row.notDisabled)
+    return {
+      kind: 'disable',
+      text: `${id}: ${row.notDisabled}; run agentage extension disable ${id}`,
+    };
+  return row.state === 'failed' ? failed(`${id}: ${row.error ?? 'failed'}`) : null;
+};
+
+const listed = (title: string, items: string[]) =>
+  items.length > 0 ? [`${title}:`, ...items.map((item) => `  ${item}`)] : [];
+
+const problemText = (problems: Problem[]): string => {
+  const of = (kind: Problem['kind']) => problems.filter((p) => p.kind === kind).map((p) => p.text);
+  const [notInstalled, notDisabled] = [of('install'), of('disable')];
+  return [
+    ...listed('not installed', notInstalled),
+    ...listed('installed but NOT disabled', notDisabled),
+  ].join('\n');
 };
 
 // The profile's extensions go through the daemon, which runs them; the cli loads nothing itself.
@@ -63,7 +99,7 @@ export const installThroughDaemon = async (
     return console.log(line('extensions', 'the daemon is off, nothing installed'));
   const host = entries.length > 0 ? await deps.host() : null;
   const have = new Set(host ? (await host.list()).map((row) => row.id) : []);
-  const problems: string[] = [];
+  const problems: Problem[] = [];
   for (const entry of host ? entries : []) {
     const problem = await tryOne(host as HostClient, entry, have);
     if (problem) problems.push(problem);
@@ -71,6 +107,5 @@ export const installThroughDaemon = async (
   // An empty profile tried nothing: a later setup still installs one with entries.
   if (account && host)
     writeFileSync(profileMarkerPath(), `${new Date().toISOString()}\n`, { mode: 0o600 });
-  if (problems.length > 0)
-    throw new CliError('extension_failed', `not installed:\n  ${problems.join('\n  ')}`);
+  if (problems.length > 0) throw new CliError('extension_failed', problemText(problems));
 };

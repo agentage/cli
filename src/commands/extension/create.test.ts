@@ -75,23 +75,35 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+// A terminal whose user answers y to the --from notice.
+const YES = { isTTY: true, prompt: async () => 'y' };
+const afterCalls: [string, boolean][] = [];
+const scaffoldOnly = async (dir: string, install: boolean) => {
+  afterCalls.push([dir, install]);
+  return { installed: null, url: null };
+};
+
 const create = (id: string, parts: string[] = [], from?: string) =>
-  output(() => runExtensionCreate({ id, parts, from }, () => url));
+  output(() => runExtensionCreate({ id, parts, from }, () => url, scaffoldOnly, YES));
 const read = (path: string) => readFileSync(join(root, 'extension-market', path), 'utf8');
 const manifest = () => JSON.parse(read('package.json')) as typeof MANIFEST;
 
 describe('extension create', () => {
   test('--json answers with the id, folder, template and kept parts; a bad id has the code invalid_argument', async () => {
     const result = await runExtensionCreate(
-      { id: 'market', parts: ['api'], json: true },
-      () => url
+      { id: 'market', parts: ['api'], json: true, install: false },
+      () => url,
+      scaffoldOnly
     );
     expect(result).toEqual({
       id: 'market',
       dir: 'extension-market',
       from: 'agentage/extension-template',
       kept: ['api'],
+      installed: null,
+      url: null,
     });
+    expect(afterCalls.at(-1)).toEqual(['extension-market', false]);
     const bad = await create('Bad');
     expect(bad.code).toBe('invalid_argument');
   });
@@ -103,7 +115,7 @@ describe('extension create', () => {
       ' template  agentage/extension-template (default branch, kit 0.5.0)',
       ' kept      mcp, api',
       ' id        market  ·  host market.next.agentage.io  ·  contract market.mcpc.json',
-      ' next      cd extension-market && npm ci && npm run build && agentage extension check',
+      ' next      cd extension-market && agentage extension up',
       " ci        MIN_EXECUTED is 1: after the first green run, set it to the gate's count",
     ]);
     expect(read('.github/workflows/ci.yml')).toContain("MIN_EXECUTED: '1'\n");
@@ -199,7 +211,12 @@ describe('extension create', () => {
 
   test('a template repo that is not there fails with its name, no folder left', async () => {
     const printed = await output(() =>
-      runExtensionCreate({ id: 'market', parts: [], from: 'x/none' }, () => `file://${root}/none`)
+      runExtensionCreate(
+        { id: 'market', parts: [], from: 'x/none' },
+        () => `file://${root}/none`,
+        scaffoldOnly,
+        YES
+      )
     );
     expect(printed.error).toMatch(/^cannot clone template x\/none: fatal: .*none/);
     expect(existsSync(join(root, 'extension-market'))).toBe(false);
@@ -254,8 +271,45 @@ describe('extension create', () => {
     expect(existsSync(join(root, `extension-${id}`))).toBe(false);
   });
 
-  test('refuses a --from that is not owner/repo', async () => {
-    expect((await create('market', [], '../../x')).error).toBe('--from ../../x: owner/repo');
+  test.for(['../../x', 'a/b#--upload-pack=x', 'a/b#x/../y', 'a/b#'])(
+    'refuses a --from %s that is not owner/repo[#branch]',
+    async (from) => {
+      expect((await create('market', [], from)).error).toBe(
+        `--from ${from}: owner/repo or owner/repo#branch`
+      );
+    }
+  );
+
+  test('--from owner/repo#branch clones that branch of the repo', async () => {
+    const repo = url.replace('file://', '');
+    execFileSync('git', ['-C', repo, 'checkout', '-q', '-b', 'feature/kit']);
+    writeFileSync(join(repo, 'branch.txt'), 'kit');
+    execFileSync('git', ['-C', repo, 'add', '.']);
+    execFileSync('git', [
+      '-C',
+      repo,
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'user.name=t',
+      'commit',
+      '-q',
+      '-m',
+      'b',
+    ]);
+    execFileSync('git', ['-C', repo, 'checkout', '-q', '-']);
+    const asked: string[] = [];
+    const printed = await output(() =>
+      runExtensionCreate(
+        { id: 'market', parts: [], from: 'x/y#feature/kit' },
+        (from) => (asked.push(from), url),
+        scaffoldOnly,
+        YES
+      )
+    );
+    expect(printed.error).toBeNull();
+    expect(asked).toEqual(['x/y']);
+    expect(read('branch.txt')).toBe('kit');
   });
 
   test('refuses an existing folder and leaves it as it was', async () => {

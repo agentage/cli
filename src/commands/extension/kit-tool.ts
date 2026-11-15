@@ -14,6 +14,7 @@ export type KitTool = Pick<
   | 'down'
   | 'token'
   | 'readManifest'
+  | 'writeContracts'
 >;
 
 export type LoadKitTool = () => Promise<KitTool>;
@@ -26,3 +27,9 @@ export const kitCheck =
   (tool: LoadKitTool = loadKitTool): KitCheck =>
   async (dir) =>
     (await tool()).checkCli(dir);
+
+// The kit's capability list (from the minor after 0.13); 0.13 has none and ignores `container`.
+export const kitBuildsContainer = async (tool: LoadKitTool = loadKitTool): Promise<boolean> => {
+  const caps = ((await tool()) as { capabilities?: unknown }).capabilities;
+  return Array.isArray(caps) && caps.includes('container');
+};

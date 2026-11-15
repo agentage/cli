@@ -415,21 +415,29 @@ writes the contracts the package commits (the kit's `writeContracts`, `@agentage
 ## extension build
 
 ```bash
-agentage extension build                  # one image per part of the package in this folder
-agentage extension build --push           # push them, write dist/agentage-extension.json
-agentage extension build --dir ../my-ext  # another package folder
+agentage extension build                       # the package in this folder, no Docker
+agentage extension build --dir ../my-ext       # another package folder
+agentage extension build --docker              # one image per part, on this machine
+agentage extension build --container           # one image of the extension (needs a kit with it)
+agentage extension build --push                # one image per part, pushed, and the build record
 ```
 
-For extension authors and their CI: a thin command over the `@agentage/extension/tool` exports of
-the extension kit, so it builds exactly what the kit's own tool builds. It checks the `agentage`
-manifest in `package.json`, runs the package's `build` script, then builds one image per server
-part from the kit recipe (`node:26-alpine`, production dependencies, non-root), tagged
-`ghcr.io/agentage/<id>-<part>:<version>` with the labels `org.opencontainers.image.revision` (the
-full commit sha: `COMMIT_SHA`, else `GITHUB_SHA`, else the checkout's `HEAD`) and
-`org.opencontainers.image.created`. `--push` pushes each image (run `docker login ghcr.io` first)
-and writes the build record `dist/agentage-extension.json` with every image by digest;
-`--registry <host/owner>` points at another registry. Prints one line per image, then the record
-path. Needs `docker` and git, and a committed tree with no changes. Exits 1 when the manifest is invalid or a build or push fails.
+With no flag it builds the package with no Docker, in any folder state (committed or not): the
+package's own `build` script (when it has one; npm's output on stderr), then the contract files
+the kit writes (`wrote <file>`, such as `{id}.mcpc.json` and `openapi.json`), then the kit's check
+(the lines of `extension check`). It exits 1 (`not_conforming`) when the package does not
+conform. `--json` answers `{ dir, built, contracts, conforms }`.
+
+`--container` hands `container: true` to the kit's `build`: one image,
+`ghcr.io/agentage/<id>:<version>`. Only a kit that has the one-image build does that; with this
+cli's kit (0.13) it exits 1 (`invalid_argument`) before anything runs and names the kit version.
+`--docker` builds one image per server part from the kit recipe, on this machine; `--push`
+builds the same (`node:26-alpine`, production
+dependencies, non-root), tagged `ghcr.io/agentage/<id>-<part>:<version>` with the labels
+`org.opencontainers.image.revision` and `org.opencontainers.image.created`, pushes each (run
+`docker login ghcr.io` first) and writes the build record `dist/agentage-extension.json` with
+every image by digest; `extension release` runs this. `--registry <host/owner>` goes with
+`--docker`, `--container` or `--push` (alone it is refused). Each needs `docker`, git and a committed tree.
 
 ## extension release
 
@@ -456,24 +464,52 @@ them. A package with `"private": true` skips npm entirely (no `npm --version`, `
 ## extension up, down and token
 
 ```bash
-agentage extension up                         # run the package in this folder on Docker
+agentage extension up                         # this folder in this terminal, until Ctrl-C (no Docker)
+agentage extension up --local                 # the same, asked for on purpose (no notice; CI)
 agentage extension up --dir ../my-ext         # another package folder
-agentage extension down                       # remove what up started
-agentage extension down --keep-data           # keep the store's volume for the next up
-agentage extension token --scope probe:write  # a dev token from this folder's stack, alone on stdout
+agentage extension up --docker                # the package on Docker, as a deployment runs it
+agentage extension down                       # stop what up started for this folder
+agentage extension down --keep-data           # keep the Docker store's volume for the next up
+agentage extension token --scope probe:write  # a dev token from this folder's Docker stack
 ```
 
-For extension authors: thin commands over the `@agentage/extension/tool` exports of the extension
-kit, imported only when one of them runs. `up` runs the package the way a deployment does, with
-Docker only: the part images built with the release recipe, the store with its migrations and
-seeds, a dev token issuer and a local gateway, and prints one line per step as the kit reports
-it, the last once every part is healthy. `down` removes its containers, network and store volume
-(`--keep-data` keeps the volume). `token --scope <scope> [--dir <path>] [--issuer <url>]` prints a token from
-the dev issuer `up` started for the package in `--dir`, trusted only by `up`. The issuer is
+`up` with no flag runs the working copy in this terminal (D7). In 0.51 it ran the Docker stack,
+so it first prints one line on stderr: `extension up now runs with no Docker; the Docker stack is
+`extension up --docker``. In CI (`CI` set and not `false`, `0` or empty, and stdin not a terminal) with neither `--local` nor
+`--docker` it exits 1 with that line, so a 0.51 script does not get the other run by surprise;
+`--local` asks for the run with no Docker and prints no notice. It builds the package as
+`extension build` does, prints what the check refuses on stderr without stopping, then hosts it
+with the kit host in the cli process on the first free port from 4244 on 127.0.0.1 (a port taken
+meanwhile is skipped), and prints
+`up        <id> <version> on http://127.0.0.1:<port>/api/<id>/ (Ctrl-C stops it)`. `/health` is on
+the same port. It answers only this machine's own pages: a request with another `Host`, a
+cross-site or same-site `Sec-Fetch-Site`, or a foreign `Origin` gets 403. It runs until Ctrl-C
+(exit code 130) or SIGTERM (exit code 0, what `down` sends), then prints `stopped   <id> (SIGINT)`.
+It does not use the daemon and does not change `installation.json`; its store and its record
+(`up.json`: pid, port, instance) are in the folder's `.agentage/`, which `up` adds to the folder's
+`.gitignore` when it is missing, and says so on stderr (`gitignore added .agentage/ to <file>`). It serves the api part only. A second `up` of the same folder
+while the first answers exits 1 (`already_running`). With `--json` the lines go to stderr; stdout
+gets one JSON line when the host is ready, `{ "ready": true, "id", "version", "url", "port" }`,
+and the envelope `{ success, data: { id, version, url, port, stoppedBy } }` when it stops.
+
+`up --docker` runs the package the way a deployment does: the part images built with the release
+recipe, the store with its migrations and seeds, a dev token issuer and a local gateway, and
+prints one line per step as the kit reports it, the last once every part is healthy. It needs
+ports 4280 and 4281 free and refuses when another working copy holds them, and git with one
+commit (or `COMMIT_SHA` or `GITHUB_SHA`).
+
+`down` stops what `up` started for the folder in `--dir`, and nothing else. A local run stops
+only when its port still answers `/health` as that run (same id and instance); then the cli
+sends SIGTERM to its pid. A record whose port refuses, or answers as something else, is stale:
+it goes, and nothing is signalled. When the folder has the Docker stack of `up --docker`
+(`.agentage/compose.json`), `down` also removes its containers, network and store volume
+(`--keep-data` keeps the volume). With neither, it prints `nothing runs for <dir>`.
+
+`token --scope <scope> [--dir <path>] [--issuer <url>]` prints a token from the dev issuer
+`up --docker` started for the package in `--dir`, trusted only by that stack. The issuer is
 `--issuer` (default `http://localhost:4281`). It exits 1 when the stack holding that port is not
-this package's, and names the one that is; `--issuer` asks that issuer and skips this check. It
-asks Docker which stack holds the port, so it needs Docker unless `--issuer` is given. An issuer that is not an `http:` or `https:` URL is a usage error. Each exits 1 with the kit's message when
-its step fails. `up` needs ports 4280 and 4281 free and refuses when another working copy holds them. It needs git with one commit, or `COMMIT_SHA` or `GITHUB_SHA` set. It does not need a clean tree.
+this package's, and names the one that is; `--issuer` asks that issuer and skips this check. An
+issuer that is not an `http:` or `https:` URL is a usage error.
 
 ## Extension commands
 
@@ -642,28 +678,30 @@ and nothing else there (progress lines go to stderr), and never prompts:
 { "success": false, "error": { "code": "not_installed", "message": "probe is not installed" } }
 ```
 
-An error exits 1. `code` is snake_case and stable: `not_installed`, `needed_by_dependents`,
+An error exits 1, success 0. The one other exit code is 130: `extension up` (also with `--json`)
+stopped by Ctrl-C, after its envelope. `code` is snake_case and stable: `not_installed`, `needed_by_dependents`,
 `confirmation_required`, `extension_failed`, `profile_invalid`, `integrity_drift`,
 `invalid_argument`, `invalid_option`, `not_conforming`, `uncommitted_changes`, `release_refused`,
 `auth_required`, `auth_unavailable`, `not_pushed`, `token_request_failed`, `daemon_unavailable`,
-`daemon_unresponsive`, `daemon_disabled`, `port_in_use`, `market_unavailable`, `error` (any other).
+`daemon_unresponsive`, `daemon_disabled`, `port_in_use`, `market_unavailable`, `already_running`,
+`stop_failed`, `build_failed`, `cancelled`, `error` (any other).
 A code from the daemon (UPPER_SNAKE, such as `NOT_FOUND` or `INVALID_SETTING`) passes through unchanged.
 A usage error (exit 2) happens before the command runs and prints no object.
 
-| Command                                               | `data`                                                             |
-| ----------------------------------------------------- | ------------------------------------------------------------------ |
-| `setup`                                               | `{ extensions: [...] }`, the rows as `extension doctor` has them   |
-| `extension install`, `disable`, `enable`, `configure` | the daemon's row `{ id, version, source, state, enabled, error? }` |
-| `extension list`                                      | the daemon's rows; a folder row has `source: "folder"` and `path`  |
-| `extension list --available`                          | `[{ id, version }]` from the market                                |
-| `extension update`                                    | `[{ id, from, to, updated }]`                                      |
-| `extension remove`                                    | `{ id, purged }`                                                   |
-| `update`                                              | `{ installed, status, latest, updated }`                           |
-| `extension create`                                    | `{ id, dir, from, kept }`                                          |
-| `extension build`                                     | the kit's build result                                             |
-| `extension release`                                   | `{ id, version, tag, built, published }`                           |
-| `extension up`, `down`                                | `{ lines }`, the lines the kit reported                            |
-| `extension token`                                     | `{ token }`; nothing else is printed                               |
+| Command                                               | `data`                                                                                              |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `setup`                                               | `{ extensions: [...] }`, the rows as `extension doctor` has them                                    |
+| `extension install`, `disable`, `enable`, `configure` | the daemon's row `{ id, version, source, state, enabled, error? }`                                  |
+| `extension list`                                      | the daemon's rows; a folder row has `source: "folder"` and `path`                                   |
+| `extension list --available`                          | `[{ id, version }]` from the market                                                                 |
+| `extension update`                                    | `[{ id, from, to, updated }]`                                                                       |
+| `extension remove`                                    | `{ id, purged }`                                                                                    |
+| `update`                                              | `{ installed, status, latest, updated }`                                                            |
+| `extension create`                                    | `{ id, dir, from, kept, installed, url }`                                                           |
+| `extension build`                                     | `{ dir, built, contracts, conforms }`; the kit's result for images                                  |
+| `extension release`                                   | `{ id, version, tag, built, published }`                                                            |
+| `extension up`, `down`                                | `up`: `{ id, version, url, port, stoppedBy }` (`--docker`: `{ lines }`); `down`: `{ local, lines }` |
+| `extension token`                                     | `{ token }`; nothing else is printed                                                                |
 
 `setup` with `--json` does not open a browser: when it must sign in it needs `--no-browser`, else
 it fails with `confirmation_required`. `extension remove --purge` with `--json` needs `--yes`, else

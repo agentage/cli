@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { type Command } from 'commander';
 import type { ExtensionPackage } from '@agentage/extension/tool';
 import { addJson, CliError } from '../../lib/json-output.js';
-import { runExtensionBuild } from './build.js';
+import { runImageBuild } from './build.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { execIn, IMAGE_PARTS, RECORD, releaseGuard, type Exec } from './release-guard.js';
 
@@ -151,7 +151,7 @@ export const runExtensionRelease = async (
   const done = isPrivate ? 'is released' : 'is released: npm only';
   step(`guard: ${tag} ${build ? 'has no record and no image: build' : done}`);
   if (build) {
-    await runExtensionBuild({ push: true, dir }, deps.tool);
+    await runImageBuild({ push: true, dir }, deps.tool);
     await attach(run, tag, repo);
   }
   if (isPrivate) step('npm: private package, not published');
