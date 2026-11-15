@@ -8,7 +8,6 @@ import {
   loadMachine,
   setAccount,
   setCloud,
-  setDev,
   setProfileSource,
 } from './machine.js';
 
@@ -86,16 +85,6 @@ describe('machine.json', () => {
     const machine = await setProfileSource('file');
     expect(machine.id).toMatch(/^m_[0-9a-f]{8}$/);
     expect(dir.json('machine.json')).toEqual(machine);
-  });
-
-  test('a dev path is added and removed by package name, keeping the others and the id', async ({
-    dir,
-  }) => {
-    dir.write('machine.json', JSON.stringify(COMPLETE));
-    await setDev('@x/a', '/src/a');
-    await setDev('@x/b', '/src/b');
-    await setDev('@x/a', null);
-    expect(dir.json('machine.json')).toEqual({ ...COMPLETE, dev: { '@x/b': '/src/b' } });
   });
 
   test('a pull or a push records the etag and the cloud source; setup records the account once', async ({

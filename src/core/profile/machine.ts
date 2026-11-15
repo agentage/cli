@@ -86,13 +86,6 @@ const update = async (change: (machine: MachineFile) => MachineFile): Promise<Ma
 export const setProfileSource = async (source: ProfileSource): Promise<MachineFile> =>
   update((machine) => ({ ...machine, profileSource: source }));
 
-// One dev entry by package name: a real path adds or replaces it, null removes it.
-export const setDev = async (name: string, path: string | null): Promise<MachineFile> =>
-  update((machine) => {
-    const dev = Object.fromEntries(Object.entries(machine.dev).filter(([pkg]) => pkg !== name));
-    return { ...machine, dev: path === null ? dev : { ...dev, [name]: path } };
-  });
-
 // After a pull or a push: profile.json mirrors the account's profile at `etag`.
 export const setCloud = async (etag: string): Promise<MachineFile> =>
   update((machine) => ({ ...machine, profileSource: 'cloud', profileEtag: etag }));

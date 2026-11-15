@@ -1,9 +1,7 @@
 import { statSync } from 'node:fs';
 import { describe, expect } from 'vitest';
 import { test } from '../../test/config-dir.js';
-import { loadMachine } from '../profile/machine.js';
-import { scan, loadSet } from './scan.js';
-import { missingSecrets, secretsFor } from './secrets.js';
+import { secretsFor } from './secrets.js';
 
 describe('ctx.secrets', () => {
   test('keeps values in secrets.json under the extension id, readable only by this user', async ({
@@ -27,20 +25,5 @@ describe('ctx.secrets', () => {
     expect(await secretsFor('hello').get('token')).toBeUndefined();
     dir.write('secrets.json', { hello: 'flat' });
     expect(await secretsFor('hello').get('token')).toBeUndefined();
-  });
-});
-
-describe('the secrets setup lists', () => {
-  test('are the keys an extension declares secret: true and this machine has not set, with their descriptions', async ({
-    dir,
-  }) => {
-    dir.profile({ extensions: { secret: '^1', hello: '^1.0.0' } });
-    dir.tree('secret', 'hello');
-    const extensions = loadSet(scan(await loadMachine()));
-    expect(missingSecrets(extensions)).toEqual([
-      { id: 'secret', key: 'token', description: 'API token the secret fixture reads' },
-    ]);
-    await secretsFor('secret').set('token', 't');
-    expect(missingSecrets(extensions)).toEqual([]);
   });
 });

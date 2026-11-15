@@ -15,6 +15,38 @@ export interface SecretInput {
   prompt: (question: string) => Promise<string>;
 }
 
+const ENTER = ['\r', '\n', '\u0004'];
+const CTRL_C = '\u0003';
+const BACKSPACE = '\u007f';
+
+// One keypress: the answer so far, or null once Enter ends it.
+const typed = (answer: string, char: string): string | null => {
+  if (ENTER.includes(char)) return null;
+  return char === BACKSPACE ? answer.slice(0, -1) : answer + char;
+};
+
+// Raw mode keeps the answer off the screen; Ctrl+C still interrupts once the terminal is restored.
+export const readHidden = (question: string): Promise<string> =>
+  new Promise((resolve) => {
+    const { stdin, stderr } = process;
+    let answer = '';
+    const onData = (chunk: Buffer): void => {
+      for (const char of chunk.toString('utf-8')) {
+        const next = char === CTRL_C ? null : typed(answer, char);
+        if (next === null) return finish(char === CTRL_C);
+        answer = next;
+      }
+    };
+    const finish = (interrupted: boolean): void => {
+      stdin.off('data', onData).setRawMode(false).pause();
+      stderr.write('\n');
+      resolve(answer);
+      if (interrupted) process.kill(process.pid, 'SIGINT');
+    };
+    stderr.write(question);
+    stdin.setRawMode(true).resume().on('data', onData);
+  });
+
 const readAll = async (): Promise<string> => {
   let text = '';
   for await (const chunk of process.stdin) text += String(chunk);

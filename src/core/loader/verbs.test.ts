@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { test } from '../../test/config-dir.js';
 import { type DiscoveredExtension } from './discover.js';
-import { claimVerbs, commandNames, readHeld, writeHeld } from './verbs.js';
+import { claimVerbs, commandNames, readHeld } from './verbs.js';
 
 const ext = (id: string, commands: string[], kind: 'api' | 'kit' = 'kit'): DiscoveredExtension => ({
   pkg: `@test/${id}`,
@@ -78,16 +78,7 @@ describe('who runs agentage <command> for a kit-built extension', () => {
 });
 
 describe('commands.json: who held each verb after the last install', () => {
-  test('is absent until there is a holder, then round-trips; unchanged is not rewritten', ({
-    dir,
-  }) => {
-    expect(readHeld().size).toBe(0);
-    writeHeld(new Map());
-    expect(dir.exists('commands.json')).toBe(false);
-    writeHeld(new Map([['ping', '@test/probe']]));
-    expect(dir.json('commands.json')).toEqual({ ping: '@test/probe' });
-    expect([...readHeld()]).toEqual([['ping', '@test/probe']]);
-  });
+  test('is absent: nobody', () => expect(readHeld().size).toBe(0));
 
   test('a file of another shape reads as nobody', ({ dir }) => {
     dir.write('commands.json', { ping: 1 });

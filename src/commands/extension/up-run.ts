@@ -1,5 +1,4 @@
 import { type RequestListener, type Server } from 'node:http';
-import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { resolve } from 'node:path';
 import type * as KitHostModule from '@agentage/extension/host';
 import type { HostedExtension, HostOptions } from '@agentage/extension/host';
@@ -19,13 +18,9 @@ import {
   writeRecord,
 } from './up-local.js';
 
-// The kit's export: an express middleware that refuses with next(err).
-type Guard = (port: () => number) => RequestHandler;
-
-// The kit host and how it keeps other sites out: its own guard (an export, or a host option), else the cli's.
+// The kit host; kitGuards: it mounts its own local-only guard (a host option), else the cli's.
 export interface KitHost {
   host: (dir: string, opts: HostOptions) => Promise<HostedExtension>;
-  guard: Guard | null;
   kitGuards: boolean;
 }
 
@@ -35,10 +30,9 @@ const loadKitHost = async (): Promise<KitHost> => {
     typeof KitHostModule;
   const caps = Array.isArray(kit['capabilities']) ? (kit['capabilities'] as unknown[]) : [];
   const option = caps.includes('localOnly');
-  const guard = typeof kit['localOnly'] === 'function' ? (kit['localOnly'] as Guard) : null;
   const host = (dir: string, opts: HostOptions) =>
     kit.hostExtension(dir, option ? ({ ...opts, localOnly: true } as HostOptions) : opts);
-  return { host, guard, kitGuards: option };
+  return { host, kitGuards: option };
 };
 
 export interface LocalUpDeps {
@@ -75,31 +69,16 @@ const warnProblems = async ({ report }: PackageBuild): Promise<void> => {
   for (const text of (await loadKitTool()).checkLines(report)) console.error(`check     ${text}`);
 };
 
-type Refusal = { status?: number; code?: string; message?: string };
-
-// The kit guard's refusal, as an envelope; 403 unless the error names its own status.
-const refused: ErrorRequestHandler = (err: Refusal, _req, res, _next) => {
-  const error = { code: err.code ?? 'FORBIDDEN', message: err.message ?? 'refused' };
-  res.status(err.status ?? 403).json({ success: false, error });
-};
-
-// The kit's guard in front of the kit app when it exports one; else the cli's own (remove then).
-// express loads only here, on use: --help and --version never load it.
-export const handlerOf = async (
-  kit: Pick<KitHost, 'guard' | 'kitGuards'>,
+// The cli's guard in front of the kit app until the kit mounts its own (remove then).
+export const handlerOf = (
+  kit: Pick<KitHost, 'kitGuards'>,
   app: RequestListener,
   port: () => number
-): Promise<RequestListener> => {
-  if (kit.kitGuards) return app;
-  if (!kit.guard) return loopbackOnly(app, port);
-  const front = (await import('express')).default();
-  front.use(kit.guard(port), app as unknown as RequestHandler, refused);
-  return front;
-};
+): RequestListener => (kit.kitGuards ? app : loopbackOnly(app, port));
 
 const serve = async (kit: KitHost, hosted: HostedExtension): Promise<Server> => {
   let port = 0;
-  const server = await listenFrom(await handlerOf(kit, hosted.app as RequestListener, () => port));
+  const server = await listenFrom(handlerOf(kit, hosted.app as RequestListener, () => port));
   port = portOf(server);
   return server;
 };

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -30,7 +29,7 @@ export interface TreeFiles {
   lock: string | null;
 }
 
-export const sortedSet = (install: Record<string, string>): Record<string, string> =>
+const sortedSet = (install: Record<string, string>): Record<string, string> =>
   Object.fromEntries(Object.entries(install).sort(([a], [b]) => (a < b ? -1 : 1)));
 
 // Same install set, same bytes: no scripts, nothing machine-specific.
@@ -46,10 +45,6 @@ export const npmrcText = (registries: Record<string, string>): string =>
   Object.entries(sortedSet(registries))
     .map(([scope, url]) => `${scope}:registry=${url}\n`)
     .join('');
-
-// Content-addressed: the same normalized lock names the same tree on every machine.
-export const treeName = (entries: string[]): string =>
-  createHash('sha256').update(entries.join('\n')).digest('hex').slice(0, 16);
 
 export const treePath = (extensionsDir: string, name: string): string =>
   join(extensionsDir, TREES, name);

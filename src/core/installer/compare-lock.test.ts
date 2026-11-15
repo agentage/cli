@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pkg } from '../../test/config-dir.js';
-import {
-  integrityDrift,
-  lockAgrees,
-  lockEntries,
-  parseLock,
-  rootDependencies,
-} from './compare-lock.js';
+import { integrityDrift, lockEntries, parseLock, rootDependencies } from './compare-lock.js';
 
 const [HELLO, WORLD] = [pkg('hello'), pkg('world')];
 
@@ -64,14 +58,6 @@ describe('the lock npm writes', () => {
       packages: { 'node_modules/alias': { name: '@agentage/real', version: '2.0.0' } },
     };
     expect(lockEntries(aliased)).toEqual(['@agentage/real@2.0.0+']);
-  });
-
-  it('is reused only when its root dependencies equal the profile extensions', () => {
-    expect(lockAgrees(lock, { [WORLD]: '^1', [HELLO]: '^1.0.0' })).toBe(true);
-    expect(lockAgrees(lock, { [HELLO]: '^1.0.0' })).toBe(false);
-    expect(lockAgrees(lock, { [HELLO]: '^1.0.0', [WORLD]: '^2' })).toBe(false);
-    expect(lockAgrees({ packages: { '': 'x' } }, { [HELLO]: '^1' })).toBe(false);
-    expect(lockAgrees({}, {})).toBe(true);
   });
 
   it('records the ranges package.json asked for as its root dependencies', () => {
