@@ -1,7 +1,7 @@
 import { type SetupDeps } from './commands/auth/setup.js';
 import { runDaemonRestart, runDaemonStatus, runDaemonStop } from './commands/daemon/daemon.js';
 import { cliInstaller } from './commands/daemon/installer.js';
-import { moveOldLists } from './commands/daemon/move.js';
+import { moveBeforeStart } from './commands/daemon/move.js';
 import { runDaemon } from './commands/daemon/run.js';
 import { signedInAccount } from './commands/extension/account.js';
 import { runExtensionBuild, runExtensionCheck } from './commands/extension/build.js';
@@ -73,7 +73,7 @@ export const defaultDeps: ProgramDeps = {
     status: () => runDaemonStatus(),
     stop: () => runDaemonStop(),
     restart: () => runDaemonRestart(),
-    run: () => runDaemon({ installer, before: moveOldLists }),
+    run: () => runDaemon({ installer, before: () => moveBeforeStart() }),
   },
   kitTool: loadKitTool,
   updateHint,
