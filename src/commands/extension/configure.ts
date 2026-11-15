@@ -24,9 +24,13 @@ const typed = (answer: string, char: string): string | null => {
 };
 
 // Raw mode keeps the answer off the screen; Ctrl+C still interrupts once the terminal is restored.
-export const readHidden = (question: string): Promise<string> =>
+type Tty = Pick<NodeJS.ReadStream, 'on' | 'off' | 'setRawMode' | 'resume' | 'pause'>;
+
+export const readHidden = (
+  question: string,
+  { stdin, stderr }: { stdin: Tty; stderr: Pick<NodeJS.WriteStream, 'write'> } = process
+): Promise<string> =>
   new Promise((resolve) => {
-    const { stdin, stderr } = process;
     let answer = '';
     const onData = (chunk: Buffer): void => {
       for (const char of chunk.toString('utf-8')) {

@@ -164,13 +164,12 @@ list, and unscoped packages, come from `https://registry.npmjs.org`. The install
 `@scope:registry=<url>` line per entry into the tree's own `.npmrc`, so the same profile builds the
 same tree on every machine.
 
-After installing, `setup` prints one `install` line, lists the secrets to set, loads every
+After installing, `setup` prints one `install` line, loads every
 extension this machine can run once, then prints the `extension doctor` rows with the result of
 that load:
 
 ```
 install    4 extensions in tree 3f9c1a0b7d2e4c51 (npm install)
-secrets to set: secret.token
 hello   ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello
 secret  ok         @agentage/fixture-secret 1.0.0 (wants ^1)
 throws  failed     @agentage/fixture-throws 1.0.0 (wants ^1)  "boom"
@@ -185,10 +184,9 @@ and `blocked` extensions are never loaded. `AGENTAGE_TOKEN` is removed from the 
 before the first extension is imported, and what an extension prints while loading goes to
 stderr. `setup` exits 1 when any extension `failed`.
 
-Secrets an extension declares (`"secret": true` in its `configuration`) and this machine has not
-set are asked for before loading, without echo, when `setup` runs on a terminal; anywhere else
-they are listed as `secrets to set: <id>.<key>`. A failed install loads nothing: the rows show
-what is still current.
+Secrets an extension declares (`"secret": true` in its `configuration`) are set with
+`agentage extension configure <id> <key> --secret`; `setup` neither asks for nor lists them. A
+failed install loads nothing: the rows show what is still current.
 
 Extension authors: see [`extensions.md`](extensions.md).
 
@@ -198,7 +196,7 @@ What they keep, and what the CLI keeps about them, lives in the config directory
 | Path              | What                                                                                   |
 | ----------------- | -------------------------------------------------------------------------------------- |
 | `state/<id>.json` | the last load, written by the CLI: `{ at, pid, state, error, version, lastOk }`        |
-| `commands.json`   | which kit-built extension holds each top-level command, `{ "<command>": "<package>" }` |
+| `commands.json`   | written by cli 0.51 only: who held each top-level command; read, never written now     |
 | `secrets.json`    | secrets per extension id (mode 0600, never synced)                                     |
 | `logs/<id>.log`   | the extension's own log, one JSON line per entry (0600, kept under 1 MB)               |
 | `data/<id>/`      | the extension's durable data (`ctx.data`); only `remove --purge` deletes it            |
@@ -552,9 +550,8 @@ failure.
 
 A command whose name is a core command, an extension id, or a command an earlier-installed
 extension already took keeps only its namespaced form, `agentage <id> <command>`; the install says
-so in one line, and `extension doctor` shows that form in its commands column. Which extension holds
-each top-level command is kept in `commands.json`, so the earlier install keeps it whatever is
-installed later.
+so in one line, and `extension doctor` shows that form in its commands column. A holder that cli
+0.51 recorded in `commands.json` keeps its command; this cli reads that file and never writes it.
 
 ## Extension context
 

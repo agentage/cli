@@ -1,7 +1,7 @@
 import { createServer, type RequestListener, type Server } from 'node:http';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { isRecord, readJson, writeJsonAtomic } from '../../lib/fs/json-file.js';
+import { isRecord, readJson, writeTextAtomic } from '../../lib/fs/json-file.js';
 import { CliError, messageOf } from '../../lib/json-output.js';
 import { waitFor } from '../../lib/wait.js';
 
@@ -23,7 +23,10 @@ export const dataDirOf = (dir: string): string => join(resolve(dir), LOCAL, 'dat
 const isUpRecord = (value: unknown): value is UpRecord =>
   isRecord(value) &&
   Number.isInteger(value['pid']) &&
+  (value['pid'] as number) > 0 &&
   Number.isInteger(value['port']) &&
+  (value['port'] as number) >= 1024 &&
+  (value['port'] as number) <= 65535 &&
   typeof value['id'] === 'string' &&
   typeof value['instance'] === 'string';
 
@@ -42,7 +45,7 @@ export const ignoreLocal = (dir: string): void => {
 export const writeRecord = (dir: string, record: UpRecord): void => {
   mkdirSync(join(resolve(dir), LOCAL), { recursive: true });
   ignoreLocal(dir);
-  writeJsonAtomic(recordPath(dir), record);
+  writeTextAtomic(recordPath(dir), `${JSON.stringify(record)}\n`);
 };
 
 export const removeRecord = (dir: string): void => rmSync(recordPath(dir), { force: true });

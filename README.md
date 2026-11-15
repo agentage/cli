@@ -102,7 +102,7 @@ Everything lives in the config directory, `~/.agentage` by default:
 | `~/.agentage/machine.json`  | this machine's id, name, dev extensions and account |
 | `~/.agentage/extensions/`   | installed extensions; `current` names the live tree |
 | `~/.agentage/state/`        | the last run of each extension                      |
-| `~/.agentage/commands.json` | which extension holds each top-level command        |
+| `~/.agentage/commands.json` | cli 0.51's command holders; read, never written     |
 | `~/.agentage/secrets.json`  | extension secrets, owner-only                       |
 | `~/.agentage/data/<id>/`    | what each extension keeps                           |
 

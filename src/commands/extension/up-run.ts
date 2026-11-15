@@ -25,9 +25,12 @@ export interface KitHost {
 }
 
 // The second of the two places that load the kit host as a value; feature checks on its exports.
-const loadKitHost = async (): Promise<KitHost> => {
-  const kit = (await import('@agentage/extension/host')) as Record<string, unknown> &
-    typeof KitHostModule;
+type KitModule = Record<string, unknown> & Pick<typeof KitHostModule, 'hostExtension'>;
+
+export const loadKitHost = async (
+  load: () => Promise<KitModule> = () => import('@agentage/extension/host')
+): Promise<KitHost> => {
+  const kit = await load();
   const caps = Array.isArray(kit['capabilities']) ? (kit['capabilities'] as unknown[]) : [];
   const option = caps.includes('localOnly');
   const host = (dir: string, opts: HostOptions) =>
@@ -43,7 +46,7 @@ export interface LocalUpDeps {
 
 export const localUpDeps: LocalUpDeps = {
   build: (dir) => buildPackage(dir),
-  kit: loadKitHost,
+  kit: () => loadKitHost(),
   stopped: untilSignal,
 };
 

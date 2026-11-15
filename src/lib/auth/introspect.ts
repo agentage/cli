@@ -22,8 +22,6 @@ const isPast = (iso?: string): boolean => {
 
 const RETRY_BACKOFF_MS = 300;
 
-// Ref'd on purpose: an unref'd backoff let Node exit 13 mid-retry once nothing else held the loop.
-
 // Any failure but a 401 is a transient: a network blip must never read as a dead session.
 const getSession = async (auth: AuthState, links: Links): Promise<IntrospectionResponse | null> => {
   const url = `${links.auth}/api/auth/mcp/get-session`;

@@ -10,7 +10,10 @@ import { takeExit } from '../../lib/exit-code.js';
 import { type KitTool } from './kit-tool.js';
 import { runExtensionDown } from './up.js';
 import { listenFrom, portOf, readRecord, recordPath, stopLocal, writeRecord } from './up-local.js';
-import { localUpDeps, runLocalUp, type LocalUpDeps } from './up-run.js';
+import { type RequestListener } from 'node:http';
+import type { HostedExtension } from '@agentage/extension/host';
+import { satisfies } from '../../core/semver-range.js';
+import { handlerOf, loadKitHost, localUpDeps, runLocalUp, type LocalUpDeps } from './up-run.js';
 
 const API = `export const create = () => (req, res) =>
   res.status(200).json({ success: true, data: { path: req.url } });
@@ -291,11 +294,68 @@ describe('extension down: the local run of this folder', () => {
     expect(recordPath(demo)).toBe(join(demo, '.agentage', 'up.json'));
   });
 
-  test('an up.json of another shape, or not JSON, reads as no record', ({ dir }) => {
+  test('an up.json of another shape, a pid under 1, a port outside 1024..65535, or not JSON, reads as no record', ({
+    dir,
+  }) => {
     const demo = dir.at('ext');
-    dir.write('ext/.agentage/up.json', { pid: '1', port: 4400, id: 'demo' });
-    expect(readRecord(demo)).toBeNull();
+    const good = { pid: 7, port: 4400, id: 'demo', instance: 'x' };
+    for (const bad of [
+      { ...good, pid: '1' },
+      { ...good, pid: 0 },
+      { ...good, port: 1023 },
+      { ...good, port: 65536 },
+    ]) {
+      dir.write('ext/.agentage/up.json', bad);
+      expect(readRecord(demo), JSON.stringify(bad)).toBeNull();
+    }
     dir.write('ext/.agentage/up.json', '{ nope');
     expect(readRecord(demo)).toBeNull();
+  });
+
+  test('up.json is one JSON line', ({ dir }) => {
+    const demo = dir.at('ext');
+    const record = { pid: 7, port: 4400, id: 'demo', instance: 'x' };
+    writeRecord(demo, record);
+    expect(readFileSync(recordPath(demo), 'utf8')).toBe(`${JSON.stringify(record)}\n`);
+    expect(readRecord(demo)).toEqual(record);
+  });
+});
+
+describe('the kit host and its guard', () => {
+  const app: RequestListener = (_req, res) => void res.end('ok');
+
+  test('a kit listing localOnly in capabilities gets localOnly: true and no second guard', async () => {
+    const hostExtension = vi.fn(async () => ({}) as HostedExtension);
+    const kit = await loadKitHost(async () => ({ capabilities: ['localOnly'], hostExtension }));
+    await kit.host('/x', { dataDir: '/d' });
+    expect(hostExtension).toHaveBeenCalledWith('/x', { dataDir: '/d', localOnly: true });
+    expect(kit.kitGuards).toBe(true);
+    expect(handlerOf(kit, app, () => 1)).toBe(app);
+  });
+
+  test("a kit with no such capability gets the options as they are and the cli's loopbackOnly in front", async () => {
+    const hostExtension = vi.fn(async () => ({}) as HostedExtension);
+    const kit = await loadKitHost(async () => ({ hostExtension }));
+    await kit.host('/x', { dataDir: '/d' });
+    expect(hostExtension).toHaveBeenCalledWith('/x', { dataDir: '/d' });
+    const handler = handlerOf(kit, app, () => 4400);
+    expect(handler).not.toBe(app);
+    const res = { writeHead: vi.fn(), end: vi.fn() };
+    handler({ headers: { host: 'evil.example' } } as never, res as never);
+    expect(res.writeHead).toHaveBeenCalledWith(403, { 'content-type': 'application/json' });
+  });
+
+  test('the kit range still allows a kit without localOnly, so up-guard.ts stays', () => {
+    const pkg = JSON.parse(
+      readFileSync(join(import.meta.dirname, '../../../package.json'), 'utf8')
+    ) as {
+      dependencies: Record<string, string>;
+    };
+    const range = pkg.dependencies['@agentage/extension'] ?? '';
+    expect(
+      satisfies('0.13.0', range),
+      `@agentage/extension ${range} no longer allows kit 0.13.0, the last kit without localOnly: ` +
+        'delete src/commands/extension/up-guard.ts, the loopbackOnly branch of handlerOf and this test'
+    ).toBe(true);
   });
 });
