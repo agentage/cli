@@ -291,18 +291,19 @@ it to load it: `extension doctor` asks the kit whether the entry exports `create
 handlers are the declared commands, and running `agentage <command>` or `agentage <id> <command>`
 hands the rest of the command line to the kit, which parses the args and runs the handler. The
 kit's own documentation covers writing one; `agentage extension install .` links your working
-copy, and `agentage extension up` runs the whole package on Docker.
+copy, `agentage extension up` runs it in the terminal, and `up --docker` runs the whole package
+on Docker.
 
 ## Author commands
 
-| Command                                                   | What it does                                                             |
-| --------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `agentage extension create <id> [part...]`                | New `./extension-<id>` from the template, only the parts named           |
-| `agentage extension check [dir] [--write]`                | Check that an extension package conforms (the six kit rules)             |
-| `agentage extension build [--push]`                       | Build the part images of a committed tree; push with digests             |
-| `agentage extension release`                              | Release from a tag in CI: guard, images, record, npm package             |
-| `agentage extension up` / `down`                          | Run an extension package on this machine with Docker, then stop          |
-| `agentage extension token --scope <scope> [--dir <path>]` | Print a token from the dev issuer `extension up` started for that folder |
+| Command                                                   | What it does                                                                   |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `agentage extension create <id> [part...]`                | New `./extension-<id>`, built and installed in the daemon (`--no-install`)     |
+| `agentage extension check [dir] [--write]`                | Check that an extension package conforms (the six kit rules)                   |
+| `agentage extension build [--container] [--push]`         | Build the package (no Docker); `--container`: one image; `--push`: part images |
+| `agentage extension release`                              | Release from a tag in CI: guard, images, record, npm package                   |
+| `agentage extension up [--docker]` / `down`               | Run the working copy in the terminal (`--docker`: on Docker), then stop        |
+| `agentage extension token --scope <scope> [--dir <path>]` | Print a token from the dev issuer `extension up` started for that folder       |
 
 `token --dir` is on master and needs a cli newer than 0.51.0. A new project pins the template's cli
 version, so check that version first.
@@ -315,16 +316,20 @@ parts, `create` sets `MIN_EXECUTED` to 1. `MIN_EXECUTED` is the least number of 
 must run. After the first green run, set it to the real count. When `create` cannot find that
 line, it says so and you set it by hand.
 
-1. Install git for `create`, which clones the template from GitHub. `build`, `up` and `release` also
-   need Docker. `build` needs a committed, clean tree. `up` needs one commit.
+After the clone, `create` runs `npm ci`, builds the package (as `extension build` does) and gives
+the folder to the daemon (`agentage extension install <folder>`), unless `--no-install`. It ends
+with `url       <the first public route of the api that answers>`.
+
+1. Install git and npm for `create`, which clones the template from GitHub. `build --container`,
+   `build --push`, `up --docker` and `release` also need Docker and a committed tree.
 2. Inside the extension folder, run `npx agentage extension up`. Use `npx agentage`, not the
-   global `agentage`. The global one can be older than the version the project pins, and lack
-   the command.
-3. `up` needs ports 4280 (gateway) and 4281 (token issuer) free. When another working copy holds
-   them, `up` refuses and names its compose project. Run `npx agentage extension down` in that
-   folder, or find it with `docker ps`.
-4. `npx agentage extension token --scope <id>:read` prints a token from the stack `up` started in
-   this folder. When the stack on localhost:4281 is another folder's, `token` refuses and names it.
-   It needs Docker unless `--issuer` is given. This stack-owner check is on master and needs a cli
-   newer than 0.51.0. A new project pins the template's cli version.
-5. Run `npx agentage extension down` to remove the containers, network and store volume.
+   global `agentage`, which can be older than the version the project pins. It builds the
+   package, runs it in the terminal on the first free port from 4244 and prints the URL. Ctrl-C,
+   or `npx agentage extension down` in the folder, stops it.
+3. `npx agentage extension up --docker` runs every part on Docker. It needs ports 4280 (gateway)
+   and 4281 (token issuer) free; when another working copy holds them, it refuses and names its
+   compose project.
+4. `npx agentage extension token --scope <id>:read` prints a token from the Docker stack of this
+   folder. It needs Docker unless `--issuer` is given.
+5. `npx agentage extension down` stops the run in the terminal and removes the Docker stack
+   (containers, network, store volume) of this folder.

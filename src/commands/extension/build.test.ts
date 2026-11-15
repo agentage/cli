@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
-import { assertCommitted, runExtensionBuild, runExtensionCheck } from './build.js';
+import {
+  assertCommitted,
+  runExtensionBuild,
+  runExtensionCheck,
+  runImageBuild,
+  type BuildFlagDeps,
+} from './build.js';
 import { loadKitTool, type KitTool } from './kit-tool.js';
 
 const SHA = 'a'.repeat(40);
@@ -31,16 +37,16 @@ const fakeTool = (fail?: Error) => {
   return { tool: async () => tool as KitTool, calls };
 };
 
-describe('extension build', () => {
+describe('extension build --push: the part images', () => {
   test('a tree with uncommitted changes exits 1 with "commit first" before the kit runs', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'agentage-build-'));
     const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'ignore' });
     git('init', '-q');
     git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'x');
     const { tool, calls } = fakeTool();
-    expect((await output(() => runExtensionBuild({ dir: repo }, tool))).error).toBeNull();
+    expect((await output(() => runImageBuild({ dir: repo }, tool))).error).toBeNull();
     writeFileSync(join(repo, 'new.ts'), '');
-    const printed = await output(() => runExtensionBuild({ dir: repo }, tool));
+    const printed = await output(() => runImageBuild({ dir: repo }, tool));
     expect(printed.error).toBe(`${repo} has uncommitted changes: commit first`);
     expect(printed.code).toBe('uncommitted_changes');
     expect(calls).toHaveLength(1);
@@ -55,11 +61,7 @@ describe('extension build', () => {
   test('hands --push, --dir and --registry to the kit tool and prints its lines', async () => {
     const { tool, calls } = fakeTool();
     const printed = await output(() =>
-      runExtensionBuild(
-        { push: true, dir: 'ext', registry: 'localhost:5000/agentage' },
-        tool,
-        clean
-      )
+      runImageBuild({ push: true, dir: 'ext', registry: 'localhost:5000/agentage' }, tool, clean)
     );
     expect(calls).toEqual([{ push: true, dir: 'ext', registry: 'localhost:5000/agentage' }]);
     expect(printed.lines).toEqual(['api ghcr.io/agentage/probe-api:0.1.0 pushed']);
@@ -68,14 +70,14 @@ describe('extension build', () => {
 
   test('--json returns the kit result and keeps the flag away from the kit', async () => {
     const { tool, calls } = fakeTool();
-    const result = await runExtensionBuild({ dir: '.', push: true, json: true }, tool, clean);
+    const result = await runImageBuild({ dir: '.', push: true, json: true }, tool, clean);
     expect(result).toMatchObject({ id: 'probe', version: '0.1.0', images: [{ part: 'api' }] });
     expect(calls).toEqual([{ dir: '.', push: true }]);
   });
 
   test('a failed build fails the step with the tool message', async () => {
     const { tool } = fakeTool(new Error('docker build failed with exit code 1'));
-    const printed = await output(() => runExtensionBuild({}, tool, clean));
+    const printed = await output(() => runImageBuild({}, tool, clean));
     expect(printed.error).toBe('docker build failed with exit code 1');
     expect(printed.lines).toEqual([]);
   });
@@ -84,7 +86,7 @@ describe('extension build', () => {
     const { buildLines } = await loadKitTool();
     const { tool } = fakeTool();
     const kitLines = async () => ({ ...(await tool()), buildLines });
-    const printed = await output(() => runExtensionBuild({ push: true }, kitLines, clean));
+    const printed = await output(() => runImageBuild({ push: true }, kitLines, clean));
     expect(printed.lines).toEqual([
       'api     ghcr.io/agentage/probe-api:0.1.0  sha256:bbbbbbbb pushed',
       'record  dist/agentage-extension.json',
@@ -152,13 +154,12 @@ describe('extension check', () => {
   });
 
   test('--write writes the contracts through the kit, prints each file, then checks', async () => {
-    const { tool, dirs } = checking(true);
-    const writer = async () => ({
+    const { tool: base, dirs } = checking(true);
+    const tool = async () => ({
+      ...(await base()),
       writeContracts: async (dir: string) => [`${dir}/probe.mcpc.json`],
     });
-    const printed = await output(() =>
-      runExtensionCheck({ dir: 'probe', write: true }, tool, writer)
-    );
+    const printed = await output(() => runExtensionCheck({ dir: 'probe', write: true }, tool));
     expect(printed.lines).toEqual([
       'wrote probe/probe.mcpc.json',
       'sealing ok',
@@ -168,18 +169,14 @@ describe('extension check', () => {
   });
 
   test('--write --json keeps stdout one JSON document: the written paths go to stderr', async () => {
-    const writer = async () => ({ writeContracts: async () => ['probe.mcpc.json'] });
-    const run = () => runExtensionCheck({ write: true, json: true }, checking(true).tool, writer);
+    const tool = async () => ({
+      ...(await checking(true).tool()),
+      writeContracts: async () => ['probe.mcpc.json'],
+    });
+    const run = () => runExtensionCheck({ write: true, json: true }, tool);
     const printed = await output(run);
     expect(printed.stderr.trim()).toBe('wrote probe.mcpc.json');
     expect(JSON.parse(printed.lines.join('\n'))).toMatchObject({ conforms: true });
-  });
-
-  test('--write on a kit without writeContracts names the kit version it needs', async () => {
-    const { tool, dirs } = checking(true);
-    const printed = await output(() => runExtensionCheck({ write: true }, tool, async () => ({})));
-    expect(printed.error).toBe('check --write needs @agentage/extension >= 0.5.1');
-    expect(dirs).toEqual([]);
   });
 });
 
@@ -188,5 +185,61 @@ describe('extension check on the real kit', () => {
     const printed = await output(() => runExtensionCheck({ dir: join(process.cwd(), 'none') }));
     expect(printed.lines[0]).toMatch(/^manifest: /);
     expect(printed.error).toMatch(/^FAIL \d+ problems? in 1 rule$/);
+  });
+});
+
+const conforming = { id: 'demo', version: '0.1.0', rules: [], problems: [], skipped: {} };
+
+const flagDeps = (conforms = true, container = true) => {
+  const calls: string[] = [];
+  const { tool: images } = fakeTool();
+  const deps: BuildFlagDeps = {
+    tool: async () => ({ ...(await images()), checkLines: fakeLines }),
+    committed: async () => void calls.push('committed'),
+    pkg: async (dir) => {
+      calls.push(`package ${dir}`);
+      const report = { ...conforming, conforms };
+      return { dir: dir ?? '.', built: true, contracts: [], report };
+    },
+    container: () => container,
+  };
+  return { deps, calls };
+};
+
+describe('extension build: the package, with no Docker', () => {
+  test('no flag: the package build, no commit gate, then the check lines', async () => {
+    const { deps, calls } = flagDeps();
+    const printed = await output(() => runExtensionBuild({ dir: 'demo' }, deps));
+    expect(calls).toEqual(['package demo']);
+    expect(printed.lines).toEqual(['sealing ok', 'PASS probe 0.4.0 conforms (1 rule)']);
+    expect(await runExtensionBuild({ dir: 'demo', json: true }, deps)).toMatchObject({
+      dir: 'demo',
+      built: true,
+      conforms: true,
+    });
+  });
+
+  test('a package that does not conform exits 1 with the FAIL line', async () => {
+    const printed = await output(() => runExtensionBuild({}, flagDeps(false).deps));
+    expect(printed).toMatchObject({ code: 'not_conforming', error: 'FAIL 1 problem in 1 rule' });
+  });
+
+  test('--container goes to the kit from a committed tree; --registry alone is refused', async () => {
+    const { deps, calls } = flagDeps();
+    await output(() => runExtensionBuild({ container: true, registry: 'r/o' }, deps));
+    expect(calls).toEqual(['committed']);
+    const alone = await output(() => runExtensionBuild({ registry: 'r/o' }, deps));
+    expect(alone).toMatchObject({ code: 'invalid_argument' });
+    expect(alone.error).toContain('--registry names where images go');
+  });
+
+  test('--container on a kit without the one-image build says so before anything runs', async () => {
+    const { deps, calls } = flagDeps(true, false);
+    const printed = await output(() => runExtensionBuild({ container: true }, deps));
+    expect(printed.code).toBe('invalid_argument');
+    expect(printed.error).toMatch(
+      /^build --container needs a kit that builds one image \(this cli has @agentage\/extension \d+\.\d+\.\d+/
+    );
+    expect(calls).toEqual([]);
   });
 });

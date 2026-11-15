@@ -75,23 +75,33 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+const afterCalls: [string, boolean][] = [];
+const scaffoldOnly = async (dir: string, install: boolean) => {
+  afterCalls.push([dir, install]);
+  return { installed: null, url: null };
+};
+
 const create = (id: string, parts: string[] = [], from?: string) =>
-  output(() => runExtensionCreate({ id, parts, from }, () => url));
+  output(() => runExtensionCreate({ id, parts, from }, () => url, scaffoldOnly));
 const read = (path: string) => readFileSync(join(root, 'extension-market', path), 'utf8');
 const manifest = () => JSON.parse(read('package.json')) as typeof MANIFEST;
 
 describe('extension create', () => {
   test('--json answers with the id, folder, template and kept parts; a bad id has the code invalid_argument', async () => {
     const result = await runExtensionCreate(
-      { id: 'market', parts: ['api'], json: true },
-      () => url
+      { id: 'market', parts: ['api'], json: true, install: false },
+      () => url,
+      scaffoldOnly
     );
     expect(result).toEqual({
       id: 'market',
       dir: 'extension-market',
       from: 'agentage/extension-template',
       kept: ['api'],
+      installed: null,
+      url: null,
     });
+    expect(afterCalls.at(-1)).toEqual(['extension-market', false]);
     const bad = await create('Bad');
     expect(bad.code).toBe('invalid_argument');
   });
@@ -103,7 +113,7 @@ describe('extension create', () => {
       ' template  agentage/extension-template (default branch, kit 0.5.0)',
       ' kept      mcp, api',
       ' id        market  ·  host market.next.agentage.io  ·  contract market.mcpc.json',
-      ' next      cd extension-market && npm ci && npm run build && agentage extension check',
+      ' next      cd extension-market && agentage extension up',
       " ci        MIN_EXECUTED is 1: after the first green run, set it to the gate's count",
     ]);
     expect(read('.github/workflows/ci.yml')).toContain("MIN_EXECUTED: '1'\n");
@@ -199,7 +209,11 @@ describe('extension create', () => {
 
   test('a template repo that is not there fails with its name, no folder left', async () => {
     const printed = await output(() =>
-      runExtensionCreate({ id: 'market', parts: [], from: 'x/none' }, () => `file://${root}/none`)
+      runExtensionCreate(
+        { id: 'market', parts: [], from: 'x/none' },
+        () => `file://${root}/none`,
+        scaffoldOnly
+      )
     );
     expect(printed.error).toMatch(/^cannot clone template x\/none: fatal: .*none/);
     expect(existsSync(join(root, 'extension-market'))).toBe(false);

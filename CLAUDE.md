@@ -89,7 +89,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
     read-only: nothing in `src` switches or deletes it; `src/test/old-install.ts` builds it for
     tests.
   - `create.ts` is `extension create`: a shallow clone of the template, the other parts dropped,
-    the word `template` rewritten to the id.
+    the word `template` rewritten to the id; `create-install.ts` then runs `npm ci`, the package
+    build and `POST {source}` to the daemon (`--no-install` skips that), and prints the URL.
   - `setup.ts` is the extensions `setup` flow; its only deps are the network ones, npm and the
     account. `setup-cloud.ts` is its signed-in half: account check, machine registration, pull or
     create, `--disconnect`. `plan.ts` is `setup --dry-run` and `setup --check`.
@@ -100,15 +101,19 @@ Each row names the doc first, then the code that proves it. Read the doc before 
     dependencies. `delegate.ts` registers one stub per contributed command and hands it to the
     extension.
   - `build.ts` is `extension check` (`--write` over the kit's `writeContracts`) and
-    `extension build`. Both are thin commands over the kit's `@agentage/extension/tool`, imported
-    on use.
+    `extension build`: with no flag the package (`package-build.ts`: build script, contracts,
+    check; no Docker), `--container` the kit's one image (only when the kit has it), `--push`
+    the part images (`runImageBuild`, also used by `release`).
   - `kit-tool.ts` is that one injected dependency (`check`, `checkLines`, `build`, `buildLines`,
-    `runCommand`, `checkCli`, `up`, `down`, `token`, `readManifest`, typed by the kit; `loadKitTool`,
-    `kitCheck`).
+    `runCommand`, `checkCli`, `up`, `down`, `token`, `readManifest`, `writeContracts`, typed by the
+    kit; `loadKitTool`, `kitCheck`, `kitVersion`, `kitBuildsContainer`).
   - `release.ts` is `extension release`: preflight, guard, `build --push`, the release asset, npm
     publish or stage. It sits over `release-guard.ts`, the guard and the bounded `execIn`
     injected dependency.
-  - `up.ts` is `extension up`, `down` and `token` over the kit; `stack-owner.ts` lets `token`
+  - `up.ts` is `extension up`, `down` and `token`. Plain `up` is `up-run.ts`: the kit's
+    `hostExtension` in this process on the first free port from 4244, its record in the folder's
+    `.agentage/up.json` (`up-local.ts`, which `down` proves by `/health` before it signals);
+    `--docker` and the Docker part of `down` go to the kit. `stack-owner.ts` lets `token`
     ask only this folder's stack. `kit-commands.ts` registers a
     kit-built extension's `agentage {id}` group and top-level verbs; its `stub` is the one every
     delegated command uses.
@@ -187,7 +192,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
 - `src/package-guard.test.ts` - CI guard: no product or agent-runtime imports; runtime deps stay
   exactly `@agentage/extension + chalk + commander + open` (the kit's tool only; it never loads
   the kit's server stack outside the daemon process) plus `express` and `@electric-sql/pglite`,
-  which the kit daemon runs on; only `src/commands/daemon/run.ts` loads `@agentage/extension/host`
+  which the kit daemon runs on; only `src/commands/daemon/run.ts` and `src/commands/extension/up-run.ts`
+  load `@agentage/extension/host`
 
 ## Auth model
 

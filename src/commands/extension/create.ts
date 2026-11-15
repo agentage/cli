@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { type Command } from 'commander';
 import { addJson, CliError } from '../../lib/json-output.js';
+import { installCreated } from './create-install.js';
 
 const run = promisify(execFile);
 export const TEMPLATE = 'agentage/extension-template';
@@ -24,6 +25,8 @@ export interface ExtensionCreateOptions {
   id: string;
   parts: string[];
   from?: string;
+  // commander's --no-install: false keeps the new folder out of the daemon.
+  install?: boolean;
   json?: boolean;
 }
 
@@ -136,13 +139,15 @@ const printNext = (dir: string, from: string, id: string, kept: string[]): void 
   console.log(` template  ${from} (default branch, kit ${kit.replace(/^[\^~]/, '')})`);
   console.log(` kept      ${kept.join(', ')}`);
   console.log(` id        ${id}  ·  host ${id}.next.agentage.io  ·  contract ${id}.mcpc.json`);
-  console.log(` next      cd ${dir} && npm ci && npm run build && agentage extension check`);
+  console.log(` next      cd ${dir} && agentage extension up`);
 };
 
-// Clones the template's default branch into ./extension-<id> as a new working copy, no history.
+// Clones the template's default branch into ./extension-<id> as a new working copy, no history;
+// then installs its dependencies, builds it and (unless --no-install) gives it to the daemon.
 export const runExtensionCreate = async (
   opts: ExtensionCreateOptions,
-  url = (from: string) => `https://github.com/${from}`
+  url = (from: string) => `https://github.com/${from}`,
+  after: typeof installCreated = installCreated
 ): Promise<unknown> => {
   const { id, from = TEMPLATE } = opts;
   const kept = opts.parts.length > 0 ? [...new Set(opts.parts)] : PARTS;
@@ -153,7 +158,7 @@ export const runExtensionCreate = async (
   const ci = shape(dir, from, id, kept);
   printNext(dir, from, id, kept);
   if (ci) console.log(ci);
-  return { id, dir, from, kept };
+  return { id, dir, from, kept, ...(await after(dir, opts.install !== false)) };
 };
 
 export const addCreate = (group: Command, create: (o: ExtensionCreateOptions) => Promise<void>) =>
@@ -164,6 +169,7 @@ export const addCreate = (group: Command, create: (o: ExtensionCreateOptions) =>
       .argument('<id>', 'the extension id, also its host and contract name')
       .argument('[parts...]', `parts to keep (default: all seven): ${PARTS.join(', ')}`)
       .option('--from <owner/repo>', `the template repo (default: ${TEMPLATE})`)
-  ).action((id: string, parts: string[], o: { from?: string; json?: boolean }) =>
+      .option('--no-install', 'build the folder, but do not give it to the daemon')
+  ).action((id: string, parts: string[], o: { from?: string; install?: boolean; json?: boolean }) =>
     create({ id, parts, ...o })
   );

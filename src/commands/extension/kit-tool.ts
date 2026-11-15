@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import type * as Kit from '@agentage/extension/tool';
 import { type KitCheck } from '../../core/loader/load.js';
 
@@ -14,6 +17,7 @@ export type KitTool = Pick<
   | 'down'
   | 'token'
   | 'readManifest'
+  | 'writeContracts'
 >;
 
 export type LoadKitTool = () => Promise<KitTool>;
@@ -26,3 +30,14 @@ export const kitCheck =
   (tool: LoadKitTool = loadKitTool): KitCheck =>
   async (dir) =>
     (await tool()).checkCli(dir);
+
+const kitRoot = (): string =>
+  dirname(createRequire(import.meta.url).resolve('@agentage/extension/package.json'));
+
+export const kitVersion = (): string =>
+  (JSON.parse(readFileSync(join(kitRoot(), 'package.json'), 'utf8')) as { version: string })
+    .version;
+
+// 0.13 ignores an unknown `container` option and builds part images: look for the module instead.
+export const kitBuildsContainer = (): boolean =>
+  existsSync(join(kitRoot(), 'dist', 'tool', 'container.js'));

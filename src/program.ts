@@ -22,7 +22,7 @@ import { type ExtensionReleaseOptions } from './commands/extension/release.js';
 import {
   type ExtensionDownOptions,
   type ExtensionTokenOptions,
-  type ExtensionUpOptions,
+  type ExtensionUpFlags,
 } from './commands/extension/up.js';
 import { registerStatus, type StatusOptions } from './commands/status/status.js';
 import { registerUpdate, type UpdateOptions } from './commands/update/update.js';
@@ -55,7 +55,7 @@ export interface ProgramDeps {
   extensionCheck: (opts: ExtensionCheckOptions) => Promise<unknown>;
   extensionBuild: (opts: ExtensionBuildOptions) => Promise<unknown>;
   extensionRelease: (opts: ExtensionReleaseOptions) => Promise<unknown>;
-  extensionUp: (opts: ExtensionUpOptions) => Promise<unknown>;
+  extensionUp: (opts: ExtensionUpFlags) => Promise<unknown>;
   extensionDown: (opts: ExtensionDownOptions) => Promise<unknown>;
   extensionToken: (opts: ExtensionTokenOptions) => Promise<unknown>;
   daemon: Record<'status' | 'stop' | 'restart' | 'run', Run<DaemonOptions>>;
