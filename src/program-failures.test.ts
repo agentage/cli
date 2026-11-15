@@ -1,4 +1,6 @@
 import { chmodSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { type AddressInfo } from 'node:net';
 import { describe, expect, vi } from 'vitest';
 import { run, type ProgramDeps } from './program.js';
 import { defaultDeps } from './program-deps.js';
@@ -27,6 +29,17 @@ const thrower = (err: Error) => async (): Promise<never> => {
   throw err;
 };
 
+const asRoot = process.getuid?.() === 0;
+
+// A port nothing listens on, so no real daemon is reached.
+const freePort = async (): Promise<number> => {
+  const server = createServer();
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const { port } = server.address() as AddressInfo;
+  await new Promise((done) => server.close(done));
+  return port;
+};
+
 const errno = (code: string, message: string) => Object.assign(new Error(message), { code });
 
 describe('expected failures reach the user as a code and one line', () => {
@@ -50,10 +63,11 @@ describe('expected failures reach the user as a code and one line', () => {
     });
   });
 
-  test('permission denied on the config folder', async ({ dir }) => {
+  // Root writes through a 0o500 folder: an environment condition, so the runner's skipIf.
+  test.skipIf(asRoot)('permission denied on the config folder', async ({ dir }) => {
     dir.write('profile.json', { version: 1, extensions: {} });
     chmodSync(dir.at(''), 0o500);
-    process.env['AGENTAGE_DAEMON_PORT'] = '4398';
+    process.env['AGENTAGE_DAEMON_PORT'] = String(await freePort());
     try {
       const got = await runReal(['extension', 'list', '--json']);
       expect(got.error.code).toBe('permission_denied');
@@ -71,6 +85,17 @@ describe('expected failures reach the user as a code and one line', () => {
       code: 'profile_invalid',
       message: 'profile.json is invalid: not valid JSON',
     });
+  });
+
+  test('AGENTAGE_DEBUG=1 adds the original error and its cause with stacks on stderr', async () => {
+    vi.stubEnv('AGENTAGE_DEBUG', '1');
+    const cause = errno('ENOTFOUND', 'getaddrinfo ENOTFOUND api.example.test');
+    const down = thrower(new TypeError('fetch failed', { cause }));
+    const got = await runReal(['status', '--json'], { status: down });
+    vi.unstubAllEnvs();
+    expect(got.error.code).toBe('network_unavailable');
+    expect(got.stderr).toMatch(/^TypeError: fetch failed\n\s+at /);
+    expect(got.stderr).toMatch(/\nError: getaddrinfo ENOTFOUND api\.example\.test\n\s+at /);
   });
 
   test('in text mode the same failure is one red line on stderr, no stack', async () => {

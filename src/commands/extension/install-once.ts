@@ -1,3 +1,6 @@
+import { realpathSync } from 'node:fs';
+import { join } from 'node:path';
+import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type HostClient, type HostRow, type HostSummary } from '../../lib/daemon/host-client.js';
 import { CliError, DaemonError } from '../../lib/json-output.js';
 
@@ -43,12 +46,29 @@ export const installId = async (host: HostClient, spec: IdBody): Promise<Install
   return got;
 };
 
-// A folder: the same folder again is installed already; its id from elsewhere is refused.
+const real = (path: string): string => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
+
+// The daemon's CONFLICT carries no id field: the folder's own manifest names it.
+const folderId = (source: string): string | null => {
+  const pkg = readJson(join(source, 'package.json'), isRecord);
+  const id = isRecord(pkg?.['agentage']) ? pkg['agentage']['id'] : undefined;
+  return typeof id === 'string' ? id : null;
+};
+
+// A folder: the same folder again (by real path) is installed already; its id from elsewhere is
+// refused.
 export const installFolder = async (host: HostClient, source: string): Promise<Installed> => {
   const got = await added(host, { source });
   if (!(got instanceof DaemonError)) return { row: got, already: false };
-  const row = (await host.list()).find((r) => r.source === source);
+  const here = real(source);
+  const row = (await host.list()).find((r) => r.source !== 'market' && real(r.source) === here);
   if (row) return { row, already: true };
-  const id = /^(\S+) is installed/.exec(got.message)?.[1] ?? '<id>';
+  const id = folderId(source) ?? '<id>';
   throw elsewhere(`${id} is installed from the market or another folder`, id);
 };

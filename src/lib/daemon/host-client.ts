@@ -47,13 +47,22 @@ const failure = (status: number, body: unknown): DaemonError => {
   return new DaemonError(code, message);
 };
 
+// What the user can see after a timeout: the kit adds the row only once the install ends, and its
+// /health names no install in progress.
+const LOOK: Record<string, string> = {
+  GET: 'agentage daemon status',
+  POST:
+    'the install may still run in the daemon, and no row shows until it ends; ' +
+    'agentage daemon status says the daemon runs; run agentage extension list again in a few minutes',
+  PATCH: 'the change may still finish; run agentage extension list again in a few minutes',
+};
+
 // A timed-out change may still finish in the daemon: say how to look, never that it failed.
 const unreachable = (port: number, err: unknown, ms: number, method: string): CliError => {
   if ((err as Error).name !== 'TimeoutError')
     return new CliError('daemon_unavailable', `the daemon on 127.0.0.1:${port}: ${messageOf(err)}`);
   const after = `the daemon on 127.0.0.1:${port} did not answer in ${ms / 1000} s`;
-  const look =
-    method === 'GET' ? 'agentage daemon status' : 'it may still finish: agentage extension list';
+  const look = LOOK[method] ?? LOOK['PATCH'];
   return new CliError('timeout', `${after}; ${look}`);
 };
 

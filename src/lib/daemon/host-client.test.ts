@@ -66,7 +66,12 @@ describe('the C5 client of the daemon', () => {
     });
     await expect(host.add({ id: 'probe' })).rejects.toMatchObject({
       code: 'timeout',
-      message: expect.stringMatching(/in 0\.2 s; it may still finish: agentage extension list$/),
+      message: expect.stringMatching(/in 0\.2 s; the install may still run .* no row shows until/),
+    });
+    await expect(host.change('probe', { enabled: false })).rejects.toMatchObject({
+      message: expect.stringMatching(
+        /; the change may still finish; run agentage extension list again/
+      ),
     });
     silent.closeAllConnections();
     await new Promise((done) => silent.close(done));

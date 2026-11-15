@@ -7,29 +7,41 @@ import { CliError } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
 const STEP_MS = 600_000;
+const GRACE_MS = 5_000;
 
 export type Npm = (dir: string, args: string[]) => Promise<void>;
 
 const failed = (what: string, why: string): CliError =>
   new CliError('build_failed', `${what} ${why}`);
 
-// npm's own output goes to stderr, so a --json stdout stays one object.
-export const npmIn = (dir: string, args: string[], timeoutMs = STEP_MS): Promise<void> =>
+const how = (code: number | null, signal: NodeJS.Signals | null): string =>
+  code === null ? `exited by signal ${signal ?? 'unknown'}` : `exited ${code}`;
+
+// npm's own output goes to stderr, so a --json stdout stays one object. Past its time it gets
+// SIGTERM, then SIGKILL after `graceMs`.
+export const npmIn = (
+  dir: string,
+  args: string[],
+  timeoutMs = STEP_MS,
+  graceMs = GRACE_MS
+): Promise<void> =>
   new Promise((done, fail) => {
     const what = `npm ${args.join(' ')} in ${dir}`;
     const child = spawn('npm', args, { cwd: dir, env: childEnv(), stdio: ['ignore', 2, 2] });
     let late = false;
-    const timer = setTimeout(() => ((late = true), child.kill('SIGTERM')), timeoutMs);
-    child.once(
-      'error',
-      (err) => (clearTimeout(timer), fail(failed(what, `did not start: ${err.message}`)))
-    );
-    child.once('exit', (code) => {
-      clearTimeout(timer);
+    let kill: NodeJS.Timeout | undefined;
+    const timer = setTimeout(() => {
+      late = true;
+      child.kill('SIGTERM');
+      kill = setTimeout(() => child.kill('SIGKILL'), graceMs);
+    }, timeoutMs);
+    const stop = () => (clearTimeout(timer), clearTimeout(kill));
+    child.once('error', (err) => (stop(), fail(failed(what, `did not start: ${err.message}`))));
+    child.once('exit', (code, signal) => {
+      stop();
       if (code === 0) return done();
-      fail(
-        failed(what, late ? `did not finish in ${timeoutMs / 1000} s; stopped` : `exited ${code}`)
-      );
+      const stopped = `did not finish in ${timeoutMs / 1000} s; stopped (${how(code, signal)})`;
+      fail(failed(what, late ? stopped : how(code, signal)));
     });
   });
 

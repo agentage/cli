@@ -1,4 +1,12 @@
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  unlinkSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
@@ -60,6 +68,7 @@ describe('extension install', () => {
       error: 'demo runs from the folder /work/extension-demo; agentage extension remove demo first',
     });
     const dir = mkdtempSync(join(tmpdir(), 'agentage-demo-'));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ agentage: { id: 'demo' } }));
     expect(await output(() => runInstall({ name: dir }, deps))).toMatchObject({
       code: 'already_installed',
       error:
@@ -73,6 +82,17 @@ describe('extension install', () => {
     expect((await output(() => runInstall({ name: dir }, deps))).lines).toEqual([
       'demo 0.1.0 running (already installed)',
     ]);
+  });
+
+  test('the same folder through a link, stored with a trailing slash, is installed already', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'agentage-demo-')));
+    const link = `${dir}-link`;
+    symlinkSync(dir, link);
+    const { deps } = fakeHost([{ ...marketRow('demo', '0.1.0'), source: `${link}/` }]);
+    expect((await output(() => runInstall({ name: dir }, deps))).lines).toEqual([
+      'demo 0.1.0 running (already installed)',
+    ]);
+    unlinkSync(link);
   });
 
   test('a folder goes by its real path; one another user can write is refused', async () => {

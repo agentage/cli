@@ -37,11 +37,25 @@ describe('npm in a working copy (create, build, up)', () => {
     });
   });
 
-  it('a step past its time is stopped and build_failed says so', async () => {
-    fakeNpm('sleep 5');
+  it('a step past its time gets SIGTERM and build_failed says so', async () => {
+    fakeNpm('exec sleep 5');
     await expect(npmIn(bin, ['ci'], 200)).rejects.toMatchObject({
       code: 'build_failed',
-      message: `npm ci in ${bin} did not finish in 0.2 s; stopped`,
+      message: `npm ci in ${bin} did not finish in 0.2 s; stopped (exited by signal SIGTERM)`,
+    });
+  });
+
+  it('a step that ignores SIGTERM gets SIGKILL after the grace time', async () => {
+    fakeNpm(`trap '' TERM; while :; do sleep 0.05; done`);
+    await expect(npmIn(bin, ['ci'], 200, 300)).rejects.toMatchObject({
+      message: `npm ci in ${bin} did not finish in 0.2 s; stopped (exited by signal SIGKILL)`,
+    });
+  });
+
+  it('a step stopped by another signal names it, never "exited null"', async () => {
+    fakeNpm('kill -INT $$');
+    await expect(npmIn(bin, ['ci'])).rejects.toMatchObject({
+      message: `npm ci in ${bin} exited by signal SIGINT`,
     });
   });
 
