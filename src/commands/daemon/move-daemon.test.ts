@@ -59,15 +59,19 @@ describe('a 0.51.1 config folder through the real daemon run (D6)', () => {
       });
       expect((await get(port, '/api/alpha/echo?msg=hi')).msg).toBe('hey hi');
       expect((await get(port, '/api/beta/echo?msg=hi')).msg).toBe('hi hi');
-      expect(dir.json('settings.json')).toMatchObject({ alpha: { 'echo.prefix': 'hey' } });
+      expect(dir.json('settings.json')).toEqual({
+        alpha: { 'echo.prefix': 'hey' },
+        beta: { 'echo.repeat': 2 },
+      });
       expect(dir.json(MOVE_REPORT)).toMatchObject({
         moved: ['alpha', 'beta', 'devon', 'devoff'],
-        skipped: [
+        skipped: expect.arrayContaining([
+          { entry: 'alpha setting echo.repeat', reason: '"lots" does not fit its type' },
           {
             entry: expect.stringMatching(/unsafe$/),
             reason: expect.stringMatching(/world-writable/),
           },
-        ],
+        ]),
         warning: null,
       });
       expect(dir.exists(MOVED_MARKER)).toBe(true);

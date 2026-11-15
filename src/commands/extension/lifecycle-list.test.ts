@@ -77,6 +77,24 @@ describe('extension update', () => {
     expect(moved).toEqual([{ id: 'probe', from: '0.6.2', to: '0.8.0', updated: true }]);
   });
 
+  test('update deletes the folder of the version it left; a refused change keeps it', async ({
+    dir,
+  }) => {
+    for (const tree of ['probe@0.6.2', 'probe@0.8.0'])
+      dir.write(`extensions/packages/trees/${tree}/.complete`, '');
+    dir.write('installation.json', {
+      host: 'local',
+      extensions: [{ id: 'probe', version: '0.8.0' }],
+    });
+    const refused = listDeps([marketRow('probe', '0.6.2')], { probe: '0.8.0' });
+    vi.mocked(refused.host.change).mockRejectedValueOnce(new Error('START_FAILED'));
+    await output(() => runUpdate({}, refused.deps));
+    expect(dir.list('extensions/packages/trees')).toEqual(['probe@0.6.2', 'probe@0.8.0']);
+    const { deps } = listDeps([marketRow('probe', '0.6.2')], { probe: '0.8.0' });
+    await output(() => runUpdate({}, deps));
+    expect(dir.list('extensions/packages/trees')).toEqual(['probe@0.8.0']);
+  });
+
   test('update <id> changes only that one; --check changes nothing', async () => {
     const { deps, host } = listDeps(rows(), { probe: '0.8.0', notes: '1.1.0' });
     await output(() => runUpdate({ id: 'notes' }, deps));

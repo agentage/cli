@@ -4,6 +4,7 @@ import { scan } from '../../core/loader/scan.js';
 import { NO_MACHINE, readMachine } from '../../core/profile/machine.js';
 import { machinePath } from '../../core/paths.js';
 import { readProfile } from '../../core/profile/profile.js';
+import { movedSettings } from './move-settings.js';
 
 export type Row = Record<string, unknown> & { id: string };
 
@@ -62,7 +63,13 @@ export const movePlan = (): MovePlan => {
   for (const ext of found.found.extensions) {
     const entry = entryOf(ext, off.includes(ext.pkg));
     if ('reason' in entry) plan.skipped.push(entry);
-    else plan.moved.push({ ...entry, settings: { ...config[entry.row.id] } });
+    else {
+      const { settings, dropped } = movedSettings(entry.row.id, ext.dir, {
+        ...config[entry.row.id],
+      });
+      plan.moved.push({ ...entry, settings });
+      plan.skipped.push(...dropped);
+    }
   }
   return plan;
 };

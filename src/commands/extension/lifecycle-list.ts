@@ -1,3 +1,5 @@
+import { prunePackages } from '../../core/installer/package-dir.js';
+import { versionsInUse } from '../../core/loader/installed.js';
 import { type HostRow } from '../../lib/daemon/host-client.js';
 import { CliError, messageOf } from '../../lib/json-output.js';
 import { type Market, type Offered } from '../../lib/net/market.js';
@@ -83,7 +85,9 @@ export const runUpdate = async (opts: ExtensionUpdateOptions, deps: ListDeps) =>
   const host = await deps.host();
   const moves = await movesOf(await marketRows(opts, await host.list()), deps.market());
   for (const { id, from, to } of moves) {
-    if (!opts.check) await host.change(id, { version: to });
+    // The daemon answers once the old child is stopped: its folder can go.
+    if (!opts.check)
+      await host.change(id, { version: to }).then(() => prunePackages(id, versionsInUse(id)));
     console.log(`${id} ${from} to ${to}${opts.check ? ' (available)' : ''}`);
   }
   if (moves.length === 0) console.log('every extension is at its newest version');

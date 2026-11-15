@@ -48,7 +48,11 @@ const devFolders = (): Record<string, string> => {
 // A config folder exactly as cli 0.51.1 leaves it: profile.json, machine.json and the tree.
 export const writeOldConfig = (config: string): void => {
   const extensions = { [name('alpha')]: '^1.0.0', [name('beta')]: '^2.0.0' };
-  const configMap = { alpha: { 'echo.prefix': 'hey' }, beta: { 'echo.repeat': 2 } };
+  // 0.51 kept any value: '2' coerces to the integer 2, 'lots' fits no integer and is dropped.
+  const configMap = {
+    alpha: { 'echo.prefix': 'hey', 'echo.repeat': 'lots' },
+    beta: { 'echo.repeat': '2' },
+  };
   const machines = { m_0000beef: { off: [name('devoff')] } };
   write(join(config, 'profile.json'), { version: 1, extensions, config: configMap, machines });
   const machine = { id: 'm_0000beef', name: 'box', dev: devFolders(), profileSource: 'default' };

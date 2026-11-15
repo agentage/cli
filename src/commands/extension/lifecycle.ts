@@ -2,7 +2,8 @@ import { realpathSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { unsafeDevPath } from '../../core/loader/dev-path.js';
-import { installedExtensions } from '../../core/loader/installed.js';
+import { prunePackages } from '../../core/installer/package-dir.js';
+import { installationRows, versionsInUse } from '../../core/loader/installed.js';
 import { getConfigDir } from '../../lib/fs/config.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type HostClient, type HostSummary } from '../../lib/daemon/host-client.js';
@@ -141,13 +142,15 @@ const peersOf = (dir: string): string[] => {
   return isRecord(peers) ? Object.keys(peers) : [];
 };
 
-// Another installed extension that peer-depends on it would break; --force removes it anyway.
+// Another installed extension (a disabled one too) that peer-depends on it would break.
 const checkDependents = (id: string, force: boolean | undefined): void => {
-  const installed = installedExtensions() ?? [];
-  const target = installed.find((ext) => ext.id === id);
-  const needing = installed.filter((ext) => target && peersOf(ext.dir).includes(target.pkg));
-  if (needing.length === 0 || force) return;
-  const names = needing.map((ext) => ext.id ?? ext.pkg).join(', ');
+  const rows = installationRows();
+  const pkg = rows.find((row) => row.id === id && row.dir !== null);
+  const name = pkg?.dir ? readJson(join(pkg.dir, 'package.json'), isRecord)?.['name'] : null;
+  if (typeof name !== 'string' || force) return;
+  const needing = rows.filter((row) => row.dir !== null && peersOf(row.dir).includes(name));
+  if (needing.length === 0) return;
+  const names = needing.map((row) => row.id).join(', ');
   throw new CliError(
     'needed_by_dependents',
     `${id} is needed by ${names}; remove them first, or --force`
@@ -160,6 +163,7 @@ export const runRemove = async (opts: RemoveOptions, deps: LifecycleDeps & { io:
   const purge = opts.purge === true && (await purgeConfirmed(id, opts, deps.io));
   if (opts.purge && !purge) throw new CliError('confirmation_required', 'nothing removed');
   await (await deps.host()).remove(id, purge);
+  prunePackages(id, versionsInUse(id));
   console.log(`removed ${id}${purge ? ', its data deleted' : ''}`);
   return { id, purged: purge };
 };

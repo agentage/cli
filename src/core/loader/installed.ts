@@ -25,6 +25,26 @@ const settings = (): ConfigMap => {
   );
 };
 
+// The versions of id that installation.json names now.
+export const versionsInUse = (id: string): string[] => {
+  const doc = readJson(installationPath(), isRecord);
+  const rows = Array.isArray(doc?.['extensions']) ? doc['extensions'] : [];
+  return rows.flatMap((row) =>
+    isRecord(row) && row['id'] === id && typeof row['version'] === 'string' ? [row['version']] : []
+  );
+};
+
+// Each row's id and package folder, disabled ones too (null: its version is on no disk here).
+export const installationRows = (): { id: string; dir: string | null }[] => {
+  const doc = readJson(installationPath(), isRecord);
+  const rows = Array.isArray(doc?.['extensions']) ? doc['extensions'] : [];
+  return rows.flatMap((row) =>
+    isRecord(row) && typeof row['id'] === 'string'
+      ? [{ id: row['id'], dir: dirOf(row)?.dir ?? null }]
+      : []
+  );
+};
+
 const discovered = (row: unknown, configs: ConfigMap): DiscoveredExtension[] => {
   const found = isRecord(row) && row['enabled'] !== false ? dirOf(row) : null;
   if (found === null) return [];

@@ -125,9 +125,10 @@ describe('extension disable, enable and remove', () => {
     const manifest = JSON.parse(readFileSync(join(user, 'package.json'), 'utf8'));
     manifest.peerDependencies = { '@agentage/extension-base': '^1' };
     writeFileSync(join(user, 'package.json'), JSON.stringify(manifest));
+    // A disabled dependent counts too.
     const rows = [
       { id: 'base', source: base },
-      { id: 'user', source: user },
+      { id: 'user', source: user, enabled: false },
     ];
     dir.write('installation.json', { host: 'local', extensions: rows });
     const { host, deps } = fakeHost([marketRow('base', '1.0.0'), marketRow('user', '1.0.0')]);
@@ -139,5 +140,20 @@ describe('extension disable, enable and remove', () => {
     expect(host.remove).not.toHaveBeenCalled();
     await output(() => runRemove({ name: 'base', force: true }, { ...deps, io: noTerminal }));
     expect(host.remove).toHaveBeenCalledWith('base', false);
+  });
+
+  test('remove deletes the version folders no entry uses, never the 0.51 tree', async ({ dir }) => {
+    for (const tree of ['probe@0.6.2', 'probe@0.7.0', 'notes@1.0.0'])
+      dir.write(`extensions/packages/trees/${tree}/.complete`, '');
+    dir.write('extensions/trees/old/node_modules/@agentage/extension-probe/package.json', {});
+    // As the daemon leaves it after DELETE: probe is gone, notes stays.
+    dir.write('installation.json', {
+      host: 'local',
+      extensions: [{ id: 'notes', version: '1.0.0' }],
+    });
+    const { deps } = fakeHost([marketRow('probe', '0.7.0'), marketRow('notes', '1.0.0')]);
+    await output(() => runRemove({ name: 'probe' }, { ...deps, io: noTerminal }));
+    expect(dir.list('extensions/packages/trees')).toEqual(['notes@1.0.0']);
+    expect(dir.exists('extensions/trees/old/node_modules/@agentage/extension-probe')).toBe(true);
   });
 });
