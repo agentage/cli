@@ -61,13 +61,14 @@ describe('the daemon installer', () => {
     await expect(none.install({ id: 'nosuch' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
+  const RESTART = ', then agentage daemon restart (the daemon reads the site at its start)';
   test.each([
-    ['no_discovery', 'NO_DISCOVERY'],
-    ['no_market', 'NO_MARKET'],
-    ['market_unreachable', 'MARKET_UNREACHABLE'],
-    ['market_failed', 'MARKET_FAILED'],
-    ['market_timeout', 'MARKET_TIMEOUT'],
-  ] as const)('a market that fails with %s, no version given: %s 502', async (why, code) => {
+    ['no_discovery', 'NO_DISCOVERY', RESTART],
+    ['no_market', 'NO_MARKET', RESTART],
+    ['market_unreachable', 'MARKET_UNREACHABLE', ''],
+    ['market_failed', 'MARKET_FAILED', ''],
+    ['market_timeout', 'MARKET_TIMEOUT', ''],
+  ] as const)('a market that fails with %s, no version given: %s 502', async (why, code, hint) => {
     const reason = new CliError(why, 'agentage.io has no extension market: the reason');
     const { install, npm } = await installer({
       latest: vi.fn(async () => null),
@@ -76,8 +77,7 @@ describe('the daemon installer', () => {
     const err = await install({ id: 'probe' }).catch((e: unknown) => e);
     expect(err).toMatchObject({ code, status: 502 });
     expect((err as Error).message).toBe(
-      'probe: agentage.io has no extension market: the reason, ' +
-        'then agentage daemon restart (the daemon reads the site at its start)'
+      `probe: agentage.io has no extension market: the reason${hint}`
     );
     expect(npm).not.toHaveBeenCalled();
   });

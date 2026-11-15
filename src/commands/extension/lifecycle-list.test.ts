@@ -1,6 +1,6 @@
 import { describe, expect, vi } from 'vitest';
-import { CliError } from '../../lib/json-output.js';
-import { type Market } from '../../lib/net/market.js';
+import { CliError, WithMeta } from '../../lib/json-output.js';
+import { type Listing, type Market } from '../../lib/net/market.js';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost, marketRow } from '../../test/host.js';
 import { runList, runUpdate, table } from './lifecycle-list.js';
@@ -14,7 +14,8 @@ const market = (latest: Record<string, string>, down = false): Market => ({
 
 const listDeps = (rows = [marketRow('probe', '0.6.2')], latest: Record<string, string> = {}) => {
   const fake = fakeHost(rows);
-  const available = vi.fn(async () => [{ id: 'notes', version: '1.2.0' }]);
+  const listing: Listing = { offered: [{ id: 'notes', version: '1.2.0' }], skipped: [] };
+  const available = vi.fn(async () => listing);
   return { ...fake, deps: { ...fake.deps, available, market: () => market(latest) } };
 };
 
@@ -48,10 +49,22 @@ describe('extension list', () => {
     deps.available.mockRejectedValueOnce(NO_MARKET);
     const down = await output(() => runList({ available: true }, deps));
     expect(down).toMatchObject({ code: 'no_market', error: NO_MARKET.message });
-    deps.available.mockResolvedValueOnce([]);
+    deps.available.mockResolvedValueOnce({ offered: [], skipped: [] });
     expect((await output(() => runList({ available: true }, deps))).lines).toEqual([
       'the market lists nothing',
     ]);
+  });
+
+  test('--available lists the rows it could read; the skipped ones go to stderr and meta', async () => {
+    const { deps } = listDeps();
+    const skipped = [{ id: 'bad', reason: 'https://m/api/v1/extensions/bad/latest answered 503' }];
+    deps.available.mockResolvedValueOnce({ offered: [{ id: 'notes', version: '1.2.0' }], skipped });
+    let got: unknown;
+    const run = await output(async () => (got = await runList({ available: true }, deps)));
+    expect(run.code).toBeNull();
+    expect(run.lines).toEqual(['ID     VERSION', 'notes  1.2.0']);
+    expect(run.stderr).toBe(`skipped bad (${skipped[0]?.reason})`);
+    expect(got).toEqual(new WithMeta([{ id: 'notes', version: '1.2.0' }], { skipped }));
   });
 
   test('table pads every column but the last', () => {

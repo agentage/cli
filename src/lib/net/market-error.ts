@@ -14,6 +14,10 @@ export const noDiscovery = (fqdn: string, url: string, why: string): CliError =>
 export const noMarket = (fqdn: string, url: string): CliError =>
   marketError('no_market', `${fqdn} has no extension market: ${url} names none; ${CHOOSE}`);
 
+// An answer, but not the discovery document: the network, not the site, may be the cause.
+export const notTheDocument = (url: string, why: string): CliError =>
+  marketError('market_unreachable', `${url} ${why}: not the discovery document; check the network`);
+
 export const isTimeout = (err: unknown): boolean =>
   err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
 

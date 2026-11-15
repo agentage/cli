@@ -137,20 +137,44 @@ describe('listMarket: extension list --available', () => {
       [`${LIST}&cursor=c%202`]: doc({ success: true, data: [row('probe'), row('gone')] }),
       [LATEST]: doc(entry),
     });
-    expect(await listMarket('next.agentage.io', get)).toEqual([
-      { id: 'notes', version: '1.2.0' },
-      { id: 'probe', version: '0.3.0' },
-    ]);
+    expect(await listMarket('next.agentage.io', get)).toEqual({
+      offered: [
+        { id: 'notes', version: '1.2.0' },
+        { id: 'probe', version: '0.3.0' },
+      ],
+      skipped: [{ id: 'gone', reason: 'the market has no version of it' }],
+    });
   });
 
-  it('a row whose /latest fails fails the listing, never drops the row', async () => {
-    const get = serving({
-      [DISCOVERY]: doc(named),
-      [LIST]: doc({ success: true, data: [row('notes', '1.2.0'), row('probe')] }),
-      [LATEST]: doc({}, 503),
+  it('a row whose /latest fails or answers a bad entry is skipped with its reason; the rest list', async () => {
+    const bad = { data: { id: 'evil', version: '1.0.0', package: 'left-pad' } };
+    const get = vi.fn(
+      serving({
+        [DISCOVERY]: doc(named),
+        [LIST]: doc({ success: true, data: [row('notes', '1.2.0'), row('probe'), row('evil')] }),
+        [LATEST]: doc({}, 503),
+        'https://market.test/api/v1/extensions/evil/latest': doc(bad),
+      })
+    );
+    expect(await listMarket('next.agentage.io', get)).toEqual({
+      offered: [{ id: 'notes', version: '1.2.0' }],
+      skipped: [
+        { id: 'probe', reason: `${LATEST} answered 503` },
+        {
+          id: 'evil',
+          reason:
+            'market answer refused for evil: package "left-pad" is not an extension of that id',
+        },
+      ],
     });
+    expect(get.mock.calls.filter(([url]) => url === DISCOVERY)).toHaveLength(1);
+  });
+
+  it('a list call that fails fails the listing', async () => {
+    const get = serving({ [DISCOVERY]: doc(named), [LIST]: doc({}, 502) });
     await expect(listMarket('next.agentage.io', get)).rejects.toMatchObject({
       code: 'market_failed',
+      message: `${LIST} answered 502`,
     });
   });
 

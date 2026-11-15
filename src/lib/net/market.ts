@@ -7,6 +7,7 @@ import {
   marketError,
   noDiscovery,
   noMarket,
+  notTheDocument,
   unreached,
 } from './market-error.js';
 import { links, siteFqdn } from './origins.js';
@@ -50,14 +51,19 @@ const json = async (get: Get, url: string): Promise<Record<string, unknown> | nu
   return isRecord(body) ? body : null;
 };
 
-// The site's discovery document: 404 (or any 3xx, 4xx) means the site has none; 5xx is a failure.
+// Only the site's own 404 means it has none. A redirect or a page that is no JSON object (a
+// network's sign-in page) is not the site's answer; another status is a failure.
 const discovery = async (fqdn: string, get: Get): Promise<Record<string, unknown>> => {
   const url = `${links(fqdn).site}/.well-known/agentage.json`;
   const res = await fetched(get, url);
-  if (res.status >= 500) throw answered(url, res.status);
-  if (!res.ok) throw noDiscovery(fqdn, url, `answered ${res.status}`);
+  if (res.status === 404) throw noDiscovery(fqdn, url, 'answered 404');
+  if (res.status >= 300 && res.status < 400) {
+    const to = res.headers.get('location') ?? 'no Location';
+    throw notTheDocument(url, `answered ${res.status} to ${to}`);
+  }
+  if (!res.ok) throw answered(url, res.status);
   const doc = await res.json().catch(() => null);
-  if (!isRecord(doc)) throw noDiscovery(fqdn, url, 'is not a JSON object');
+  if (!isRecord(doc)) throw notTheDocument(url, `answered ${res.status} with no JSON object`);
   return doc;
 };
 
@@ -84,8 +90,8 @@ const accept = (id: string, { version, package: pkg }: Record<string, unknown>):
 };
 
 // Never throws for a missing or silent market: it answers null and `down` keeps the first reason.
-export const openMarket = (fqdn: string = siteFqdn(), get: Get = timed): Market => {
-  let base: Promise<string> | undefined;
+export const openMarket = (fqdn: string = siteFqdn(), get: Get = timed, known?: string): Market => {
+  let base: Promise<string> | undefined = known === undefined ? undefined : Promise.resolve(known);
   let failure: CliError | null = null;
   const latest = async (id: string): Promise<Latest | null> => {
     let data: unknown;
@@ -108,6 +114,8 @@ export interface Offered {
 }
 
 const PAGE = 200;
+// /latest calls in flight at once while listing.
+const AT_ONCE = 8;
 
 // A market that repeats its cursor would page for ever; past this the listing stops.
 export const MAX_PAGES = 20;
@@ -127,22 +135,44 @@ const pages = async (get: Get, url: string, cursor?: string, page = 1): Promise<
   return next && data.length > 0 ? [...data, ...(await pages(get, url, next, page + 1))] : data;
 };
 
+export interface Skipped {
+  id: string;
+  reason: string;
+}
+
+export interface Listing {
+  offered: Offered[];
+  skipped: Skipped[];
+}
+
 // A row without an exact version (the market of today lists none) asks /latest for it.
-const offered = async (row: unknown, market: Market): Promise<Offered | null> => {
+const offered = async (row: unknown, market: Market): Promise<Offered | Skipped | null> => {
   if (!isRecord(row) || typeof row['id'] !== 'string') return null;
-  const listed = typeof row['version'] === 'string' && EXACT.test(row['version']);
-  const version = listed ? String(row['version']) : (await market.latest(row['id']))?.version;
-  return version ? { id: row['id'], version } : null;
+  const id = row['id'];
+  if (typeof row['version'] === 'string' && EXACT.test(row['version']))
+    return { id, version: row['version'] };
+  try {
+    const version = (await market.latest(id))?.version;
+    const down = market.down();
+    if (down) return { id, reason: down.message };
+    return version ? { id, version } : { id, reason: 'the market has no version of it' };
+  } catch (err) {
+    return { id, reason: messageOf(err) };
+  }
 };
 
-// `extension list --available`: each listed id with its newest version; throws on no answer.
-export const listMarket = async (fqdn: string = siteFqdn(), get: Get = timed) => {
+// `extension list --available`: each listed id with its newest version. Only a failed list call
+// fails it; a row that cannot be read is skipped with its reason.
+export const listMarket = async (fqdn: string = siteFqdn(), get: Get = timed): Promise<Listing> => {
   const base = await marketUrl(fqdn, get);
   const rows = await pages(get, `${base}/api/v1/extensions`);
-  const market = openMarket(fqdn, get);
-  const found = await Promise.all(rows.map((row) => offered(row, market)));
-  // A row whose /latest failed is not dropped in silence: the listing fails with the reason.
-  const down = market.down();
-  if (down) throw down;
-  return found.filter((row): row is Offered => row !== null);
+  const found: (Offered | Skipped | null)[] = [];
+  for (let i = 0; i < rows.length; i += AT_ONCE) {
+    const batch = rows.slice(i, i + AT_ONCE);
+    found.push(...(await Promise.all(batch.map((r) => offered(r, openMarket(fqdn, get, base))))));
+  }
+  const listing: Listing = { offered: [], skipped: [] };
+  for (const row of found)
+    if (row) 'version' in row ? listing.offered.push(row) : listing.skipped.push(row);
+  return listing;
 };

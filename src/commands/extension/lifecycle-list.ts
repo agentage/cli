@@ -1,6 +1,6 @@
 import { type HostRow } from '../../lib/daemon/host-client.js';
-import { CliError } from '../../lib/json-output.js';
-import { type Market, type Offered } from '../../lib/net/market.js';
+import { CliError, WithMeta } from '../../lib/json-output.js';
+import { type Listing, type Market } from '../../lib/net/market.js';
 import { pruneUnused, type LifecycleDeps } from './lifecycle.js';
 
 export interface ListOptions {
@@ -15,7 +15,7 @@ export interface ExtensionUpdateOptions {
 }
 
 export interface ListDeps extends LifecycleDeps {
-  available: () => Promise<Offered[]>;
+  available: () => Promise<Listing>;
   market: () => Market;
 }
 
@@ -39,11 +39,14 @@ const printRows = (rows: HostRow[]): void => {
   for (const line of rows.length > 0 ? lines : ['no extensions']) console.log(line);
 };
 
-const available = async (deps: ListDeps): Promise<Offered[]> => {
-  const offered = await deps.available();
+// A row the market cannot answer for is left out and named on stderr; the others are listed.
+const available = async (deps: ListDeps): Promise<WithMeta> => {
+  const { offered, skipped } = await deps.available();
   const lines = table([['ID', 'VERSION'], ...offered.map((o) => [o.id, o.version])]);
   for (const line of offered.length > 0 ? lines : ['the market lists nothing']) console.log(line);
-  return offered;
+  if (skipped.length > 0)
+    console.error(`skipped ${skipped.map((s) => `${s.id} (${s.reason})`).join(', ')}`);
+  return new WithMeta(offered, { skipped });
 };
 
 export const runList = async (opts: ListOptions, deps: ListDeps) => {

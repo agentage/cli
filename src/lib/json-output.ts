@@ -101,6 +101,21 @@ export interface Failure {
   shown: boolean;
 }
 
+// A command's answer with `meta` beside `data` in the --json envelope.
+export class WithMeta {
+  constructor(
+    readonly data: unknown,
+    readonly meta: Record<string, unknown>
+  ) {}
+}
+
+const envelope = (data: unknown): string =>
+  JSON.stringify(
+    data instanceof WithMeta
+      ? { success: true, data: data.data, meta: data.meta }
+      : { success: true, data }
+  );
+
 let active = false;
 
 // True inside a --json run: nothing may prompt.
@@ -159,7 +174,7 @@ export const runJson = async (
       data = (await run()) ?? null;
     });
     if (failure) return failureOf(io, failure, log.wrote());
-    if (!legacy) io.writeOut(`${JSON.stringify({ success: true, data })}\n`);
+    if (!legacy) io.writeOut(`${envelope(data)}\n`);
     return null;
   } finally {
     log.restore();

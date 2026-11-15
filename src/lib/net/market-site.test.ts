@@ -54,6 +54,25 @@ describe('a site and its market, over a real socket: one code per way it fails',
     );
   });
 
+  it('a redirect or a sign-in page (200, HTML) is market_unreachable, not "no market"', async () => {
+    const portal = await serve((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html' }).end('<html>sign in to the wifi</html>');
+    });
+    const redirect = await serve((_req, res) => {
+      res.writeHead(302, { location: `http://127.0.0.1:${portal}/login` }).end();
+    });
+    for (const [port, why] of [
+      [portal, 'answered 200 with no JSON object'],
+      [redirect, `answered 302 to http://127.0.0.1:${portal}/login`],
+    ] as const) {
+      const url = `http://127.0.0.1:${port}/.well-known/agentage.json`;
+      await expect(listMarket(`127.0.0.1:${port}`)).rejects.toMatchObject({
+        code: 'market_unreachable',
+        message: `${url} ${why}: not the discovery document; check the network`,
+      });
+    }
+  });
+
   it('a discovery document that names no market', async () => {
     const fqdn = `127.0.0.1:${await site({ platform: 'http://p.test' })}`;
     const err = await listMarket(fqdn).catch((e: unknown) => e);

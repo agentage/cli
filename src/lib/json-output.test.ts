@@ -12,6 +12,7 @@ import {
   isJsonRun,
   messageOf,
   runJson,
+  WithMeta,
 } from './json-output.js';
 
 const REFERENCE = join(import.meta.dirname, '..', '..', 'docs', 'reference.md');
@@ -77,6 +78,17 @@ describe('expected failures of the system', () => {
 });
 
 describe('runJson', () => {
+  it('WithMeta puts meta beside data, the envelope stays', async () => {
+    const out: string[] = [];
+    const answer = new WithMeta([{ id: 'a' }], { skipped: [{ id: 'b', reason: 'r' }] });
+    await runJson({ writeOut: (t) => void out.push(t) }, async () => answer);
+    expect(JSON.parse(out.join(''))).toEqual({
+      success: true,
+      data: [{ id: 'a' }],
+      meta: { skipped: [{ id: 'b', reason: 'r' }] },
+    });
+  });
+
   it('marks the run as json while it runs and writes the success envelope', async () => {
     const out: string[] = [];
     let during = false;
