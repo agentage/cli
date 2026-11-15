@@ -10,16 +10,26 @@ const STEP_MS = 600_000;
 
 export type Npm = (dir: string, args: string[]) => Promise<void>;
 
+const failed = (what: string, why: string): CliError =>
+  new CliError('build_failed', `${what} ${why}`);
+
 // npm's own output goes to stderr, so a --json stdout stays one object.
-export const npmIn: Npm = (dir, args) =>
+export const npmIn = (dir: string, args: string[], timeoutMs = STEP_MS): Promise<void> =>
   new Promise((done, fail) => {
+    const what = `npm ${args.join(' ')} in ${dir}`;
     const child = spawn('npm', args, { cwd: dir, env: childEnv(), stdio: ['ignore', 2, 2] });
-    const timer = setTimeout(() => child.kill('SIGTERM'), STEP_MS);
-    child.once('error', (err) => (clearTimeout(timer), fail(err)));
+    let late = false;
+    const timer = setTimeout(() => ((late = true), child.kill('SIGTERM')), timeoutMs);
+    child.once(
+      'error',
+      (err) => (clearTimeout(timer), fail(failed(what, `did not start: ${err.message}`)))
+    );
     child.once('exit', (code) => {
       clearTimeout(timer);
       if (code === 0) return done();
-      fail(new CliError('build_failed', `npm ${args.join(' ')} in ${dir} exited ${code}`));
+      fail(
+        failed(what, late ? `did not finish in ${timeoutMs / 1000} s; stopped` : `exited ${code}`)
+      );
     });
   });
 

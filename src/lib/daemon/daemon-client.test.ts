@@ -6,6 +6,7 @@ import { test } from '../../test/config-dir.js';
 import { VERSION } from '../../utils/version.js';
 import {
   daemonLogPath,
+  defaultEnsureDeps,
   ensureDaemon,
   openDaemonLog,
   restartIfRunning,
@@ -48,6 +49,14 @@ describe('the daemon start', () => {
       expect(d.spawn).toHaveBeenCalledWith(4555);
       expect(d.log).toHaveBeenCalledWith('daemon started on 127.0.0.1:4555');
     }
+  });
+
+  test('the started line goes to stderr: a command that fails after it is not a half success on stdout', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    defaultEnsureDeps.log('daemon started on 127.0.0.1:4555');
+    expect(error).toHaveBeenCalledWith('daemon started on 127.0.0.1:4555');
+    expect(log).not.toHaveBeenCalled();
   });
 
   test('a live pid whose port refuses: a reused pid, the file goes, nothing signalled, one spawns', async ({

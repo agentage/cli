@@ -53,10 +53,13 @@ plain `setup` installs nothing and prints
 so an extension you removed does not come back. An `extension install` before the first `setup`
 does not block it. `setup --profile <file>` is an explicit ask and is never gated: it installs
 each entry of the file that is not installed yet. Either way, an entry already in
-`installation.json` is left as it is (`<id> already installed`). Each `@agentage/extension-<id>`
-entry goes to the daemon by id (`POST /host/extensions`, as `extension install <id>` sends it):
-an exact version as it is, a range at the market's newest version. An entry this machine's
-profile turns `off` is installed, then disabled. The daemon runs it; `setup` loads no extension
+`installation.json` is left as it is (`<id> already installed`, on the daemon's `CONFLICT`
+answer). Each `@agentage/extension-<id>` entry goes to the daemon by id
+(`POST /host/extensions`, as `extension install <id>` sends it): an exact version as it is, a
+range at the market's newest version; any other package is `<name>: not an extension, skipped`.
+An entry this machine's profile turns `off` is installed disabled in one step when the kit lists
+the capability `installDisabled` (`enabled: false` on the add); else it is installed, then
+disabled, and a disable that fails is reported as `installed but NOT disabled`. The daemon runs it; `setup` loads no extension
 itself, and nothing else installs. A failed entry is reported and does not stop the others;
 `setup` then exits 1 (`extension_failed`) naming each. With the daemon off (`--no-daemon`,
 `AGENTAGE_NO_DAEMON=1`) it prints `extensions the daemon is off, nothing installed` and writes no
@@ -118,20 +121,30 @@ stderr. `setup --profile` registers nothing.
 | `add`       | `+ add <name> <range>`                      | in the profile, not installed: setup installs it              |
 | `off`       | `o off <name> <range> (installed disabled)` | the same, turned off on this machine: installed disabled      |
 | `unchanged` | (not printed)                               | installed already (or the account profile was installed here) |
+| (skipped)   | `- <name>: not an extension, skipped`       | no `@agentage/extension-` prefix: the daemon can never install it |
 
-`update` and `remove` stay in the summary and are always 0: setup changes no installed entry.
+`update` and `remove` stay in the summary and are always 0: setup changes no installed entry. A
+skipped entry is not a change, so it never fails `--check`; plain `setup` prints the same line and
+installs the others.
 
 ```
 dry run    nothing written
 registry   default    https://registry.npmjs.org
 + add @agentage/extension-notes ^1
 plan: 1 to add, 0 off, 2 already installed
+from       profile.json on this machine; plain setup installs your account profile
 ```
+
+The last line names the profile the plan is of: the `--profile` file, `profile.json`, or the
+built-in default profile when there is no `profile.json`. Plain `setup`, signed in, installs the
+profile of your account instead, which `--check` does not read.
 
 `--check` prints the same lines without the header and exits 1 when anything would be installed
 (`not converged: 1 to add, 1 to install disabled`) or when `machine.json` is missing (it is read,
-never created); else 0. It writes nothing. With `--json`, both print the plan object, `--check`
-adding `problems`; the shape is the one of 0.51, `current` is `"installed"` or `null`:
+never created) or does not parse (`machine.json: invalid, fix or delete it`); else 0. It writes
+nothing. With `--json`, both print the plan object, `--check` adding `problems`; the shape is the
+one of 0.51 plus `skipped` (the names) and `source` (the profile it is of); `current` is
+`"installed"` or `null`:
 
 ```json
 {
@@ -139,7 +152,9 @@ adding `problems`; the shape is the one of 0.51, `current` is `"installed"` or `
     { "verb": "add", "name": "@agentage/extension-notes", "wanted": "^1", "current": null }
   ],
   "summary": { "add": 1, "update": 0, "remove": 0, "off": 0, "unchanged": 0 },
-  "problems": []
+  "skipped": [],
+  "problems": [],
+  "source": "profile.json"
 }
 ```
 
@@ -355,8 +370,11 @@ the daemon log and in `daemon status` (`move skipped <entry>: <reason>`). Secret
 does not declare, is dropped and listed (`move skipped <id> setting <key>: ...`), so the extension
 still starts. An extension that declares no settings keeps its values as they are.
 
-The marker `installation.moved` is written once every entry is moved or skipped; with it the move
-never runs again. An invalid `profile.json` or `machine.json` moves nothing and writes no marker:
+The move writes `installation.json` and `settings.json` under the daemon's own lock
+(`<file>.lock`), so a daemon that serves already never loses a write to it. The marker
+`installation.moved` is written once every entry is moved or skipped; with it the move
+never runs again. An invalid `profile.json` or `machine.json`, or an `installation.json` or
+`settings.json` that does not parse, moves nothing and writes no marker:
 the daemon still starts, `daemon status` shows `move: <file> is invalid ...`, and the next start
 after you fix the file moves it. A stop half way loses nothing: an id already in
 `installation.json` keeps its row, and the next start adds the rest. The old files stay as they
@@ -616,7 +634,9 @@ runs each installed extension as a child process and serves `/api/{id}/*`, `/hea
 A daemon counts as this machine's daemon only with proof: `/health` on the port of
 `<config>/daemon.json` answers `service: "agentage-daemon"` with the same `pid` as the file.
 Requests go only to a proven daemon, and `stop` signals only a proven pid (SIGTERM, then SIGKILL
-after 30 s). The command reads `daemon.json` and then:
+after 30 s); `stop` says `stopped` only once the pid is gone, and a pid that outlives SIGKILL by
+5 s is `stop_failed` naming the pid, with `daemon.json` kept. A pid in `daemon.json` must be an
+integer above 1. The command reads `daemon.json` and then:
 
 | Found                                                        | What happens                                                                                                                          |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -630,7 +650,10 @@ after 30 s). The command reads `daemon.json` and then:
 A start that waits over 3 s, and a stop that waits over 3 s, print one line on stderr (never on
 stdout, so `--json` stays one object). A start that times out checks `daemon.json` and `/health`
 once more and uses a proven daemon found there; else it fails with `daemon_unavailable`, naming
-`agentage daemon status` and the log path. `agentage update` restarts a running daemon after the install. `AGENTAGE_NO_DAEMON=1` makes
+`agentage daemon status` and the log path. A command that starts the daemon prints
+`daemon started on 127.0.0.1:<port>` on stderr; when the command then fails (a refused install,
+no market), the daemon keeps running, as the service it is, and the failure is the last line and
+the exit code. `agentage update` restarts a running daemon after the install. `AGENTAGE_NO_DAEMON=1` makes
 every command that needs the daemon fail with `daemon_disabled`; nothing starts.
 The daemon writes its output, and each extension's, to `<config>/logs/daemon.log`; at each start
 a log over 5 MB moves to `daemon.log.1` (one old file is kept). A daemon that cannot bind its port

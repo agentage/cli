@@ -1,4 +1,7 @@
-import { CliError, isJsonRun } from '../../lib/json-output.js';
+import { join } from 'node:path';
+import { installationRows } from '../../core/loader/installed.js';
+import { isRecord, readJson } from '../../lib/fs/json-file.js';
+import { CliError, DaemonError, isJsonRun } from '../../lib/json-output.js';
 import { report, specOf, type ConfirmIo, type LifecycleDeps } from './lifecycle.js';
 
 export interface ConfigureOptions {
@@ -81,6 +84,28 @@ const valuesOf = async (opts: ConfigureOptions, input: SecretInput) => {
   return values;
 };
 
+// The keys the installed package declares (null: its folder is not on this disk).
+const declaredOf = (id: string): string[] | null => {
+  const dir = installationRows().find((row) => row.id === id)?.dir;
+  if (!dir) return null;
+  const agentage = readJson(join(dir, 'package.json'), isRecord)?.['agentage'];
+  const settings = isRecord(agentage) ? agentage['settings'] : undefined;
+  return Object.keys(isRecord(settings) ? settings : {});
+};
+
+// The daemon names the key it refused; the answer adds the keys the extension does declare.
+const withDeclared = (id: string, err: unknown): unknown => {
+  if (!(err instanceof DaemonError) || !/not declared/.test(err.message)) return err;
+  const keys = declaredOf(id);
+  const tail =
+    keys === null
+      ? 'see agentage.settings in its package.json'
+      : keys.length > 0
+        ? `${id} declares: ${keys.join(', ')}`
+        : `${id} declares no settings`;
+  return new DaemonError(err.code, `${err.message}; ${tail}`);
+};
+
 // The daemon starts a new child with the values, then moves the route: no request is lost.
 export const runConfigure = async (
   opts: ConfigureOptions,
@@ -89,7 +114,10 @@ export const runConfigure = async (
   const { id } = specOf(opts.id);
   const values = await valuesOf(opts, deps.input);
   const patch = opts.secret ? { secrets: values } : { settings: values };
-  const done = report(await (await deps.host()).change(id, patch));
+  const changed = (await deps.host()).change(id, patch).catch((err: unknown) => {
+    throw withDeclared(id, err);
+  });
+  const done = report(await changed);
   const keys = Object.keys(values);
   console.log(`${opts.secret ? 'secrets' : 'settings'} set: ${keys.join(', ')}`);
   return { ...done, keys };
