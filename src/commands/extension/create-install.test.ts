@@ -35,6 +35,10 @@ const deps = (conforms = true, answers = [404, 200]) => {
     build: async (dir) => ({ dir, built: true, contracts: [], report: report(conforms) }),
     daemon: async () => ({ port: 4555, host: daemon.host }),
     fetch: fetcher as unknown as typeof fetch,
+    tool: async () =>
+      ({
+        checkLines: () => ['stack: kit 0.13.0 is outside engines.agentage ^0.12'],
+      }) as unknown as KitTool,
   };
   return { all, npm, daemon, fetcher };
 };
@@ -83,6 +87,7 @@ describe('extension create: npm ci, the build, then the daemon runs the folder',
     const { all, daemon } = deps(false);
     const run = await output(() => installCreated(dir.at('demo'), true, all));
     expect(run).toMatchObject({ code: 'not_conforming' });
+    expect(run.stderr).toContain('check     stack: kit 0.13.0 is outside engines.agentage ^0.12');
     expect(daemon.host.add).not.toHaveBeenCalled();
   });
 });

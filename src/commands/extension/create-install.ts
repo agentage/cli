@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { CliError } from '../../lib/json-output.js';
+import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { report, summaryOf } from './lifecycle.js';
 import { buildPackage, npmIn, type Npm, type PackageBuild } from './package-build.js';
 
@@ -11,6 +12,7 @@ export interface CreateInstallDeps {
   build: (dir: string) => Promise<PackageBuild>;
   daemon: () => Promise<{ port: number; host: HostClient }>;
   fetch: typeof fetch;
+  tool: LoadKitTool;
 }
 
 export const createInstallDeps: CreateInstallDeps = {
@@ -21,6 +23,7 @@ export const createInstallDeps: CreateInstallDeps = {
     return { port, host: hostClient(port) };
   },
   fetch: (...args) => fetch(...args),
+  tool: loadKitTool,
 };
 
 interface Operation {
@@ -52,10 +55,12 @@ const answering = async (deps: CreateInstallDeps, port: number, dir: string) => 
   return null;
 };
 
+// The check's problem lines go to stderr, then the command fails naming the folder.
 const conforms = async (dir: string, deps: CreateInstallDeps): Promise<void> => {
   const { report: checked } = await deps.build(dir);
-  if (!checked.conforms)
-    throw new CliError('not_conforming', `${dir} does not conform: agentage extension check`);
+  if (checked.conforms) return;
+  for (const text of (await deps.tool()).checkLines(checked)) console.error(`check     ${text}`);
+  throw new CliError('not_conforming', `${dir} does not conform: agentage extension check`);
 };
 
 // After the scaffold: npm ci, the package build, then the daemon runs the folder (POST {source}).
