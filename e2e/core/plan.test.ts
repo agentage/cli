@@ -40,9 +40,10 @@ test.describe('agentage setup --dry-run @p0 @offline', () => {
     const before = cli.snapshot();
     const run = await cli.run('setup --dry-run');
     expect(run.code).toBe(0);
-    expect(run.lines.slice(-3)).toEqual([
+    expect(run.lines.slice(-4)).toEqual([
       `+ add ${B} 2.0.0`,
       'plan: 1 to add, 0 off, 1 already installed',
+      'from       profile.json on this machine; plain setup installs your account profile',
       '',
     ]);
     expect(cli.snapshot()).toEqual(before);
@@ -70,6 +71,7 @@ test.describe('agentage setup --check @p0 @offline', () => {
     expect(run.lines).toEqual([
       `+ add ${B} 2.0.0`,
       'plan: 1 to add, 0 off, 1 already installed',
+      'from       profile.json on this machine; plain setup installs your account profile',
       '',
     ]);
     expect(run.stderr).toContain('not converged: 1 to add');
@@ -89,7 +91,11 @@ test.describe('agentage setup --check @p0 @offline', () => {
     });
     const run = await cli.run('setup --check');
     expect(run.code).toBe(0);
-    expect(run.lines).toEqual(['plan: nothing to change', '']);
+    expect(run.lines).toEqual([
+      'plan: nothing to change',
+      'from       profile.json on this machine; plain setup installs your account profile',
+      '',
+    ]);
   });
 
   test('agentage setup --check on a new machine reports "machine.json: missing", exits 1 and creates nothing', async ({
