@@ -54,7 +54,7 @@ Each row names the doc first, then the code that proves it. Read the doc before 
     loaded with `register`. The kit's `checkCli` checks it and its `runCommand` runs
     `agentage {command}` and `agentage {id} {command}`. Its exit code is the CLI's.
 - **Verbs:** a verb that a core command, an extension id or an earlier install has stays
-  namespaced. `commands.json` keeps who holds each verb.
+  namespaced. `commands.json`, written by cli 0.51, keeps who held each verb; nothing writes it now.
 - **Versions (profile path):** without a range, `setup` pins the newest release whose
   `engines.agentage` fits `EXTENSION_API_VERSION`. After a successful install only the tree that
   `extensions/current` names is kept.
@@ -97,8 +97,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   - `sync.ts` holds the account check and the edit helpers the profile path still uses.
   - `account.ts` is the account dependency. `signedInAccount` does a bearer fetch to the API
     origin plus the account id from introspection, and gives null when signed out.
-  - `secrets-prompt.ts` asks for or lists missing secrets; `isTTY`/`prompt` are its only injected
-    dependencies. `delegate.ts` registers one stub per contributed command and hands it to the
+  - `configure.ts` is `extension configure`; a bare `--secret` key reads stdin or a hidden
+    prompt (`readHidden`). `delegate.ts` registers one stub per contributed command and hands it to the
     extension.
   - `build.ts` is `extension check` (`--write` over the kit's `writeContracts`) and
     `extension build`: with no flag the package (`package-build.ts`: build script, contracts,
@@ -110,7 +110,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   - `release.ts` is `extension release`: preflight, guard, `build --push`, the release asset, npm
     publish or stage. It sits over `release-guard.ts`, the guard and the bounded `execIn`
     injected dependency.
-  - `up.ts` is `extension up`, `down` and `token`. Plain `up` is `up-run.ts`: the kit's
+  - `up.ts` is `extension up`, `down` and `token` (registered in `up-commands.ts`, as the
+    lifecycle commands are in `lifecycle-commands.ts`). Plain `up` is `up-run.ts`: the kit's
     `hostExtension` in this process on the first free port from 4244, its record in the folder's
     `.agentage/up.json` (`up-local.ts`, which `down` proves by `/health` before it signals);
     `--docker` and the Docker part of `down` go to the kit. `stack-owner.ts` lets `token`
@@ -124,7 +125,11 @@ Each row names the doc first, then the code that proves it. Read the doc before 
 - `src/lib/` - shared library, grouped by domain:
   - `daemon/` - the daemon client, HTTP only: `daemon-file.ts` (`daemon.json`, the port),
     `daemon-client.ts` (`ensureDaemon`: stale file, detached spawn, health wait),
-    `daemon-stop.ts`, `host-client.ts` (the `/host/extensions` routes, error code mapping)
+    `daemon-stop.ts`, `host-client.ts` (the `/host/extensions` routes; the daemon's code as a
+    `DaemonError`)
+  - `json-output.ts` - the `--json` envelope, `CliError` and `CODES`, the one list of error codes
+    (a test keeps it equal to `docs/reference.md`); `wait.ts` - `sleep` and the one poll loop;
+    `child-env.ts` - the token-free env of every process the cli starts
   - `auth/` - oauth (DCR + PKCE), callback-server (one-shot localhost), api (`authedFetch`:
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,
     `signIn`, `signOut`), credentials (PAT), env-match
@@ -147,8 +152,7 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   - `kit-version.ts` - the kit's version read from its `package.json`, so startup never imports
     the kit
   - `loader/` - reading without running: `scan.ts` (profile + machine + manifests -> static states,
-    the plan, rows to remove, integrity drift and the load set; or of a tree that is not current
-    yet, for `setup --latest`), `discover.ts`, `dev-path.ts` (a dev
+    the plan, rows to remove, integrity drift and the load set), `discover.ts`, `dev-path.ts` (a dev
     folder another user can write is invalid), `manifest.ts` (both kinds; `kit-manifest.ts` reads the kit-shaped block), `verbs.ts` (who
     runs each top-level verb: `claimVerbs`, `commands.json`), `config.ts` (config slice checked
     against `configuration`: type, `enum`, defaults filled), `states.ts`; running: `load.ts` (a
@@ -193,7 +197,7 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   exactly `@agentage/extension + chalk + commander + open` (the kit's tool only; it never loads
   the kit's server stack outside the daemon process) plus `express` and `@electric-sql/pglite`,
   which the kit daemon runs on; only `src/commands/daemon/run.ts` and `src/commands/extension/up-run.ts`
-  load `@agentage/extension/host`; only `up-run.ts` imports `express` (to mount the kit guard)
+  load `@agentage/extension/host`; no file in `src` imports `express`
 
 ## Auth model
 
