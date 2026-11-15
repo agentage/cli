@@ -290,4 +290,12 @@ describe('extension down: the local run of this folder', () => {
     expect(await stopLocal(demo)).toBe('none');
     expect(recordPath(demo)).toBe(join(demo, '.agentage', 'up.json'));
   });
+
+  test('an up.json of another shape, or not JSON, reads as no record', ({ dir }) => {
+    const demo = dir.at('ext');
+    dir.write('ext/.agentage/up.json', { pid: '1', port: 4400, id: 'demo' });
+    expect(readRecord(demo)).toBeNull();
+    dir.write('ext/.agentage/up.json', '{ nope');
+    expect(readRecord(demo)).toBeNull();
+  });
 });
