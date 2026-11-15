@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { refusedBy } from './up-guard.js';
 
 // The installed kit's guard, not a copy: the cli's fallback must refuse exactly what it refuses.
+// A kit that allows [::1] fails this table: that bump deletes up-guard.ts and uses the kit's.
 const KIT_GUARD = join(
   import.meta.dirname,
   '../../../node_modules/@agentage/extension/dist/host/daemon/guard.js'
