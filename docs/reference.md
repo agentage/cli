@@ -35,31 +35,44 @@ agentage setup --profile ./profile.json            # install and load a profile 
 agentage setup --profile ./profile.json --dry-run  # print the plan, write nothing
 agentage setup --check                             # exit 1 when setup would change anything
 agentage setup --latest                            # newest versions the ranges allow (below)
-agentage setup                                     # sign in, then install your account's profile
+agentage setup                                     # sign in; on a new machine, install your account's profile
 ```
 
 `--profile <file>` validates the file (schema v1), saves it as `profile.json` (mode 0600,
 keeping this machine's own `machines[<id>]` entry), records `profileSource: "file"` in
 `machine.json` and installs; it never signs in. Every version must be a semver range or an
 `https:` tarball URL (`npm:`, `github:`, `file:`, `http:` and local paths are refused); a refused
-profile names each entry and the rule and writes nothing. Plain `setup` signs in, then installs
-the profile in your account (below). `--disconnect` skips the extension steps.
+profile names each entry and the rule and writes nothing. `--disconnect` skips the extension
+steps.
+
+Plain `setup` signs in and pulls the profile in your account (below). It installs that profile
+only on a machine with no `installation.json` yet (the first run): each `@agentage/extension-<id>`
+entry goes to the daemon by id (`POST /host/extensions`, as `extension install <id>` sends it, at
+the market's newest version), and the daemon runs it. Plain `setup` loads no extension itself.
+Once `installation.json` exists, `setup` installs nothing and prints
+`extensions installation.json holds this machine; setup installs nothing (agentage extension install)`,
+so an extension you removed with `extension remove` does not come back. With the daemon off
+(`--no-daemon`, `AGENTAGE_NO_DAEMON=1`) it prints `extensions the daemon is off, nothing installed`.
+An entry the daemon refuses, or a package that is not `@agentage/extension-<id>`, fails `setup`
+(exit 1, `extension_failed`) after the others, naming each.
 
 ### The profile in your account
 
-Signed in, the profile lives in your account: one document, with npm's lock and the npm major
-that wrote it, under one ETag. `profile.json` is this machine's copy. Plain `setup` pulls it
-and never pushes a change:
+Signed in, the profile lives in your account: one document under one ETag. `profile.json` is
+this machine's copy. Plain `setup` pulls it and never pushes a change. "Installs" below means: on
+a first run, through the daemon (above).
 
 | Your account answers                                   | `setup`                                                                                                                                                                                                                                                                                  |
 | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `304`, the copy here is current (sent `If-None-Match`) | installs from `profile.json`                                                                                                                                                                                                                                                             |
-| `200`, a newer profile                                 | replaces `profile.json`, installs from the account's lock (`npm ci` when it matches) and prints `profile    pulled from your account (etag "...")`                                                                                                                                       |
+| `200`, a newer profile                                 | replaces `profile.json`, prints `profile    pulled from your account (etag "...")` and installs it                                                                                                                                                                                       |
 | `404 PROFILE_NOT_FOUND`, no profile yet                | installs this machine's `profile.json` (the built-in default when there is none), then creates it in your account with `If-None-Match: *`; when another machine created one first, takes that one and installs it                                                                        |
 | `5xx`, another `404`, no network or a timeout          | prints `cloud profile unavailable, using local profile.json (<reason>)` on stderr and installs from it; with no `profile.json` it prints `cloud profile unavailable and no local profile.json, nothing installed (<reason>)`, installs nothing and goes on to the status report (exit 0) |
 
-The lifecycle commands (`extension install`, `remove` and the others) do not change the profile:
-they change the daemon's `installation.json` (see [Extension lifecycle](#extension-lifecycle)).
+The profile in your account is no longer changed by any command but the first signed-in `setup`
+(which creates it). The lifecycle commands (`extension install`, `remove` and the others) change
+only the daemon's `installation.json` (see [Extension lifecycle](#extension-lifecycle)); they do
+not push to your account, and another machine's `setup` does not see their changes.
 
 `machine.json` says where `profile.json` came from:
 
@@ -233,12 +246,12 @@ agentage status --token aga_...   # check with a personal access token
 `status` adds three lines after the ones above, and `--json` adds four keys after the existing
 ones:
 
-| Line         | JSON key     | Meaning                                                                                    |
-| ------------ | ------------ | ------------------------------------------------------------------------------------------ |
-| `machine`    | `machine`    | this machine's id and name from `machine.json` (created on first use)                      |
-| `profile`    | `profile`    | `version <n> (source: cloud, file or default)`, `no profile` or `invalid`                  |
-| `extensions` | `extensions` | extensions the profile, dev paths and tree name, then the pending changes: `(1 to remove)` |
-|              | `plan`       | the plan summary: `{ add, update, remove, off, unchanged }`                                |
+| Line         | JSON key     | Meaning                                                                                  |
+| ------------ | ------------ | ---------------------------------------------------------------------------------------- |
+| `machine`    | `machine`    | this machine's id and name from `machine.json` (created on first use)                    |
+| `profile`    | `profile`    | `version <n> (source: cloud, file or default)`, `no profile` or `invalid`                |
+| `extensions` | `extensions` | the extensions in `installation.json` (before the move: the profile, dev paths and tree) |
+|              | `plan`       | the plan summary: `{ add, update, remove, off, unchanged }`                              |
 
 For a copy of the profile in your account the line also shows its ETag, and the account's
 version and ETag when another machine pushed since:
@@ -251,7 +264,8 @@ answer in time, or any other answer, such as a `404` from an API without the mac
 
 Extension code is never loaded and the only file written is `machine.json`. With no profile it
 prints `no profile` and exits 0; an invalid `profile.json` still prints the report, then
-exits 1 naming each bad entry on stderr. The rows themselves are in `extension doctor`.
+exits 1 naming each bad entry on stderr. The rows themselves are in `extension doctor`. Once
+`installation.json` exists, `status` and `extension doctor` read it, not the profile.
 
 ## Extension lifecycle
 
@@ -280,24 +294,46 @@ in the config folder and runs each extension as its own process: its api at
   version. `@agentage/extension-<id>` and `agentage-extension-<id>` are accepted for `<id>`. The
   daemon's installer reads the market entry, installs `<package>@<version>` exactly with
   `--ignore-scripts` into `extensions/packages/trees/<id>@<version>`, and checks that the
-  package's `agentage.id` is `<id>`. A private market entry exits 1 with `private_entry`. Over an
+  package's `agentage.id` is `<id>`. A version already on disk (the daemon's own tree, or the
+  tree cli 0.51 installed) runs from there with no network call. Over an
   installed id another version is a change to that version (go back), data kept; the same version
   changes nothing. A path (`.`, `./path`, `../path`, `/path`) sends the folder's real path; a
   folder another user can write to is refused. A failed start exits 1 with `extension_failed`.
-  `--off` is the old name of install, then `disable`, and says so on stderr.
+  `--off` is the old name of install, then `disable`, and says so on stderr. A package name of
+  another scope and an `https:` tarball URL, which 0.51 installed, are refused
+  (`invalid_argument`) with what to type instead: install the unpacked folder (`./path`).
+  The installer's errors reach you with the daemon's code:
+
+  | Code                 | When                                                               |
+  | -------------------- | ------------------------------------------------------------------ |
+  | `NOT_FOUND`          | the market and npm know no such id, or no such version (404)       |
+  | `MARKET_UNAVAILABLE` | no version given and the market did not answer (502)               |
+  | `INSTALL_FAILED`     | npm could not install it; the message holds npm's last lines (502) |
+  | `PRIVATE_ENTRY`      | the market entry has no npm package (400)                          |
+  | `VALIDATION_ERROR`   | the package's `agentage.id` is another id (400)                    |
+
 - **list** prints the daemon's rows; a folder row shows `folder` and `--json` adds its `path`.
-  `--available` reads the market (paged, 200 per page), not the daemon.
+  `--available` reads the market (paged, 200 per page, at most 20 pages; past that it stops
+  with `market_unavailable` naming the cap), not the daemon.
 - **update** compares each market row with the market's newest version and changes the ones that
   differ; folders are left alone. `--check` only prints `<id> <from> to <to> (available)`.
 - **disable** and **enable** stop and start the extension; data, settings and secrets stay.
-- **configure** sends `<key>=<value>` pairs as settings, or with `--secret` as secrets. The daemon
-  starts the extension again with the new values, then moves its route. A secret value is never
+- **configure** sends `<key>=<value>` pairs as settings, or with `--secret` as secrets. Values
+  are sent as text; the daemon turns each into the type the manifest declares (`5` for an
+  `integer`, `true` for a `boolean`), and an undeclared key or a value of the wrong type is 400
+  `INVALID_SETTING`, nothing changed. The daemon starts the extension again with the new values,
+  then moves its route. A secret value is never
   printed: the line names only the keys. A single `<key>` with `--secret` reads the value from
   stdin when stdin is not a terminal, else asks for it hidden; with `--json` on a terminal it is
   refused (`confirmation_required`), never asked.
-- **remove** forgets the extension's settings and secrets. `--purge` also deletes `data/<id>/`:
-  on a terminal it asks first (`[y/N]`), without one it needs `--yes`, else exits 1 with
-  `confirmation_required` and nothing changed.
+- **remove** forgets the extension's settings and secrets. While another installed extension
+  peer-depends on it, it exits 1 with `needed_by_dependents` naming them; `--force` removes it
+  anyway. `--purge` also deletes `data/<id>/`: on a terminal it asks first (`[y/N]`), without one
+  it needs `--yes`, else exits 1 with `confirmation_required` and nothing changed.
+
+Error codes: the cli's own are lowercase snake_case (`confirmation_required`); a code the daemon
+answers with is UPPER_SNAKE (`NOT_FOUND`, `CONFLICT`, `INVALID_SETTING`) and passes through
+unchanged, in the text and in the `--json` envelope.
 
 `extension install` and `remove` no longer change `profile.json` or the profile in your account:
 `installation.json` is this machine's one list. The commands of an installed extension
@@ -307,11 +343,29 @@ the daemon is down.
 ### The move from the old lists
 
 The first `daemon run` on a machine that ran cli 0.51 reads the old lists once, before the daemon
-starts: each extension of `profile.json` `extensions` (at the version its current tree holds,
-`enabled: false` when this machine's `off` lists it) and each `machine.json` `dev` folder (as a
-folder row). It adds the ids `installation.json` does not have yet, then writes the marker
-`installation.moved`. The old files stay as they are. A stop before the marker loses nothing; the
-next start adds what is still missing. With the marker the move never runs again.
+starts, and moves them into `installation.json`:
+
+| 0.51 entry                                                 | Moves as                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------- |
+| `profile.json` `extensions`, installed in the current tree | `{ id, version }` at the exact version that tree holds              |
+| the same, in this machine's `off`                          | the same, with `enabled: false`                                     |
+| `machine.json` `dev` folder                                | `{ id, source }`; `enabled: false` when `off` lists it              |
+| `config.<id>` in the profile                               | that extension's settings in `settings.json` (values set later win) |
+
+A moved version runs from the 0.51 tree as it is: no npm call, so the move works offline and the
+commands of each moved extension stay in `agentage --help`. An entry is skipped, never run, when
+its folder is gone, another user can write to it (the check of `install <path>`), its manifest is
+invalid, it has no `agentage.id`, or it is not in the 0.51 tree (a plain `setup` on a new machine
+installs those). Each skipped entry is listed in `installation.moved.json` beside the marker, in
+the daemon log and in `daemon status` (`move skipped <entry>: <reason>`). Secrets need no move:
+`secrets.json` is the same file.
+
+The marker `installation.moved` is written once every entry is moved or skipped; with it the move
+never runs again. An invalid `profile.json` or `machine.json` moves nothing and writes no marker:
+the daemon still starts, `daemon status` shows `move: <file> is invalid ...`, and the next start
+after you fix the file moves it. A stop half way loses nothing: an id already in
+`installation.json` keeps its row, and the next start adds the rest. The old files stay as they
+are.
 
 ## extension doctor
 
@@ -545,7 +599,8 @@ a log over 5 MB moves to `daemon.log.1` (one old file is kept). A daemon that ca
 exits 3. `status`, `stop` and `restart` exit 0 when no daemon runs; `status` says when a pid does
 not answer, and `stop` says when it removed a stale `daemon.json`. With `--json`, `data` is
 `{ running, pid, port, version, status, extensions }` (or `{ running: false, unresponsive, pid,
-port }`), `{ stopped }` and `{ port }`.
+port }`), `{ stopped }` and `{ port }`; `status` adds `move`, the report of the
+[move from the old lists](#the-move-from-the-old-lists), and prints its warning and skipped entries.
 
 ## update
 
@@ -579,7 +634,8 @@ An error exits 1. `code` is snake_case and stable: `not_installed`, `needed_by_d
 `confirmation_required`, `extension_failed`, `profile_invalid`, `integrity_drift`,
 `invalid_argument`, `invalid_option`, `not_conforming`, `uncommitted_changes`, `release_refused`,
 `auth_required`, `auth_unavailable`, `not_pushed`, `token_request_failed`, `daemon_unavailable`,
-`daemon_unresponsive`, `daemon_disabled`, `port_in_use`, `error` (any other).
+`daemon_unresponsive`, `daemon_disabled`, `port_in_use`, `market_unavailable`, `error` (any other).
+A code from the daemon (UPPER_SNAKE, such as `NOT_FOUND` or `INVALID_SETTING`) passes through unchanged.
 A usage error (exit 2) happens before the command runs and prints no object.
 
 | Command                                               | `data`                                                             |

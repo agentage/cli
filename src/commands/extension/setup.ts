@@ -14,10 +14,14 @@ import { extensionsResult, installAndLoad } from './install-load.js';
 import { printDryRun, runSetupCheck } from './plan.js';
 import { printWarnings } from './row-lines.js';
 import { accountSetup, disconnect } from './setup-cloud.js';
+import { installThroughDaemon } from './setup-install.js';
+import { type HostClient } from '../../lib/daemon/host-client.js';
 import { type EditDeps } from './sync.js';
 
 // Sign-in and status reach the site; npm and the account are the other seams.
 export interface ExtensionSetupDeps extends SetupDeps, EditDeps {
+  // The daemon the profile installs through on a machine with no installation.json.
+  host: () => Promise<HostClient>;
   // `extension update`, which --latest now runs.
   updateExtensions: () => Promise<unknown>;
 }
@@ -67,11 +71,21 @@ const fromFile = async (source: Source, deps: ExtensionSetupDeps): Promise<void>
   await installAndLoad(source.profile, deps.npm);
 };
 
+const daemonOff = (opts: SetupOptions): boolean =>
+  opts.daemon === false || process.env['AGENTAGE_NO_DAEMON'] === '1';
+
 // The daemon needs no account; --no-daemon or AGENTAGE_NO_DAEMON=1 leave it off.
 const startDaemon = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
-  if (opts.daemon === false || process.env['AGENTAGE_NO_DAEMON'] === '1') return;
+  if (daemonOff(opts)) return;
   console.log(`daemon running on 127.0.0.1:${await deps.startDaemon()}`);
 };
+
+// Plain setup installs the profile only through the daemon (one install path).
+const profileDeps = (opts: SetupOptions, deps: ExtensionSetupDeps) => ({
+  ...deps,
+  installProfile: (profile: Profile) =>
+    installThroughDaemon(profile, { host: deps.host, daemonOff: daemonOff(opts) }),
+});
 
 // A token is the headless credential: no browser and no callback, so --reauth has nothing to do.
 const signIn = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
@@ -92,7 +106,7 @@ const setupFlow = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<
   }
   const token = process.env['AGENTAGE_TOKEN'];
   await signIn(opts, deps);
-  const failure = await accountSetup(deps).then(
+  const failure = await accountSetup(profileDeps(opts, deps)).then(
     () => null,
     (error: unknown) => error
   );

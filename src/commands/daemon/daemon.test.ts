@@ -29,7 +29,7 @@ describe('agentage daemon status | stop | restart', () => {
     expect(run.stdout).toBe(
       `daemon: ok on 127.0.0.1:${served.port}, pid ${process.pid}, 0.52.0\n  probe 0.7.0 running`
     );
-    expect(status).toEqual({ running: true, port: served.port, ...HEALTH });
+    expect(status).toEqual({ running: true, port: served.port, ...HEALTH, move: null });
   });
 
   test('status: a live pid that does not answer is unresponsive; a stale file is not running', async ({

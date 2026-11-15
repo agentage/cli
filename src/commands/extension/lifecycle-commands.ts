@@ -96,6 +96,7 @@ const addSettings = (group: Command, { configure, remove }: LifecycleActions): v
       .argument('<id>', 'the extension id')
       .option('--purge', "also delete the extension's data, data/<id>/")
       .option('--yes', 'do not ask before --purge deletes (needed without a terminal)')
+      .option('--force', 'remove it although another installed extension depends on it')
   )
     .addHelpText('after', REMOVE_HELP)
     .action((name: string, opts: Omit<RemoveOptions, 'name'>) => remove({ name, ...opts }));

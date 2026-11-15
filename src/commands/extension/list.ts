@@ -46,7 +46,7 @@ const addDoctor = (group: Command, doctor: ExtensionActions['doctor']): void => 
     .action(doctor);
 };
 
-// Help order: install, list, update, disable, enable, configure, remove, doctor, create, check, build, release, up, down, token.
+// Help order: C1 (install to remove), then doctor, create, check, build, release, up, down, token.
 export const registerExtension = (program: Command, actions: ExtensionActions): void => {
   const group = program
     .command('extension')

@@ -6,7 +6,7 @@ import { type HostClient, type HostRow } from '../lib/daemon/host-client.js';
 export const fakeHost = (rows: HostRow[] = []) => {
   const row = (id: string): HostRow => {
     const found = rows.find((r) => r.id === id);
-    if (!found) throw new CliError('not_installed', `${id} is not installed`);
+    if (!found) throw new CliError('NOT_FOUND', `${id} is not installed`);
     return found;
   };
   const host: HostClient = {

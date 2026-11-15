@@ -52,6 +52,7 @@ export const defaultDeps: ProgramDeps = {
       ...setupDeps,
       ...editDeps,
       updateExtensions: () => runExtensionUpdate({}, listDeps),
+      host: lifecycle.host,
     }),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),

@@ -15,6 +15,7 @@ const deps: ExtensionSetupDeps = {
   signOut: never,
   printStatus: never,
   startDaemon: never,
+  host: never,
   updateExtensions: never,
   npm: npmFromFixtures,
   npmMajor: never,

@@ -140,7 +140,6 @@ test.describe('agentage setup (signs in) @p0 @offline', () => {
     const run = await cli.signIn();
     expect(run.code).toBe(0);
     expect(run.output).toMatch(/^profile {4}created in your account \(etag "\S+"\)$/m);
-    expect(run.output).toMatch(/^install {4}no extensions in tree \S+ \(npm skipped\)$/m);
     expect(cli.json('profile.json')).toEqual({
       version: 1,
       extensions: {},
@@ -150,7 +149,7 @@ test.describe('agentage setup (signs in) @p0 @offline', () => {
     expect(cli.exists('auth.json')).toBe(true);
   });
 
-  test('agentage setup after setup --profile installs from the saved profile.json, not from your account', async ({
+  test('agentage setup after setup --profile reads the saved profile.json, not your account', async ({
     cli,
   }) => {
     expect((await cli.signIn()).code).toBe(0);
@@ -160,7 +159,6 @@ test.describe('agentage setup (signs in) @p0 @offline', () => {
     expect(again.lines).toContain(
       'profile    from a file (setup --profile), not synced with your account'
     );
-    expect(again.lines).toContain(HELLO);
-    expect(again.lines).toContain('extensions 2');
+    expect(again.lines).toContain('extensions the daemon is off, nothing installed');
   });
 });

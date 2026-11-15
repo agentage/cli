@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { listMarket, openMarket } from './market.js';
+import { listMarket, MAX_PAGES, openMarket } from './market.js';
 
 const DISCOVERY = 'https://next.agentage.io/.well-known/agentage.json';
 const LATEST = 'https://market.test/api/v1/extensions/probe/latest';
@@ -105,6 +105,18 @@ describe('listMarket: extension list --available', () => {
     id,
     package: null,
     ...(version && { version }),
+  });
+
+  it('a market that repeats its cursor stops after MAX_PAGES with a clear message', async () => {
+    const page = () =>
+      doc({ success: true, data: [row('notes', '1.2.0')], meta: { nextCursor: 'same' } });
+    const get = vi.fn(async (url: string) =>
+      url === DISCOVERY ? doc(named) : url.startsWith(LIST) ? page() : doc({}, 404)
+    );
+    await expect(listMarket('next.agentage.io', get)).rejects.toThrow(
+      `the market list has more than ${MAX_PAGES} pages of 200; stopped there`
+    );
+    expect(get).toHaveBeenCalledTimes(MAX_PAGES + 1);
   });
 
   it('reads every page by meta.nextCursor; a row without a version asks /latest', async () => {

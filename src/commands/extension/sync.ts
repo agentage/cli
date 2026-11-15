@@ -9,13 +9,18 @@ import { mutateProfile } from '../../core/profile/profile.js';
 import { pushBody, type Apply, type LockPair } from '../../core/profile/push.js';
 import { type Profile } from '../../core/profile/schema.js';
 import { type AccountOf } from './account.js';
-import { installAndLoad, line } from './install-load.js';
+import { line } from './install-load.js';
 
 // npm, the npm major that writes the lock, and the account: the seams of a profile edit.
 export interface EditDeps {
   npm: () => Promise<Npm>;
   npmMajor: () => Promise<number>;
   account: AccountOf;
+}
+
+// Plain setup: how the profile's extensions are installed (through the daemon).
+export interface ProfileDeps extends EditDeps {
+  installProfile: (profile: Profile) => Promise<void>;
 }
 
 export type Change = (profile: Profile) => Profile;
@@ -36,15 +41,15 @@ const localLock = async (deps: EditDeps): Promise<LockPair> => {
   return { lock, npmMajor: lock === null ? null : await deps.npmMajor() };
 };
 
-// Nothing is pushed unless the new tree installed and loaded: installAndLoad throws otherwise.
-export const applying = (change: Change, deps: EditDeps, note: string | null = null): Apply => {
+// Nothing is pushed unless the install worked: installProfile throws otherwise.
+export const applying = (change: Change, deps: ProfileDeps, note: string | null = null): Apply => {
   let calls = 0;
   return async (base) => {
     const next = change(base.profile);
     await mutateProfile(() => next);
     const text = calls++ === 0 ? note : line('profile', REPLAY);
     if (text !== null) console.log(text);
-    await installAndLoad({ ...next, lock: base.lock }, deps.npm);
+    await deps.installProfile(next);
     return pushBody(next, base, await localLock(deps));
   };
 };

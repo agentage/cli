@@ -5,6 +5,7 @@ import { readProfile } from '../profile/profile.js';
 import { type ProfileParse } from '../profile/schema.js';
 import { extensionsDir } from '../paths.js';
 import { discover, type DiscoveredExtension, type Discovery } from './discover.js';
+import { installedExtensions } from './installed.js';
 import { staticStates, type StaticResult } from './states.js';
 
 export interface Scan {
@@ -50,3 +51,18 @@ export const scan = (machine: MachineFile, tree?: string): Scan => {
 // What can load: a valid manifest, installed, not off here, and peers that can load too.
 export const loadSet = (found: Scan): DiscoveredExtension[] =>
   found.found.extensions.filter((ext) => found.states.get(ext.pkg)?.state === 'installed');
+
+// Once installation.json exists it is this machine's list: no profile plan, no drift.
+const scanInstalled = (machine: MachineFile, installed: DiscoveredExtension[]): Scan => {
+  const eff = effective(null, machine);
+  const found = { extensions: installed, warnings: [] };
+  const plan = planChanges(eff, {});
+  const states = staticStates(installed, []);
+  return { machine, parsed: readProfile(), eff, found, states, plan, removed: [], drift: [] };
+};
+
+// What status and doctor read: installation.json when it exists, else the old lists.
+export const scanNow = (machine: MachineFile): Scan => {
+  const installed = installedExtensions();
+  return installed === null ? scan(machine) : scanInstalled(machine, installed);
+};

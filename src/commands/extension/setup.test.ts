@@ -1,5 +1,6 @@
+import { fakeHost } from '../../test/host.js';
 import { CliError } from '../../lib/json-output.js';
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
 import { noAccount } from '../../test/account.js';
 import { MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
@@ -15,6 +16,7 @@ const deps: ExtensionSetupDeps = {
   signOut: async () => console.log('(signed out)'),
   printStatus: async () => console.log('(status)'),
   startDaemon: async () => 4243,
+  host: async () => fakeHost().host,
   updateExtensions: async () => undefined,
   npm: npmFromFixtures,
   ...noAccount,
@@ -150,7 +152,7 @@ describe('agentage setup', () => {
     expect(dir.list('')).toEqual([]);
   });
 
-  test('reports status with AGENTAGE_TOKEN, which loading removed from the environment', async ({
+  test('reports status with AGENTAGE_TOKEN; setup loads no extension code itself', async ({
     dir,
   }) => {
     process.env['AGENTAGE_TOKEN'] = 'aga_unit';
@@ -159,7 +161,7 @@ describe('agentage setup', () => {
       console.log(`(status with ${opts.token})`);
     const run = await output(() => runExtensionSetup({}, { ...deps, printStatus }));
     expect(run.lines).toContain('(status with aga_unit)');
-    expect(process.env['AGENTAGE_TOKEN']).toBeUndefined();
+    delete process.env['AGENTAGE_TOKEN'];
   });
 
   test('prints status after signing in, even when profile.json is invalid, then fails', async ({
@@ -170,5 +172,14 @@ describe('agentage setup', () => {
       lines: ['(signed in)', '(status)', 'daemon running on 127.0.0.1:4243'],
       error: 'profile.json is invalid:\n  version: must be 1 (got 0)',
     });
+  });
+
+  test('setup --latest names its new command on stderr and runs extension update', async () => {
+    const updateExtensions = vi.fn(async () => undefined);
+    const run = await output(() =>
+      runExtensionSetup({ latest: true }, { ...deps, updateExtensions })
+    );
+    expect(run.stderr).toBe('setup --latest is now: agentage extension update');
+    expect(updateExtensions).toHaveBeenCalledOnce();
   });
 });

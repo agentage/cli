@@ -80,14 +80,19 @@ export interface Offered {
 
 const PAGE = 200;
 
+// A market that repeats its cursor would page for ever; past this the listing stops.
+export const MAX_PAGES = 20;
+
 // Every row of the market list, page after page while `meta.nextCursor` names one.
-const pages = async (get: Get, url: string, cursor?: string): Promise<unknown[]> => {
+const pages = async (get: Get, url: string, cursor?: string, page = 1): Promise<unknown[]> => {
+  if (page > MAX_PAGES)
+    throw new Error(`the market list has more than ${MAX_PAGES} pages of ${PAGE}; stopped there`);
   const query = `?limit=${PAGE}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
   const body = await json(get, `${url}${query}`);
   const data = Array.isArray(body?.['data']) ? body['data'] : [];
   const meta = body?.['meta'];
   const next = isRecord(meta) && typeof meta['nextCursor'] === 'string' ? meta['nextCursor'] : '';
-  return next && data.length > 0 ? [...data, ...(await pages(get, url, next))] : data;
+  return next && data.length > 0 ? [...data, ...(await pages(get, url, next, page + 1))] : data;
 };
 
 // A row without an exact version (the market of today lists none) asks /latest for it.
@@ -98,7 +103,7 @@ const offered = async (row: unknown, market: Market): Promise<Offered | null> =>
   return version ? { id: row['id'], version } : null;
 };
 
-// `extension list --available`: each listed id with its newest version; throws when no market answers.
+// `extension list --available`: each listed id with its newest version; throws on no answer.
 export const listMarket = async (fqdn: string = siteFqdn(), get: Get = timed) => {
   const base = await marketUrl(fqdn, get);
   const rows = await pages(get, `${base}/api/v1/extensions`);

@@ -1,9 +1,10 @@
-import { chmodSync, mkdtempSync, realpathSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost, marketRow } from '../../test/host.js';
+import { writeKitExtension } from '../../test/kit-fixture.js';
 import { runEnabled, runInstall, runRemove, specOf, type ConfirmIo } from './lifecycle.js';
 
 const noTerminal: ConfirmIo = { isTTY: false, prompt: vi.fn(async () => 'y') };
@@ -15,6 +16,10 @@ describe('extension install', () => {
     expect(specOf('@agentage/extension-probe@1')).toEqual({ id: 'probe', version: '1' });
     expect(() => specOf('Probe')).toThrow('not an id, id@version or a folder');
     expect(() => specOf('probe@')).toThrow('not an id');
+    expect(() => specOf('@other/thing')).toThrow(/only @agentage\/extension-<id> packages install/);
+    expect(() => specOf('https://x.test/a.tgz')).toThrow(
+      /unpack it, then agentage extension install/
+    );
   });
 
   test('a new id is a POST; the extension runs', async () => {
@@ -80,7 +85,7 @@ describe('extension disable, enable and remove', () => {
       ['probe', { enabled: true }],
     ]);
     const nope = await output(() => runEnabled('nope', false, deps));
-    expect(nope).toMatchObject({ code: 'not_installed', error: 'nope is not installed' });
+    expect(nope).toMatchObject({ code: 'NOT_FOUND', error: 'nope is not installed' });
   });
 
   test('remove keeps the data; --purge deletes it, and without a terminal needs --yes', async () => {
@@ -109,5 +114,30 @@ describe('extension disable, enable and remove', () => {
     io.prompt = vi.fn(async () => 'yes');
     const yes = await output(() => runRemove({ name: 'probe', purge: true }, { ...deps, io }));
     expect(yes.lines).toEqual(['removed probe, its data deleted']);
+  });
+
+  test('remove refuses an extension another installed one depends on, unless --force', async ({
+    dir,
+  }) => {
+    const root = mkdtempSync(join(tmpdir(), 'agentage-peers-'));
+    const base = writeKitExtension(join(root, 'base'), 'base', '1.0.0');
+    const user = writeKitExtension(join(root, 'user'), 'user', '1.0.0');
+    const manifest = JSON.parse(readFileSync(join(user, 'package.json'), 'utf8'));
+    manifest.peerDependencies = { '@agentage/extension-base': '^1' };
+    writeFileSync(join(user, 'package.json'), JSON.stringify(manifest));
+    const rows = [
+      { id: 'base', source: base },
+      { id: 'user', source: user },
+    ];
+    dir.write('installation.json', { host: 'local', extensions: rows });
+    const { host, deps } = fakeHost([marketRow('base', '1.0.0'), marketRow('user', '1.0.0')]);
+    const refused = await output(() => runRemove({ name: 'base' }, { ...deps, io: noTerminal }));
+    expect(refused).toMatchObject({
+      code: 'needed_by_dependents',
+      error: 'base is needed by user; remove them first, or --force',
+    });
+    expect(host.remove).not.toHaveBeenCalled();
+    await output(() => runRemove({ name: 'base', force: true }, { ...deps, io: noTerminal }));
+    expect(host.remove).toHaveBeenCalledWith('base', false);
   });
 });

@@ -1,52 +1,77 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { installationPath } from '../../core/loader/installed.js';
-import { scan } from '../../core/loader/scan.js';
-import { NO_MACHINE, readMachine } from '../../core/profile/machine.js';
-import { type DiscoveredExtension } from '../../core/loader/discover.js';
-import { ensureConfigDir } from '../../lib/fs/config.js';
+import { ensureConfigDir, getConfigDir } from '../../lib/fs/config.js';
 import { isRecord, readJson, writeJsonAtomic } from '../../lib/fs/json-file.js';
+import { movePlan, type Moved, type Row, type Skipped } from './move-plan.js';
 
-// Written once the old lists are in installation.json; the old files themselves stay as they were.
+// Written once every old entry is moved or deliberately skipped; the old files stay as they were.
 export const MOVED_MARKER = 'installation.moved';
+// What the last move did: the skipped entries and why, or the warning that stopped it.
+export const MOVE_REPORT = 'installation.moved.json';
 
-type Row = Record<string, unknown> & { id: string };
+export interface MoveReport {
+  moved: string[];
+  skipped: Skipped[];
+  warning: string | null;
+}
 
-const PACKAGE_ID = /^(?:@agentage\/extension-|agentage-extension-)([a-z][a-z0-9-]*)$/;
+const settingsPath = (): string => join(getConfigDir(), 'settings.json');
 
-// One old entry as a C3 row: a dev folder as source, an off package as enabled false.
-const rowOf = (ext: DiscoveredExtension, spec: string | undefined, off: boolean): Row | null => {
-  const id = ext.id ?? PACKAGE_ID.exec(ext.pkg)?.[1];
-  if (!id) return null;
-  if (ext.source === 'dev') return { id, source: ext.dir };
-  const version = ext.version ?? spec?.replace(/^[\^~]/, '');
-  return version ? { id, version, ...(off && { enabled: false }) } : null;
-};
-
-// profile.json extensions{} and off, machine.json dev{}: what cli 0.51 ran on this machine.
-export const oldRows = (): Row[] => {
-  const found = scan(readMachine() ?? NO_MACHINE);
-  const { install, off } = found.eff;
-  const rows = found.found.extensions.map((ext) =>
-    rowOf(ext, install[ext.pkg], off.includes(ext.pkg))
-  );
-  return rows.filter((row): row is Row => row !== null);
-};
-
-const merged = (rows: Row[]) => {
+// An id in installation.json keeps its row: a rerun after a stop adds only what is missing.
+const addRow = (row: Row): void => {
   const doc = readJson(installationPath(), isRecord) ?? { host: 'local' };
   const have = Array.isArray(doc['extensions']) ? (doc['extensions'] as Row[]) : [];
-  const ids = new Set(have.map((row) => row.id));
-  return { ...doc, extensions: [...have, ...rows.filter((row) => !ids.has(row.id))] };
+  if (have.some((r) => r.id === row.id)) return;
+  writeJsonAtomic(installationPath(), { ...doc, extensions: [...have, row] }, 0o644);
 };
 
-// D6, before the daemon reads the file: each run adds only the ids it lacks, so a stop half way
-// loses nothing and the next start finishes it.
-export const moveOldLists = async (): Promise<void> => {
+// The daemon's own values win over the profile's: they were set after the move.
+const addSettings = (id: string, settings: Record<string, unknown>): void => {
+  if (Object.keys(settings).length === 0) return;
+  const all = readJson(settingsPath(), isRecord) ?? {};
+  const mine = isRecord(all[id]) ? all[id] : {};
+  writeJsonAtomic(settingsPath(), { ...all, [id]: { ...settings, ...mine } }, 0o600);
+};
+
+const writeReport = (report: MoveReport): void =>
+  writeJsonAtomic(join(getConfigDir(), MOVE_REPORT), report, 0o644);
+
+export const readMoveReport = (): MoveReport | null =>
+  readJson(join(getConfigDir(), MOVE_REPORT), (v): v is MoveReport => isRecord(v));
+
+const say = (report: MoveReport): void => {
+  if (report.moved.length > 0)
+    console.error(`moved ${report.moved.length} extensions into installation.json`);
+  for (const { entry, reason } of report.skipped) console.error(`move skipped ${entry}: ${reason}`);
+};
+
+export interface MoveHooks {
+  // Runs after each entry; a test stops the move here to check that a rerun finishes it.
+  entry?: (moved: Moved) => void;
+}
+
+// D6, before the daemon reads the file. An old list that does not parse moves nothing and writes
+// no marker: the daemon still starts, and the next start tries again.
+export const moveOldLists = async (hooks: MoveHooks = {}): Promise<void> => {
   const marker = join(ensureConfigDir(), MOVED_MARKER);
   if (existsSync(marker)) return;
-  const rows = oldRows();
-  if (rows.length > 0) writeJsonAtomic(installationPath(), merged(rows), 0o644);
+  const plan = movePlan();
+  const report = {
+    moved: plan.moved.map((m) => m.row.id),
+    skipped: plan.skipped,
+    warning: plan.warning,
+  };
+  if (plan.warning) {
+    writeReport(report);
+    return console.error(`move: ${plan.warning}; nothing moved, fix it and restart the daemon`);
+  }
+  for (const moved of plan.moved) {
+    addRow(moved.row);
+    addSettings(moved.row.id, moved.settings);
+    hooks.entry?.(moved);
+  }
+  writeReport(report);
   writeFileSync(marker, `${new Date().toISOString()}\n`);
-  if (rows.length > 0) console.error(`moved ${rows.length} extensions into installation.json`);
+  say(report);
 };

@@ -6,10 +6,11 @@
  */
 import { expect, test, type Machine } from './cli.js';
 
-const HELLO = 'hello  ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello';
+// The tier runs with AGENTAGE_NO_DAEMON=1: plain setup installs only through the daemon.
+const DAEMON_OFF = 'extensions the daemon is off, nothing installed';
 const DEFAULT = { version: 1, extensions: {}, config: {}, machines: {} };
 
-// The account already holds a profile (routing @agentage to the loopback registry); setup pulls it.
+// The account holds a profile (routing @agentage to the loopback registry); setup pulls it.
 const connected = async (cli: Machine, extensions: Record<string, string> = {}) => {
   const etag = cli.site.store({ extensions });
   const run = await cli.signIn();
@@ -38,15 +39,14 @@ test.describe('agentage setup and the profile in your account @p0 @offline', () 
     });
   });
 
-  test('agentage setup installs the profile your account holds and pushes nothing; run again it sends If-None-Match and keeps the local copy', async ({
+  test('agentage setup pulls the profile your account holds and pushes nothing; with the daemon off it installs nothing; run again it sends If-None-Match', async ({
     cli,
   }) => {
     const { etag, run } = await connected(cli, { hello: '^1.0.0' });
     expect(run.output).toContain(`profile    pulled from your account (etag ${etag})`);
-    expect(run.output).toContain(HELLO);
+    expect(run.output).toContain(DAEMON_OFF);
     const again = await cli.run('setup --no-browser');
     expect(again.code).toBe(0);
-    expect(again.lines).toContain(HELLO);
     expect(cli.site.requests('/v1/profile').at(-1)).toMatchObject({
       method: 'GET',
       ifNoneMatch: etag,
@@ -63,7 +63,7 @@ test.describe('agentage setup and the profile in your account @p0 @offline', () 
     const run = await cli.run('setup --no-browser');
     expect(run.code).toBe(0);
     expect(run.stderr).toContain('cloud profile unavailable, using local profile.json (503');
-    expect(run.lines).toContain(HELLO);
+    expect(run.lines).toContain(DAEMON_OFF);
   });
 
   test('when your account answers 503 and there is no local profile.json, agentage setup says so on one dim line, installs nothing and exits 0', async ({

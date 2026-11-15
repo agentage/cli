@@ -2,26 +2,35 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { getConfigDir } from '../../lib/fs/config.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
-import { packageDir } from '../installer/package-dir.js';
+import { installedDir } from '../installer/old-tree.js';
+import { type ConfigMap } from '../profile/schema.js';
 import { inspect, type DiscoveredExtension } from './discover.js';
 
 export const installationPath = (): string => join(getConfigDir(), 'installation.json');
 
-// The package folder of one C3 row: its source folder, or the tree its version installed to.
+// The package folder of one C3 row: its source folder, or the tree that holds its version.
 const dirOf = (row: Record<string, unknown>): { dir: string; dev: boolean } | null => {
   if (typeof row['source'] === 'string') return { dir: row['source'], dev: true };
   const { id, version } = row;
   if (typeof id !== 'string' || typeof version !== 'string') return null;
-  const dir = packageDir(id, version);
+  const dir = installedDir(id, version);
   return dir === null ? null : { dir, dev: false };
 };
 
-const discovered = (row: unknown): DiscoveredExtension[] => {
+// The daemon's settings by id: what a 1.0-API extension's ctx.config holds.
+const settings = (): ConfigMap => {
+  const all = readJson(join(getConfigDir(), 'settings.json'), isRecord) ?? {};
+  return Object.fromEntries(
+    Object.entries(all).filter((e): e is [string, Record<string, unknown>] => isRecord(e[1]))
+  );
+};
+
+const discovered = (row: unknown, configs: ConfigMap): DiscoveredExtension[] => {
   const found = isRecord(row) && row['enabled'] !== false ? dirOf(row) : null;
   if (found === null) return [];
   const name = readJson(join(found.dir, 'package.json'), isRecord)?.['name'];
   const pkg = typeof name === 'string' ? name : String((row as Record<string, unknown>)['id']);
-  const ext = inspect({ pkg, source: found.dev ? 'dev' : 'tree', dir: found.dir }, {});
+  const ext = inspect({ pkg, source: found.dev ? 'dev' : 'tree', dir: found.dir }, configs);
   return ext.missing || ext.problem ? [] : [ext];
 };
 
@@ -30,5 +39,6 @@ export const installedExtensions = (): DiscoveredExtension[] | null => {
   if (!existsSync(installationPath())) return null;
   const doc = readJson(installationPath(), isRecord);
   const rows = Array.isArray(doc?.['extensions']) ? doc['extensions'] : [];
-  return rows.flatMap(discovered);
+  const configs = settings();
+  return rows.flatMap((row) => discovered(row, configs));
 };

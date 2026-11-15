@@ -2,7 +2,7 @@ import { CliError } from '../../lib/json-output.js';
 import { driftLines } from '../../core/installer/plan.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { loadExtensions } from '../../core/loader/load.js';
-import { loadSet, scan } from '../../core/loader/scan.js';
+import { loadSet, scan, scanNow } from '../../core/loader/scan.js';
 import { loadMachine } from '../../core/profile/machine.js';
 import { kitCheck, type LoadKitTool } from './kit-tool.js';
 import { printReport } from './list.js';
@@ -25,7 +25,8 @@ export const loadAndGather = async (
   tree?: string,
   tool?: LoadKitTool
 ): Promise<ExtensionsGather> => {
-  const found = scan(await loadMachine(), tree);
+  const machine = await loadMachine();
+  const found = tree ? scan(machine, tree) : scanNow(machine);
   const extensions = loadSet(found);
   await beforeLoad(extensions);
   const session = await loadExtensions(extensions, undefined, kitCheck(tool));

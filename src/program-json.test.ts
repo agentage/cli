@@ -47,6 +47,8 @@ const NEW: [string, string[], keyof ProgramDeps][] = [
   ['extension list', ['extension', 'list'], 'extensionList'],
   ['extension update', ['extension', 'update'], 'extensionUpdate'],
   ['extension disable', ['extension', 'disable', 'probe'], 'extensionEnabled'],
+  ['extension enable', ['extension', 'enable', 'probe'], 'extensionEnabled'],
+  ['extension list --available', ['extension', 'list', '--available'], 'extensionList'],
   ['extension configure', ['extension', 'configure', 'probe', 'a=b'], 'extensionConfigure'],
   ['extension create', ['extension', 'create', 'demo'], 'extensionCreate'],
   ['extension build', ['extension', 'build'], 'extensionBuild'],

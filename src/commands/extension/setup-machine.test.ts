@@ -1,3 +1,4 @@
+import { fakeHost } from '../../test/host.js';
 import { describe, expect } from 'vitest';
 import { editDeps, fakeAccount, type FakeAccount } from '../../test/account.js';
 import { MACHINE_ID, output, test } from '../../test/config-dir.js';
@@ -12,6 +13,7 @@ const setup = (account: FakeAccount, opts: SetupOptions = {}) =>
       signOut: async () => console.log('(signed out)'),
       printStatus: async () => undefined,
       startDaemon: async () => 4243,
+      host: async () => fakeHost().host,
       updateExtensions: async () => undefined,
       ...editDeps(account),
     })

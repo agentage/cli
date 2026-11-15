@@ -11,9 +11,12 @@ the extension author guide in [docs/extensions.md](docs/extensions.md); profiles
   live"; `src/program.ts`, `src/lib/fs/config.ts`.
 - `setup` (account profile, `--latest`, the plan), `status`, `update`: `docs/reference.md` sections
   of those names; `src/commands/auth/`, `status/`, `update/`, `extension/setup.ts`.
-- Every `extension` subcommand (install, market, remove, list, doctor, check, build, release,
-  up/down/token): `docs/reference.md` section of that name; `src/commands/extension/` (`check` in
-  `build.ts`, `down`/`token` in `up.ts`), `src/lib/net/market.ts`.
+- The lifecycle (C1: install, list, update, disable, enable, configure, remove) and the move from
+  0.51: `docs/reference.md` "Extension lifecycle"; `src/commands/extension/lifecycle*.ts`,
+  `configure.ts`, `src/commands/daemon/installer.ts`, `move.ts`, `src/lib/daemon/host-client.ts`.
+- The other `extension` subcommands (doctor, check, build, release, up/down/token):
+  `docs/reference.md` section of that name; `src/commands/extension/` (`check` in `build.ts`,
+  `down`/`token` in `up.ts`), `src/lib/net/market.ts`.
 - The daemon (`daemon status | stop | restart`, the start, the port, `setup --no-daemon`):
   `docs/reference.md` "daemon"; `src/commands/daemon/`, `src/lib/daemon/`, the host in the kit
   (`@agentage/extension/host`).
@@ -39,8 +42,10 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   the daemon's `/host/extensions` (`lifecycle*.ts`, `configure.ts`, `lib/daemon/host-client.ts`);
   the daemon's installer is `commands/daemon/installer.ts`, one npm tree per `<id>@<version>`
   (`core/installer/package-dir.ts`). `installation.json` is the one list; `core/loader/installed.ts`
-  reads it for the commands and `--help` without the daemon, and `commands/daemon/move.ts` moves
-  the 0.51 lists into it once (D6). `setup --latest` is the old name of `extension update`.
+  reads it for the commands and `--help` without the daemon (a version in the 0.51 tree runs
+  from there: `core/installer/old-tree.ts`), and `commands/daemon/move.ts` with `move-plan.ts`
+  moves the 0.51 lists and settings into it once (D6). `status` and `doctor` read it once it
+  exists (`scanNow`). `setup --latest` is the old name of `extension update`.
   `extension doctor` shows the profile rows.
   `extension check [dir]` is the kit's conformance check of a working copy.
 - **Two manifest kinds:**
@@ -57,7 +62,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   over profile, lock and npm major.
   - Plain `setup` pulls it and never pushes. On `404 PROFILE_NOT_FOUND` it creates it. After any
     other failure or 404 it uses the local `profile.json`, or installs nothing and prints one dim
-    line.
+    line. It installs the profile only through the daemon, and only while `installation.json`
+    does not exist (`setup-install.ts`). No command pushes an install or remove to the account.
   - `setup`, `status` and `setup --disconnect` register the machine at `/v1/machines` (fire and
     forget).
 - Memory, vault, sync and MCP code lives in git history up to v0.37.2 and returns as

@@ -8,7 +8,7 @@ export interface ConfigureOptions {
   json?: boolean;
 }
 
-// How a secret value arrives with no `=value`: stdin when it is not a terminal, else a hidden prompt.
+// A secret with no `=value`: stdin when it is not a terminal, else a hidden prompt.
 export interface SecretInput {
   isTTY: boolean;
   readStdin: () => Promise<string>;
@@ -47,7 +47,7 @@ const valuesOf = async (opts: ConfigureOptions, input: SecretInput) => {
   return values;
 };
 
-// The daemon starts a new child with the values, then moves the route: no restart, no lost request.
+// The daemon starts a new child with the values, then moves the route: no request is lost.
 export const runConfigure = async (
   opts: ConfigureOptions,
   deps: LifecycleDeps & { input: SecretInput }
