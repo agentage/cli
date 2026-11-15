@@ -64,14 +64,10 @@ jobs:
           mkdir -p /tmp/pack
           npm pack --pack-destination /tmp/pack
 
-      - name: 🚀 Install the packed CLI and smoke the binary
-        run: |
-          set -euo pipefail
-          tarball=$(ls /tmp/pack/*.tgz)
-          expected=$(node -p "require('./package.json').version")
-          npm i -g "$tarball" --prefix /tmp/global
-          export PATH="/tmp/global/bin:$PATH"
-          got=$(agentage --version)
-          echo "installed CLI reports $got (expected $expected)"
-          test "$got" = "$expected"
-          agentage --help > /dev/null
+      # Only the declared dependencies (--omit=dev): the bin, the daemon's /health, express and PGlite.
+      - name: 🚀 Install the packed CLI and smoke the binary and the daemon
+        run: scripts/pack-smoke.sh /tmp/pack/*.tgz
+
+      # A 0.51.1 user updates (D6): every entry moves and runs, the 0.51 files stay; reads npm.
+      - name: 🔁 Update from 0.51.1 over its own state
+        run: scripts/update-smoke.sh /tmp/pack/*.tgz
