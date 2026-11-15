@@ -1,21 +1,22 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, rmSync, watch } from 'node:fs';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { existsSync, rmSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { kitFileLock, withKitLock } from '../../lib/fs/kit-lock.js';
+import { sleep } from '../../lib/wait.js';
 import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
+import { kitInternal } from '../../test/kit-internal.js';
 import { runDaemonStatus } from './daemon.js';
 import { MOVE_REPORT, MOVED_MARKER, moveBeforeStart, moveOldLists } from './move.js';
 
 // The kit's own lock code, not a copy: the move must wait for the daemon's writer.
-const KIT_LOCK = join(
-  import.meta.dirname,
-  '../../../node_modules/@agentage/extension/dist/host/data-lock.js'
-);
 type LockDataDir = (file: string) => Promise<() => Promise<void>>;
 const kitLock = async (): Promise<LockDataDir> =>
-  ((await import(pathToFileURL(KIT_LOCK).href)) as { lockDataDir: LockDataDir }).lockDataDir;
+  (
+    await kitInternal<{ lockDataDir: LockDataDir }>(
+      'dist/host/data-lock.js',
+      'src/lib/fs/kit-lock.ts'
+    )
+  ).lockDataDir;
 
 const oldFolder = (dir: ConfigDir) => {
   dir.machine({ [pkg('probe')]: fixture('probe') });
@@ -84,29 +85,20 @@ describe('kit-lock.ts is a copy until the kit ships its lock', () => {
 });
 
 describe('the move writes under the daemon lock', () => {
-  test("tries again while the kit's lock is held, and finishes only after it is given back", async ({
-    dir,
-  }) => {
+  // The holder is another live process, as a serving daemon is: no event or timing race decides it.
+  test('waits while another live process holds the lock, then moves every row', async ({ dir }) => {
     oldFolder(dir);
-    const events: string[] = [];
-    const release = await (await kitLock())(dir.at('installation.json'));
-    let tries = 0;
-    const tried = new Promise<void>((resolve) => {
-      const watcher = watch(dir.at(''), (_kind, name) => {
-        if (!name?.startsWith(`installation.json.lock.${process.pid}.`)) return;
-        tries += 1;
-        if (tries < 3) return;
-        watcher.close();
-        resolve();
-      });
-    });
-    const moving = output(() => moveOldLists()).then(() => void events.push('moved'));
-    await tried;
-    events.push('released');
-    await release();
+    dir.write('installation.json.lock', String(sleeper.pid));
+    let done = false;
+    const moving = output(() => moveOldLists()).then(() => void (done = true));
+    await sleep(300);
+    expect(done || dir.exists('installation.json'), 'the move did not wait for the lock').toBe(
+      false
+    );
+    rmSync(dir.at('installation.json.lock'));
     await moving;
-    expect(events).toEqual(['released', 'moved']);
     expect(dir.json('installation.json')['extensions']).toHaveLength(2);
+    expect(dir.exists(MOVED_MARKER)).toBe(true);
   });
 
   test('a live holder past the wait is a timeout naming it', async ({ dir }) => {

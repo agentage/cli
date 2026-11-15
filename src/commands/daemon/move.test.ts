@@ -52,6 +52,20 @@ describe('the one-time move of the old lists (D6)', () => {
     expect(rows.map((row) => row.id).sort()).toEqual(['hello', 'probe', 'world']);
   });
 
+  test('a value the daemon has wins over the profile one; the other profile values move', async ({
+    dir,
+  }) => {
+    oldFolder(dir);
+    const profile = dir.json('profile.json');
+    dir.write('profile.json', { ...profile, config: { hello: { greeting: 'old', mode: 'a' } } });
+    dir.write('settings.json', { hello: { greeting: 'new' }, world: { x: 1 } });
+    await output(() => moveOldLists());
+    expect(dir.json('settings.json')).toEqual({
+      hello: { greeting: 'new', mode: 'a' },
+      world: { x: 1 },
+    });
+  });
+
   test('a new machine writes only the marker', async ({ dir }) => {
     await output(() => moveOldLists());
     expect(dir.exists('installation.json')).toBe(false);
