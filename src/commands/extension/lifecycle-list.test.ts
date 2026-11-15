@@ -151,13 +151,13 @@ describe('extension update', () => {
     );
   });
 
-  test('a market without the id: npm decides, with the same kind of line on stderr', async () => {
+  test('a row the market no longer lists keeps its version: one line, no npm, exit 0', async () => {
     const { deps, host } = listDeps(rows(), { notes: '1.0.0' });
     const run = await output(() => runUpdate({}, deps));
-    expect(vi.mocked(host.change).mock.calls).toEqual([['probe', { version: '0.7.0' }]]);
-    expect(run.stderr).toBe(
-      'the market of agentage.io has no probe; probe resolves from npm, as cli 0.51 did'
-    );
+    expect(host.change).not.toHaveBeenCalled();
+    expect(deps.npmNewest).not.toHaveBeenCalled();
+    expect(run.stderr).toBe('probe: not in the market any more; 0.6.2 stays');
+    expect(run).toMatchObject({ code: null, lines: ['every extension is at its newest version'] });
   });
 
   test('an id npm cannot resolve is named; the others still update; exit 1 at the end', async () => {

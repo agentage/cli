@@ -40,12 +40,13 @@ export interface HostClient {
 // An install runs npm (up to 10 min in the daemon), then starts the child: past that it is stuck.
 const WAITS = { read: 10_000, change: 12 * 60_000 };
 
-// What the user can see after a timeout: the kit adds the row only once the install ends, and its
-// /health lists the change under pending until then.
+// The kit's queue and installer can each take 11 min, so a change can still finish after this
+// wait; /health lists it under pending until it ends.
 const LOOK: Record<string, string> = {
   GET: 'agentage daemon status',
-  POST: 'the install may still run in the daemon: agentage daemon status shows it under pending',
-  PATCH: 'the change may still finish: agentage daemon status shows it under pending',
+  POST: 'the daemon may still finish the install: agentage daemon status shows it under pending, then agentage extension list shows if it was installed',
+  PATCH:
+    'the daemon may still finish the change: agentage daemon status shows it under pending, then agentage extension list shows the version',
 };
 
 // A timed-out change may still finish in the daemon: say how to look, never that it failed.

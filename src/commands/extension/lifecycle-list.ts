@@ -1,7 +1,7 @@
 import { type HostRow } from '../../lib/daemon/host-client.js';
 import { CliError, messageOf, WithMeta } from '../../lib/json-output.js';
 import { type Listing, type Market } from '../../lib/net/market.js';
-import { fromNpmLine, noSiteMarket, npmFallbackLine } from '../../lib/net/market-error.js';
+import { fromNpmLine, noSiteMarket } from '../../lib/net/market-error.js';
 import { siteFqdn } from '../../lib/net/origins.js';
 import { pruneUnused, type LifecycleDeps } from './lifecycle.js';
 
@@ -66,13 +66,15 @@ interface Move {
   to: string;
 }
 
-// The market's newest; a market without the id names it on stderr, then npm decides.
-const newestOf = async (id: string, market: Market, deps: ListDeps): Promise<string | null> => {
-  const to = (await market.latest(id))?.version;
+// The market's newest. A market that answers without the id keeps the installed version (one
+// line); only a site with no market asks npm, by the name the row was installed under.
+const newestOf = async (row: HostRow, market: Market, deps: ListDeps): Promise<string | null> => {
+  const to = (await market.latest(row.id))?.version;
   const down = market.down();
   if (to || (down && !noSiteMarket(down))) return to ?? null;
-  if (!down) console.error(npmFallbackLine(siteFqdn(), id, `${id} resolves`, null));
-  return deps.npmNewest(id);
+  if (down) return deps.npmNewest(row.id);
+  console.error(`${row.id}: not in the market any more; ${row.version} stays`);
+  return null;
 };
 
 // An id npm cannot resolve is named and skipped: the other ids still update.
@@ -81,7 +83,7 @@ const movesOf = async (rows: HostRow[], deps: ListDeps) => {
   const moves: Move[] = [];
   const failed: string[] = [];
   for (const row of rows) {
-    const to = await newestOf(row.id, market, deps).catch((err: unknown) => {
+    const to = await newestOf(row, market, deps).catch((err: unknown) => {
       failed.push(`${row.id}: ${messageOf(err)}`);
       return null;
     });
@@ -101,7 +103,7 @@ const marketRows = async (opts: ExtensionUpdateOptions, rows: HostRow[]): Promis
 };
 
 // The market's newest version for each extension it installed (or one); --check changes nothing.
-// Ids with no newest version fail the run at the end (exit 1), after the others updated.
+// On a site with no market, an id npm cannot resolve fails the run at the end (exit 1).
 export const runUpdate = async (opts: ExtensionUpdateOptions, deps: ListDeps) => {
   const host = await deps.host();
   const { moves, failed } = await movesOf(await marketRows(opts, await host.list()), deps);

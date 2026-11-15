@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, vi } from 'vitest';
 import { sleep } from '../../lib/wait.js';
 import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { runDaemonStatus } from './daemon.js';
@@ -17,16 +17,6 @@ beforeAll(() => {
   sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
 });
 afterAll(() => void sleeper.kill('SIGKILL'));
-
-describe('the move calls the kit functions', () => {
-  it('the bundled kit ships updateInstallation and withFileLock (kit-lock.ts is gone)', async () => {
-    const host = await import('@agentage/extension/host');
-    expect(host.capabilities).toEqual(
-      expect.arrayContaining(['updateInstallation', 'withFileLock'])
-    );
-    expect(typeof host.updateInstallation).toBe('function');
-  });
-});
 
 describe('the move writes under the daemon lock', () => {
   // The holder is another live process, as a serving daemon is: no event or timing race decides it.

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { kitWarning, manifestInfo, manifestProblem, olderKitWarning } from './manifest.js';
+import { kitVersion } from '../kit-version.js';
+import {
+  kitWarning,
+  manifestInfo,
+  manifestProblem,
+  OLDER_KIT_MINORS,
+  olderKitWarning,
+} from './manifest.js';
 
 const NAME = '@agentage/fixture-x';
 
@@ -165,5 +172,17 @@ describe('a kit-shaped package.json (agentage.parts)', () => {
     const info = manifestInfo(kit({ parts: { api: true }, commands: [] }));
     expect(info.entry).toBeNull();
     expect(manifestProblem(PROBE, info, '1.0.0', '0.2.0')).toBeNull();
+  });
+});
+
+describe('OLDER_KIT_MINORS tracks the bundled kit', () => {
+  it('its newest minor is the one just below the bundled kit', () => {
+    const [major, minor] = kitVersion().split('.').map(Number);
+    const newest = OLDER_KIT_MINORS.at(-1);
+    const before = `${major}.${(minor ?? 0) - 1}`;
+    expect(
+      newest,
+      `OLDER_KIT_MINORS in manifest.ts must end at ${before} for kit ${kitVersion()}`
+    ).toBe(before);
   });
 });

@@ -73,10 +73,26 @@ export interface MoveHooks {
   kit?: () => Promise<KitMove>;
 }
 
-const addEntry = async (kit: KitMove, moved: Moved, hooks: MoveHooks): Promise<void> => {
-  await addRow(kit, moved.row);
+// A row the kit's check refuses is skipped with its reason; the other rows still move.
+const addEntry = async (kit: KitMove, moved: Moved, hooks: MoveHooks): Promise<Skipped | null> => {
+  try {
+    await addRow(kit, moved.row);
+  } catch (err) {
+    if ((err as { code?: unknown }).code !== 'VALIDATION_ERROR') throw err;
+    return { entry: moved.row.id, reason: `the daemon refuses the row (${messageOf(err)})` };
+  }
   await addSettings(kit, moved.row.id, moved.settings);
   hooks.entry?.(moved);
+  return null;
+};
+
+const addAll = async (kit: KitMove, report: MoveReport, plan: Moved[], hooks: MoveHooks) => {
+  for (const moved of plan) {
+    const skipped = await addEntry(kit, moved, hooks);
+    if (!skipped) continue;
+    report.skipped.push(skipped);
+    report.moved = report.moved.filter((id) => id !== skipped.entry);
+  }
 };
 
 // D6, before the daemon reads the file. An old list that does not parse moves nothing and writes
@@ -85,9 +101,9 @@ export const moveOldLists = async (hooks: MoveHooks = {}): Promise<void> => {
   const marker = join(ensureConfigDir(), MOVED_MARKER);
   if (existsSync(marker)) return;
   const plan = movePlan();
-  const report = {
+  const report: MoveReport = {
     moved: plan.moved.map((m) => m.row.id),
-    skipped: plan.skipped,
+    skipped: [...plan.skipped],
     warning: plan.warning,
   };
   if (plan.warning) {
@@ -95,7 +111,7 @@ export const moveOldLists = async (hooks: MoveHooks = {}): Promise<void> => {
     return console.error(`move: ${plan.warning}; nothing moved, fix it and restart the daemon`);
   }
   const kit = await (hooks.kit ?? kitMove)();
-  for (const moved of plan.moved) await addEntry(kit, moved, hooks);
+  await addAll(kit, report, plan.moved, hooks);
   writeReport(report);
   writeFileSync(marker, `${new Date().toISOString()}\n`);
   say(report);

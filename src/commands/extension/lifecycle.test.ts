@@ -24,6 +24,7 @@ describe('extension install', () => {
     expect(specOf('@agentage/extension-probe@1')).toEqual({ id: 'probe', version: '1' });
     expect(() => specOf('Probe')).toThrow('not an id, id@version or a folder');
     expect(() => specOf('probe@')).toThrow('not an id');
+    expect(() => specOf('sync')).toThrow('sync: the id sync is a name the platform owns');
     expect(() => specOf('@other/thing')).toThrow(/only @agentage\/extension-<id> packages install/);
     expect(() => specOf('https://x.test/a.tgz')).toThrow(
       /unpack it, then agentage extension install/
@@ -49,6 +50,19 @@ describe('extension install', () => {
     const pinned = await output(() => runInstall({ name: 'probe@0.7.0' }, { ...deps, fromNpm }));
     expect(pinned.stderr).toBe('');
     expect(fromNpm).toHaveBeenCalledExactlyOnceWith('probe', 'probe 0.7.0 came');
+  });
+
+  test('an unscoped npm name: refused before npm when the site has a market', async () => {
+    const { host, deps } = fakeHost();
+    const name = 'agentage-extension-probe';
+    const market = { ...deps, hasMarket: vi.fn(async () => true) };
+    expect(await output(() => runInstall({ name }, market))).toMatchObject({
+      code: 'invalid_argument',
+      error: `${name}: an unscoped npm name installs only on a site with no market; nothing installed`,
+    });
+    expect(host.add).not.toHaveBeenCalled();
+    await output(() => runInstall({ name }, { ...deps, hasMarket: vi.fn(async () => false) }));
+    expect(host.add).toHaveBeenCalledWith({ id: 'probe' });
   });
 
   test('installed: another version is a PATCH (go back keeps the data); the same is no change', async () => {

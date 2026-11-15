@@ -45,7 +45,7 @@ describe('agentage daemon status | stop | restart', () => {
     const reasons = [
       'notes is failed',
       'a change of probe was not undone: its files disagree',
-      'installation.json had rows it refused: kept as installation.json.bad',
+      'installation.json is invalid',
     ];
     expect(run.lines.slice(1)).toEqual([
       '  notes 1.0.0 failed',
@@ -53,6 +53,10 @@ describe('agentage daemon status | stop | restart', () => {
       ...reasons.map((r) => `  degraded: ${r}`),
     ]);
     expect(status).toMatchObject({ status: 'degraded', ...marks, reasons });
+    dir.write('installation.json.bad', {});
+    expect((await output(() => runDaemonStatus())).lines).toContain(
+      '  degraded: installation.json is invalid: the daemon kept the bad file as installation.json.bad'
+    );
   });
 
   test('status: an unreadable installation.json names its reason; a bare degraded says none came', async ({

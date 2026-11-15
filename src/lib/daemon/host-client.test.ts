@@ -116,7 +116,7 @@ describe('the C5 client of the daemon', () => {
       504,
       env('TIMEOUT', 'the installer did not answer in 600000 ms'),
       'TIMEOUT',
-      `the installer did not answer in 600000 ms; it may still finish: ${STATUS} shows it under pending`,
+      `the installer did not answer in 600000 ms; the daemon recorded nothing: when ${STATUS} no longer shows it under pending, run the command again (a download that finished is reused)`,
     ],
   ];
 
@@ -152,11 +152,11 @@ describe('the C5 client of the daemon', () => {
     });
     await expect(host.add({ id: 'probe' })).rejects.toMatchObject({
       code: 'timeout',
-      message: `the daemon on 127.0.0.1:${port} did not answer in 0.2 s; the install may still run in the daemon: agentage daemon status shows it under pending`,
+      message: `the daemon on 127.0.0.1:${port} did not answer in 0.2 s; the daemon may still finish the install: agentage daemon status shows it under pending, then agentage extension list shows if it was installed`,
     });
     await expect(host.change('probe', { enabled: false })).rejects.toMatchObject({
       message: expect.stringMatching(
-        /; the change may still finish: agentage daemon status shows it under pending$/
+        /; the daemon may still finish the change: agentage daemon status shows it under pending, then agentage extension list shows the version$/
       ),
     });
     silent.closeAllConnections();

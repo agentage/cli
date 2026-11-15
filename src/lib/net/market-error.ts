@@ -24,7 +24,9 @@ export const npmFallbackLine = (
   down: CliError | null
 ): string | null => {
   if (noSiteMarket(down)) return fromNpmLine(fqdn, what);
-  return down ? null : `the market of ${fqdn} has no ${id}; ${what} from npm, as cli 0.51 did`;
+  return down
+    ? null
+    : `the market of ${fqdn} has no ${id}; ${what} from npm as @agentage/extension-${id}`;
 };
 
 export const noDiscovery = (fqdn: string, url: string, why: string): CliError =>

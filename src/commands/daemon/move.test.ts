@@ -48,7 +48,7 @@ describe('the one-time move of the old lists (D6)', () => {
       host: 'local',
       extensions: [{ id: 'hello', version: '1.2.0' }],
     });
-    await output(() => moveOldLists());
+    expect((await output(() => moveOldLists())).stderr).not.toContain('move skipped');
     const rows = dir.json('installation.json')['extensions'] as { id: string; version?: string }[];
     expect(rows.find((row) => row.id === 'hello')).toEqual({ id: 'hello', version: '1.2.0' });
     expect(rows.map((row) => row.id).sort()).toEqual(['hello', 'probe', 'world']);

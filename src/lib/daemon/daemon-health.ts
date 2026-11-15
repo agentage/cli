@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { getConfigDir } from '../fs/config.js';
 import { type Health } from './daemon-probe.js';
 
 // One change the daemon took and has not answered (kit 0.14 /health `pending`).
@@ -19,6 +22,12 @@ export interface HealthMarks {
 
 const UNSETTLED = ['starting', 'failed'];
 
+// The kit keeps a copy only of a file whose rows it refused at boot, not of one that later broke.
+const invalidReason = (): string =>
+  existsSync(join(getConfigDir(), 'installation.json.bad'))
+    ? 'installation.json is invalid: the daemon kept the bad file as installation.json.bad'
+    : 'installation.json is invalid';
+
 // Why the daemon says degraded: every cause the kit counts, in words; empty when ok.
 export const degradedReasons = (health: Health & HealthMarks): string[] => {
   if (health.status === 'ok') return [];
@@ -29,8 +38,7 @@ export const degradedReasons = (health: Health & HealthMarks): string[] => {
     reasons.push(`a change of ${health.unsynced.join(', ')} was not undone: its files disagree`);
   if (health.installation === 'unreadable')
     reasons.push(`installation.json cannot be read (${health.installationError ?? 'no reason'})`);
-  if (health.installation === 'invalid')
-    reasons.push('installation.json had rows it refused: kept as installation.json.bad');
+  if (health.installation === 'invalid') reasons.push(invalidReason());
   if (reasons.length === 0) reasons.push('the daemon gave no reason');
   return reasons;
 };
