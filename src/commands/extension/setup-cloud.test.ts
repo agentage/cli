@@ -26,6 +26,7 @@ const setup = (account: FakeAccount | null, opts: SetupOptions = {}) =>
       ensureSignedIn: async () => 'already',
       signOut: async () => console.log('(signed out)'),
       printStatus: async () => undefined,
+      startDaemon: async () => 4243,
       ...editDeps(account),
     })
   );
@@ -44,6 +45,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
           ensureSignedIn: async () => 'already',
           signOut: async () => undefined,
           printStatus: async () => undefined,
+          startDaemon: async () => 4243,
           ...editDeps(account),
           account: failing,
         }
@@ -69,6 +71,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
       expect.stringMatching(/^install {4}no extensions in tree \w+ \(npm skipped\)$/),
       'profile    created in your account (etag "etag-0001")',
       expect.stringMatching(/^registered m_[0-9a-f]{8} at https:\/\/platform\.test$/),
+      'daemon running on 127.0.0.1:4243',
     ]);
     expect(dir.json('machine.json')).toMatchObject({
       profileSource: 'cloud',
@@ -101,6 +104,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
       expect.stringMatching(/^install {4}1 extension in tree \w+ \(npm install\)$/),
       HELLO_OK,
       expect.stringMatching(/^registered m_/),
+      'daemon running on 127.0.0.1:4243',
     ]);
     expect(profileCalls(account)).toEqual(['GET 200']);
     expect(dir.json('profile.json')['extensions']).toEqual(HELLO_DOC.extensions);
@@ -150,7 +154,10 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     const account = fakeAccount();
     account.fail('profile', 'network');
     const run = await setup(account);
-    expect(run).toMatchObject({ lines: [expect.stringMatching(/^registered /)], error: null });
+    expect(run).toMatchObject({
+      lines: [expect.stringMatching(/^registered /), 'daemon running on 127.0.0.1:4243'],
+      error: null,
+    });
     expect(run.stderr).toBe(
       'cloud profile unavailable and no local profile.json, nothing installed (fetch failed)'
     );

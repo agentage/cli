@@ -42,7 +42,7 @@ test.describe('agentage <extension command> @p0 @offline', () => {
     expect(run.stderr).toContain(
       [
         "error: unknown command 'nope'",
-        'core: setup, status, update, extension',
+        'core: setup, status, update, daemon, extension',
         'hello: hello',
         'world: world',
       ].join('\n')

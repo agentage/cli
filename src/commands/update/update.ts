@@ -4,7 +4,8 @@ import { type Command } from 'commander';
 import { getConfigDir } from '../../lib/fs/config.js';
 import { acquireFileLock, releaseFileLock, type LockOptions } from '../../lib/fs/file-lock.js';
 import { requireNpm10, runNpm } from '../../lib/npm/npm-cli.js';
-import { addJson } from '../../lib/json-output.js';
+import { restartIfRunning } from '../../lib/daemon/daemon-client.js';
+import { addJson, messageOf } from '../../lib/json-output.js';
 import { checkForUpdate, INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
 import { VERSION } from '../../utils/version.js';
 
@@ -34,6 +35,7 @@ export interface UpdateDeps {
   install: () => Promise<void>;
   acquireLock: () => boolean;
   releaseLock: () => void;
+  restartDaemon: () => Promise<unknown>;
   log: (msg: string) => void;
 }
 
@@ -42,6 +44,7 @@ const defaultDeps: UpdateDeps = {
   install: () => installLatest(),
   acquireLock: () => acquireFileLock(updateLockTarget(), Date.now(), UPDATE_LOCK),
   releaseLock: () => releaseFileLock(updateLockTarget()),
+  restartDaemon: () => restartIfRunning(),
   log: (msg) => console.log(msg),
 };
 
@@ -77,6 +80,10 @@ const install = async (deps: UpdateDeps): Promise<void> => {
   deps.log('Installing the latest @agentage/cli...');
   await deps.install();
   deps.log(chalk.green('Updated. Run `agentage status` to confirm.'));
+  // The running daemon still holds the old code; a failed restart leaves the next command to it.
+  await deps
+    .restartDaemon()
+    .catch((err: unknown) => deps.log(`daemon not restarted: ${messageOf(err)}`));
 };
 
 // --check never installs; otherwise install only when behind, under a single-writer lock.

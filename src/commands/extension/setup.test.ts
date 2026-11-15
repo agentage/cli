@@ -1,3 +1,4 @@
+import { CliError } from '../../lib/json-output.js';
 import { describe, expect } from 'vitest';
 import { noAccount } from '../../test/account.js';
 import { MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
@@ -13,6 +14,7 @@ const deps: ExtensionSetupDeps = {
   },
   signOut: async () => console.log('(signed out)'),
   printStatus: async () => console.log('(status)'),
+  startDaemon: async () => 4243,
   npm: npmFromFixtures,
   ...noAccount,
 };
@@ -98,7 +100,44 @@ describe('agentage setup', () => {
       runExtensionSetup({ reauth: true, browser: false }, { ...deps, ensureSignedIn })
     );
     expect(run.lines[0]).toBe('(signed in {"reauth":true,"browser":false})');
-    expect(run.lines.at(-1)).toBe('(status)');
+    expect(run.lines.slice(-2)).toEqual(['(status)', 'daemon running on 127.0.0.1:4243']);
+  });
+
+  test('starts the daemon last; --no-daemon or AGENTAGE_NO_DAEMON=1 leave it off', async () => {
+    const started: number[] = [];
+    const startDaemon = async () => (started.push(1), 4243);
+    await output(() => runExtensionSetup({}, { ...deps, startDaemon }));
+    await output(() => runExtensionSetup({ daemon: false }, { ...deps, startDaemon }));
+    process.env['AGENTAGE_NO_DAEMON'] = '1';
+    const off = await output(() => runExtensionSetup({}, { ...deps, startDaemon }));
+    delete process.env['AGENTAGE_NO_DAEMON'];
+    expect(started).toHaveLength(1);
+    expect(off.lines).not.toContain('daemon running on 127.0.0.1:4243');
+  });
+
+  test('with AGENTAGE_TOKEN set, setup opens no sign-in and still starts the daemon', async () => {
+    process.env['AGENTAGE_TOKEN'] = 'aga_unit';
+    const run = await output(() => runExtensionSetup({ browser: false }, deps));
+    delete process.env['AGENTAGE_TOKEN'];
+    expect(run.error).toBeNull();
+    expect(run.lines).not.toContain('(signed in)');
+    expect(run.lines.at(-1)).toBe('daemon running on 127.0.0.1:4243');
+    process.env['AGENTAGE_TOKEN'] = 'aga_unit';
+    const reauth = await output(() => runExtensionSetup({ reauth: true }, deps));
+    delete process.env['AGENTAGE_TOKEN'];
+    expect(reauth.stderr).toContain('--reauth does nothing: AGENTAGE_TOKEN is set');
+  });
+
+  test('a daemon that cannot start fails setup (exit 1) after the account step, with its code', async () => {
+    const startDaemon = async (): Promise<never> => {
+      throw new CliError('port_in_use', 'port 4243 is in use by another program');
+    };
+    const run = await output(() => runExtensionSetup({}, { ...deps, startDaemon }));
+    expect(run).toMatchObject({
+      code: 'port_in_use',
+      error: 'port 4243 is in use by another program',
+    });
+    expect(run.lines).toContain('(status)');
   });
 
   test('a failed sign-in stops setup before the account or the status report', async ({ dir }) => {
@@ -127,7 +166,7 @@ describe('agentage setup', () => {
   }) => {
     dir.write('profile.json', { version: 0 });
     expect(await setup({})).toMatchObject({
-      lines: ['(signed in)', '(status)'],
+      lines: ['(signed in)', '(status)', 'daemon running on 127.0.0.1:4243'],
       error: 'profile.json is invalid:\n  version: must be 1 (got 0)',
     });
   });

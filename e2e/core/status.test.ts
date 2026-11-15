@@ -65,7 +65,7 @@ test.describe('agentage status and the profile in your account @p0 @offline', ()
 test.describe('a machine upgraded from 0.39 @p0 @offline', () => {
   const UNSET = { AGENTAGE_EXTENSIONS: undefined };
 
-  test('agentage setup --help keeps the 0.39 usage and flags, then lists --profile, --dry-run, --check, --latest and --json', async ({
+  test('agentage setup --help keeps the 0.39 usage and flags, then lists --no-daemon, --profile, --dry-run, --check, --latest and --json', async ({
     cli,
   }) => {
     const help = await cli.run('setup --help', UNSET);
@@ -80,6 +80,7 @@ test.describe('a machine upgraded from 0.39 @p0 @offline', () => {
       '--disconnect',
       '--reauth',
       '--no-browser',
+      '--no-daemon',
       '--profile',
       '--dry-run',
       '--check',

@@ -56,6 +56,15 @@ describe('package guard (the core)', () => {
     }
   });
 
+  // `import { type X }` still emits `import {}` and loads the module; only `import type` is erased.
+  it('only src/commands/daemon/run.ts loads the kit host; every other import of it is `import type`', () => {
+    const files = sourceFiles(SRC).map((file) => [file, readFileSync(file, 'utf-8')] as const);
+    const loaders = files.filter(([, text]) => text.includes("import('@agentage/extension/host')"));
+    expect(loaders.map(([file]) => file.slice(SRC.length + 1))).toEqual(['commands/daemon/run.ts']);
+    const statics = /^(?:import|export)\b(?!\s+type\b)[^;]*?from '@agentage\/extension\/host'/gm;
+    for (const [file, text] of files) expect(text.match(statics), file).toBeNull();
+  });
+
   it('exposes the extension contract and its test context as subpath exports', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
       exports: Record<string, { default?: string } | undefined>;
@@ -67,15 +76,18 @@ describe('package guard (the core)', () => {
     expect(defineExtension(extension)).toBe(extension);
   });
 
-  it('runtime dependencies are exactly the core set', () => {
+  // express and pglite: the kit's daemon (`@agentage/extension/host`) needs them at runtime.
+  it('runtime dependencies are the core set plus the two the kit daemon runs on', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
       dependencies: Record<string, string>;
       bin: Record<string, string>;
     };
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
       '@agentage/extension',
+      '@electric-sql/pglite',
       'chalk',
       'commander',
+      'express',
       'open',
     ]);
     expect(pkg.bin['agentage']).toBe('./dist/cli.js');

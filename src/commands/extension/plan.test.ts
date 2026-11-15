@@ -14,6 +14,7 @@ const deps: ExtensionSetupDeps = {
   ensureSignedIn: never,
   signOut: never,
   printStatus: never,
+  startDaemon: never,
   npm: npmFromFixtures,
   npmMajor: never,
   account: async () => {

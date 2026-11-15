@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { rawPatToken } from '../../lib/auth/credentials.js';
 import { loadMachine, setProfileSource } from '../../core/profile/machine.js';
 import { keepMachine } from '../../core/profile/merge.js';
 import {
@@ -64,19 +65,34 @@ const fromFile = async (source: Source, deps: ExtensionSetupDeps): Promise<void>
   await installAndLoad(source.profile, deps.npm);
 };
 
+// The daemon needs no account; --no-daemon or AGENTAGE_NO_DAEMON=1 leave it off.
+const startDaemon = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
+  if (opts.daemon === false || process.env['AGENTAGE_NO_DAEMON'] === '1') return;
+  console.log(`daemon running on 127.0.0.1:${await deps.startDaemon()}`);
+};
+
+// A token is the headless credential: no browser and no callback, so --reauth has nothing to do.
+const signIn = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
+  if (!rawPatToken())
+    return void (await deps.ensureSignedIn({ reauth: opts.reauth, browser: opts.browser }));
+  if (opts.reauth)
+    console.error('--reauth does nothing: AGENTAGE_TOKEN is set and is the credential');
+};
+
 const setupFlow = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
   if (opts.disconnect) return disconnect(deps);
   const file = opts.profile === undefined ? null : fileSource(opts.profile);
   if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts);
   if (file) return fromFile(file, deps);
   if (opts.latest) return runSetupLatest(deps);
-  await deps.ensureSignedIn({ reauth: opts.reauth, browser: opts.browser });
   const token = process.env['AGENTAGE_TOKEN'];
+  await signIn(opts, deps);
   const failure = await accountSetup(deps).then(
     () => null,
     (error: unknown) => error
   );
   await deps.printStatus({ token });
+  await startDaemon(opts, deps);
   if (failure) throw failure;
 };
 

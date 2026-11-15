@@ -7,6 +7,8 @@ export interface SetupOptions extends SignInOptions {
   dryRun?: boolean;
   check?: boolean;
   latest?: boolean;
+  // false with --no-daemon.
+  daemon?: boolean;
   json?: boolean;
 }
 
@@ -16,6 +18,8 @@ export interface SetupDeps {
   signOut: () => Promise<void>;
   // `token` stands in for AGENTAGE_TOKEN once loading extensions removed it from the environment.
   printStatus: (opts?: { token?: string }) => Promise<void>;
+  // The port of the running daemon, started when none runs.
+  startDaemon: () => Promise<number>;
 }
 
 const EXTENSIONS_HELP = `
@@ -28,7 +32,9 @@ Neither signs in. Plain setup signs in, then pulls the profile from your account
 from this machine's profile.json, or the default, when the account has none), registers this
 machine in the account and installs; it never pushes a change. When the account cannot be
 reached it installs from the local profile.json, or, with none, installs nothing and says so on
-one line. A profile from --profile stays local: setup neither pulls nor pushes it. Each package
+one line. With AGENTAGE_TOKEN set, setup signs in with that token and opens no browser. Then
+setup starts the daemon on 127.0.0.1:4243, which needs no account (--no-daemon or
+AGENTAGE_NO_DAEMON=1: not started). A profile from --profile stays local: setup neither pulls nor pushes it. Each package
 comes from the registry the profile's registries map names for its scope (default
 https://registry.npmjs.org) into AGENTAGE_EXTENSIONS_DIR (default ~/.agentage/extensions). After
 installing, setup lists the secrets extensions declare and this machine has not set (asking for
@@ -62,6 +68,7 @@ export const registerSetup = (
     .option('--disconnect', 'sign out and remove local credentials')
     .option('--reauth', 'force a fresh sign-in')
     .option('--no-browser', 'print the sign-in URL instead of opening a browser')
+    .option('--no-daemon', 'do not start the daemon')
     .option('--profile <file>', 'install the extensions a profile file names; never signs in')
     .option('--dry-run', 'print what setup would change and write nothing')
     .option('--check', 'exit 1 when setup would change anything; write nothing')

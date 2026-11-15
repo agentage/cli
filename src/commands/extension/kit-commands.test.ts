@@ -43,6 +43,7 @@ const agentage = async (kit: Pick<ProgramDeps, 'kitTool'>, ...args: string[]) =>
     extensionUp: notHere,
     extensionDown: notHere,
     extensionToken: notHere,
+    daemon: { status: notHere, stop: notHere, restart: notHere, run: notHere },
     updateHint: () => null,
     refreshUpdateCache: async () => undefined,
     writeOut: (text) => void out.push(text),
@@ -183,7 +184,7 @@ describe('a command name someone else has: only agentage <id> <command> runs it'
     const nope = await agentage({ kitTool: fakeKit().tool }, 'nope');
     expect(nope.code).toBe(2);
     expect(nope.err).toBe(
-      "error: unknown command 'nope'\ncore: setup, status, update, extension\n" +
+      "error: unknown command 'nope'\ncore: setup, status, update, daemon, extension\n" +
         'probe: ping\npong: pong ping, pong status\n'
     );
   });
