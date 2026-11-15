@@ -1,5 +1,5 @@
 import { CliError, isJsonRun } from '../../lib/json-output.js';
-import { report, specOf, type LifecycleDeps } from './lifecycle.js';
+import { report, specOf, type ConfirmIo, type LifecycleDeps } from './lifecycle.js';
 
 export interface ConfigureOptions {
   id: string;
@@ -9,10 +9,8 @@ export interface ConfigureOptions {
 }
 
 // A secret with no `=value`: stdin when it is not a terminal, else a hidden prompt.
-export interface SecretInput {
-  isTTY: boolean;
+export interface SecretInput extends ConfirmIo {
   readStdin: () => Promise<string>;
-  prompt: (question: string) => Promise<string>;
 }
 
 const ENTER = ['\r', '\n', '\u0004'];

@@ -6,7 +6,7 @@ import { type ExtensionDoctorOptions } from './doctor.js';
 import { addLifecycle, type LifecycleActions } from './lifecycle-commands.js';
 import { printWarnings, rowLines } from './row-lines.js';
 import { type ExtensionsGather } from './rows.js';
-import { addKitTools, type KitActions } from './up.js';
+import { addKitTools, type KitActions } from './up-commands.js';
 
 // The rows, or the whole report as JSON, on stdout; warnings on stderr (extension doctor).
 export const printReport = ({ status, warnings }: ExtensionsGather, json?: boolean): void => {

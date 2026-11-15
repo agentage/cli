@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { CliError, messageOf } from '../../lib/json-output.js';
+import { waitFor } from '../../lib/wait.js';
 
 // D7: a local up takes the first free port from here; the daemon keeps 4243.
 export const UP_FROM = 4244;
@@ -100,13 +101,8 @@ export const untilSignal = (): Promise<string> =>
     process.once('SIGTERM', on);
   });
 
-const gone = async (record: UpRecord, timeoutMs: number): Promise<boolean> => {
-  for (const end = Date.now() + timeoutMs; Date.now() < end;) {
-    if ((await answerOf(record, 500)) === 'none') return true;
-    await new Promise((done) => setTimeout(done, 100));
-  }
-  return false;
-};
+const gone = (record: UpRecord, timeoutMs: number): Promise<boolean> =>
+  waitFor(async () => (await answerOf(record, 500)) === 'none', timeoutMs);
 
 export type LocalDown = 'stopped' | 'stale' | 'none';
 

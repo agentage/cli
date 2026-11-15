@@ -22,6 +22,10 @@ export const daemonPort = (env: NodeJS.ProcessEnv = process.env): number => {
   return Number.isInteger(port) && port > 0 && port < 65536 ? port : DEFAULT_DAEMON_PORT;
 };
 
+// AGENTAGE_NO_DAEMON=1: no command starts or uses the daemon.
+export const daemonOff = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  env['AGENTAGE_NO_DAEMON'] === '1';
+
 export const daemonFilePath = (): string => join(getConfigDir(), 'daemon.json');
 
 const isDaemonFile = (value: unknown): value is DaemonFile =>

@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
+import { daemonOff } from '../../lib/daemon/daemon-file.js';
 import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { CliError } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
-import { report, summaryOf, terminalIo, type ConfirmIo } from './lifecycle.js';
+import { confirmed, report, summaryOf, terminalIo, type ConfirmIo } from './lifecycle.js';
 import { ignoreLocal } from './up-local.js';
 import { buildPackage, npmIn, type Npm, type PackageBuild } from './package-build.js';
 
@@ -76,7 +77,7 @@ export const installCreated = async (
   await deps.npm(dir, ['ci', '--ignore-scripts', '--no-audit', '--no-fund']);
   await conforms(dir, deps);
   ignoreLocal(dir);
-  if (process.env['AGENTAGE_NO_DAEMON'] === '1') {
+  if (daemonOff()) {
     console.log(' install   the daemon is off (AGENTAGE_NO_DAEMON=1): not installed');
     return { installed: null, url: null };
   }
@@ -100,7 +101,6 @@ export const trustFrom = async (
   if (opts.yes) return;
   if (!io.isTTY)
     throw new CliError('invalid_argument', `--from ${from} with no terminal: pass --yes to run it`);
-  const answer = (await io.prompt('run it? (y/N) ')).trim().toLowerCase();
-  if (answer !== 'y' && answer !== 'yes')
+  if (!(await confirmed(io, 'run it? (y/N) ')))
     throw new CliError('cancelled', `--from ${from}: not confirmed, nothing created`);
 };

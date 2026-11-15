@@ -42,23 +42,23 @@ import { VERSION } from './utils/version.js';
 type Run<T> = (opts: T) => Promise<unknown>;
 
 export interface ProgramDeps {
-  setup: (opts: SetupOptions) => Promise<unknown>;
-  status: (opts: StatusOptions) => Promise<unknown>;
-  update: (opts: UpdateOptions) => Promise<unknown>;
+  setup: Run<SetupOptions>;
+  status: Run<StatusOptions>;
+  update: Run<UpdateOptions>;
   extensionInstall: Run<InstallOptions>;
   extensionRemove: Run<RemoveOptions>;
   extensionList: Run<ListOptions>;
   extensionUpdate: Run<ExtensionUpdateOptions>;
   extensionEnabled: Run<{ id: string; enabled: boolean; json?: boolean }>;
   extensionConfigure: Run<ConfigureOptions>;
-  extensionDoctor: (opts: ExtensionDoctorOptions) => Promise<unknown>;
-  extensionCreate: (opts: ExtensionCreateOptions) => Promise<unknown>;
-  extensionCheck: (opts: ExtensionCheckOptions) => Promise<unknown>;
-  extensionBuild: (opts: ExtensionBuildOptions) => Promise<unknown>;
-  extensionRelease: (opts: ExtensionReleaseOptions) => Promise<unknown>;
-  extensionUp: (opts: ExtensionUpFlags) => Promise<unknown>;
-  extensionDown: (opts: ExtensionDownOptions) => Promise<unknown>;
-  extensionToken: (opts: ExtensionTokenOptions) => Promise<unknown>;
+  extensionDoctor: Run<ExtensionDoctorOptions>;
+  extensionCreate: Run<ExtensionCreateOptions>;
+  extensionCheck: Run<ExtensionCheckOptions>;
+  extensionBuild: Run<ExtensionBuildOptions>;
+  extensionRelease: Run<ExtensionReleaseOptions>;
+  extensionUp: Run<ExtensionUpFlags>;
+  extensionDown: Run<ExtensionDownOptions>;
+  extensionToken: Run<ExtensionTokenOptions>;
   daemon: Record<'status' | 'stop' | 'restart' | 'run', Run<DaemonOptions>>;
   // The kit's tool library, which runs the commands of kit-built extensions.
   kitTool: LoadKitTool;

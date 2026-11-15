@@ -4,13 +4,8 @@ import { output, test } from '../../test/config-dir.js';
 import { type KitTool } from './kit-tool.js';
 import { type Exec } from './release-guard.js';
 import { ownProject } from './stack-owner.js';
-import {
-  issuerUrl,
-  runExtensionDown,
-  runExtensionToken,
-  runExtensionUp,
-  UP_CHANGED,
-} from './up.js';
+import { runExtensionDown, runExtensionToken, runExtensionUp, UP_CHANGED } from './up.js';
+import { issuerUrl } from './up-commands.js';
 
 // The kit tool as a seam: what each call got, the lines it reports, or the error it throws.
 const fakeKit = (fail?: Error) => {

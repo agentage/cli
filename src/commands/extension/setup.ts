@@ -15,6 +15,7 @@ import { printWarnings } from './row-lines.js';
 import { accountSetup, disconnect } from './setup-cloud.js';
 import { installThroughDaemon } from './setup-install.js';
 import { type HostClient } from '../../lib/daemon/host-client.js';
+import { daemonOff } from '../../lib/daemon/daemon-file.js';
 import { type EditDeps } from './sync.js';
 
 // Sign-in and status reach the site; npm and the account are the other seams.
@@ -62,8 +63,7 @@ const readOnly = (source: Source, opts: SetupOptions, file: boolean): void => {
   else printDryRun(source.profile, { ...opts, file });
 };
 
-const daemonOff = (opts: SetupOptions): boolean =>
-  opts.daemon === false || process.env['AGENTAGE_NO_DAEMON'] === '1';
+const noDaemon = (opts: SetupOptions): boolean => opts.daemon === false || daemonOff();
 
 // `--profile` never signs in nor calls the account; it installs through the daemon as plain setup.
 const fromFile = async (source: Source, opts: SetupOptions, deps: ExtensionSetupDeps) => {
@@ -72,14 +72,14 @@ const fromFile = async (source: Source, opts: SetupOptions, deps: ExtensionSetup
   await setProfileSource('file');
   await installThroughDaemon(source.profile, {
     host: deps.host,
-    daemonOff: daemonOff(opts),
+    daemonOff: noDaemon(opts),
     from: 'file',
   });
 };
 
 // The daemon needs no account; --no-daemon or AGENTAGE_NO_DAEMON=1 leave it off.
 const startDaemon = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
-  if (daemonOff(opts)) return;
+  if (noDaemon(opts)) return;
   console.log(`daemon running on 127.0.0.1:${await deps.startDaemon()}`);
 };
 
@@ -87,7 +87,7 @@ const startDaemon = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promis
 const profileDeps = (opts: SetupOptions, deps: ExtensionSetupDeps) => ({
   ...deps,
   installProfile: (profile: Profile) =>
-    installThroughDaemon(profile, { host: deps.host, daemonOff: daemonOff(opts), from: 'account' }),
+    installThroughDaemon(profile, { host: deps.host, daemonOff: noDaemon(opts), from: 'account' }),
 });
 
 // A token is the headless credential: no browser and no callback, so --reauth has nothing to do.
