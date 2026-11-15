@@ -4,16 +4,18 @@ import { isAlive, readDaemonFile, type DaemonFile } from '../../lib/daemon/daemo
 import { probeRetry, proven, type Health } from '../../lib/daemon/daemon-probe.js';
 import { stopDaemon, type StopResult } from '../../lib/daemon/daemon-stop.js';
 import { addJson } from '../../lib/json-output.js';
+import { readMoveReport, type MoveReport } from './move.js';
 import { helpOrUnknown } from '../extension/list.js';
 
 export interface DaemonOptions {
   json?: boolean;
 }
 
-export type DaemonStatus =
+export type DaemonStatus = (
   | { running: false }
   | { running: false; unresponsive: true; pid: number; port: number }
-  | ({ running: true; port: number } & Health);
+  | ({ running: true; port: number } & Health)
+) & { move?: MoveReport | null };
 
 const report = (file: DaemonFile, live: Health): DaemonStatus => {
   console.log(`daemon: ${live.status} on 127.0.0.1:${file.port}, pid ${live.pid}, ${live.version}`);
@@ -22,7 +24,21 @@ const report = (file: DaemonFile, live: Health): DaemonStatus => {
 };
 
 // Reads only: a stale daemon.json is left for the next start or stop to remove.
+// The D6 move's warning or skipped entries, until the user fixes them.
+const moveLines = (): { move: MoveReport | null } => {
+  const move = readMoveReport();
+  if (move?.warning) console.log(`move: ${move.warning}`);
+  for (const { entry, reason } of move?.skipped ?? [])
+    console.log(`move skipped ${entry}: ${reason}`);
+  return { move };
+};
+
 export const runDaemonStatus = async (look = probeRetry): Promise<DaemonStatus> => {
+  const status = await daemonStatus(look);
+  return { ...status, ...moveLines() };
+};
+
+const daemonStatus = async (look: typeof probeRetry): Promise<DaemonStatus> => {
   const file = readDaemonFile();
   const found = file && isAlive(file.pid) ? await look(file.port) : null;
   if (file && found?.kind === 'silent') {

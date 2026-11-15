@@ -1,5 +1,6 @@
-import { rmSync } from 'node:fs';
-import { describe, expect } from 'vitest';
+import { beforeEach, describe, expect, vi } from 'vitest';
+import { CliError } from '../../lib/json-output.js';
+import { fakeHost, marketRow } from '../../test/host.js';
 import {
   connected,
   editDeps,
@@ -8,18 +9,22 @@ import {
   profileRequests,
   type FakeAccount,
 } from '../../test/account.js';
-import { output, pkg, test } from '../../test/config-dir.js';
+import { MACHINE_ID, output, test } from '../../test/config-dir.js';
 import { type SetupOptions } from '../auth/setup.js';
 import { runExtensionSetup } from './setup.js';
 
-const HELLO_OK = 'hello  ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello';
+// The profile's extensions go to the daemon (a fake here), as `extension install` sends them.
+const HELLO_OK = 'hello 0.7.0 running';
 const DEFAULT = { version: 1, extensions: {}, config: {}, machines: {} };
-const HELLO_DOC = { version: 1, extensions: { [pkg('hello')]: '^1.0.0' } };
-const HELLO = { hello: '^1.0.0' };
+const HELLO_PKG = '@agentage/extension-hello';
+const HELLO_DOC = { version: 1, extensions: { [HELLO_PKG]: '^1.0.0' } };
+const HELLO = { [HELLO_PKG]: '^1.0.0' };
 
 const NO_PLATFORM = 'FAIL discovery: https://x.test/.well-known/agentage.json has no "platform"';
 
-// Signed in already; besides npm, the account is all this flow reaches.
+let daemon = fakeHost();
+
+// Signed in already; besides the daemon, the account is all this flow reaches.
 const setup = (account: FakeAccount | null, opts: SetupOptions = {}) =>
   output(() =>
     runExtensionSetup(opts, {
@@ -27,9 +32,15 @@ const setup = (account: FakeAccount | null, opts: SetupOptions = {}) =>
       signOut: async () => console.log('(signed out)'),
       printStatus: async () => undefined,
       startDaemon: async () => 4243,
+      host: async () => daemon.host,
+      updateExtensions: async () => undefined,
       ...editDeps(account),
     })
   );
+
+beforeEach(() => {
+  daemon = fakeHost();
+});
 
 describe('agentage setup, signed in, and the profile in the account', () => {
   test('a site whose discovery names no platform fails setup with the document URL, registering nothing', async () => {
@@ -46,6 +57,8 @@ describe('agentage setup, signed in, and the profile in the account', () => {
           signOut: async () => undefined,
           printStatus: async () => undefined,
           startDaemon: async () => 4243,
+          host: async () => daemon.host,
+          updateExtensions: async () => undefined,
           ...editDeps(account),
           account: failing,
         }
@@ -68,7 +81,6 @@ describe('agentage setup, signed in, and the profile in the account', () => {
       body: { version: 1, profile: DEFAULT, lock: null, npmMajor: null },
     });
     expect(run.lines).toEqual([
-      expect.stringMatching(/^install {4}no extensions in tree \w+ \(npm skipped\)$/),
       'profile    created in your account (etag "etag-0001")',
       expect.stringMatching(/^registered m_[0-9a-f]{8} at https:\/\/platform\.test$/),
       'daemon running on 127.0.0.1:4243',
@@ -86,14 +98,15 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     dir.profile({ extensions: HELLO });
     const account = fakeAccount();
     expect((await setup(account)).lines).toContain(HELLO_OK);
+    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'hello' });
     expect(account.stored).toMatchObject({
       profile: { extensions: HELLO_DOC.extensions },
-      lock: { packages: { [`node_modules/${pkg('hello')}`]: { version: '1.0.0' } } },
-      npmMajor: 10,
+      lock: null,
+      npmMajor: null,
     });
   });
 
-  test('pulls the profile the account holds, installs and loads it, and pushes nothing', async ({
+  test('pulls the profile the account holds, installs it through the daemon, and pushes nothing', async ({
     dir,
   }) => {
     const account = fakeAccount();
@@ -101,7 +114,6 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     const run = await setup(account);
     expect(run.lines).toEqual([
       `profile    pulled from your account (etag ${etag})`,
-      expect.stringMatching(/^install {4}1 extension in tree \w+ \(npm install\)$/),
       HELLO_OK,
       expect.stringMatching(/^registered m_/),
       'daemon running on 127.0.0.1:4243',
@@ -111,17 +123,51 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     expect(dir.json('machine.json')).toMatchObject({ profileSource: 'cloud', profileEtag: etag });
   });
 
-  test('installs with the lock the account holds: npm ci, the same tree as the machine that pushed it', async ({
+  test('once per machine: an extension installed before is left as it is; the next setup installs nothing', async ({
     dir,
   }) => {
     const account = fakeAccount();
     account.store(HELLO_DOC);
+    daemon = fakeHost([marketRow('hello', '0.7.0')]);
+    dir.write('installation.json', {
+      host: 'local',
+      extensions: [{ id: 'hello', version: '0.7.0' }],
+    });
+    expect((await setup(account)).lines).toContain('hello already installed');
+    expect(daemon.host.add).not.toHaveBeenCalled();
+    expect(dir.exists('setup.profile-installed')).toBe(true);
+    expect((await setup(account)).lines).toContain(
+      'extensions your account profile was installed here already; setup installs nothing (agentage extension install)'
+    );
+  });
+
+  test("this machine's off entries install disabled", async ({ dir }) => {
+    dir.machine({});
+    const account = fakeAccount();
+    const machines = { [MACHINE_ID]: { off: [HELLO_PKG], config: {} } };
+    account.store({ ...HELLO_DOC, machines });
     await setup(account);
-    const tree = dir.file('extensions/current');
-    account.store(HELLO_DOC, dir.json('extensions/package-lock.json'), 10);
-    rmSync(dir.at('extensions'), { recursive: true });
+    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'hello' });
+    expect(daemon.host.change).toHaveBeenCalledWith('hello', { enabled: false });
+  });
+
+  test('a profile entry the daemon refuses fails setup naming it, after the others', async () => {
+    const account = fakeAccount();
+    account.store({ version: 1, extensions: { [HELLO_PKG]: '^1', '@other/thing': '^1' } });
+    vi.mocked(daemon.host.add).mockRejectedValueOnce(new CliError('NOT_FOUND', 'no hello'));
     const run = await setup(account);
-    expect(run.lines).toContain(`install    1 extension in tree ${tree} (npm ci)`);
+    expect(run).toMatchObject({ code: 'extension_failed' });
+    expect(run.error).toBe(
+      'not installed:\n  hello: no hello\n  @other/thing: not an @agentage/extension-<id> package'
+    );
+  });
+
+  test('with the daemon off, setup pulls the profile and installs nothing', async () => {
+    const account = fakeAccount();
+    account.store(HELLO_DOC);
+    const run = await setup(account, { daemon: false });
+    expect(run.lines).toContain('extensions the daemon is off, nothing installed');
+    expect(daemon.host.add).not.toHaveBeenCalled();
   });
 
   test('with the etag of the local copy still current (304), keeps profile.json and installs from it', async ({
@@ -180,7 +226,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
   test('a profile from a file (setup --profile) is neither pulled nor pushed, and setup says so', async ({
     dir,
   }) => {
-    dir.profile({ extensions: HELLO });
+    dir.write('profile.json', { version: 1, extensions: HELLO });
     dir.machine({}, { profileSource: 'file' });
     const account = fakeAccount();
     const run = await setup(account);

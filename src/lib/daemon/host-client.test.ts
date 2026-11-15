@@ -29,7 +29,7 @@ describe('the C5 client of the daemon', () => {
     expect(served.seen[1]?.body).toEqual({ id: 'probe', version: '0.7.0' });
   });
 
-  it('maps the error envelope: NOT_FOUND is not_installed, others in snake case', async () => {
+  it('passes the error code of the daemon through unchanged', async () => {
     const replies: [number, unknown][] = [
       [404, fail('NOT_FOUND', 'nope is not installed')],
       [409, fail('CONFLICT', 'probe is installed')],
@@ -38,10 +38,10 @@ describe('the C5 client of the daemon', () => {
     served = await serve(() => replies.shift() ?? [500, {}]);
     const host = hostClient(served.port);
     await expect(host.remove('nope', false)).rejects.toMatchObject({
-      code: 'not_installed',
+      code: 'NOT_FOUND',
       message: 'nope is not installed',
     });
-    await expect(host.add({ id: 'probe' })).rejects.toMatchObject({ code: 'conflict' });
+    await expect(host.add({ id: 'probe' })).rejects.toMatchObject({ code: 'CONFLICT' });
     await expect(host.list()).rejects.toMatchObject({ code: 'error', message: 'HTTP 500' });
   });
 

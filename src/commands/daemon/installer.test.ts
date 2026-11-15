@@ -39,13 +39,55 @@ describe('the daemon installer', () => {
 
   test('a private market entry is refused; a package of another id too', async () => {
     const priv = await installer(market({ version: '1.0.0', package: null }));
-    await expect(priv.install({ id: 'probe' })).rejects.toMatchObject({ code: 'private_entry' });
+    await expect(priv.install({ id: 'probe' })).rejects.toMatchObject({
+      code: 'PRIVATE_ENTRY',
+      status: 400,
+    });
     const hello = await installer(market({ version: '1.0.0', package: '@agentage/fixture-hello' }));
-    await expect(hello.install({ id: 'probe' })).rejects.toThrow('agentage.id is hello');
+    await expect(hello.install({ id: 'probe' })).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      message: expect.stringContaining('agentage.id is hello'),
+    });
   });
 
-  test('a version npm does not have is not_found', async () => {
+  test('a version npm does not have, or an id nobody has, is NOT_FOUND 404', async () => {
     const { install } = await installer(market({ version: '9.9.9', package: PKG }));
-    await expect(install({ id: 'probe' })).rejects.toThrow('No matching version');
+    await expect(install({ id: 'probe' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      status: 404,
+    });
+    const none = await installer(market(null));
+    await expect(none.install({ id: 'nosuch' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  test('a silent market without a version is MARKET_UNAVAILABLE 502', async () => {
+    const down: Market = { latest: vi.fn(async () => null), down: () => true };
+    const { install, npm } = await installer(down);
+    await expect(install({ id: 'probe' })).rejects.toMatchObject({
+      code: 'MARKET_UNAVAILABLE',
+      status: 502,
+    });
+    expect(npm).not.toHaveBeenCalled();
+  });
+
+  test('a failed npm install is INSTALL_FAILED 502 with the npm reason', async () => {
+    const npm = vi.fn(async () => ({ code: 1, stdout: '', stderr: 'npm error E500 boom' }));
+    const m = market({ version: '0.2.0', package: PKG });
+    const deps = { npm: async () => npm, manifest: manifestFromFixtures(), market: () => m };
+    await expect(cliInstaller(deps)({ id: 'probe' })).rejects.toMatchObject({
+      code: 'INSTALL_FAILED',
+      status: 502,
+      message: expect.stringContaining('E500 boom'),
+    });
+  });
+
+  test('a version the 0.51 tree holds runs from there: no market, no npm (offline)', async ({
+    dir,
+  }) => {
+    dir.tree('probe');
+    const offline = await installer({ latest: vi.fn(async () => null), down: () => true });
+    const got = await offline.install({ id: 'probe', version: '0.2.0' });
+    expect(got.dir).toMatch(/extensions\/trees\/[^/]+\/node_modules\/@agentage\/fixture-probe$/);
+    expect(offline.npm).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,7 @@ import { rmSync } from 'node:fs';
 import { describe, expect } from 'vitest';
 import { pkg, test } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
-import { install } from './installer.js';
+import { install } from '../../test/old-install.js';
 import { currentDependencies, lockDrift, pendingChanges, planChanges } from './plan.js';
 
 const [HELLO, WORLD, SECRET] = [pkg('hello'), pkg('world'), pkg('secret')];

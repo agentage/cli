@@ -19,8 +19,8 @@ extension.
 ## Get started
 
 `agentage setup` opens your browser for sign-in. Check the session with `agentage status`.
-Installing and running extensions needs no sign-in. Sign-in adds your account's profile, so every
-machine gets the same extensions.
+Installing and running extensions needs no sign-in. On a new machine, a signed-in `setup` installs
+the extensions of your account's profile once; after that each machine keeps its own list.
 
 ### On a server or in CI (no browser)
 
@@ -54,15 +54,18 @@ More: [author commands](docs/extensions.md#author-commands) and [the lifecycle](
 
 - A **profile** lists what your account wants: extensions, version ranges, and which are off
   per machine.
-- `setup` installs the profile, loads each extension once and prints `ok` or why not.
-- `extension install` and `remove` edit the profile, then do the same.
+- On a new machine, `setup` installs the profile's extensions through the daemon, once. No
+  command pushes your changes back to the account: each machine keeps its own list.
+- `extension install`, `list`, `update`, `disable`, `enable`, `configure` and `remove` manage
+  one extension in the local daemon (`127.0.0.1:4243`), which runs each as its own process.
 - Nothing installs on a timer: the machine changes only when you run a command.
 
 ```bash
-agentage extension install probe        # short name for @agentage/extension-probe
-agentage extension list                 # one row per extension
-agentage probe ping                     # run a command by its extension id
-agentage extension remove probe         # take it out again
+agentage extension install probe                    # the market's newest version, then it runs
+agentage extension configure probe echo.prefix=hey  # settings, no daemon restart
+agentage extension list                             # id, version, source, state
+agentage probe ping                                 # run a command by its extension id
+agentage extension remove probe                     # take it out again; --purge also deletes its data
 ```
 
 Extensions run in the CLI process with your privileges, so install only ones you trust. npm runs with

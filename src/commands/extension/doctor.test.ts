@@ -1,5 +1,5 @@
 import { describe, expect, vi } from 'vitest';
-import { install } from '../../core/installer/installer.js';
+import { install } from '../../test/old-install.js';
 import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
 import { runExtensionDoctor } from './doctor.js';

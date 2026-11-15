@@ -2,6 +2,7 @@ import { type Command } from 'commander';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { loadExtensions } from '../../core/loader/load.js';
 import { loadOrder } from '../../core/loader/order.js';
+import { installedExtensions } from '../../core/loader/installed.js';
 import { loadSet, scan } from '../../core/loader/scan.js';
 import { claimVerbs, commandNames, readHeld, type Verbs } from '../../core/loader/verbs.js';
 import { NO_MACHINE, readMachine } from '../../core/profile/machine.js';
@@ -57,7 +58,8 @@ export const registerDelegates = (
   tool: LoadKitTool = loadKitTool
 ): void => {
   const core = program.commands.map((command) => command.name());
-  const extensions = loadSet(scan(readMachine() ?? NO_MACHINE));
+  // The daemon's installation once it exists; before the one-time move, the old lists.
+  const extensions = installedExtensions() ?? loadSet(scan(readMachine() ?? NO_MACHINE));
   const verbs = claimVerbs(extensions, readHeld());
   for (const ext of extensions) {
     if (ext.kind === 'kit') registerKit(program, ext, verbs, { argv, wrap, tool });

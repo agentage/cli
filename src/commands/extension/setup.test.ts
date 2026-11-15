@@ -1,5 +1,6 @@
+import { fakeHost, marketRow } from '../../test/host.js';
 import { CliError } from '../../lib/json-output.js';
-import { describe, expect } from 'vitest';
+import { describe, expect, vi } from 'vitest';
 import { noAccount } from '../../test/account.js';
 import { MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
@@ -15,6 +16,8 @@ const deps: ExtensionSetupDeps = {
   signOut: async () => console.log('(signed out)'),
   printStatus: async () => console.log('(status)'),
   startDaemon: async () => 4243,
+  host: async () => fakeHost().host,
+  updateExtensions: async () => undefined,
   npm: npmFromFixtures,
   ...noAccount,
 };
@@ -25,14 +28,10 @@ describe('agentage setup --profile', () => {
   test("keeps this machine's own off list from the local profile.json", async ({ dir }) => {
     dir.profile({ extensions: { hello: '^1.0.0' }, off: ['hello'] });
     const next = dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } }, 'next.json');
-    const run = await setup({ profile: next });
-    expect(run.error).toBeNull();
+    await setup({ profile: next });
     expect(dir.json('profile.json')['machines']).toEqual({
       [MACHINE_ID]: { off: [pkg('hello')], config: {} },
     });
-    expect(run.lines).toContain(
-      'hello  off        @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello'
-    );
   });
 
   test('refuses a file it cannot read or parse, and a URL, writing nothing', async ({ dir }) => {
@@ -56,37 +55,63 @@ describe('agentage setup --profile', () => {
   });
 });
 
-describe('agentage setup --profile, after installing', () => {
-  test('loads the extensions, prints ok and failed rows, and fails naming each that failed', async ({
+describe('agentage setup --profile installs through the daemon', () => {
+  const HELLO = '@agentage/extension-hello';
+
+  test('each entry by id (an exact version as it is); the cli loads nothing', async ({ dir }) => {
+    const daemon = fakeHost();
+    dir.write('p.json', {
+      version: 1,
+      extensions: { [HELLO]: '^1.0.0', '@agentage/extension-world': '2.1.0' },
+    });
+    const file = dir.at('p.json');
+    const run = await output(() =>
+      runExtensionSetup({ profile: file }, { ...deps, host: async () => daemon.host })
+    );
+    expect(run.error).toBeNull();
+    expect(vi.mocked(daemon.host.add).mock.calls).toEqual([
+      [{ id: 'hello' }],
+      [{ id: 'world', version: '2.1.0' }],
+    ]);
+    expect(dir.exists('extensions')).toBe(false);
+    expect(dir.json('machine.json')).toMatchObject({ profileSource: 'file' });
+  });
+
+  test('a failed entry is reported and the others install', async ({ dir }) => {
+    const daemon = fakeHost();
+    vi.mocked(daemon.host.add).mockRejectedValueOnce(new CliError('NOT_FOUND', 'no hello'));
+    const extensions = { [HELLO]: '^1', '@agentage/extension-world': '^2' };
+    dir.write('p.json', { version: 1, extensions });
+    const file = dir.at('p.json');
+    const run = await output(() =>
+      runExtensionSetup({ profile: file }, { ...deps, host: async () => daemon.host })
+    );
+    expect(run.error).toBe('not installed:\n  hello: no hello');
+    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'world' });
+  });
+
+  test('never gated: installs the entries not installed yet, reports the others as already installed', async ({
     dir,
   }) => {
-    const run = await setup({
-      profile: dir.profile({ extensions: { hello: '^1.0.0', throws: '^1' } }, 'p.json'),
+    const daemon = fakeHost([marketRow('hello', '0.7.0')]);
+    dir.write('setup.profile-installed', '');
+    dir.write('p.json', {
+      version: 1,
+      extensions: { [HELLO]: '^1', '@agentage/extension-world': '^2' },
     });
-    expect(run.lines).toContain(
-      'hello   ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello'
+    const file = dir.at('p.json');
+    const run = await output(() =>
+      runExtensionSetup({ profile: file }, { ...deps, host: async () => daemon.host })
     );
-    expect(run.lines).toContain(
-      'throws  failed     @agentage/fixture-throws 1.0.0 (wants ^1)  "boom"'
-    );
-    expect(run.error).toBe('1 extension failed to load: throws');
+    expect(run.lines).toContain('hello already installed');
+    expect(vi.mocked(daemon.host.add).mock.calls).toEqual([[{ id: 'world' }]]);
   });
 
-  test('lists the secrets to set before it loads', async ({ dir }) => {
-    const run = await setup({ profile: dir.profile({ extensions: { secret: '^1' } }, 'p.json') });
-    expect(run.lines.slice(1)).toEqual([
-      'secrets to set: secret.token',
-      'secret  ok         @agentage/fixture-secret 1.0.0 (wants ^1)',
-    ]);
-  });
-
-  test('loads nothing when npm fails: the rows show what is still current', async ({ dir }) => {
-    const run = await setup({ profile: dir.profile({ extensions: { absent: '^1' } }, 'p.json') });
-    expect(run.error).toMatch(/^npm install failed/);
-    expect(run.lines).toEqual([
-      '?  missing    add  @agentage/fixture-absent - (wants ^1)  not installed in the current tree',
-    ]);
-    expect(dir.exists('state')).toBe(false);
+  test('with the daemon off it installs nothing and says so', async ({ dir }) => {
+    dir.write('p.json', { version: 1, extensions: { [HELLO]: '^1' } });
+    const run = await setup({ profile: dir.at('p.json'), daemon: false });
+    expect(run.lines).toContain('extensions the daemon is off, nothing installed');
+    expect(dir.exists('setup.profile-installed')).toBe(false);
   });
 });
 
@@ -149,7 +174,7 @@ describe('agentage setup', () => {
     expect(dir.list('')).toEqual([]);
   });
 
-  test('reports status with AGENTAGE_TOKEN, which loading removed from the environment', async ({
+  test('reports status with AGENTAGE_TOKEN; setup loads no extension code itself', async ({
     dir,
   }) => {
     process.env['AGENTAGE_TOKEN'] = 'aga_unit';
@@ -158,7 +183,7 @@ describe('agentage setup', () => {
       console.log(`(status with ${opts.token})`);
     const run = await output(() => runExtensionSetup({}, { ...deps, printStatus }));
     expect(run.lines).toContain('(status with aga_unit)');
-    expect(process.env['AGENTAGE_TOKEN']).toBeUndefined();
+    delete process.env['AGENTAGE_TOKEN'];
   });
 
   test('prints status after signing in, even when profile.json is invalid, then fails', async ({
@@ -169,5 +194,14 @@ describe('agentage setup', () => {
       lines: ['(signed in)', '(status)', 'daemon running on 127.0.0.1:4243'],
       error: 'profile.json is invalid:\n  version: must be 1 (got 0)',
     });
+  });
+
+  test('setup --latest names its new command on stderr and runs extension update', async () => {
+    const updateExtensions = vi.fn(async () => undefined);
+    const run = await output(() =>
+      runExtensionSetup({ latest: true }, { ...deps, updateExtensions })
+    );
+    expect(run.stderr).toBe('setup --latest is now: agentage extension update');
+    expect(updateExtensions).toHaveBeenCalledOnce();
   });
 });

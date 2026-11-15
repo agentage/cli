@@ -116,13 +116,16 @@ const blank = (pkg: string, source: ExtensionSource, dir: string): DiscoveredExt
   missing: false,
 });
 
-interface Candidate {
+export interface Candidate {
   pkg: string;
   source: ExtensionSource;
   dir: string | null;
 }
 
-const inspect = ({ pkg, source, dir }: Candidate, configs: ConfigMap): DiscoveredExtension => {
+export const inspect = (
+  { pkg, source, dir }: Candidate,
+  configs: ConfigMap
+): DiscoveredExtension => {
   const base = blank(pkg, source, dir ?? '');
   if (source === 'dev' && !isAbsolute(base.dir))
     return { ...base, problem: 'dev path not absolute' };

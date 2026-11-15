@@ -4,7 +4,7 @@
  * the kit, a name someone else has keeps only the namespaced form, `extension doctor` checks its
  * command entry, and `extension up`, `down` and `token` reach the kit's tool library.
  */
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test, type Machine, type Run } from './cli.js';
 
@@ -12,8 +12,23 @@ const PROBE = './fixtures/extension-probe';
 const PONG = './fixtures/extension-pong';
 const PROBE_OK = 'probe  ok         @agentage/fixture-probe 0.2.0 (dev)  commands: ping';
 
+// A working copy in machine.json dev, as cli 0.51 linked it: the commands come from the old list
+// until the daemon's first start moves it into installation.json.
 const linked = async (cli: Machine, ...paths: string[]): Promise<void> => {
-  for (const path of paths) expect((await cli.run(`extension install ${path}`)).code).toBe(0);
+  const dev = Object.fromEntries(
+    paths.map((path) => [
+      JSON.parse(readFileSync(resolve(path, 'package.json'), 'utf8')).name,
+      realpathSync(path),
+    ])
+  );
+  cli.write('machine.json', {
+    id: 'm_0000beef',
+    name: 'box',
+    dev,
+    profileSource: 'default',
+    accountId: null,
+    profileEtag: null,
+  });
 };
 
 const said = ({ code, stdout, stderr }: Run) => ({
@@ -23,19 +38,6 @@ const said = ({ code, stdout, stderr }: Run) => ({
 });
 
 test.describe('agentage extension install <path> of a kit-built working copy @p0 @offline', () => {
-  test('agentage extension install ./fixtures/extension-probe links it and lists probe ok with ping', async ({
-    cli,
-  }) => {
-    const run = await cli.run(`extension install ${PROBE}`);
-    expect(run.code).toBe(0);
-    expect(run.lines[0]).toBe('linked     @agentage/fixture-probe (working copy)');
-    expect(run.lines).toContain(PROBE_OK);
-    expect(cli.json('machine.json')['dev']).toEqual({
-      '@agentage/fixture-probe': realpathSync(PROBE),
-    });
-    expect(cli.exists('profile.json')).toBe(false);
-  });
-
   test('agentage extension doctor checks its command entry through the kit: probe ok', async ({
     cli,
   }) => {
@@ -50,7 +52,7 @@ test.describe('agentage extension install <path> of a kit-built working copy @p0
     cli,
   }) => {
     const pang = cli.fixture('probe', { '"name": "ping"': '"name": "pang"' });
-    expect((await cli.run(`extension install ${pang}`)).code).toBe(1);
+    await linked(cli, pang);
     const doctor = await cli.run('extension doctor');
     expect(said(doctor)).toMatchObject({ code: 1, stderr: ['1 extension failed to load: probe'] });
     expect(doctor.lines.filter((line) => line !== '')).toEqual([
@@ -96,22 +98,6 @@ test.describe('agentage <command> of a kit-built extension @p0 @offline', () => 
 });
 
 test.describe('a kit command whose name is taken keeps only agentage <id> <command> @p0 @offline', () => {
-  test('agentage extension install of pong after probe says so; agentage ping stays probe', async ({
-    cli,
-  }) => {
-    await linked(cli, PROBE);
-    const pong = await cli.run(`extension install ${PONG}`);
-    expect(pong.code).toBe(0);
-    expect(pong.lines).toContain(
-      'namespaced agentage pong ping (agentage ping is taken by extension probe)'
-    );
-    expect(pong.lines).toContain(
-      'namespaced agentage pong status (agentage status is a core command)'
-    );
-    expect(await cli.run('ping')).toMatchObject({ code: 0, stdout: 'pong\n' });
-    expect(await cli.run('pong ping')).toMatchObject({ code: 0, stdout: 'pong from pong\n' });
-  });
-
   test('agentage status stays the core status; agentage pong status runs the kit command', async ({
     cli,
   }) => {
@@ -120,29 +106,6 @@ test.describe('a kit command whose name is taken keeps only agentage <id> <comma
     expect(status.code).toBe(0);
     expect(status.lines[0]).toMatch(/^version {4}/);
     expect(await cli.run('pong status')).toMatchObject({ code: 0, stdout: 'pong status\n' });
-  });
-
-  test('agentage extension list shows what to type in the commands column', async ({ cli }) => {
-    await linked(cli, PROBE, PONG);
-    const list = await cli.run('extension list');
-    const rows = list.lines.filter((line) => line !== '');
-    expect(rows.map((line) => line.replace(/ {2}last run: .*$/, ''))).toEqual([
-      'pong   installed  @agentage/fixture-pong 0.2.0 (dev)  commands: pong ping, pong status',
-      'probe  installed  @agentage/fixture-probe 0.2.0 (dev)  commands: ping',
-    ]);
-  });
-
-  test('installing probe again after pong keeps agentage ping with probe, the earlier install, with pong first on disk', async ({
-    cli,
-  }) => {
-    await linked(cli, PROBE, PONG);
-    const [probe, pong] = ['@agentage/fixture-probe', '@agentage/fixture-pong'];
-    const machine = cli.json('machine.json');
-    const dev = machine['dev'] as Record<string, string>;
-    cli.write('machine.json', { ...machine, dev: { [pong]: dev[pong], [probe]: dev[probe] } });
-    await linked(cli, PROBE);
-    expect(cli.json('commands.json')).toEqual({ ping: probe });
-    expect(await cli.run('ping')).toMatchObject({ code: 0, stdout: 'pong\n' });
   });
 });
 

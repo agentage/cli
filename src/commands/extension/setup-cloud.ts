@@ -18,8 +18,8 @@ import { defaultProfile, mutateProfile, readProfile } from '../../core/profile/p
 import { pushWithReplay } from '../../core/profile/push.js';
 import { disconnectMachine, registerMachine } from '../../core/profile/register.js';
 import { type Profile } from '../../core/profile/schema.js';
-import { installAndLoad, line } from './install-load.js';
-import { applying, checkAccount, type EditDeps } from './sync.js';
+import { line } from './line.js';
+import { applying, checkAccount, type EditDeps, type ProfileDeps } from './sync.js';
 
 export interface AccountSetupDeps extends EditDeps {
   signOut: () => Promise<void>;
@@ -40,7 +40,7 @@ const mirroredEtag = (machine: MachineFile): string | null =>
   machine.profileSource === 'cloud' && readProfile()?.ok === true ? machine.profileEtag : null;
 
 // Without the account: the local profile.json; with none, nothing to install, and setup goes on.
-const fromLocalCopy = async (reason: string, deps: EditDeps): Promise<void> => {
+const fromLocalCopy = async (reason: string, deps: ProfileDeps): Promise<void> => {
   const local = localCopy();
   const unavailable = 'cloud profile unavailable';
   if (local === null)
@@ -48,13 +48,14 @@ const fromLocalCopy = async (reason: string, deps: EditDeps): Promise<void> => {
       chalk.dim(`${unavailable} and no local profile.json, nothing installed (${reason})`)
     );
   console.error(chalk.dim(`${unavailable}, using local profile.json (${reason})`));
-  await installAndLoad(local, deps.npm);
+  await deps.installProfile(local);
 };
 
-const installPulled = async (doc: CloudProfile & { etag: string }, deps: EditDeps) => {
+const installPulled = async (doc: CloudProfile & { etag: string }, deps: ProfileDeps) => {
   await mutateProfile(() => doc.profile);
   console.log(line('profile', `pulled from your account (etag ${doc.etag})`));
-  await installAndLoad({ ...doc.profile, lock: doc.lock }, deps.npm, () => setCloud(doc.etag));
+  await setCloud(doc.etag);
+  await deps.installProfile(doc.profile);
 };
 
 // A create the account did not take fails nothing: the next setup creates it.
@@ -65,7 +66,7 @@ const notCreated = (err: unknown): null => {
 };
 
 // No profile in the account yet: this machine's own, or the default, becomes it once it loaded.
-const createIn = async (account: Account, deps: EditDeps): Promise<void> => {
+const createIn = async (account: Account, deps: ProfileDeps): Promise<void> => {
   const base = localProfile(localCopy() ?? defaultProfile());
   const apply = applying((profile) => profile, deps);
   const done = await pushWithReplay(account.fetch, base, apply).catch(notCreated);
@@ -76,15 +77,15 @@ const createIn = async (account: Account, deps: EditDeps): Promise<void> => {
 };
 
 // Plain setup pulls and never pushes, except to create the account's first profile.
-const profileFrom = async (account: Account, machine: MachineFile, deps: EditDeps) => {
+const profileFrom = async (account: Account, machine: MachineFile, deps: ProfileDeps) => {
   if (machine.profileSource === 'file') {
     console.log(line('profile', FILE_NOTE));
-    return installAndLoad(localCopy() ?? defaultProfile(), deps.npm);
+    return deps.installProfile(localCopy() ?? defaultProfile());
   }
   const pulled = await pullProfile(account.fetch, mirroredEtag(machine));
   if (pulled.kind === 'found') return installPulled(pulled.doc, deps);
   if (pulled.kind === 'none') return createIn(account, deps);
-  if (pulled.kind === 'current') return installAndLoad(localCopy() ?? defaultProfile(), deps.npm);
+  if (pulled.kind === 'current') return deps.installProfile(localCopy() ?? defaultProfile());
   return fromLocalCopy(pulled.reason, deps);
 };
 
@@ -96,7 +97,7 @@ const connect = async (account: Account): Promise<MachineFile> => {
 };
 
 // Registration runs alongside the profile, so it never delays setup by more than its 2 s.
-export const accountSetup = async (deps: EditDeps): Promise<void> => {
+export const accountSetup = async (deps: ProfileDeps): Promise<void> => {
   const account = await deps.account();
   if (account === null) return fromLocalCopy('not signed in', deps);
   const platform = await account.platform();

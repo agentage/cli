@@ -20,6 +20,7 @@ import { startStubSite, stubEnv, type StubSite } from '../stub/auth-server.js';
 import { signInVia, type SignInRun } from '../stub/client.js';
 import { configFiles, fixtureCopy, hashTree, type ConfigFiles } from './files.js';
 import { expand, profileDoc, profileWriter, type ProfileSpec } from './profiles.js';
+import { oldSetup } from './old-setup.js';
 import { testRegistry, type TestRegistry } from './registry.js';
 import { siteOf, type Site } from './site.js';
 
@@ -44,6 +45,8 @@ export interface Machine extends ConfigFiles {
   signIn: () => Promise<SignInRun>;
   // Writes a profile file outside the config dir and returns its path, for `setup --profile`.
   profile: (spec: ProfileSpec) => string;
+  // The state a 0.51 `setup --profile` left: profile.json and the npm tree `current` names.
+  oldSetup: (spec: ProfileSpec) => Promise<void>;
   // A copy of fixtures/extension-<name> outside the config dir, for `extension install <path>`.
   fixture: (name: string, edits?: Record<string, string>) => string;
   snapshot: () => Record<string, string>;
@@ -89,6 +92,7 @@ const machine = (
     start: (command) => host.startSetup(words(command)),
     signIn: () => signInVia(host),
     profile: profileWriter(scratch, docOf),
+    oldSetup: (spec) => oldSetup(host.env, profileWriter(scratch, docOf)(spec)),
     fixture: fixtureCopy(scratch),
     ...files,
     snapshot: () => hashTree(host.configDir),

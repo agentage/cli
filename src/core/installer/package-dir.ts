@@ -1,9 +1,8 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { extensionsDir } from '../paths.js';
-import { lastLines } from './installer.js';
-import { type Npm } from './npm.js';
+import { lastLines, type Npm } from './npm.js';
 import {
   clearStaging,
   commitTree,
@@ -65,4 +64,16 @@ export const installPackage = async (spec: PackageSpec, npm: Npm): Promise<strin
       spec.name
     );
   });
+};
+
+// The versions of id that no installation entry uses any more go; only the daemon's own trees,
+// never the 0.51 tree (read-only for this cli). Called after the daemon stopped the old child.
+export const prunePackages = (id: string, inUse: string[]): string[] => {
+  const trees = join(packagesDir(), 'trees');
+  const names = existsSync(trees) ? readdirSync(trees) : [];
+  const unused = names.filter(
+    (name) => name.startsWith(`${id}@`) && !inUse.includes(name.slice(id.length + 1))
+  );
+  for (const name of unused) rmSync(join(trees, name), { recursive: true, force: true });
+  return unused;
 };

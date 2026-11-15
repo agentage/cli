@@ -10,15 +10,20 @@ import {
 } from '../../core/profile/profile.js';
 import { type Profile, type ProfileParse } from '../../core/profile/schema.js';
 import { type SetupDeps, type SetupOptions } from '../auth/setup.js';
-import { extensionsResult, installAndLoad } from './install-load.js';
-import { runSetupLatest } from './latest.js';
 import { printDryRun, runSetupCheck } from './plan.js';
 import { printWarnings } from './row-lines.js';
 import { accountSetup, disconnect } from './setup-cloud.js';
+import { installThroughDaemon } from './setup-install.js';
+import { type HostClient } from '../../lib/daemon/host-client.js';
 import { type EditDeps } from './sync.js';
 
 // Sign-in and status reach the site; npm and the account are the other seams.
-export interface ExtensionSetupDeps extends SetupDeps, EditDeps {}
+export interface ExtensionSetupDeps extends SetupDeps, EditDeps {
+  // The daemon the profile installs through on a machine with no installation.json.
+  host: () => Promise<HostClient>;
+  // `extension update`, which --latest now runs.
+  updateExtensions: () => Promise<unknown>;
+}
 
 interface Source {
   profile: Profile;
@@ -51,25 +56,39 @@ const localSource = (): Source => {
 };
 
 // --check and --dry-run read only and never sign in.
-const readOnly = (source: Source, opts: SetupOptions): void => {
+const readOnly = (source: Source, opts: SetupOptions, file: boolean): void => {
   printWarnings(source.warnings);
-  if (opts.check) runSetupCheck(source.profile, opts);
-  else printDryRun(source.profile, opts);
+  if (opts.check) runSetupCheck(source.profile, { ...opts, file });
+  else printDryRun(source.profile, { ...opts, file });
 };
 
-// `--profile` never signs in nor calls the account; this machine's own entry is kept.
-const fromFile = async (source: Source, deps: ExtensionSetupDeps): Promise<void> => {
+const daemonOff = (opts: SetupOptions): boolean =>
+  opts.daemon === false || process.env['AGENTAGE_NO_DAEMON'] === '1';
+
+// `--profile` never signs in nor calls the account; it installs through the daemon as plain setup.
+const fromFile = async (source: Source, opts: SetupOptions, deps: ExtensionSetupDeps) => {
   const machine = await loadMachine();
   await mutateProfile((current) => keepMachine(source.profile, current, machine.id));
   await setProfileSource('file');
-  await installAndLoad(source.profile, deps.npm);
+  await installThroughDaemon(source.profile, {
+    host: deps.host,
+    daemonOff: daemonOff(opts),
+    from: 'file',
+  });
 };
 
 // The daemon needs no account; --no-daemon or AGENTAGE_NO_DAEMON=1 leave it off.
 const startDaemon = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
-  if (opts.daemon === false || process.env['AGENTAGE_NO_DAEMON'] === '1') return;
+  if (daemonOff(opts)) return;
   console.log(`daemon running on 127.0.0.1:${await deps.startDaemon()}`);
 };
+
+// Plain setup installs the profile only through the daemon (one install path).
+const profileDeps = (opts: SetupOptions, deps: ExtensionSetupDeps) => ({
+  ...deps,
+  installProfile: (profile: Profile) =>
+    installThroughDaemon(profile, { host: deps.host, daemonOff: daemonOff(opts), from: 'account' }),
+});
 
 // A token is the headless credential: no browser and no callback, so --reauth has nothing to do.
 const signIn = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
@@ -82,12 +101,15 @@ const signIn = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<voi
 const setupFlow = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
   if (opts.disconnect) return disconnect(deps);
   const file = opts.profile === undefined ? null : fileSource(opts.profile);
-  if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts);
-  if (file) return fromFile(file, deps);
-  if (opts.latest) return runSetupLatest(deps);
+  if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts, file !== null);
+  if (file) return fromFile(file, opts, deps);
+  if (opts.latest) {
+    console.error('setup --latest is now: agentage extension update');
+    return void (await deps.updateExtensions());
+  }
   const token = process.env['AGENTAGE_TOKEN'];
   await signIn(opts, deps);
-  const failure = await accountSetup(deps).then(
+  const failure = await accountSetup(profileDeps(opts, deps)).then(
     () => null,
     (error: unknown) => error
   );
@@ -101,5 +123,5 @@ export const runExtensionSetup = async (
   deps: ExtensionSetupDeps
 ): Promise<unknown> => {
   await setupFlow(opts, deps);
-  return opts.check || opts.dryRun ? undefined : extensionsResult(opts.json);
+  return undefined;
 };

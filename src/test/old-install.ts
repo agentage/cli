@@ -1,28 +1,32 @@
+// Test fixture only: the 0.51 install (one shared tree, switched by `current`). The cli no
+// longer has it; tests build the 0.51 state that the new cli reads and never changes.
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { loadMachine, setProfileSource } from '../core/profile/machine.js';
+import { keepMachine } from '../core/profile/merge.js';
+import { mutateProfile, parseProfileText } from '../core/profile/profile.js';
 import { join } from 'node:path';
-import { type NpmResult } from '../../lib/npm/npm-cli.js';
-import { extensionsDir } from '../paths.js';
-import { type Profile } from '../profile/schema.js';
-import { lockAgrees, lockEntries, parseLock } from './compare-lock.js';
-import { prepareNpm, type Npm, type NpmCommand } from './npm.js';
-import { driftLines, lockDrift } from './plan.js';
+import { writeTextAtomic } from '../lib/fs/json-file.js';
+import { type NpmResult } from '../lib/npm/npm-cli.js';
+import { extensionsDir } from '../core/paths.js';
+import { type Profile } from '../core/profile/schema.js';
+import { lockAgrees, lockEntries, parseLock } from '../core/installer/compare-lock.js';
+import { lastLines, prepareNpm, type Npm, type NpmCommand } from '../core/installer/npm.js';
+import { driftLines, lockDrift } from '../core/installer/plan.js';
 import {
   clearStaging,
-  collectTrees,
   commitTree,
   discardTree,
   isComplete,
   LOCK_FILE,
   manifestText,
   npmrcText,
-  pointCurrent,
-  promoteFiles,
   readText,
   sortedSet,
   stageTree,
   treeName,
   withInstallLock,
   type TreeFiles,
-} from './tree.js';
+} from '../core/installer/tree.js';
 
 // `lock`: the lock pulled with the profile, installed from instead of the local one.
 export type InstallSet = Pick<Profile, 'extensions' | 'registries'> & {
@@ -63,7 +67,6 @@ const lockPlan = (dir: string, install: Record<string, string>, raw: string | nu
   return { lock: raw, npm: reuse ? null : 'ci', tree, reuse };
 };
 
-// Reads only: `setup --dry-run` prints this and stops.
 export const planInstall = (set: InstallSet): InstallPlan => {
   const dir = extensionsDir();
   const install = sortedSet(set.extensions);
@@ -73,14 +76,6 @@ export const planInstall = (set: InstallSet): InstallPlan => {
   const lock = lockPlan(dir, install, raw);
   return { extensionsDir: dir, install, registries, ...files, ...lock };
 };
-
-// npm's last lines, enough to see why it failed.
-export const lastLines = (output: string, count = 20): string =>
-  output
-    .split(/\r?\n/)
-    .filter((line) => line.trim() !== '')
-    .slice(-count)
-    .join('\n');
 
 const npmFailure = (command: NpmCommand, res: NpmResult): Error =>
   new Error(
@@ -146,3 +141,38 @@ export const install = async (
   prepare: () => Promise<Npm> = prepareNpm
 ): Promise<InstallResult> =>
   withInstallLock(extensionsDir(), () => execute(planInstall(set), prepare));
+
+const TREES = 'trees';
+const STAGING_PREFIX = '.staging-';
+const MANIFEST_FILE = 'package.json';
+const remove = (path: string): void => rmSync(path, { recursive: true, force: true });
+
+// Only `keep` stays: the lock in the extensions root can rebuild any other tree. Staging dirs are
+// left to clearStaging, so a run never removes another's.
+const collectTrees = (extensionsDir: string, keep: string): void => {
+  const trees = join(extensionsDir, TREES);
+  if (!existsSync(trees)) return;
+  for (const name of readdirSync(trees))
+    if (name !== keep && !name.startsWith(STAGING_PREFIX)) remove(join(trees, name));
+};
+
+const pointCurrent = (extensionsDir: string, name: string): void =>
+  writeTextAtomic(join(extensionsDir, 'current'), `${name}\n`);
+
+// The extensions root always describes the tree `current` names, never a failed attempt.
+const promoteFiles = (extensionsDir: string, files: Omit<TreeFiles, 'npmrc'>): void => {
+  writeTextAtomic(join(extensionsDir, MANIFEST_FILE), files.manifest);
+  const lock = join(extensionsDir, LOCK_FILE);
+  if (files.lock === null) remove(lock);
+  else writeTextAtomic(lock, files.lock);
+};
+
+// What `setup --profile <file>` did in 0.51: save the profile, then build and switch the tree.
+export const installOld = async (file: string, npm: () => Promise<Npm>): Promise<void> => {
+  const parsed = parseProfileText(readFileSync(file, 'utf8'));
+  if (!parsed.ok) throw new Error(`${file} is invalid`);
+  const machine = await loadMachine();
+  await mutateProfile((current) => keepMachine(parsed.profile, current, machine.id));
+  await setProfileSource('file');
+  await install(parsed.profile, npm);
+};

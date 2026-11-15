@@ -23,7 +23,7 @@ test.describe('agentage status @offline', () => {
   test('agentage status after setup --profile with hello and world shows the file profile and extensions 2 @p0', async ({
     cli,
   }) => {
-    await cli.run(`setup --profile ${cli.profile(TWO)}`);
+    await cli.oldSetup(TWO);
     const run = await cli.run('status');
     expect(run.lines).toContain('profile    version 1 (source: file)');
     expect(run.lines).toContain('extensions 2');
@@ -105,14 +105,10 @@ test.describe('a machine upgraded from 0.39 @p0 @offline', () => {
     ]);
   });
 
-  test('without AGENTAGE_EXTENSIONS, or with it set to 0, agentage setup --profile, extension list and agentage hello work', async ({
+  test('without AGENTAGE_EXTENSIONS, or with it set to 0, agentage hello works', async ({
     cli,
   }) => {
-    const install = await cli.run(`setup --profile ${cli.profile(TWO)}`, UNSET);
-    expect(install.code).toBe(0);
-    const list = await cli.run('extension list', { AGENTAGE_EXTENSIONS: '0' });
-    expect(list.code).toBe(0);
-    expect(list.lines).toContainEqual(expect.stringMatching(/^hello {2}installed /));
+    await cli.oldSetup(TWO);
     const hello = await cli.run('hello', { AGENTAGE_EXTENSIONS: '0' });
     expect(hello.code).toBe(0);
     expect(hello.lines).toContain('hello from hello');

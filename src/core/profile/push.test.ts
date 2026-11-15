@@ -2,7 +2,6 @@ import { describe, expect } from 'vitest';
 import { fakeAccount } from '../../test/account.js';
 import { test } from '../../test/config-dir.js';
 import { localProfile, type CloudProfile } from './cloud.js';
-import { addExtension } from './edit.js';
 import { defaultProfile } from './profile.js';
 import { pushBody, pushWithReplay } from './push.js';
 import { toDocument } from './schema.js';
@@ -15,7 +14,7 @@ const OTHER_LOCK = { lockfileVersion: 3, packages: { '': { name: 'other' } } };
 // The operation `extension install hello` replays: add hello to whatever document it gets.
 const addHello = (bases: CloudProfile[]) => async (base: CloudProfile) => {
   bases.push(base);
-  const next = addExtension(base.profile, HELLO, '^1.0.0', 'm_0000beef', false);
+  const next = { ...base.profile, extensions: { ...base.profile.extensions, [HELLO]: '^1.0.0' } };
   return pushBody(next, base, { lock: LOCK, npmMajor: 10 });
 };
 

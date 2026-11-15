@@ -45,6 +45,7 @@ export interface SetupProcess {
 export interface CliMachine {
   configDir: string;
   home: string;
+  env: NodeJS.ProcessEnv;
   // `env` is added to this machine's environment for one run; an undefined value unsets a variable.
   exec: (args: string[], timeoutMs?: number, env?: NodeJS.ProcessEnv) => Promise<ExecResult>;
   startSetup: (args?: string[]) => SetupProcess;
@@ -112,6 +113,7 @@ export const createCliMachine = (extraEnv: NodeJS.ProcessEnv = {}): CliMachine =
   return {
     configDir,
     home,
+    env,
     exec: (args, timeoutMs = 30_000, extra = {}) => execCli({ ...env, ...extra }, args, timeoutMs),
     startSetup: (args = ['setup', '--no-browser']) => spawnSetup(env, args),
     cleanup: () => {

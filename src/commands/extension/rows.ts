@@ -2,7 +2,7 @@ import { CliError } from '../../lib/json-output.js';
 import { type PlanSummary, type PlanVerb } from '../../core/installer/plan.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { type LoadOutcome } from '../../core/loader/load.js';
-import { loadSet, scan, type Scan } from '../../core/loader/scan.js';
+import { loadSet, scanNow, type Scan } from '../../core/loader/scan.js';
 import { readRunState } from '../../core/loader/state.js';
 import { type StaticResult, type StaticState } from '../../core/loader/states.js';
 import { claimVerbs, commandNames, readHeld, type Verbs } from '../../core/loader/verbs.js';
@@ -130,7 +130,7 @@ export const gatherFrom = (
 
 // Reads manifests, profile and state files; writes only a missing machine.json.
 export const gatherExtensions = async (): Promise<ExtensionsGather> =>
-  gatherFrom(scan(await loadMachine()));
+  gatherFrom(scanNow(await loadMachine()));
 
 // The report still prints first; an invalid profile.json then fails the step.
 export const invalidProfileError = (profile: ProfileStatus): Error | null =>

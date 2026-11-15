@@ -1,11 +1,10 @@
 import { rmSync } from 'node:fs';
 import { describe, expect } from 'vitest';
-import { output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
-import { npmFromFixtures } from '../../test/npm-fixtures.js';
+import { MACHINE_ID, output, test, type ConfigDir } from '../../test/config-dir.js';
 import { type SetupOptions } from '../auth/setup.js';
 import { runExtensionSetup, type ExtensionSetupDeps } from './setup.js';
 
-// --dry-run and --check never reach the site: these stand-ins fail the test if they are called.
+// --dry-run and --check never reach the site or the daemon: these stand-ins fail if called.
 const never = async (): Promise<never> => {
   throw new Error('reached the site');
 };
@@ -15,20 +14,79 @@ const deps: ExtensionSetupDeps = {
   signOut: never,
   printStatus: never,
   startDaemon: never,
-  npm: npmFromFixtures,
+  host: never,
+  updateExtensions: never,
+  npm: never,
   npmMajor: never,
-  account: async () => {
-    throw new Error('reached the account');
-  },
+  account: never,
 };
 
 const setup = (opts: SetupOptions) => output(() => runExtensionSetup(opts, deps));
 
-describe('agentage setup --dry-run', () => {
+const A = '@agentage/extension-alpha';
+const B = '@agentage/extension-beta';
+const C = '@agentage/extension-gamma';
+
+// profile.json with three entries, gamma off on this machine; alpha already in installation.json.
+const machineWith = (dir: ConfigDir): void => {
+  dir.machine({});
+  const machines = { [MACHINE_ID]: { off: [C], config: {} } };
+  dir.write('profile.json', {
+    version: 1,
+    extensions: { [A]: '^1', [B]: '2.0.0', [C]: '^3' },
+    machines,
+  });
+  dir.write('installation.json', {
+    host: 'local',
+    extensions: [{ id: 'alpha', version: '1.0.0' }],
+  });
+};
+
+describe('agentage setup --dry-run: what setup would send to the daemon', () => {
+  test('add, off (installed disabled) and already installed; nothing written', async ({ dir }) => {
+    machineWith(dir);
+    const before = dir.list('');
+    const run = await setup({ dryRun: true });
+    expect(run.lines.slice(2)).toEqual([
+      `+ add ${B} 2.0.0`,
+      `o off ${C} ^3 (installed disabled)`,
+      'plan: 1 to add, 1 off, 1 already installed',
+    ]);
+    expect(dir.list('')).toEqual(before);
+  });
+
+  test('--json keeps the plan shape: extensions with verb, name, wanted, current; summary', async ({
+    dir,
+  }) => {
+    machineWith(dir);
+    const plan = JSON.parse((await setup({ dryRun: true, json: true })).stdout);
+    expect(plan.extensions).toEqual([
+      { verb: 'unchanged', name: A, wanted: '^1', current: 'installed' },
+      { verb: 'add', name: B, wanted: '2.0.0', current: null },
+      { verb: 'off', name: C, wanted: '^3', current: null },
+    ]);
+    expect(plan.summary).toEqual({ add: 1, update: 0, remove: 0, off: 1, unchanged: 1 });
+  });
+
+  test('once the account profile was installed, plain setup would install nothing; --profile still would', async ({
+    dir,
+  }) => {
+    machineWith(dir);
+    dir.write('setup.profile-installed', '');
+    expect((await setup({ dryRun: true })).lines.slice(2)).toEqual(['plan: nothing to change']);
+    const file = dir.at('p.json');
+    dir.write('p.json', { version: 1, extensions: { [B]: '2.0.0' } });
+    expect((await setup({ profile: file, dryRun: true })).lines.slice(2)).toEqual([
+      `+ add ${B} 2.0.0`,
+      'plan: 1 to add, 0 off, 0 already installed',
+    ]);
+  });
+
   test('of a profile from a newer schema warns, prints the plan and writes nothing', async ({
     dir,
   }) => {
-    const path = dir.profile({ version: 2, extensions: { hello: '^1.0.0' } }, 'v2.json');
+    const path = dir.at('v2.json');
+    dir.write('v2.json', { version: 2, extensions: { [A]: '^1' } });
     const run = await setup({ profile: path, dryRun: true });
     expect(run.stderr).toBe(
       'warning: version: 2 is newer than this CLI understands (1); read-only'
@@ -36,111 +94,32 @@ describe('agentage setup --dry-run', () => {
     expect(run.lines).toEqual([
       'dry run    nothing written',
       'registry   default  https://registry.npmjs.org',
-      '+ add @agentage/fixture-hello ^1.0.0',
-      'plan: 1 to add, 0 to update, 0 to remove, 0 off, 0 unchanged',
+      `+ add ${A} ^1`,
+      'plan: 1 to add, 0 off, 0 already installed',
     ]);
     expect(dir.list('')).toEqual(['v2.json']);
-  });
-
-  test('after an install prints only what changes: nothing, an update, an off', async ({ dir }) => {
-    const two = dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } }, 'two.json');
-    expect((await setup({ profile: two })).error).toBeNull();
-    const plan = async (opts: SetupOptions) =>
-      (await setup({ ...opts, dryRun: true })).lines.slice(2);
-    expect(await plan({ profile: two })).toEqual(['plan: nothing to change']);
-    const tilde = dir.profile({ extensions: { hello: '~1.0.0', world: '^1' } }, 'tilde.json');
-    expect(await plan({ profile: tilde })).toEqual([
-      '~ update @agentage/fixture-hello ~1.0.0 (was ^1.0.0)',
-      'plan: 0 to add, 1 to update, 0 to remove, 0 off, 1 unchanged',
-    ]);
-    dir.profile({ extensions: { hello: '^1.0.0', world: '^1' }, off: ['world'] });
-    expect(await plan({})).toEqual([
-      'o off @agentage/fixture-world',
-      'plan: 0 to add, 0 to update, 0 to remove, 1 off, 1 unchanged',
-    ]);
-  });
-
-  test('--json prints the plan object; a package the profile dropped is - remove', async ({
-    dir,
-  }) => {
-    await setup({
-      profile: dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } }, 'a.json'),
-    });
-    const one = dir.profile({ extensions: { hello: '^1.0.0' } }, 'one.json');
-    expect((await setup({ profile: one, dryRun: true })).lines.slice(2)).toEqual([
-      '- remove @agentage/fixture-world',
-      'plan: 0 to add, 0 to update, 1 to remove, 0 off, 1 unchanged',
-    ]);
-    const json = JSON.parse((await setup({ profile: one, dryRun: true, json: true })).stdout);
-    expect(json.summary).toEqual({ add: 0, update: 0, remove: 1, off: 0, unchanged: 1 });
-  });
-
-  test('without --profile plans from profile.json, never signing in', async ({ dir }) => {
-    dir.profile({ extensions: { hello: '^1.0.0' } });
-    expect((await setup({ dryRun: true })).lines).toContain('+ add @agentage/fixture-hello ^1.0.0');
   });
 });
 
 describe('agentage setup --check', () => {
-  const installed = async (dir: ConfigDir) =>
-    setup({ profile: dir.profile({ extensions: { hello: '^1.0.0' } }, 'one.json') });
+  test('with entries to install prints the plan and fails "not converged"', async ({ dir }) => {
+    machineWith(dir);
+    const run = await setup({ check: true });
+    expect(run.error).toBe('not converged: 1 to add, 1 to install disabled');
+  });
 
-  test('on a converged machine prints "plan: nothing to change", passes and writes nothing', async ({
+  test('with every entry installed passes; no machine.json is a problem in --json', async ({
     dir,
   }) => {
-    await installed(dir);
-    const before = dir.list('extensions/trees');
+    machineWith(dir);
+    dir.write('setup.profile-installed', '');
     expect(await setup({ check: true })).toMatchObject({
       lines: ['plan: nothing to change'],
       error: null,
     });
-    expect(dir.list('extensions/trees')).toEqual(before);
-  });
-
-  test('with a change pending prints the plan and fails "not converged", without signing in', async ({
-    dir,
-  }) => {
-    await installed(dir);
-    dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } });
-    expect(await setup({ check: true })).toMatchObject({
-      lines: [
-        '+ add @agentage/fixture-world ^1',
-        'plan: 1 to add, 0 to update, 0 to remove, 0 off, 1 unchanged',
-      ],
-      error: 'not converged: 1 to add',
-    });
-  });
-
-  test('with integrity drift between the two locks fails naming each name@version', async ({
-    dir,
-  }) => {
-    await installed(dir);
-    const lock = dir.json('extensions/package-lock.json') as { packages: Record<string, object> };
-    lock.packages[`node_modules/${pkg('hello')}`] = { version: '1.0.0', integrity: 'sha512-x' };
-    dir.write('extensions/package-lock.json', lock);
-    expect((await setup({ check: true })).error).toBe(`integrity drift: ${pkg('hello')}@1.0.0`);
-  });
-
-  test('--json prints the plan object with what else is wrong: no machine.json, a lock that does not match', async ({
-    dir,
-  }) => {
-    await installed(dir);
-    const lock = dir.json('extensions/package-lock.json') as { packages: Record<string, object> };
-    delete lock.packages[`node_modules/${pkg('hello')}`];
-    dir.write('extensions/package-lock.json', lock);
     rmSync(dir.at('machine.json'));
     const run = await setup({ check: true, json: true });
-    expect(JSON.parse(run.stdout)).toEqual({
-      extensions: [{ verb: 'unchanged', name: pkg('hello'), wanted: '^1.0.0', current: '^1.0.0' }],
-      summary: { add: 0, update: 0, remove: 0, off: 0, unchanged: 1 },
-      problems: [
-        'machine.json: missing',
-        'lock mismatch: extensions/package-lock.json does not match the current tree',
-      ],
-    });
-    expect(run.error).toBe(
-      'machine.json: missing\nlock mismatch: extensions/package-lock.json does not match the current tree'
-    );
-    expect(dir.exists('machine.json')).toBe(false);
+    expect(JSON.parse(run.stdout).problems).toEqual(['machine.json: missing']);
+    expect(run.error).toBe('machine.json: missing');
   });
 });

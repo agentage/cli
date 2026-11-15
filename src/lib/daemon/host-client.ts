@@ -37,9 +37,8 @@ export interface HostClient {
 const CHANGE_MS = 10 * 60_000;
 const READ_MS = 10_000;
 
-// The daemon's codes in snake_case; NOT_FOUND on these routes means the id is not installed.
-const codeOf = (code: unknown): string =>
-  code === 'NOT_FOUND' ? 'not_installed' : String(code ?? 'error').toLowerCase();
+// The daemon's own codes (UPPER_SNAKE: NOT_FOUND, INVALID_SETTING) pass through unchanged.
+const codeOf = (code: unknown): string => (typeof code === 'string' && code ? code : 'error');
 
 const failure = (status: number, body: unknown): CliError => {
   const error = isRecord(body) && isRecord(body['error']) ? body['error'] : {};
