@@ -28,14 +28,10 @@ describe('agentage setup --profile', () => {
   test("keeps this machine's own off list from the local profile.json", async ({ dir }) => {
     dir.profile({ extensions: { hello: '^1.0.0' }, off: ['hello'] });
     const next = dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } }, 'next.json');
-    const run = await setup({ profile: next });
-    expect(run.error).toBeNull();
+    await setup({ profile: next });
     expect(dir.json('profile.json')['machines']).toEqual({
       [MACHINE_ID]: { off: [pkg('hello')], config: {} },
     });
-    expect(run.lines).toContain(
-      'hello  off        @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello'
-    );
   });
 
   test('refuses a file it cannot read or parse, and a URL, writing nothing', async ({ dir }) => {
@@ -59,37 +55,68 @@ describe('agentage setup --profile', () => {
   });
 });
 
-describe('agentage setup --profile, after installing', () => {
-  test('loads the extensions, prints ok and failed rows, and fails naming each that failed', async ({
+describe('agentage setup --profile installs through the daemon', () => {
+  const HELLO = '@agentage/extension-hello';
+
+  test('each entry by id (an exact version as it is); the cli loads nothing', async ({ dir }) => {
+    const daemon = fakeHost();
+    dir.write('p.json', {
+      version: 1,
+      extensions: { [HELLO]: '^1.0.0', '@agentage/extension-world': '2.1.0' },
+    });
+    const file = dir.at('p.json');
+    const run = await output(() =>
+      runExtensionSetup({ profile: file }, { ...deps, host: async () => daemon.host })
+    );
+    expect(run.error).toBeNull();
+    expect(vi.mocked(daemon.host.add).mock.calls).toEqual([
+      [{ id: 'hello' }],
+      [{ id: 'world', version: '2.1.0' }],
+    ]);
+    expect(dir.exists('extensions')).toBe(false);
+    expect(dir.json('machine.json')).toMatchObject({ profileSource: 'file' });
+  });
+
+  test('a failed entry is reported, the others install, and the marker goes', async ({ dir }) => {
+    const daemon = fakeHost();
+    vi.mocked(daemon.host.add).mockRejectedValueOnce(new CliError('NOT_FOUND', 'no hello'));
+    const extensions = { [HELLO]: '^1', '@agentage/extension-world': '^2' };
+    dir.write('p.json', { version: 1, extensions });
+    const file = dir.at('p.json');
+    const run = await output(() =>
+      runExtensionSetup({ profile: file }, { ...deps, host: async () => daemon.host })
+    );
+    expect(run.error).toBe('not installed:\n  hello: no hello');
+    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'world' });
+    expect(dir.exists('setup.installing')).toBe(false);
+  });
+
+  test('a first install a stop left unfinished goes on: the marker overrides installation.json', async ({
     dir,
   }) => {
-    const run = await setup({
-      profile: dir.profile({ extensions: { hello: '^1.0.0', throws: '^1' } }, 'p.json'),
-    });
-    expect(run.lines).toContain(
-      'hello   ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello'
+    const daemon = fakeHost();
+    dir.write('installation.json', { host: 'local', extensions: [] });
+    dir.write('p.json', { version: 1, extensions: { [HELLO]: '^1' } });
+    const file = dir.at('p.json');
+    const run = () =>
+      output(() =>
+        runExtensionSetup({ profile: file }, { ...deps, host: async () => daemon.host })
+      );
+    expect((await run()).lines).toContain(
+      'extensions installation.json holds this machine; setup installs nothing (agentage extension install)'
     );
-    expect(run.lines).toContain(
-      'throws  failed     @agentage/fixture-throws 1.0.0 (wants ^1)  "boom"'
-    );
-    expect(run.error).toBe('1 extension failed to load: throws');
+    dir.write('setup.installing', '');
+    await run();
+    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'hello' });
+    expect(dir.exists('setup.installing')).toBe(false);
   });
 
-  test('lists the secrets to set before it loads', async ({ dir }) => {
-    const run = await setup({ profile: dir.profile({ extensions: { secret: '^1' } }, 'p.json') });
-    expect(run.lines.slice(1)).toEqual([
-      'secrets to set: secret.token',
-      'secret  ok         @agentage/fixture-secret 1.0.0 (wants ^1)',
-    ]);
-  });
-
-  test('loads nothing when npm fails: the rows show what is still current', async ({ dir }) => {
-    const run = await setup({ profile: dir.profile({ extensions: { absent: '^1' } }, 'p.json') });
-    expect(run.error).toMatch(/^npm install failed/);
-    expect(run.lines).toEqual([
-      '?  missing    add  @agentage/fixture-absent - (wants ^1)  not installed in the current tree',
-    ]);
-    expect(dir.exists('state')).toBe(false);
+  test('with the daemon off the marker stays, so the next setup installs', async ({ dir }) => {
+    dir.write('p.json', { version: 1, extensions: { [HELLO]: '^1' } });
+    const file = dir.at('p.json');
+    const run = await setup({ profile: file, daemon: false });
+    expect(run.lines).toContain('extensions the daemon is off, nothing installed');
+    expect(dir.exists('setup.installing')).toBe(true);
   });
 });
 

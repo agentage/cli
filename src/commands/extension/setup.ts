@@ -10,7 +10,6 @@ import {
 } from '../../core/profile/profile.js';
 import { type Profile, type ProfileParse } from '../../core/profile/schema.js';
 import { type SetupDeps, type SetupOptions } from '../auth/setup.js';
-import { extensionsResult, installAndLoad } from './install-load.js';
 import { printDryRun, runSetupCheck } from './plan.js';
 import { printWarnings } from './row-lines.js';
 import { accountSetup, disconnect } from './setup-cloud.js';
@@ -63,16 +62,16 @@ const readOnly = (source: Source, opts: SetupOptions): void => {
   else printDryRun(source.profile, opts);
 };
 
-// `--profile` never signs in nor calls the account; this machine's own entry is kept.
-const fromFile = async (source: Source, deps: ExtensionSetupDeps): Promise<void> => {
+const daemonOff = (opts: SetupOptions): boolean =>
+  opts.daemon === false || process.env['AGENTAGE_NO_DAEMON'] === '1';
+
+// `--profile` never signs in nor calls the account; it installs through the daemon as plain setup.
+const fromFile = async (source: Source, opts: SetupOptions, deps: ExtensionSetupDeps) => {
   const machine = await loadMachine();
   await mutateProfile((current) => keepMachine(source.profile, current, machine.id));
   await setProfileSource('file');
-  await installAndLoad(source.profile, deps.npm);
+  await installThroughDaemon(source.profile, { host: deps.host, daemonOff: daemonOff(opts) });
 };
-
-const daemonOff = (opts: SetupOptions): boolean =>
-  opts.daemon === false || process.env['AGENTAGE_NO_DAEMON'] === '1';
 
 // The daemon needs no account; --no-daemon or AGENTAGE_NO_DAEMON=1 leave it off.
 const startDaemon = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
@@ -99,7 +98,7 @@ const setupFlow = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<
   if (opts.disconnect) return disconnect(deps);
   const file = opts.profile === undefined ? null : fileSource(opts.profile);
   if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts);
-  if (file) return fromFile(file, deps);
+  if (file) return fromFile(file, opts, deps);
   if (opts.latest) {
     console.error('setup --latest is now: agentage extension update');
     return void (await deps.updateExtensions());
@@ -120,5 +119,5 @@ export const runExtensionSetup = async (
   deps: ExtensionSetupDeps
 ): Promise<unknown> => {
   await setupFlow(opts, deps);
-  return opts.check || opts.dryRun ? undefined : extensionsResult(opts.json);
+  return undefined;
 };

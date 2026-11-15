@@ -11,7 +11,6 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { refreshFileLock, withFileLock } from '../../lib/fs/file-lock.js';
-import { writeTextAtomic } from '../../lib/fs/json-file.js';
 
 export const LOCK_FILE = 'package-lock.json';
 const MANIFEST_FILE = 'package.json';
@@ -95,26 +94,6 @@ export const commitTree = (extensionsDir: string, staging: string, name: string)
   remove(target);
   writeFileSync(join(staging, COMPLETE), '');
   renameSync(staging, target);
-};
-
-// Only `keep` stays: the lock in the extensions root can rebuild any other tree. Staging dirs are
-// left to clearStaging, so a run never removes another's.
-export const collectTrees = (extensionsDir: string, keep: string): void => {
-  const trees = join(extensionsDir, TREES);
-  if (!existsSync(trees)) return;
-  for (const name of readdirSync(trees))
-    if (name !== keep && !name.startsWith(STAGING_PREFIX)) remove(join(trees, name));
-};
-
-export const pointCurrent = (extensionsDir: string, name: string): void =>
-  writeTextAtomic(join(extensionsDir, 'current'), `${name}\n`);
-
-// The extensions root always describes the tree `current` names, never a failed attempt.
-export const promoteFiles = (extensionsDir: string, files: Omit<TreeFiles, 'npmrc'>): void => {
-  writeTextAtomic(join(extensionsDir, MANIFEST_FILE), files.manifest);
-  const lock = join(extensionsDir, LOCK_FILE);
-  if (files.lock === null) remove(lock);
-  else writeTextAtomic(lock, files.lock);
 };
 
 const heartbeat = async <T>(target: string, fn: () => Promise<T>): Promise<T> => {

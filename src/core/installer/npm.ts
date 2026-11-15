@@ -117,3 +117,11 @@ export const prepareManifest = async (env = process.env): Promise<NpmManifest> =
       npmCli,
     });
 };
+
+// npm's last lines, enough to see why it failed.
+export const lastLines = (output: string, count = 20): string =>
+  output
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== '')
+    .slice(-count)
+    .join('\n');

@@ -2,9 +2,11 @@ import { rmSync } from 'node:fs';
 import { describe, expect } from 'vitest';
 import { output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
+import { installOld } from '../../test/old-install.js';
 import { type SetupOptions } from '../auth/setup.js';
 import { runExtensionSetup, type ExtensionSetupDeps } from './setup.js';
 
+// The machine a 0.51 `setup --profile` left: --dry-run and --check still plan against its tree.
 // --dry-run and --check never reach the site: these stand-ins fail the test if they are called.
 const never = async (): Promise<never> => {
   throw new Error('reached the site');
@@ -46,7 +48,7 @@ describe('agentage setup --dry-run', () => {
 
   test('after an install prints only what changes: nothing, an update, an off', async ({ dir }) => {
     const two = dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } }, 'two.json');
-    expect((await setup({ profile: two })).error).toBeNull();
+    await installOld(two, npmFromFixtures);
     const plan = async (opts: SetupOptions) =>
       (await setup({ ...opts, dryRun: true })).lines.slice(2);
     expect(await plan({ profile: two })).toEqual(['plan: nothing to change']);
@@ -65,9 +67,10 @@ describe('agentage setup --dry-run', () => {
   test('--json prints the plan object; a package the profile dropped is - remove', async ({
     dir,
   }) => {
-    await setup({
-      profile: dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } }, 'a.json'),
-    });
+    await installOld(
+      dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } }, 'a.json'),
+      npmFromFixtures
+    );
     const one = dir.profile({ extensions: { hello: '^1.0.0' } }, 'one.json');
     expect((await setup({ profile: one, dryRun: true })).lines.slice(2)).toEqual([
       '- remove @agentage/fixture-world',
@@ -85,7 +88,7 @@ describe('agentage setup --dry-run', () => {
 
 describe('agentage setup --check', () => {
   const installed = async (dir: ConfigDir) =>
-    setup({ profile: dir.profile({ extensions: { hello: '^1.0.0' } }, 'one.json') });
+    installOld(dir.profile({ extensions: { hello: '^1.0.0' } }, 'one.json'), npmFromFixtures);
 
   test('on a converged machine prints "plan: nothing to change", passes and writes nothing', async ({
     dir,

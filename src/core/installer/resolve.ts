@@ -5,8 +5,7 @@ import { type NpmResult } from '../../lib/npm/npm-cli.js';
 import { PACKAGE_NAME, specProblem } from '../profile/schema.js';
 import { cliGate, needs, newestCompatible, parsePublished, type Published } from './compat.js';
 import { isKitShaped } from '../loader/kit-manifest.js';
-import { lastLines } from './installer.js';
-import { type LookupCommand, type NpmManifest } from './npm.js';
+import { lastLines, type LookupCommand, type NpmManifest } from './npm.js';
 
 // A package goes into profile.json; a dev extension into machine.json, by its real path.
 // `skipped`: newer versions whose engines.agentage does not fit; `kit`: built on the kit.

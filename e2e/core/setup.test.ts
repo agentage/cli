@@ -1,82 +1,26 @@
 /**
- * @offline - `agentage setup`: installing the extensions a profile names from the loopback
- * registry, and plain `setup` signing in at the loopback site first. Loading what was installed:
- * setup-load.test.ts.
+ * @offline - `agentage setup`: the profile file it saves and refuses, and plain `setup` signing
+ * in at the loopback site first. The install goes through the daemon, which this tier leaves off
+ * (AGENTAGE_NO_DAEMON=1); the lifecycle tier of agentage/e2e runs it.
  */
 import { expect, test } from './cli.js';
 
-const HELLO = 'hello  ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello';
-const WORLD = 'world  ok         @agentage/fixture-world 1.0.0 (wants ^1)  commands: world';
 const TWO = { extensions: { hello: '^1.0.0', world: '^1' } };
 
 test.describe('agentage setup --profile @p0 @offline', () => {
-  test('agentage setup --profile with hello and world installs both without signing in', async ({
+  test('agentage setup --profile saves profile.json from the file; with the daemon off it installs nothing and keeps the first-install marker', async ({
     cli,
   }) => {
     const run = await cli.run(`setup --profile ${cli.profile(TWO)}`);
     expect(run.code).toBe(0);
-    expect(run.lines).toContain(HELLO);
-    expect(run.lines).toContain(WORLD);
-    const tree = `extensions/trees/${cli.file('extensions/current')}`;
-    expect(cli.exists(`${tree}/.complete`)).toBe(true);
-    expect(cli.file(`${tree}/.npmrc`)).toBe(`@agentage:registry=${cli.registry.url}`);
-    expect(cli.json('profile.json')['registries']).toEqual({ '@agentage': cli.registry.url });
+    expect(run.lines).toContain('extensions the daemon is off, nothing installed');
+    expect(Object.keys(cli.json('profile.json')['extensions'] as object)).toEqual([
+      '@agentage/fixture-hello',
+      '@agentage/fixture-world',
+    ]);
     expect(cli.json('machine.json')).toMatchObject({ profileSource: 'file' });
-    expect(cli.exists('auth.json')).toBe(false);
-    expect(cli.homeFiles()).toEqual([]);
-  });
-
-  test('running agentage setup --profile again with the same extensions reuses the installed tree', async ({
-    cli,
-  }) => {
-    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
-    const again = await cli.run(`setup --profile ${cli.profile(TWO)}`);
-    const tree = cli.file('extensions/current');
-    expect(again.lines).toContain(`install    2 extensions in tree ${tree} (reused)`);
-    expect(cli.list('extensions/trees')).toEqual([tree]);
-    expect(cli.json('extensions/package.json')).toEqual({
-      name: 'agentage-extensions',
-      private: true,
-      dependencies: { '@agentage/fixture-hello': '^1.0.0', '@agentage/fixture-world': '^1' },
-    });
-  });
-
-  test('agentage setup --profile with hello only, after hello and world, leaves only the new tree under extensions/trees', async ({
-    cli,
-  }) => {
-    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
-    const two = cli.file('extensions/current');
-    expect(
-      (await cli.run(`setup --profile ${cli.profile({ extensions: { hello: '^1.0.0' } })}`)).code
-    ).toBe(0);
-    const one = cli.file('extensions/current');
-    expect(one).not.toBe(two);
-    expect(cli.list('extensions/trees')).toEqual([one]);
-  });
-
-  test('agentage setup --profile with the same extensions on two machines installs the same tree', async ({
-    cli,
-    anotherMachine,
-  }) => {
-    const other = anotherMachine();
-    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
-    expect((await other.run(`setup --profile ${other.profile(TWO)}`)).code).toBe(0);
-    expect(other.file('extensions/current')).toBe(cli.file('extensions/current'));
-  });
-
-  test('two agentage setup --profile runs at once: one waits for the other, both succeed', async ({
-    cli,
-  }) => {
-    const profile = cli.profile(TWO);
-    const first = cli.start(`setup --profile ${profile}`);
-    const second = cli.start(`setup --profile ${profile}`);
-    expect(await Promise.all([first.waitExit(60_000), second.waitExit(60_000)])).toEqual([0, 0]);
-    const waited = [first, second].filter((p) =>
-      p.stderr().includes('waiting for another install')
-    );
-    expect(waited).toHaveLength(1);
-    expect(cli.list('extensions/trees')).toEqual([cli.file('extensions/current')]);
-    expect(cli.exists('extensions/install.lock')).toBe(false);
+    expect(cli.exists('extensions')).toBe(false);
+    expect(cli.exists('setup.installing')).toBe(true);
   });
 
   test('agentage setup --profile --dry-run prints the registries and the plan, and writes nothing', async ({
@@ -112,24 +56,6 @@ test.describe('agentage setup --profile @p0 @offline', () => {
       'registries["@acme"]: must be an https: URL, or http: on a loopback host'
     );
     expect(cli.list('')).toEqual([]);
-  });
-
-  test('when npm fails, agentage setup --profile exits 1, still lists the extensions and keeps the last good tree', async ({
-    cli,
-  }) => {
-    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
-    const good = cli.file('extensions/current');
-    const missing = cli.profile({ extensions: { hello: '^1.0.0', missing: '^1.0.0' } });
-    const failed = await cli.run(`setup --profile ${missing}`);
-    expect(failed.code).toBe(1);
-    expect(failed.stderr).toContain('npm install failed');
-    expect(failed.stderr).toContain('E404');
-    expect(failed.lines).toContainEqual(
-      expect.stringMatching(/^hello  installed .* last run: ok /)
-    );
-    expect(cli.file('extensions/current')).toBe(good);
-    expect(cli.list('extensions/trees')).toEqual([good]);
-    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
   });
 });
 

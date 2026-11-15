@@ -9,7 +9,7 @@ import { mutateProfile } from '../../core/profile/profile.js';
 import { pushBody, type Apply, type LockPair } from '../../core/profile/push.js';
 import { type Profile } from '../../core/profile/schema.js';
 import { type AccountOf } from './account.js';
-import { line } from './install-load.js';
+import { line } from './line.js';
 
 // npm, the npm major that writes the lock, and the account: the seams of a profile edit.
 export interface EditDeps {

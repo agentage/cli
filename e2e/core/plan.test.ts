@@ -25,7 +25,7 @@ test.describe('agentage setup --dry-run @p0 @offline', () => {
   test('agentage setup --dry-run with the profile just installed prints "plan: nothing to change"', async ({
     cli,
   }) => {
-    expect((await cli.run(`setup --profile ${cli.profile(TWO)}`)).code).toBe(0);
+    await cli.oldSetup(TWO);
     const run = await cli.run(`setup --profile ${cli.profile(TWO)} --dry-run`);
     expect(run.code).toBe(0);
     expect(run.lines.slice(-2)).toEqual(['plan: nothing to change', '']);
@@ -34,7 +34,7 @@ test.describe('agentage setup --dry-run @p0 @offline', () => {
   test('agentage setup --dry-run with a profile that drops world and adds secret prints - remove, + add and the summary, writing nothing', async ({
     cli,
   }) => {
-    await cli.run(`setup --profile ${cli.profile(TWO)}`);
+    await cli.oldSetup(TWO);
     const before = cli.snapshot();
     const swapped = cli.profile({ extensions: { hello: '^1.0.0', secret: '^1' } });
     const run = await cli.run(`setup --profile ${swapped} --dry-run`);
@@ -56,7 +56,7 @@ test.describe('agentage status shows the drift @p0 @offline', () => {
   test('after world is taken out of profile.json by hand, status says "extensions 2 (1 to remove)"', async ({
     cli,
   }) => {
-    await cli.run(`setup --profile ${cli.profile(TWO)}`);
+    await cli.oldSetup(TWO);
     handEdit(cli, { [HELLO]: '^1.0.0' });
     expect((await cli.run('status')).lines).toContain('extensions 2 (1 to remove)');
   });
@@ -66,7 +66,7 @@ test.describe('agentage setup --check @p0 @offline', () => {
   test('agentage setup --check on a converged machine prints "plan: nothing to change", exits 0 and writes nothing', async ({
     cli,
   }) => {
-    await cli.run(`setup --profile ${cli.profile(TWO)}`);
+    await cli.oldSetup(TWO);
     const before = cli.snapshot();
     const run = await cli.run('setup --check');
     expect(run.code).toBe(0);
@@ -77,7 +77,7 @@ test.describe('agentage setup --check @p0 @offline', () => {
   test('agentage setup --check after secret is added to profile.json by hand exits 1, printing the plan and writing nothing', async ({
     cli,
   }) => {
-    await cli.run(`setup --profile ${cli.profile(TWO)}`);
+    await cli.oldSetup(TWO);
     handEdit(cli, { ...TWO_PACKAGES, '@agentage/fixture-secret': '^1' });
     const before = cli.snapshot();
     const run = await cli.run('setup --check');
@@ -94,7 +94,7 @@ test.describe('agentage setup --check @p0 @offline', () => {
   test('agentage setup --check after a hand edit of hello\'s integrity in the lock exits 1 with "integrity drift"', async ({
     cli,
   }) => {
-    await cli.run(`setup --profile ${cli.profile(TWO)}`);
+    await cli.oldSetup(TWO);
     tamper(cli);
     const run = await cli.run('setup --check');
     expect(run.code).toBe(1);
@@ -112,14 +112,14 @@ test.describe('agentage setup --check @p0 @offline', () => {
 });
 
 test.describe('integrity drift @p0 @offline', () => {
-  test("after a hand edit of hello's integrity in the lock, setup --profile and extension doctor exit 1", async ({
+  test("after a hand edit of hello's integrity in the lock, setup --check and extension doctor exit 1", async ({
     cli,
   }) => {
-    await cli.run(`setup --profile ${cli.profile(TWO)}`);
+    await cli.oldSetup(TWO);
     tamper(cli);
-    const setup = await cli.run(`setup --profile ${cli.profile(TWO)}`);
-    expect(setup.code).toBe(1);
-    expect(setup.stderr).toContain(`Setup failed: integrity drift: ${HELLO}@1.0.0`);
+    const check = await cli.run('setup --check');
+    expect(check.code).toBe(1);
+    expect(check.stderr).toContain(`integrity drift: ${HELLO}@1.0.0`);
     expect((await cli.run('extension doctor')).code).toBe(1);
   });
 });

@@ -2,7 +2,7 @@ import { CliError } from '../../lib/json-output.js';
 import { driftLines } from '../../core/installer/plan.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { loadExtensions } from '../../core/loader/load.js';
-import { loadSet, scan, scanNow } from '../../core/loader/scan.js';
+import { loadSet, scanNow } from '../../core/loader/scan.js';
 import { loadMachine } from '../../core/profile/machine.js';
 import { kitCheck, type LoadKitTool } from './kit-tool.js';
 import { printReport } from './list.js';
@@ -19,14 +19,12 @@ export interface ExtensionDoctorOptions {
 
 type BeforeLoad = (extensions: DiscoveredExtension[]) => Promise<void>;
 
-// Loads what can load once (`tree`: that tree, not the current one); the kit checks kit-shaped ones.
+// Loads what can load once, for the report only; the kit checks kit-shaped ones.
 export const loadAndGather = async (
   beforeLoad: BeforeLoad = async () => undefined,
-  tree?: string,
   tool?: LoadKitTool
 ): Promise<ExtensionsGather> => {
-  const machine = await loadMachine();
-  const found = tree ? scan(machine, tree) : scanNow(machine);
+  const found = scanNow(await loadMachine());
   const extensions = loadSet(found);
   await beforeLoad(extensions);
   const session = await loadExtensions(extensions, undefined, kitCheck(tool));
@@ -50,7 +48,7 @@ export const runExtensionDoctor = async (
   opts: ExtensionDoctorOptions = {},
   tool?: LoadKitTool
 ): Promise<void> => {
-  const gathered = await loadAndGather(undefined, undefined, tool);
+  const gathered = await loadAndGather(undefined, tool);
   printReport(gathered, opts.json);
   const { profile, extensions } = gathered.status;
   const failure =

@@ -18,7 +18,7 @@ import { defaultProfile, mutateProfile, readProfile } from '../../core/profile/p
 import { pushWithReplay } from '../../core/profile/push.js';
 import { disconnectMachine, registerMachine } from '../../core/profile/register.js';
 import { type Profile } from '../../core/profile/schema.js';
-import { line } from './install-load.js';
+import { line } from './line.js';
 import { applying, checkAccount, type EditDeps, type ProfileDeps } from './sync.js';
 
 export interface AccountSetupDeps extends EditDeps {

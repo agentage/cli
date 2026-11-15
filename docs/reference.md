@@ -31,7 +31,7 @@ Plain `setup` ends by starting the [daemon](#daemon) when none runs and prints
 `setup` also installs extensions:
 
 ```bash
-agentage setup --profile ./profile.json            # install and load a profile file, no sign-in
+agentage setup --profile ./profile.json            # save a profile file and install it, no sign-in
 agentage setup --profile ./profile.json --dry-run  # print the plan, write nothing
 agentage setup --check                             # exit 1 when setup would change anything
 agentage setup --latest                            # newest versions the ranges allow (below)
@@ -40,19 +40,25 @@ agentage setup                                     # sign in; on a new machine, 
 
 `--profile <file>` validates the file (schema v1), saves it as `profile.json` (mode 0600,
 keeping this machine's own `machines[<id>]` entry), records `profileSource: "file"` in
-`machine.json` and installs; it never signs in. Every version must be a semver range or an
+`machine.json` and installs it as plain `setup` does (below); it never signs in. Every version
+must be a semver range or an
 `https:` tarball URL (`npm:`, `github:`, `file:`, `http:` and local paths are refused); a refused
 profile names each entry and the rule and writes nothing. `--disconnect` skips the extension
 steps.
 
-Plain `setup` signs in and pulls the profile in your account (below). It installs that profile
-only on a machine with no `installation.json` yet (the first run): each `@agentage/extension-<id>`
-entry goes to the daemon by id (`POST /host/extensions`, as `extension install <id>` sends it, at
-the market's newest version), and the daemon runs it. Plain `setup` loads no extension itself.
-Once `installation.json` exists, `setup` installs nothing and prints
+Plain `setup` signs in and pulls the profile in your account (below). `setup` and
+`setup --profile` install a profile only on a first install: there is no `installation.json` yet,
+or the marker `setup.installing` of an unfinished first install is there. The marker is written
+before the first entry and removed once every entry was tried; a failed entry is reported and
+does not stop the others. Each `@agentage/extension-<id>` entry goes to the daemon by id
+(`POST /host/extensions`, as `extension install <id>` sends it): an exact version as it is, a
+range at the market's newest version (a range is not matched). The daemon runs it; `setup` loads
+no extension itself, and nothing else installs. Otherwise `setup` installs nothing and prints
 `extensions installation.json holds this machine; setup installs nothing (agentage extension install)`,
 so an extension you removed with `extension remove` does not come back. With the daemon off
-(`--no-daemon`, `AGENTAGE_NO_DAEMON=1`) it prints `extensions the daemon is off, nothing installed`.
+(`--no-daemon`, `AGENTAGE_NO_DAEMON=1`) it prints `extensions the daemon is off, nothing installed`
+and keeps the marker, so the next `setup` installs. The tree cli 0.51 installed in
+`extensions/trees/` is read-only for this cli: nothing switches or deletes it.
 An entry the daemon refuses, or a package that is not `@agentage/extension-<id>`, fails `setup`
 (exit 1, `extension_failed`) after the others, naming each.
 
@@ -316,7 +322,8 @@ in the config folder and runs each extension as its own process: its api at
   `--available` reads the market (paged, 200 per page, at most 20 pages; past that it stops
   with `market_unavailable` naming the cap), not the daemon.
 - **update** compares each market row with the market's newest version and changes the ones that
-  differ; folders are left alone. `--check` only prints `<id> <from> to <to> (available)`.
+  differ; folders are left alone. `--check` only prints `<id> <from> to <to> (available)`. After a
+  change the folder of the old version goes (below).
 - **disable** and **enable** stop and start the extension; data, settings and secrets stay.
 - **configure** sends `<key>=<value>` pairs as settings, or with `--secret` as secrets. Values
   are sent as text; the daemon turns each into the type the manifest declares (`5` for an
@@ -327,9 +334,14 @@ in the config folder and runs each extension as its own process: its api at
   stdin when stdin is not a terminal, else asks for it hidden; with `--json` on a terminal it is
   refused (`confirmation_required`), never asked.
 - **remove** forgets the extension's settings and secrets. While another installed extension
-  peer-depends on it, it exits 1 with `needed_by_dependents` naming them; `--force` removes it
+  (a disabled one too) peer-depends on it, it exits 1 with `needed_by_dependents` naming them; `--force` removes it
   anyway. `--purge` also deletes `data/<id>/`: on a terminal it asks first (`[y/N]`), without one
   it needs `--yes`, else exits 1 with `confirmation_required` and nothing changed.
+
+After `remove` and `update`, each folder `extensions/packages/trees/<id>@<version>` that no
+`installation.json` entry uses any more is deleted; the daemon has stopped its child before it
+answers. A refused change keeps the old folder. Only the daemon's own trees are deleted, never the
+0.51 tree.
 
 Error codes: the cli's own are lowercase snake_case (`confirmation_required`); a code the daemon
 answers with is UPPER_SNAKE (`NOT_FOUND`, `CONFLICT`, `INVALID_SETTING`) and passes through
@@ -358,7 +370,10 @@ its folder is gone, another user can write to it (the check of `install <path>`)
 invalid, it has no `agentage.id`, or it is not in the 0.51 tree (a plain `setup` on a new machine
 installs those). Each skipped entry is listed in `installation.moved.json` beside the marker, in
 the daemon log and in `daemon status` (`move skipped <entry>: <reason>`). Secrets need no move:
-`secrets.json` is the same file.
+`secrets.json` is the same file. A moved setting gets the type the extension's manifest declares
+(`"2"` becomes `2` for an `integer`); a value that fits no declared type, or a key the manifest
+does not declare, is dropped and listed (`move skipped <id> setting <key>: ...`), so the extension
+still starts. An extension that declares no settings keeps its values as they are.
 
 The marker `installation.moved` is written once every entry is moved or skipped; with it the move
 never runs again. An invalid `profile.json` or `machine.json` moves nothing and writes no marker:
@@ -366,6 +381,14 @@ the daemon still starts, `daemon status` shows `move: <file> is invalid ...`, an
 after you fix the file moves it. A stop half way loses nothing: an id already in
 `installation.json` keeps its row, and the next start adds the rest. The old files stay as they
 are.
+
+### Downgrade to 0.51
+
+cli 0.51 finds its old state as it left it: `profile.json`, `machine.json` and the tree in
+`extensions/trees/`, which this cli never changes. What you changed after the update (installs,
+removes, settings in `installation.json` and `settings.json`) 0.51 does not see. Stop the daemon
+first with `agentage daemon stop`, then install 0.51; 0.51 has no daemon and would leave this one
+running on its port.
 
 ## extension doctor
 

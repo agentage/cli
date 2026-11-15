@@ -62,8 +62,9 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   over profile, lock and npm major.
   - Plain `setup` pulls it and never pushes. On `404 PROFILE_NOT_FOUND` it creates it. After any
     other failure or 404 it uses the local `profile.json`, or installs nothing and prints one dim
-    line. It installs the profile only through the daemon, and only while `installation.json`
-    does not exist (`setup-install.ts`). No command pushes an install or remove to the account.
+    line. `setup` and `setup --profile` install a profile only through the daemon, and only on a
+    first install: no `installation.json`, or the `setup.installing` marker
+    (`setup-install.ts`). No command pushes an install or remove to the account.
   - `setup`, `status` and `setup --disconnect` register the machine at `/v1/machines` (fire and
     forget).
 - Memory, vault, sync and MCP code lives in git history up to v0.37.2 and returns as
@@ -83,10 +84,10 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   - `extension/` holds the rest. `rows.ts` gathers the extension rows; `list.ts` prints them and
     registers the `extension` group; `doctor.ts` loads once and reports; `row-lines.ts` renders
     the rows and the `status` lines.
-  - `install-load.ts` is the flow `setup`, `install` and `remove` end with: install, load, print
-    rows, fail. `install.ts` adds one extension; npm is its only injected dependency, and a
-    kit-built working copy prints `linked`. `remove.ts` takes one out; `--purge` asks through an
-    injected `isTTY`/`prompt`.
+  - One install path: the daemon's installer (`commands/daemon/installer.ts`, one tree per
+    version under `extensions/packages/trees/`). The 0.51 tree under `extensions/trees/` is
+    read-only: nothing in `src` switches or deletes it; `src/test/old-install.ts` builds it for
+    tests.
   - `create.ts` is `extension create`: a shallow clone of the template, the other parts dropped,
     the word `template` rewritten to the id.
   - `setup.ts` is the extensions `setup` flow; its only deps are the network ones, npm and the
@@ -154,16 +155,13 @@ Each row names the doc first, then the code that proves it. Read the doc before 
     (`logs/<id>.log`)
   - `installer/` - `npm.ts` (`node npm-cli.js`, scrubbed env, `--registry` default; the `Npm` injected dependency
     for `ci`, `install` and `update`, the `NpmManifest` injected dependency for `pack` and `view`),
-    `tree.ts` (deterministic `package.json` and per-scope `.npmrc`, staged
-    `extensions/trees/<hash>/` + `.complete` + `extensions/current`, `install.lock` with a
-    heartbeat, `collectTrees`: every tree but `current` removed after a success, staging dirs left
-    to the next locked run), `compare-lock.ts` (normalized lock compare, root dependencies,
+    `tree.ts` (deterministic `package.json` and per-scope `.npmrc`, a staged tree + `.complete`,
+    `install.lock` with a heartbeat; used by `package-dir.ts` for the per-version trees), `compare-lock.ts` (normalized lock compare, root dependencies,
     locked versions, integrity drift), `compat.ts` (the gate: `engines.agentage` against
     `EXTENSION_API_VERSION`, or the kit's version for a kit-shaped release (`agentage.parts` in
     `npm view`), newest compatible version, `npm view` output),
     `plan.ts` (desired vs current: `add`, `update`, `remove`, `off`, `unchanged` per package, from
-    the lock's root dependencies; lock drift), `installer.ts` (install plan, install, refuses
-    integrity drift; npm is the only injected dep), `resolve.ts` (what `extension install <name>`
+    the lock's root dependencies; lock drift), `resolve.ts` (what `extension install <name>`
     means: dev path, refused scheme, tarball URL, package or short name; a name without a range
     via `npm view <name>@>=0.0.0 name version engines` and the gate, anything else via
     `npm pack --dry-run`)

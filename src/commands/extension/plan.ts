@@ -12,7 +12,7 @@ import { NO_MACHINE, readMachine, type MachineFile } from '../../core/profile/ma
 import { effective, keepMachine } from '../../core/profile/merge.js';
 import { readProfile } from '../../core/profile/profile.js';
 import { type Profile } from '../../core/profile/schema.js';
-import { line } from './install-load.js';
+import { line } from './line.js';
 
 export interface PlanOptions {
   json?: boolean;

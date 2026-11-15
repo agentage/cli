@@ -9,10 +9,11 @@ const HELLO_AND_THROWS = { extensions: { hello: '^1.0.0', throws: '^1' } };
 const said = (stderr: string): string[] => stderr.split('\n').filter((line) => line !== '');
 
 test.describe('agentage extension doctor @p0 @offline', () => {
-  test('agentage extension doctor after a failed setup loads again, rewrites the state files and exits 1', async ({
+  test('agentage extension doctor run twice loads again, rewrites the state files and exits 1', async ({
     cli,
   }) => {
-    expect((await cli.run(`setup --profile ${cli.profile(HELLO_AND_THROWS)}`)).code).toBe(1);
+    await cli.oldSetup(HELLO_AND_THROWS);
+    expect((await cli.run('extension doctor')).code).toBe(1);
     const before = cli.json('state/throws.json');
     const check = await cli.run('extension doctor');
     expect(check.code).toBe(1);
@@ -30,7 +31,7 @@ test.describe('agentage extension doctor @p0 @offline', () => {
   test('agentage extension doctor --json keeps stdout valid JSON while throws prints during its load', async ({
     cli,
   }) => {
-    await cli.run(`setup --profile ${cli.profile(HELLO_AND_THROWS)}`);
+    await cli.oldSetup(HELLO_AND_THROWS);
     const check = await cli.run('extension doctor --json');
     expect(check.code).toBe(1);
     const rows = JSON.parse(check.stdout).extensions as { id: string; state: string }[];
