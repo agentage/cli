@@ -1,7 +1,6 @@
-import { unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { getConfigDir } from '../fs/config.js';
-import { isRecord, readJson } from '../fs/json-file.js';
+import { isRecord, readJson, unlinkQuiet } from '../fs/json-file.js';
 
 export const DEFAULT_DAEMON_PORT = 4243;
 
@@ -33,13 +32,7 @@ const isDaemonFile = (value: unknown): value is DaemonFile =>
 
 export const readDaemonFile = (): DaemonFile | null => readJson(daemonFilePath(), isDaemonFile);
 
-export const removeDaemonFile = (): void => {
-  try {
-    unlinkSync(daemonFilePath());
-  } catch {
-    // already gone
-  }
-};
+export const removeDaemonFile = (): void => unlinkQuiet(daemonFilePath());
 
 // EPERM: the pid lives, under another user.
 export const isAlive = (pid: number): boolean => {

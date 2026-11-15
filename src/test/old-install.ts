@@ -34,8 +34,8 @@ const treeName = (lock: string | null): string => {
 const build = async (dir: string, set: InstallSet, npm: () => Promise<Npm>) => {
   const manifest = manifestText(set.extensions);
   const files = { manifest, npmrc: npmrcText(set.registries) };
-  const staging = stageTree(dir, { ...files, lock: readText(join(dir, LOCK_FILE)) });
   const empty = Object.keys(set.extensions).length === 0;
+  const staging = stageTree(dir, { ...files, lock: empty ? null : readText(join(dir, LOCK_FILE)) });
   const res = empty ? null : await (await npm())('install', staging);
   if (res && res.code !== 0) {
     discardTree(staging);

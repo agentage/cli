@@ -1,9 +1,8 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { CheckReport } from '@agentage/extension/tool';
 import { childEnv } from '../../lib/child-env.js';
-import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { CliError } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
@@ -30,8 +29,10 @@ const hasBuildScript = (dir: string): boolean => {
       'invalid_argument',
       `no package.json in ${dir}: run it in an extension package folder`
     );
-  const scripts = readJson(join(dir, 'package.json'), isRecord)?.['scripts'];
-  return isRecord(scripts) && typeof scripts['build'] === 'string';
+  const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
+    scripts?: Record<string, unknown>;
+  };
+  return typeof pkg.scripts?.['build'] === 'string';
 };
 
 export interface PackageBuild {

@@ -709,7 +709,7 @@ exits 1 with the error object, code `usage`, and the usage line on stderr.
 
 `setup` with `--json` does not open a browser: when it must sign in it needs `--no-browser`, else
 it fails with `confirmation_required`. `extension remove --purge` with `--json` needs `--yes`, else
-`confirmation_required`. Secrets are listed, never asked.
+`confirmation_required`.
 
 `status`, `extension doctor` and `check`, and `setup` with `--dry-run` or `--check`, keep
 their own JSON (described under each command) because tools read it today. An error they hit
