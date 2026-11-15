@@ -25,6 +25,7 @@ const FORBIDDEN = [
   '@opentelemetry/',
   '@supabase/',
   "from 'express'",
+  "import('express')",
   "from 'ws'",
   'better-sqlite3',
 ];
@@ -37,7 +38,8 @@ const CORE_FORBIDDEN: RegExp[] = [
 
 // The local extension up mounts the kit's express guard in front of the kit app: its one express use.
 const allowed = (file: string, token: string): boolean =>
-  token === "from 'express'" && file.endsWith(join('commands', 'extension', 'up-run.ts'));
+  ["from 'express'", "import('express')"].includes(token) &&
+  file.endsWith(join('commands', 'extension', 'up-run.ts'));
 
 describe('package guard (the core)', () => {
   it('source contains no product or agent-runtime imports', () => {

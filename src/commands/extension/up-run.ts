@@ -1,5 +1,5 @@
 import { type RequestListener, type Server } from 'node:http';
-import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
+import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { resolve } from 'node:path';
 import type * as KitHostModule from '@agentage/extension/host';
 import type { HostedExtension, HostOptions } from '@agentage/extension/host';
@@ -84,21 +84,22 @@ const refused: ErrorRequestHandler = (err: Refusal, _req, res, _next) => {
 };
 
 // The kit's guard in front of the kit app when it exports one; else the cli's own (remove then).
-export const handlerOf = (
+// express loads only here, on use: --help and --version never load it.
+export const handlerOf = async (
   kit: Pick<KitHost, 'guard' | 'kitGuards'>,
   app: RequestListener,
   port: () => number
-): RequestListener => {
+): Promise<RequestListener> => {
   if (kit.kitGuards) return app;
   if (!kit.guard) return loopbackOnly(app, port);
-  const front = express();
+  const front = (await import('express')).default();
   front.use(kit.guard(port), app as unknown as RequestHandler, refused);
   return front;
 };
 
 const serve = async (kit: KitHost, hosted: HostedExtension): Promise<Server> => {
   let port = 0;
-  const server = await listenFrom(handlerOf(kit, hosted.app as RequestListener, () => port));
+  const server = await listenFrom(await handlerOf(kit, hosted.app as RequestListener, () => port));
   port = portOf(server);
   return server;
 };
