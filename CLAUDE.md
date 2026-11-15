@@ -202,6 +202,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
 - `scripts/pack-smoke.sh`, `scripts/update-smoke.sh` - the `Pack smoke` CI job: the packed cli with
   only its declared dependencies (bin, daemon `/health`, express, PGlite), and a 0.51.1 user's
   update over its own state (D6, reads npm); both run locally on a tarball
+- `scripts/mutate.mjs` - the mutation check of the rule tests (`node scripts/mutate.mjs [ids]`):
+  each mutation must turn its tests red; it edits `src`, so never run it beside verify
 - `src/package-guard.test.ts` - CI guard: no product or agent-runtime imports; runtime deps stay
   exactly `@agentage/extension + chalk + commander + open` (the kit's tool only; it never loads
   the kit's server stack outside the daemon process) plus `express` and `@electric-sql/pglite`,

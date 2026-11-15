@@ -31,8 +31,7 @@
     "url": "https://github.com/agentage/cli/issues"
   },
   "files": [
-    "dist",
-    "CHANGELOG.md"
+    "dist"
   ],
   "engines": {
     "node": ">=22.0.0",
