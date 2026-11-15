@@ -7,7 +7,8 @@ tarball=$(realpath "$1")
 expected=$(tar -xOzf "$tarball" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0)).version')
 work=$(mktemp -d)
 daemon=
-trap 'if [ -n "$daemon" ]; then kill "$daemon" 2>/dev/null || true; fi; rm -rf "$work"' EXIT
+# Cleanup after a FAIL only: the end asserts the daemon is gone and sets daemon= first.
+trap 'if [ -n "$daemon" ] && kill -0 "$daemon" 2>/dev/null; then kill "$daemon"; fi; rm -rf "$work"' EXIT
 npm i -g "$tarball" --omit=dev --prefix "$work/prefix" --no-audit --no-fund > /dev/null
 export PATH="$work/prefix/bin:$PATH" AGENTAGE_CONFIG_DIR="$work/config"
 export AGENTAGE_DAEMON_PORT=$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')
@@ -37,3 +38,10 @@ done
 echo "${body:-}" | grep -q '"service":"agentage-daemon"' && pass "daemon run: /health $body" || fail "daemon run: no /health"
 agentage daemon status --json | grep -q '"running":true' && pass "daemon status: running" || fail "daemon status"
 agentage daemon stop > /dev/null && pass "daemon stop" || fail "daemon stop"
+for _ in $(seq 25); do kill -0 "$daemon" 2>/dev/null || break; sleep 0.2; done
+kill -0 "$daemon" 2>/dev/null && fail "daemon pid $daemon still runs after stop"
+pass "daemon pid $daemon is gone"
+code=0
+curl -sS -o /dev/null "http://127.0.0.1:$AGENTAGE_DAEMON_PORT/health" 2>/dev/null || code=$?
+[ "$code" = 7 ] && pass "/health refuses the connection" || fail "/health after stop: curl exit $code, not 7 (refused)"
+daemon=
