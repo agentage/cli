@@ -3,7 +3,8 @@ import { promisify } from 'node:util';
 import { type Command } from 'commander';
 import type { BuildOptions } from '@agentage/extension/tool';
 import { addJson, CliError, omitJson } from '../../lib/json-output.js';
-import { kitBuildsContainer, kitVersion, loadKitTool, type LoadKitTool } from './kit-tool.js';
+import { kitVersion } from '../../core/kit-version.js';
+import { kitBuildsContainer, loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { buildPackage, type PackageBuild } from './package-build.js';
 
 // `container` is in the kit's BuildOptions from the minor after 0.13.
@@ -67,21 +68,21 @@ export interface BuildFlagDeps {
   tool: LoadKitTool;
   committed: Committed;
   pkg: (dir?: string) => Promise<PackageBuild>;
-  container: () => boolean;
+  container: () => Promise<boolean>;
 }
 
 const defaultFlagDeps: BuildFlagDeps = {
   tool: loadKitTool,
   committed: assertCommitted,
   pkg: (dir) => buildPackage(dir),
-  container: kitBuildsContainer,
+  container: () => kitBuildsContainer(),
 };
 
-const refusedFlags = (opts: ExtensionBuildOptions, deps: BuildFlagDeps): string => {
+const refusedFlags = async (opts: ExtensionBuildOptions, deps: BuildFlagDeps): Promise<string> => {
   if (opts.container && opts.docker) return '--container and --docker: pick one';
   if (opts.registry && !opts.push && !opts.container && !opts.docker)
     return '--registry names where images go: use it with --docker, --container or --push';
-  if (opts.container && !deps.container())
+  if (opts.container && !(await deps.container()))
     return `build --container needs a kit that builds one image (this cli has @agentage/extension ${kitVersion()}): update the cli`;
   return '';
 };
@@ -101,7 +102,7 @@ export const runExtensionBuild = async (
   opts: ExtensionBuildOptions = {},
   deps: BuildFlagDeps = defaultFlagDeps
 ): Promise<unknown> => {
-  const refused = refusedFlags(opts, deps);
+  const refused = await refusedFlags(opts, deps);
   if (refused) throw new CliError('invalid_argument', refused);
   if (!opts.push && !opts.container && !opts.docker) return packageOnly(opts.dir, deps);
   return runImageBuild(opts, deps.tool, deps.committed);

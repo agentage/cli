@@ -141,6 +141,19 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     );
   });
 
+  test('an off entry whose disable fails is reported installed but NOT disabled, never not installed', async ({
+    dir,
+  }) => {
+    dir.machine({});
+    const account = fakeAccount();
+    account.store({ ...HELLO_DOC, machines: { [MACHINE_ID]: { off: [HELLO_PKG], config: {} } } });
+    vi.mocked(daemon.host.change).mockRejectedValueOnce(new CliError('UNAVAILABLE', 'busy'));
+    const run = await setup(account);
+    expect(run.error).toBe(
+      'installed but NOT disabled:\n  hello: busy; run agentage extension disable hello'
+    );
+  });
+
   test("this machine's off entries install disabled", async ({ dir }) => {
     dir.machine({});
     const account = fakeAccount();

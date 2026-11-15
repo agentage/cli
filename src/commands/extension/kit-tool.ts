@@ -1,6 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
 import type * as Kit from '@agentage/extension/tool';
 import { type KitCheck } from '../../core/loader/load.js';
 
@@ -31,13 +28,8 @@ export const kitCheck =
   async (dir) =>
     (await tool()).checkCli(dir);
 
-const kitRoot = (): string =>
-  dirname(createRequire(import.meta.url).resolve('@agentage/extension/package.json'));
-
-export const kitVersion = (): string =>
-  (JSON.parse(readFileSync(join(kitRoot(), 'package.json'), 'utf8')) as { version: string })
-    .version;
-
-// 0.13 ignores an unknown `container` option and builds part images: look for the module instead.
-export const kitBuildsContainer = (): boolean =>
-  existsSync(join(kitRoot(), 'dist', 'tool', 'container.js'));
+// The kit's capability list (from the minor after 0.13); 0.13 has none and ignores `container`.
+export const kitBuildsContainer = async (tool: LoadKitTool = loadKitTool): Promise<boolean> => {
+  const caps = ((await tool()) as { capabilities?: unknown }).capabilities;
+  return Array.isArray(caps) && caps.includes('container');
+};

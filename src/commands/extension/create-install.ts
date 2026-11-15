@@ -5,6 +5,7 @@ import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { CliError } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { report, summaryOf } from './lifecycle.js';
+import { ignoreLocal } from './up-local.js';
 import { buildPackage, npmIn, type Npm, type PackageBuild } from './package-build.js';
 
 export interface CreateInstallDeps {
@@ -70,8 +71,9 @@ export const installCreated = async (
   deps = createInstallDeps
 ) => {
   const dir = resolve(folder);
-  await deps.npm(dir, ['ci', '--no-audit', '--no-fund']);
+  await deps.npm(dir, ['ci', '--ignore-scripts', '--no-audit', '--no-fund']);
   await conforms(dir, deps);
+  ignoreLocal(dir);
   if (!install) return { installed: null, url: null };
   if (process.env['AGENTAGE_NO_DAEMON'] === '1') {
     console.log(' install   the daemon is off (AGENTAGE_NO_DAEMON=1): not installed');
@@ -82,4 +84,18 @@ export const installCreated = async (
   const url = await answering(deps, port, dir);
   console.log(url ? ` url       ${url}` : ' url       none answers yet: agentage extension list');
   return { installed, url };
+};
+
+const OWN_TEMPLATE = 'agentage/extension-template';
+
+// Another repo, or a branch of ours, is code nobody reviewed for you: say so before it runs.
+export const trustFrom = (
+  from: string,
+  opts: { yes?: boolean; install?: boolean },
+  tty = process.stdin.isTTY === true
+): void => {
+  if (from === OWN_TEMPLATE) return;
+  console.error(`template  ${from}: code from that repo will be built and run on this machine`);
+  if (tty || opts.yes || opts.install === false) return;
+  throw new CliError('invalid_argument', `--from ${from} with no terminal: pass --yes to run it`);
 };

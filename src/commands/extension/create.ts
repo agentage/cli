@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { type Command } from 'commander';
 import { addJson, CliError } from '../../lib/json-output.js';
-import { installCreated } from './create-install.js';
+import { installCreated, trustFrom } from './create-install.js';
 
 const run = promisify(execFile);
 export const TEMPLATE = 'agentage/extension-template';
@@ -29,6 +29,8 @@ export interface ExtensionCreateOptions {
   from?: string;
   // commander's --no-install: false keeps the new folder out of the daemon.
   install?: boolean;
+  // --yes: run code from a --from other than the template with no terminal to see the notice.
+  yes?: boolean;
   json?: boolean;
 }
 
@@ -155,12 +157,14 @@ const printNext = (dir: string, from: string, id: string, kept: string[]): void 
 export const runExtensionCreate = async (
   opts: ExtensionCreateOptions,
   url = (from: string) => `https://github.com/${from}`,
-  after: typeof installCreated = installCreated
+  after: typeof installCreated = installCreated,
+  tty = process.stdin.isTTY === true
 ): Promise<unknown> => {
   const { id, from = TEMPLATE } = opts;
   const kept = opts.parts.length > 0 ? [...new Set(opts.parts)] : PARTS;
   const refused = refusal(opts, kept);
   if (refused) throw new CliError('invalid_argument', refused);
+  trustFrom(from, opts, tty);
   const dir = `extension-${id}`;
   await clone(url(from.split('#')[0] ?? from), from, dir);
   const ci = shape(dir, from, id, kept);
@@ -178,6 +182,11 @@ export const addCreate = (group: Command, create: (o: ExtensionCreateOptions) =>
       .argument('[parts...]', `parts to keep (default: all seven): ${PARTS.join(', ')}`)
       .option('--from <owner/repo[#branch]>', `the template repo (default: ${TEMPLATE})`)
       .option('--no-install', 'build the folder, but do not give it to the daemon')
-  ).action((id: string, parts: string[], o: { from?: string; install?: boolean; json?: boolean }) =>
-    create({ id, parts, ...o })
+      .option('--yes', 'run code from another --from repo or branch with no terminal')
+  ).action(
+    (
+      id: string,
+      parts: string[],
+      o: { from?: string; install?: boolean; yes?: boolean; json?: boolean }
+    ) => create({ id, parts, ...o })
   );

@@ -26,6 +26,7 @@ import {
 } from './commands/extension/up.js';
 import { registerStatus, type StatusOptions } from './commands/status/status.js';
 import { registerUpdate, type UpdateOptions } from './commands/update/update.js';
+import { takeExit } from './lib/exit-code.js';
 import { messageOf, writeError } from './lib/json-output.js';
 import {
   ACTION_FAILED,
@@ -154,7 +155,7 @@ export const run = async (
   if (process.env['NO_COLOR']) chalk.level = 0; // chalk ignores NO_COLOR on its own
   try {
     await createProgram(deps, argv).parseAsync(argv);
-    return EXIT_OK;
+    return takeExit() ?? EXIT_OK;
   } catch (err) {
     return exitCodeOf(err, deps, argv);
   }

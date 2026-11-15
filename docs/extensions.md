@@ -317,7 +317,9 @@ must run. After the first green run, set it to the real count. When `create` can
 line, it says so and you set it by hand.
 
 `--from <owner/repo>` takes another template repo, and `--from <owner/repo#branch>` one of its
-branches. After the clone, `create` runs `npm ci`, builds the package (as `extension build` does) and gives
+branches. For any source other than `agentage/extension-template` itself, `create` first prints
+that code from that repo will be built and run on this machine; with no terminal it needs `--yes`
+(or `--no-install`). After the clone, `create` runs `npm ci --ignore-scripts`, builds the package (as `extension build` does) and gives
 the folder to the daemon (`agentage extension install <folder>`), unless `--no-install`. It ends
 with `url       <the first public route of the api that answers>`.
 

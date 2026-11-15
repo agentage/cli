@@ -82,7 +82,7 @@ const scaffoldOnly = async (dir: string, install: boolean) => {
 };
 
 const create = (id: string, parts: string[] = [], from?: string) =>
-  output(() => runExtensionCreate({ id, parts, from }, () => url, scaffoldOnly));
+  output(() => runExtensionCreate({ id, parts, from }, () => url, scaffoldOnly, true));
 const read = (path: string) => readFileSync(join(root, 'extension-market', path), 'utf8');
 const manifest = () => JSON.parse(read('package.json')) as typeof MANIFEST;
 
@@ -212,7 +212,8 @@ describe('extension create', () => {
       runExtensionCreate(
         { id: 'market', parts: [], from: 'x/none' },
         () => `file://${root}/none`,
-        scaffoldOnly
+        scaffoldOnly,
+        true
       )
     );
     expect(printed.error).toMatch(/^cannot clone template x\/none: fatal: .*none/);
@@ -300,7 +301,8 @@ describe('extension create', () => {
       runExtensionCreate(
         { id: 'market', parts: [], from: 'x/y#feature/kit' },
         (from) => (asked.push(from), url),
-        scaffoldOnly
+        scaffoldOnly,
+        true
       )
     );
     expect(printed.error).toBeNull();

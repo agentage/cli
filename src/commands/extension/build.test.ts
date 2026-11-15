@@ -201,7 +201,7 @@ const flagDeps = (conforms = true, container = true) => {
       const report = { ...conforming, conforms };
       return { dir: dir ?? '.', built: true, contracts: [], report };
     },
-    container: () => container,
+    container: async () => container,
   };
   return { deps, calls };
 };

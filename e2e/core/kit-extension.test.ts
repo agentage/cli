@@ -110,11 +110,11 @@ test.describe('a kit command whose name is taken keeps only agentage <id> <comma
 });
 
 test.describe('agentage extension up, down and token reach the kit @offline', () => {
-  test('agentage extension up and up --docker in a folder that is not an extension exit 1 naming it; down says nothing runs', async ({
+  test('agentage extension up --local and up --docker in a folder that is not an extension exit 1 naming it; down says nothing runs', async ({
     cli,
   }) => {
     const message = `no package.json in ${resolve('e2e')}: run it in an extension package folder`;
-    for (const args of ['up', 'up --docker'])
+    for (const args of ['up --local', 'up --docker'])
       expect(said(await cli.run(`extension ${args} --dir ./e2e`))).toEqual({
         code: 1,
         stdout: '',

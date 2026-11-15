@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { InvalidArgumentError, type Command } from 'commander';
-import { addJson, omitJson } from '../../lib/json-output.js';
+import { addJson, CliError, omitJson } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { execIn, type Exec } from './release-guard.js';
 import { assertOwnStack } from './stack-owner.js';
@@ -30,15 +30,34 @@ const printed = (): { lines: string[]; onLine: (line: string) => void } => {
 
 export interface ExtensionUpFlags extends ExtensionUpOptions {
   docker?: boolean;
+  local?: boolean;
 }
+
+export const UP_CHANGED =
+  'extension up now runs with no Docker; the Docker stack is `extension up --docker`';
+
+// 0.51's up was Docker: a CI script with neither flag asked for that, so it stops instead.
+const noticeChange = ({ local }: ExtensionUpFlags, env: NodeJS.ProcessEnv, tty: boolean) => {
+  if (local) return;
+  if (env['CI'] && !tty) throw new CliError('invalid_argument', `${UP_CHANGED}; or --local`);
+  console.error(UP_CHANGED);
+};
+
+type LocalRun = (dir: string | undefined, json: boolean) => Promise<unknown>;
 
 // No Docker: the working copy in this terminal (D7). --docker: the kit's path, a line per step.
 export const runExtensionUp = async (
-  { docker, ...opts }: ExtensionUpFlags = {},
+  { docker, local: asked, ...opts }: ExtensionUpFlags = {},
   tool: LoadKitTool = loadKitTool,
-  local: (dir?: string) => Promise<unknown> = runLocalUp
+  local: LocalRun = (dir, json) => runLocalUp(dir, undefined, json),
+  env: NodeJS.ProcessEnv = process.env,
+  tty = process.stdin.isTTY === true
 ): Promise<unknown> => {
-  if (!docker) return local(opts.dir);
+  if (docker && asked) throw new CliError('invalid_argument', '--docker and --local: pick one');
+  if (!docker) {
+    noticeChange({ local: asked }, env, tty);
+    return local(opts.dir, opts.json === true);
+  }
   const { up } = await tool();
   const { lines, onLine } = printed();
   await up({ ...omitJson(opts), onLine });
@@ -139,6 +158,7 @@ const addUp = (group: Command, up: KitActions['up']): void => {
       .description('Run the working copy in this terminal until Ctrl-C; --docker = on Docker')
       .option(DIR, DIR_TEXT)
       .option('--docker', 'the images, store, issuer and gateway on Docker')
+      .option('--local', 'the run with no Docker, asked for on purpose (no notice; for CI)')
   )
     .addHelpText('after', UP_HELP)
     .action(up);

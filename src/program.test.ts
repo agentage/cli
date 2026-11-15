@@ -225,6 +225,8 @@ describe('createProgram', () => {
     expect(h.deps.extensionUp).toHaveBeenLastCalledWith({ dir: 'probe' });
     expect(await h.exec('extension', 'up', '--docker')).toBe(0);
     expect(h.deps.extensionUp).toHaveBeenLastCalledWith({ docker: true });
+    expect(await h.exec('extension', 'up', '--local')).toBe(0);
+    expect(h.deps.extensionUp).toHaveBeenLastCalledWith({ local: true });
     expect(await h.exec('extension', 'down', '--keep-data')).toBe(0);
     expect(h.deps.extensionDown).toHaveBeenLastCalledWith({ keepData: true });
     const issuer = ['--issuer', 'http://localhost:4281'];
@@ -277,6 +279,13 @@ describe('createProgram', () => {
       parts: ['mcp', 'api'],
       from: 'x/y',
       install: true,
+    });
+    expect(await h.exec('extension', 'create', 'market', '--yes')).toBe(0);
+    expect(h.deps.extensionCreate).toHaveBeenLastCalledWith({
+      id: 'market',
+      parts: [],
+      install: true,
+      yes: true,
     });
     expect(await h.exec('extension', 'create', 'market', '--no-install')).toBe(0);
     expect(h.deps.extensionCreate).toHaveBeenLastCalledWith({

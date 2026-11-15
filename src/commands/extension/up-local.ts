@@ -1,9 +1,14 @@
-import { createServer as netServer } from 'node:net';
-import { type Server } from 'node:http';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, type RequestListener, type Server } from 'node:http';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { HostedExtension } from '@agentage/extension/host';
-import { CliError } from '../../lib/json-output.js';
+import { CliError, messageOf } from '../../lib/json-output.js';
 
 // D7: a local up takes the first free port from here; the daemon keeps 4243.
 export const UP_FROM = 4244;
@@ -30,23 +35,42 @@ export const readRecord = (dir: string): UpRecord | null => {
   }
 };
 
+// The run state stays out of git: `.agentage/` goes into the folder's .gitignore when missing.
+export const ignoreLocal = (dir: string): void => {
+  if (!existsSync(resolve(dir))) return;
+  const file = join(resolve(dir), '.gitignore');
+  const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  if (text.split('\n').some((line) => /^\/?\.agentage\/?$/.test(line.trim()))) return;
+  appendFileSync(file, `${text === '' || text.endsWith('\n') ? '' : '\n'}${LOCAL}/\n`);
+};
+
 export const writeRecord = (dir: string, record: UpRecord): void => {
   mkdirSync(join(resolve(dir), LOCAL), { recursive: true });
+  ignoreLocal(dir);
   writeFileSync(recordPath(dir), `${JSON.stringify(record)}\n`, { mode: 0o600 });
 };
 
 export const removeRecord = (dir: string): void => rmSync(recordPath(dir), { force: true });
 
-const isFree = (port: number): Promise<boolean> =>
-  new Promise((done) => {
-    const probe = netServer().once('error', () => done(false));
-    probe.listen(port, '127.0.0.1', () => probe.close(() => done(true)));
+const bind = (handler: RequestListener, port: number): Promise<Server | null> =>
+  new Promise((done, fail) => {
+    const server = createServer(handler);
+    server.once('error', (err: NodeJS.ErrnoException) =>
+      err.code === 'EADDRINUSE' ? done(null) : fail(err)
+    );
+    server.listen(port, '127.0.0.1', () => done(server));
   });
 
-export const nextFreePort = async (from = UP_FROM): Promise<number> => {
-  for (let port = from; port < from + 100; port += 1) if (await isFree(port)) return port;
+// D7: the first port from 4244 that binds; a port taken meanwhile is skipped, not fatal.
+export const listenFrom = async (handler: RequestListener, from = UP_FROM): Promise<Server> => {
+  for (let port = from; port < from + 100; port += 1) {
+    const server = await bind(handler, port);
+    if (server) return server;
+  }
   throw new CliError('port_in_use', `no free port from ${from} to ${from + 99}`);
 };
+
+export const portOf = (server: Server): number => (server.address() as { port: number }).port;
 
 export type Answer = 'ours' | 'other' | 'none';
 
@@ -62,12 +86,6 @@ export const answerOf = async (record: UpRecord, timeoutMs = 2_000): Promise<Ans
   const same = body?.data?.extension === record.id && body.data.instance === record.instance;
   return same ? 'ours' : 'other';
 };
-
-export const listen = (app: HostedExtension['app'], port: number): Promise<Server> =>
-  new Promise((done, fail) => {
-    const server = app.listen(port, '127.0.0.1', () => done(server));
-    server.once('error', fail);
-  });
 
 // Resolves on the first SIGINT or SIGTERM, then releases both.
 export const untilSignal = (): Promise<string> =>
@@ -96,7 +114,12 @@ export const stopLocal = async (dir: string, timeoutMs = 10_000): Promise<LocalD
   const record = readRecord(dir);
   if (!record) return 'none';
   if ((await answerOf(record)) !== 'ours') return (removeRecord(dir), 'stale');
-  process.kill(record.pid, 'SIGTERM');
+  try {
+    process.kill(record.pid, 'SIGTERM');
+  } catch (err) {
+    const why = messageOf(err);
+    throw new CliError('stop_failed', `cannot stop extension up (pid ${record.pid}): ${why}`);
+  }
   if (!(await gone(record, timeoutMs)))
     throw new CliError('stop_failed', `extension up (pid ${record.pid}) did not stop`);
   removeRecord(dir);

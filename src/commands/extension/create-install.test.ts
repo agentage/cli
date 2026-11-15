@@ -1,7 +1,7 @@
 import { describe, expect, vi } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost } from '../../test/host.js';
-import { installCreated, type CreateInstallDeps } from './create-install.js';
+import { installCreated, trustFrom, type CreateInstallDeps } from './create-install.js';
 import { buildPackage, childEnv } from './package-build.js';
 import { type KitTool } from './kit-tool.js';
 
@@ -48,7 +48,12 @@ describe('extension create: npm ci, the build, then the daemon runs the folder',
     dir.write('demo/openapi.json', OPENAPI);
     const { all, npm, daemon, fetcher } = deps();
     const run = await output(() => installCreated(dir.at('demo'), true, all));
-    expect(npm).toHaveBeenCalledWith(dir.at('demo'), ['ci', '--no-audit', '--no-fund']);
+    expect(npm).toHaveBeenCalledWith(dir.at('demo'), [
+      'ci',
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+    ]);
     expect(daemon.host.add).toHaveBeenCalledWith({ source: dir.at('demo') });
     expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
       'http://127.0.0.1:4555/api/demo/ping',
@@ -113,5 +118,26 @@ describe('the package build', () => {
 
   test("the cli's token never reaches the author's scripts", () => {
     expect(childEnv({ AGENTAGE_TOKEN: 't', PATH: '/bin' })).toEqual({ PATH: '/bin' });
+  });
+});
+
+describe('extension create --from another repo or a branch', () => {
+  test('the template needs nothing; any other source prints one line, and with no terminal needs --yes or --no-install', async () => {
+    const quiet = await output(async () => trustFrom('agentage/extension-template', {}, false));
+    expect(quiet).toMatchObject({ error: null, stderr: '' });
+    for (const from of ['acme/ext', 'agentage/extension-template#feature/x']) {
+      const line = `template  ${from}: code from that repo will be built and run on this machine`;
+      const tty = await output(async () => trustFrom(from, {}, true));
+      expect(tty).toMatchObject({ error: null, stderr: line });
+      const refused = await output(async () => trustFrom(from, {}, false));
+      expect(refused).toMatchObject({
+        code: 'invalid_argument',
+        error: `--from ${from} with no terminal: pass --yes to run it`,
+      });
+      expect((await output(async () => trustFrom(from, { yes: true }, false))).error).toBeNull();
+      expect(
+        (await output(async () => trustFrom(from, { install: false }, false))).error
+      ).toBeNull();
+    }
   });
 });

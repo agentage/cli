@@ -4,7 +4,13 @@ import { output, test } from '../../test/config-dir.js';
 import { type KitTool } from './kit-tool.js';
 import { type Exec } from './release-guard.js';
 import { ownProject } from './stack-owner.js';
-import { issuerUrl, runExtensionDown, runExtensionToken, runExtensionUp } from './up.js';
+import {
+  issuerUrl,
+  runExtensionDown,
+  runExtensionToken,
+  runExtensionUp,
+  UP_CHANGED,
+} from './up.js';
 
 // The kit tool as a seam: what each call got, the lines it reports, or the error it throws.
 const fakeKit = (fail?: Error) => {
@@ -83,16 +89,35 @@ describe('extension up, down and token: thin commands over the kit tool', () => 
     expect(run.lines).toEqual(['store    postgres:18-alpine', 'ready    7 parts healthy']);
   });
 
-  test('up with no --docker runs the folder locally and never asks the kit tool', async () => {
+  test('up with no --docker runs the folder locally, never asks the kit tool, and says up changed', async () => {
     const { tool, calls } = fakeKit();
-    const local: string[] = [];
-    const result = await runExtensionUp({ dir: 'probe' }, tool, async (dir) => {
-      local.push(dir ?? '.');
-      return { id: 'probe' };
+    const local: [string, boolean][] = [];
+    const run = (dir: string | undefined, json: boolean) => (
+      local.push([dir ?? '.', json]),
+      Promise.resolve({ id: 'probe' })
+    );
+    const printed = await output(() => runExtensionUp({ dir: 'probe' }, tool, run, {}, true));
+    expect(printed.stderr.trim()).toBe(UP_CHANGED);
+    expect(await runExtensionUp({ local: true, json: true }, tool, run, {}, true)).toEqual({
+      id: 'probe',
     });
-    expect(result).toEqual({ id: 'probe' });
-    expect(local).toEqual(['probe']);
+    expect(local).toEqual([
+      ['probe', false],
+      ['.', true],
+    ]);
     expect(calls).toEqual([]);
+  });
+
+  test('in CI with no terminal, up needs --local or --docker; both at once is refused', async () => {
+    const { tool } = fakeKit();
+    const run = async () => ({ id: 'probe' });
+    const ci = await output(() => runExtensionUp({}, tool, run, { CI: 'true' }, false));
+    expect(ci).toMatchObject({ code: 'invalid_argument', error: `${UP_CHANGED}; or --local` });
+    expect(
+      (await output(() => runExtensionUp({ local: true }, tool, run, { CI: 'true' }, false))).error
+    ).toBeNull();
+    const both = await output(() => runExtensionUp({ local: true, docker: true }, tool, run));
+    expect(both.error).toBe('--docker and --local: pick one');
   });
 
   test('down with a Docker stack here hands --dir and --keep-data to the kit', async ({ dir }) => {

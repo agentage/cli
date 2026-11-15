@@ -465,6 +465,7 @@ them. A package with `"private": true` skips npm entirely (no `npm --version`, `
 
 ```bash
 agentage extension up                         # this folder in this terminal, until Ctrl-C (no Docker)
+agentage extension up --local                 # the same, asked for on purpose (no notice; CI)
 agentage extension up --dir ../my-ext         # another package folder
 agentage extension up --docker                # the package on Docker, as a deployment runs it
 agentage extension down                       # stop what up started for this folder
@@ -472,16 +473,24 @@ agentage extension down --keep-data           # keep the Docker store's volume f
 agentage extension token --scope probe:write  # a dev token from this folder's Docker stack
 ```
 
-`up` with no flag runs the working copy in this terminal (D7). It builds the package as
+`up` with no flag runs the working copy in this terminal (D7). In 0.51 it ran the Docker stack,
+so it first prints one line on stderr: `extension up now runs with no Docker; the Docker stack is
+`extension up --docker``. In CI (`CI` set and stdin not a terminal) with neither `--local` nor
+`--docker` it exits 1 with that line, so a 0.51 script does not get the other run by surprise;
+`--local` asks for the run with no Docker and prints no notice. It builds the package as
 `extension build` does, prints what the check refuses on stderr without stopping, then hosts it
-with the kit host in the cli process on the first free port from 4244 on 127.0.0.1, and prints
+with the kit host in the cli process on the first free port from 4244 on 127.0.0.1 (a port taken
+meanwhile is skipped), and prints
 `up        <id> <version> on http://127.0.0.1:<port>/api/<id>/ (Ctrl-C stops it)`. `/health` is on
-the same port. It runs until Ctrl-C (or SIGTERM), then prints `stopped   <id> (SIGINT)`. It does
-not use the daemon and does not change `installation.json`; its store and its record
-(`up.json`: pid, port, instance) are in the folder's `.agentage/`. It serves the api part only,
-binds 127.0.0.1 only, and has no Host or Origin check. A second `up` of the same folder while
-the first answers exits 1 (`already_running`). With `--json` the lines go to stderr and the
-answer `{ id, version, url, port, stoppedBy }` comes when it stops.
+the same port. It answers only this machine's own pages: a request with another `Host`, a
+cross-site or same-site `Sec-Fetch-Site`, or a foreign `Origin` gets 403. It runs until Ctrl-C
+(exit code 130) or SIGTERM (exit code 0, what `down` sends), then prints `stopped   <id> (SIGINT)`.
+It does not use the daemon and does not change `installation.json`; its store and its record
+(`up.json`: pid, port, instance) are in the folder's `.agentage/`, which `up` adds to the folder's
+`.gitignore` when it is missing. It serves the api part only. A second `up` of the same folder
+while the first answers exits 1 (`already_running`). With `--json` the lines go to stderr; stdout
+gets one JSON line when the host is ready, `{ "ready": true, "id", "version", "url", "port" }`,
+and the envelope `{ success, data: { id, version, url, port, stoppedBy } }` when it stops.
 
 `up --docker` runs the package the way a deployment does: the part images built with the release
 recipe, the store with its migrations and seeds, a dev token issuer and a local gateway, and

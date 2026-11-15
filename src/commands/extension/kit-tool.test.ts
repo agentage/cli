@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { kitVersion } from '../../core/kit-version.js';
 import { satisfies } from '../../core/semver-range.js';
 import { fixture } from '../../test/config-dir.js';
-import { kitCheck, loadKitTool, type KitTool } from './kit-tool.js';
+import { kitBuildsContainer, kitCheck, loadKitTool, type KitTool } from './kit-tool.js';
 
 const USED = [
   'check',
@@ -88,5 +88,16 @@ describe('the kit tool library', () => {
     expect(await check('/good')).toBeNull();
     expect(await check('/bad')).toBe('no create');
     expect(asked).toEqual(['/good', '/bad']);
+  });
+});
+
+describe('the kit capability list', () => {
+  it('build --container only when the kit lists container; kit 0.13 lists nothing', async () => {
+    const listing = (capabilities?: unknown) => async () =>
+      ({ capabilities }) as unknown as KitTool;
+    expect(await kitBuildsContainer(listing(['container']))).toBe(true);
+    expect(await kitBuildsContainer(listing(['localOnly']))).toBe(false);
+    expect(await kitBuildsContainer(listing())).toBe(false);
+    expect(await kitBuildsContainer()).toBe(false);
   });
 });
