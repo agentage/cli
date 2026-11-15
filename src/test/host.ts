@@ -1,12 +1,12 @@
 import { vi } from 'vitest';
-import { CliError } from '../lib/json-output.js';
+import { DaemonError } from '../lib/json-output.js';
 import { type HostClient, type HostRow } from '../lib/daemon/host-client.js';
 
 // A daemon in memory for the lifecycle commands: the rows it holds and what was asked of it.
 export const fakeHost = (rows: HostRow[] = []) => {
   const row = (id: string): HostRow => {
     const found = rows.find((r) => r.id === id);
-    if (!found) throw new CliError('NOT_FOUND', `${id} is not installed`);
+    if (!found) throw new DaemonError('NOT_FOUND', `${id} is not installed`);
     return found;
   };
   const host: HostClient = {

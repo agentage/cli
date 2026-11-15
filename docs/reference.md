@@ -332,9 +332,7 @@ After `remove` and `update`, each folder `extensions/packages/trees/<id>@<versio
 answers. A refused change keeps the old folder. Only the daemon's own trees are deleted, never the
 0.51 tree.
 
-Error codes: the cli's own are lowercase snake_case (`confirmation_required`); a code the daemon
-answers with is UPPER_SNAKE (`NOT_FOUND`, `CONFLICT`, `INVALID_SETTING`) and passes through
-unchanged, in the text and in the `--json` envelope.
+Error codes: see [The --json envelope](#the---json-envelope).
 
 `extension install` and `remove` no longer change `profile.json` or the profile in your account:
 `installation.json` is this machine's one list. The commands of an installed extension
@@ -679,14 +677,20 @@ and nothing else there (progress lines go to stderr), and never prompts:
 ```
 
 An error exits 1, success 0. The one other exit code is 130: `extension up` (also with `--json`)
-stopped by Ctrl-C, after its envelope. `code` is snake_case and stable: `not_installed`, `needed_by_dependents`,
-`confirmation_required`, `extension_failed`, `profile_invalid`, `integrity_drift`,
-`invalid_argument`, `invalid_option`, `not_conforming`, `uncommitted_changes`, `release_refused`,
-`auth_required`, `auth_unavailable`, `not_pushed`, `token_request_failed`, `daemon_unavailable`,
-`daemon_unresponsive`, `daemon_disabled`, `port_in_use`, `market_unavailable`, `already_running`,
-`stop_failed`, `build_failed`, `cancelled`, `error` (any other).
-A code from the daemon (UPPER_SNAKE, such as `NOT_FOUND` or `INVALID_SETTING`) passes through unchanged.
-A usage error (exit 2) happens before the command runs and prints no object.
+stopped by Ctrl-C, after its envelope. `code` is snake_case and stable:
+
+<!-- codes: the same list as CODES in src/lib/json-output.ts; a test keeps them equal -->
+`already_running`, `auth_required`, `auth_unavailable`, `build_failed`, `cancelled`,
+`confirmation_required`, `daemon_disabled`, `daemon_unavailable`, `daemon_unresponsive`,
+`error` (any other), `extension_failed`, `integrity_drift`, `invalid_argument`,
+`market_unavailable`, `needed_by_dependents`, `not_conforming`, `not_installed`, `not_pushed`,
+`port_in_use`, `profile_invalid`, `release_refused`, `stop_failed`, `token_request_failed`,
+`uncommitted_changes`, `usage`.
+<!-- /codes -->
+
+A code from the daemon (such as `NOT_FOUND` or `INVALID_SETTING`) passes through unchanged.
+A usage error (an unknown flag, a missing argument) exits 2 with no object; with `--json` it
+exits 1 with the error object, code `usage`, and the usage line on stderr.
 
 | Command                                               | `data`                                                                                              |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |

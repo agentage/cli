@@ -3,8 +3,49 @@ import { NotPushedError } from '../core/profile/cloud.js';
 import { AuthRequiredError, TransientAuthError } from './auth/auth-errors.js';
 import { TokenRequestError } from './auth/oauth.js';
 
+// Every code of the cli's own: docs/reference.md lists the same, and a test keeps them equal.
+export const CODES = [
+  'already_running',
+  'auth_required',
+  'auth_unavailable',
+  'build_failed',
+  'cancelled',
+  'confirmation_required',
+  'daemon_disabled',
+  'daemon_unavailable',
+  'daemon_unresponsive',
+  'error',
+  'extension_failed',
+  'integrity_drift',
+  'invalid_argument',
+  'market_unavailable',
+  'needed_by_dependents',
+  'not_conforming',
+  'not_installed',
+  'not_pushed',
+  'port_in_use',
+  'profile_invalid',
+  'release_refused',
+  'stop_failed',
+  'token_request_failed',
+  'uncommitted_changes',
+  'usage',
+] as const;
+
+export type Code = (typeof CODES)[number];
+
 // An error with a stable snake_case code for `--json`; any other error is `error`.
 export class CliError extends Error {
+  constructor(
+    readonly code: Code,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+// The daemon's own code (NOT_FOUND, INVALID_SETTING), passed through as it is.
+export class DaemonError extends Error {
   constructor(
     readonly code: string,
     message: string
@@ -13,7 +54,7 @@ export class CliError extends Error {
   }
 }
 
-const KNOWN: [new (...args: never[]) => Error, string][] = [
+const KNOWN: [new (...args: never[]) => Error, Code][] = [
   [AuthRequiredError, 'auth_required'],
   [TransientAuthError, 'auth_unavailable'],
   [NotPushedError, 'not_pushed'],
@@ -21,7 +62,7 @@ const KNOWN: [new (...args: never[]) => Error, string][] = [
 ];
 
 export const codeOf = (err: unknown): string => {
-  if (err instanceof CliError) return err.code;
+  if (err instanceof CliError || err instanceof DaemonError) return err.code;
   return KNOWN.find(([type]) => err instanceof type)?.[1] ?? 'error';
 };
 
@@ -52,7 +93,7 @@ export const attempt = async (run: () => Promise<unknown>): Promise<Failure | nu
 export const messageOf = (err: unknown): string =>
   err instanceof Error ? err.message : String(err);
 
-export const writeError = (io: JsonIo, err: unknown, code = codeOf(err)): void =>
+export const writeError = (io: JsonIo, err: unknown, code: string = codeOf(err)): void =>
   io.writeOut(`${JSON.stringify({ success: false, error: { code, message: messageOf(err) } })}\n`);
 
 // Progress goes to stderr; a pinned command keeps stdout and we note that it printed.

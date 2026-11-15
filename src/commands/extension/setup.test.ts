@@ -1,5 +1,5 @@
 import { fakeHost, marketRow } from '../../test/host.js';
-import { CliError } from '../../lib/json-output.js';
+import { CliError, DaemonError } from '../../lib/json-output.js';
 import { describe, expect, vi } from 'vitest';
 import { noAccount } from '../../test/account.js';
 import { MACHINE_ID, output, pkg, test } from '../../test/config-dir.js';
@@ -79,7 +79,7 @@ describe('agentage setup --profile installs through the daemon', () => {
 
   test('a failed entry is reported and the others install', async ({ dir }) => {
     const daemon = fakeHost();
-    vi.mocked(daemon.host.add).mockRejectedValueOnce(new CliError('NOT_FOUND', 'no hello'));
+    vi.mocked(daemon.host.add).mockRejectedValueOnce(new DaemonError('NOT_FOUND', 'no hello'));
     const extensions = { [HELLO]: '^1', '@agentage/extension-world': '^2' };
     dir.write('p.json', { version: 1, extensions });
     const file = dir.at('p.json');
