@@ -56,10 +56,10 @@ const localSource = (): Source => {
 };
 
 // --check and --dry-run read only and never sign in.
-const readOnly = (source: Source, opts: SetupOptions): void => {
+const readOnly = (source: Source, opts: SetupOptions, file: boolean): void => {
   printWarnings(source.warnings);
-  if (opts.check) runSetupCheck(source.profile, opts);
-  else printDryRun(source.profile, opts);
+  if (opts.check) runSetupCheck(source.profile, { ...opts, file });
+  else printDryRun(source.profile, { ...opts, file });
 };
 
 const daemonOff = (opts: SetupOptions): boolean =>
@@ -70,7 +70,11 @@ const fromFile = async (source: Source, opts: SetupOptions, deps: ExtensionSetup
   const machine = await loadMachine();
   await mutateProfile((current) => keepMachine(source.profile, current, machine.id));
   await setProfileSource('file');
-  await installThroughDaemon(source.profile, { host: deps.host, daemonOff: daemonOff(opts) });
+  await installThroughDaemon(source.profile, {
+    host: deps.host,
+    daemonOff: daemonOff(opts),
+    from: 'file',
+  });
 };
 
 // The daemon needs no account; --no-daemon or AGENTAGE_NO_DAEMON=1 leave it off.
@@ -83,7 +87,7 @@ const startDaemon = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promis
 const profileDeps = (opts: SetupOptions, deps: ExtensionSetupDeps) => ({
   ...deps,
   installProfile: (profile: Profile) =>
-    installThroughDaemon(profile, { host: deps.host, daemonOff: daemonOff(opts) }),
+    installThroughDaemon(profile, { host: deps.host, daemonOff: daemonOff(opts), from: 'account' }),
 });
 
 // A token is the headless credential: no browser and no callback, so --reauth has nothing to do.
@@ -97,7 +101,7 @@ const signIn = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<voi
 const setupFlow = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
   if (opts.disconnect) return disconnect(deps);
   const file = opts.profile === undefined ? null : fileSource(opts.profile);
-  if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts);
+  if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts, file !== null);
   if (file) return fromFile(file, opts, deps);
   if (opts.latest) {
     console.error('setup --latest is now: agentage extension update');

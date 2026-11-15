@@ -8,7 +8,7 @@ import { expect, test } from './cli.js';
 const TWO = { extensions: { hello: '^1.0.0', world: '^1' } };
 
 test.describe('agentage setup --profile @p0 @offline', () => {
-  test('agentage setup --profile saves profile.json from the file; with the daemon off it installs nothing and keeps the first-install marker', async ({
+  test('agentage setup --profile saves profile.json from the file; with the daemon off it installs nothing', async ({
     cli,
   }) => {
     const run = await cli.run(`setup --profile ${cli.profile(TWO)}`);
@@ -20,7 +20,6 @@ test.describe('agentage setup --profile @p0 @offline', () => {
     ]);
     expect(cli.json('machine.json')).toMatchObject({ profileSource: 'file' });
     expect(cli.exists('extensions')).toBe(false);
-    expect(cli.exists('setup.installing')).toBe(true);
   });
 
   test('agentage setup --profile --dry-run prints the registries and the plan, and writes nothing', async ({
@@ -32,7 +31,7 @@ test.describe('agentage setup --profile @p0 @offline', () => {
     expect(run.lines).toContain(`registry   @agentage  ${cli.registry.url}`);
     expect(run.lines).toContain('registry   default    https://registry.npmjs.org');
     expect(run.lines).toContain('+ add @agentage/fixture-hello ^1.0.0');
-    expect(run.lines).toContain('plan: 2 to add, 0 to update, 0 to remove, 0 off, 0 unchanged');
+    expect(run.lines).toContain('plan: 2 to add, 0 off, 0 already installed');
     // update-check.json is the CLI's own update throttle, written after any command.
     expect(cli.list('').filter((name) => name !== 'update-check.json')).toEqual([]);
   });

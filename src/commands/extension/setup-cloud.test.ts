@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, vi } from 'vitest';
 import { CliError } from '../../lib/json-output.js';
-import { fakeHost } from '../../test/host.js';
+import { fakeHost, marketRow } from '../../test/host.js';
 import {
   connected,
   editDeps,
@@ -9,7 +9,7 @@ import {
   profileRequests,
   type FakeAccount,
 } from '../../test/account.js';
-import { output, test } from '../../test/config-dir.js';
+import { MACHINE_ID, output, test } from '../../test/config-dir.js';
 import { type SetupOptions } from '../auth/setup.js';
 import { runExtensionSetup } from './setup.js';
 
@@ -123,17 +123,32 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     expect(dir.json('machine.json')).toMatchObject({ profileSource: 'cloud', profileEtag: etag });
   });
 
-  test('once installation.json exists, setup installs nothing: a removed extension stays removed', async ({
+  test('once per machine: an extension installed before is left as it is; the next setup installs nothing', async ({
     dir,
   }) => {
     const account = fakeAccount();
     account.store(HELLO_DOC);
-    dir.write('installation.json', { host: 'local', extensions: [] });
-    const run = await setup(account);
-    expect(run.lines).toContain(
-      'extensions installation.json holds this machine; setup installs nothing (agentage extension install)'
-    );
+    daemon = fakeHost([marketRow('hello', '0.7.0')]);
+    dir.write('installation.json', {
+      host: 'local',
+      extensions: [{ id: 'hello', version: '0.7.0' }],
+    });
+    expect((await setup(account)).lines).toContain('hello already installed');
     expect(daemon.host.add).not.toHaveBeenCalled();
+    expect(dir.exists('setup.profile-installed')).toBe(true);
+    expect((await setup(account)).lines).toContain(
+      'extensions your account profile was installed here already; setup installs nothing (agentage extension install)'
+    );
+  });
+
+  test("this machine's off entries install disabled", async ({ dir }) => {
+    dir.machine({});
+    const account = fakeAccount();
+    const machines = { [MACHINE_ID]: { off: [HELLO_PKG], config: {} } };
+    account.store({ ...HELLO_DOC, machines });
+    await setup(account);
+    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'hello' });
+    expect(daemon.host.change).toHaveBeenCalledWith('hello', { enabled: false });
   });
 
   test('a profile entry the daemon refuses fails setup naming it, after the others', async () => {
@@ -143,7 +158,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     const run = await setup(account);
     expect(run).toMatchObject({ code: 'extension_failed' });
     expect(run.error).toBe(
-      'not installed:\n  hello: no hello\n  @other/thing: not an @agentage/extension-<id> package, not installed'
+      'not installed:\n  hello: no hello\n  @other/thing: not an @agentage/extension-<id> package'
     );
   });
 

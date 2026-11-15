@@ -62,9 +62,9 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   over profile, lock and npm major.
   - Plain `setup` pulls it and never pushes. On `404 PROFILE_NOT_FOUND` it creates it. After any
     other failure or 404 it uses the local `profile.json`, or installs nothing and prints one dim
-    line. `setup` and `setup --profile` install a profile only through the daemon, and only on a
-    first install: no `installation.json`, or the `setup.installing` marker
-    (`setup-install.ts`). No command pushes an install or remove to the account.
+    line. Plain `setup` installs the account profile through the daemon once per machine (marker
+    `setup.profile-installed`); `setup --profile` is never gated; `off` entries install disabled
+    (`setup-install.ts`, the plan of `--check`/`--dry-run` in `profile-plan.ts`). No command pushes an install or remove to the account.
   - `setup`, `status` and `setup --disconnect` register the machine at `/v1/machines` (fire and
     forget).
 - Memory, vault, sync and MCP code lives in git history up to v0.37.2 and returns as

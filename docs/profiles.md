@@ -42,31 +42,20 @@ install. Then only `agentage <id> <command>` runs it. The install tells you when
 
 ## States
 
-`extension list` shows one state per extension:
-
-| State       | Meaning                                                              |
-| ----------- | -------------------------------------------------------------------- |
-| `installed` | in the installed tree and ready to load                              |
-| `off`       | installed, but this machine's profile entry turns it off             |
-| `blocked`   | an extension it needs is not `installed`                             |
-| `invalid`   | its manifest, config, integrity or dev folder is wrong; never loaded |
-| `missing`   | the profile names it but the tree does not hold it                   |
-
-`last run: ok` is the result of the last load, not the state.
+`extension list` shows the daemon's state of each extension: `starting`, `running`, `failed`
+(with the reason) or `disabled`. `extension doctor` loads each once and prints `ok` or why not.
 
 ## The plan
 
-The plan is what `setup` would change, one line per extension (`+ add`, `~ update`, `- remove`,
-`o off`) and a summary such as `plan: 1 to add, 0 to update, 0 to remove, 0 off, 2 unchanged`.
-`setup --dry-run` prints it. `setup --check` exits 1 when anything would change. `extension list`
-shows it per extension. `status` sums it up, for example `extensions 2 (1 to add)`.
+The plan is what `setup` would install through the daemon, one line per extension (`+ add`, or
+`o off` for one installed disabled) and a summary such as
+`plan: 1 to add, 0 off, 2 already installed`. `setup --dry-run` prints it. `setup --check` exits 1
+when anything would be installed.
 
 ## Updates
 
-`setup --latest` moves each extension to the newest version its range allows and prints one line
-per change, such as `~ update @agentage/example 1.0.0 -> 1.0.1`. The new versions are used only
-when every extension loads cleanly from them. Until then, the old versions stay in use. A version
-that needs a newer extension API than this CLI has is skipped, here and by `extension install`.
+`agentage extension update` moves each market extension to the market's newest version
+(`setup --latest` is its old name). See [`reference.md`](reference.md).
 
 ## The profile file
 

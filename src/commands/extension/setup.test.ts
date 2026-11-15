@@ -1,4 +1,4 @@
-import { fakeHost } from '../../test/host.js';
+import { fakeHost, marketRow } from '../../test/host.js';
 import { CliError } from '../../lib/json-output.js';
 import { describe, expect, vi } from 'vitest';
 import { noAccount } from '../../test/account.js';
@@ -77,7 +77,7 @@ describe('agentage setup --profile installs through the daemon', () => {
     expect(dir.json('machine.json')).toMatchObject({ profileSource: 'file' });
   });
 
-  test('a failed entry is reported, the others install, and the marker goes', async ({ dir }) => {
+  test('a failed entry is reported and the others install', async ({ dir }) => {
     const daemon = fakeHost();
     vi.mocked(daemon.host.add).mockRejectedValueOnce(new CliError('NOT_FOUND', 'no hello'));
     const extensions = { [HELLO]: '^1', '@agentage/extension-world': '^2' };
@@ -88,35 +88,30 @@ describe('agentage setup --profile installs through the daemon', () => {
     );
     expect(run.error).toBe('not installed:\n  hello: no hello');
     expect(daemon.host.add).toHaveBeenCalledWith({ id: 'world' });
-    expect(dir.exists('setup.installing')).toBe(false);
   });
 
-  test('a first install a stop left unfinished goes on: the marker overrides installation.json', async ({
+  test('never gated: installs the entries not installed yet, reports the others as already installed', async ({
     dir,
   }) => {
-    const daemon = fakeHost();
-    dir.write('installation.json', { host: 'local', extensions: [] });
-    dir.write('p.json', { version: 1, extensions: { [HELLO]: '^1' } });
+    const daemon = fakeHost([marketRow('hello', '0.7.0')]);
+    dir.write('setup.profile-installed', '');
+    dir.write('p.json', {
+      version: 1,
+      extensions: { [HELLO]: '^1', '@agentage/extension-world': '^2' },
+    });
     const file = dir.at('p.json');
-    const run = () =>
-      output(() =>
-        runExtensionSetup({ profile: file }, { ...deps, host: async () => daemon.host })
-      );
-    expect((await run()).lines).toContain(
-      'extensions installation.json holds this machine; setup installs nothing (agentage extension install)'
+    const run = await output(() =>
+      runExtensionSetup({ profile: file }, { ...deps, host: async () => daemon.host })
     );
-    dir.write('setup.installing', '');
-    await run();
-    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'hello' });
-    expect(dir.exists('setup.installing')).toBe(false);
+    expect(run.lines).toContain('hello already installed');
+    expect(vi.mocked(daemon.host.add).mock.calls).toEqual([[{ id: 'world' }]]);
   });
 
-  test('with the daemon off the marker stays, so the next setup installs', async ({ dir }) => {
+  test('with the daemon off it installs nothing and says so', async ({ dir }) => {
     dir.write('p.json', { version: 1, extensions: { [HELLO]: '^1' } });
-    const file = dir.at('p.json');
-    const run = await setup({ profile: file, daemon: false });
+    const run = await setup({ profile: dir.at('p.json'), daemon: false });
     expect(run.lines).toContain('extensions the daemon is off, nothing installed');
-    expect(dir.exists('setup.installing')).toBe(true);
+    expect(dir.exists('setup.profile-installed')).toBe(false);
   });
 });
 

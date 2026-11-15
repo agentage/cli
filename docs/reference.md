@@ -46,18 +46,21 @@ must be a semver range or an
 profile names each entry and the rule and writes nothing. `--disconnect` skips the extension
 steps.
 
-Plain `setup` signs in and pulls the profile in your account (below). `setup` and
-`setup --profile` install a profile only on a first install: there is no `installation.json` yet,
-or the marker `setup.installing` of an unfinished first install is there. The marker is written
-before the first entry and removed once every entry was tried; a failed entry is reported and
-does not stop the others. Each `@agentage/extension-<id>` entry goes to the daemon by id
-(`POST /host/extensions`, as `extension install <id>` sends it): an exact version as it is, a
-range at the market's newest version (a range is not matched). The daemon runs it; `setup` loads
-no extension itself, and nothing else installs. Otherwise `setup` installs nothing and prints
-`extensions installation.json holds this machine; setup installs nothing (agentage extension install)`,
-so an extension you removed with `extension remove` does not come back. With the daemon off
-(`--no-daemon`, `AGENTAGE_NO_DAEMON=1`) it prints `extensions the daemon is off, nothing installed`
-and keeps the marker, so the next `setup` installs. The tree cli 0.51 installed in
+Plain `setup` signs in and pulls the profile in your account (below), and installs it once per
+machine: the marker `setup.profile-installed` is written when every entry was tried, and a later
+plain `setup` installs nothing and prints
+`extensions your account profile was installed here already; setup installs nothing (agentage extension install)`,
+so an extension you removed does not come back. An `extension install` before the first `setup`
+does not block it. `setup --profile <file>` is an explicit ask and is never gated: it installs
+each entry of the file that is not installed yet. Either way, an entry already in
+`installation.json` is left as it is (`<id> already installed`). Each `@agentage/extension-<id>`
+entry goes to the daemon by id (`POST /host/extensions`, as `extension install <id>` sends it):
+an exact version as it is, a range at the market's newest version. An entry this machine's
+profile turns `off` is installed, then disabled. The daemon runs it; `setup` loads no extension
+itself, and nothing else installs. A failed entry is reported and does not stop the others;
+`setup` then exits 1 (`extension_failed`) naming each. With the daemon off (`--no-daemon`,
+`AGENTAGE_NO_DAEMON=1`) it prints `extensions the daemon is off, nothing installed` and writes no
+marker.
 `extensions/trees/` is read-only for this cli: nothing switches or deletes it.
 An entry the daemon refuses, or a package that is not `@agentage/extension-<id>`, fails `setup`
 (exit 1, `extension_failed`) after the others, naming each.
@@ -105,58 +108,44 @@ stderr. `setup --profile` registers nothing.
 `setup --latest` is the old name of `agentage extension update` (see
 [Extension lifecycle](#extension-lifecycle)): it says so on stderr and runs it.
 
-### The plan: desired against current
+### The plan: what setup would install
 
-The profile is the desired state; the installed tree (`extensions/current` and the lock it was
-installed from) is the current state. `setup` converges the two. The plan says what converging would do,
-one verb per extension the profile or the tree names:
+`setup --dry-run` and `setup --check` read `profile.json` (or the `--profile` file) and
+`installation.json` only, never the 0.51 tree, and say what `setup` would send to the daemon:
 
-| Verb        | Line                                    | Meaning                                               |
-| ----------- | --------------------------------------- | ----------------------------------------------------- |
-| `add`       | `+ add <name> <range>`                  | in the profile, not in the tree                       |
-| `update`    | `~ update <name> <range> (was <range>)` | in both, with another range than the lock recorded    |
-| `remove`    | `- remove <name>`                       | in the tree, no longer in the profile                 |
-| `off`       | `o off <name>`                          | installed, turned off on this machine; never a change |
-| `unchanged` | (not printed)                           | in both with the same range                           |
+| Verb        | Line                                        | Meaning                                                       |
+| ----------- | ------------------------------------------- | ------------------------------------------------------------- |
+| `add`       | `+ add <name> <range>`                      | in the profile, not installed: setup installs it              |
+| `off`       | `o off <name> <range> (installed disabled)` | the same, turned off on this machine: installed disabled      |
+| `unchanged` | (not printed)                               | installed already (or the account profile was installed here) |
 
-`--dry-run` prints the registries, then one line per extension that is not unchanged, then one
-summary line, and writes nothing; with nothing to change the summary is `plan: nothing to
-change`:
+`update` and `remove` stay in the summary and are always 0: setup changes no installed entry.
 
 ```
 dry run    nothing written
-registry   @acme      https://npm.acme.example
 registry   default    https://registry.npmjs.org
-+ add @acme/notes ^1
-- remove @acme/todo
-plan: 1 to add, 0 to update, 1 to remove, 0 off, 2 unchanged
++ add @agentage/extension-notes ^1
+plan: 1 to add, 0 off, 2 already installed
 ```
 
-`--check` verifies instead of converging: it prints the same plan lines (without the header) and
-exits 1 when anything would be added, updated or removed, when `extensions/package-lock.json`
-does not name the same `name@version+integrity` set as the lock inside the tree `current` names
-(`lock mismatch`), on integrity drift (below), or when `machine.json` is missing (it is read,
-never created). It exits 0 on a converged machine, and writes nothing. With `--json`, both print
-the plan object, `--check` adding `problems`:
+`--check` prints the same lines without the header and exits 1 when anything would be installed
+(`not converged: 1 to add, 1 to install disabled`) or when `machine.json` is missing (it is read,
+never created); else 0. It writes nothing. With `--json`, both print the plan object, `--check`
+adding `problems`; the shape is the one of 0.51, `current` is `"installed"` or `null`:
 
 ```json
 {
   "extensions": [
-    { "verb": "add", "name": "@agentage/example", "wanted": "^1.0.0", "current": null }
+    { "verb": "add", "name": "@agentage/extension-notes", "wanted": "^1", "current": null }
   ],
   "summary": { "add": 1, "update": 0, "remove": 0, "off": 0, "unchanged": 0 },
   "problems": []
 }
 ```
 
-Without `--profile` both plan against the local `profile.json`. Neither signs in.
-
-**Integrity drift**: the same `name@version` with another `integrity` in
-`extensions/package-lock.json` than in the lock inside the current tree means one of them was
-changed by hand. It is a hard error: `setup`, `extension
-check` and `setup --check` exit 1 with `integrity drift: <name@version>` before npm runs, and
-`extension doctor` shows that extension `invalid` with the same reason. Restore the lock, or delete
-`extensions/package-lock.json` to install again from the profile.
+Without `--profile` both plan against the local `profile.json`. Neither signs in. A 0.51 tree is
+still checked by `extension doctor`: an `integrity` in `extensions/package-lock.json` other than
+the one in the lock inside the tree shows that extension `invalid` (`integrity drift`).
 
 A profile names its extensions and, optionally, the npm-compatible registry each scope comes
 from:

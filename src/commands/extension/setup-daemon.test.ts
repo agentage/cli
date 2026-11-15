@@ -46,7 +46,7 @@ const profile = (extensions: Record<string, string>): Profile => ({
 
 // Spawns a child per extension; a sandbox that kills children fails this test, not skipped.
 describe('setup through the real daemon run', () => {
-  test('installs each entry, reports the one that fails, removes the marker; then installs nothing', async ({
+  test('installs each entry, reports the one that fails, writes the marker; then installs nothing', async ({
     dir,
   }) => {
     placed(dir, 'alpha', '1.0.0');
@@ -54,7 +54,7 @@ describe('setup through the real daemon run', () => {
     const port = await freePort();
     vi.stubEnv('AGENTAGE_DAEMON_PORT', String(port));
     const running = runDaemon({ installer: offline });
-    const deps = { host: async () => hostClient(port), daemonOff: false };
+    const deps = { host: async () => hostClient(port), daemonOff: false, from: 'account' as const };
     try {
       await vi.waitFor(() => expect(dir.exists('daemon.json')).toBe(true), { timeout: 10_000 });
       const wanted = profile({
@@ -66,10 +66,10 @@ describe('setup through the real daemon run', () => {
       expect(first.lines).toEqual(['alpha 1.0.0 running', 'beta 2.0.0 running']);
       expect(first.code).toBe('extension_failed');
       expect(first.error).toMatch(/^not installed:\n {2}gone: /);
-      expect(dir.exists('setup.installing')).toBe(false);
+      expect(dir.exists('setup.profile-installed')).toBe(true);
       const again = await output(() => installThroughDaemon(wanted, deps));
       expect(again.lines).toEqual([
-        'extensions installation.json holds this machine; setup installs nothing (agentage extension install)',
+        'extensions your account profile was installed here already; setup installs nothing (agentage extension install)',
       ]);
     } finally {
       process.emit('SIGTERM');
