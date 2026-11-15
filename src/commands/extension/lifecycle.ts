@@ -7,6 +7,7 @@ import { installationRows, versionsInUse } from '../../core/loader/installed.js'
 import { getConfigDir } from '../../lib/fs/config.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type HostClient, type HostSummary } from '../../lib/daemon/host-client.js';
+import { installFolder, installId } from './install-once.js';
 import { CliError, isJsonRun } from '../../lib/json-output.js';
 
 // Every lifecycle command is a client of the daemon; `host` starts it when none runs.
@@ -72,15 +73,6 @@ const folderOf = (input: string): string => {
   return path;
 };
 
-// Installed already: another version is a change of version, so going back keeps the data.
-const installSpec = async (host: HostClient, spec: { id: string; version?: string }) => {
-  const row = (await host.list()).find((r) => r.id === spec.id);
-  if (!row) return host.add(spec);
-  if (spec.version && spec.version !== row.version)
-    return host.change(spec.id, { version: spec.version });
-  return row;
-};
-
 export const summaryOf = ({ id, version, state, error }: HostSummary): HostSummary => ({
   id,
   version,
@@ -89,20 +81,20 @@ export const summaryOf = ({ id, version, state, error }: HostSummary): HostSumma
 });
 
 // A failed start is listed (state failed) and the command exits 1 with the reason.
-export const report = (done: HostSummary): HostSummary => {
+export const report = (done: HostSummary, note = ''): HostSummary => {
   if (done.state === 'failed')
     throw new CliError('extension_failed', `${done.id} failed: ${done.error ?? 'no reason given'}`);
-  console.log(`${done.id} ${done.version} ${done.state}`);
+  console.log(`${done.id} ${done.version} ${done.state}${note}`);
   return summaryOf(done);
 };
 
 export const runInstall = async (opts: InstallOptions, deps: LifecycleDeps) => {
   const host = await deps.host();
   const folder = LOCAL.test(opts.name) || isAbsolute(opts.name);
-  const done = folder
-    ? await host.add({ source: folderOf(opts.name) })
-    : await installSpec(host, specOf(opts.name));
-  if (!opts.off) return report(done);
+  const { row: done, already } = folder
+    ? await installFolder(host, folderOf(opts.name))
+    : await installId(host, specOf(opts.name));
+  if (!opts.off) return report(done, already ? ' (already installed)' : '');
   console.error('install --off is now: agentage extension disable <id>');
   return report(await host.change(done.id, { enabled: false }));
 };

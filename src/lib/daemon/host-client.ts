@@ -28,7 +28,10 @@ export interface HostPatch {
 
 export interface HostClient {
   list: () => Promise<HostRow[]>;
-  add: (body: { id: string; version?: string } | { source: string }) => Promise<HostSummary>;
+  // enabled: false only to a daemon whose kit lists installDisabled.
+  add: (
+    body: ({ id: string; version?: string } | { source: string }) & { enabled?: false }
+  ) => Promise<HostSummary>;
   change: (id: string, patch: HostPatch) => Promise<HostSummary>;
   remove: (id: string, purge: boolean) => Promise<{ id: string }>;
 }

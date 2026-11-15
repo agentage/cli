@@ -13,6 +13,7 @@ export const fakeHost = (rows: HostRow[] = []) => {
     list: vi.fn(async () => rows.map((r) => ({ ...r }))),
     add: vi.fn(async (body) => {
       const id = 'id' in body ? body.id : 'demo';
+      if (rows.some((r) => r.id === id)) throw new DaemonError('CONFLICT', `${id} is installed`);
       const added: HostRow = {
         id,
         version: '0.7.0',
