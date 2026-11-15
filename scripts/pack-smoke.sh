@@ -7,7 +7,7 @@ tarball=$(realpath "$1")
 expected=$(tar -xOzf "$tarball" package/package.json | node -p 'JSON.parse(require("fs").readFileSync(0)).version')
 work=$(mktemp -d)
 daemon=
-trap '[ -n "$daemon" ] && kill "$daemon" 2>/dev/null; rm -rf "$work"' EXIT
+trap 'if [ -n "$daemon" ]; then kill "$daemon" 2>/dev/null || true; fi; rm -rf "$work"' EXIT
 npm i -g "$tarball" --omit=dev --prefix "$work/prefix" --no-audit --no-fund > /dev/null
 export PATH="$work/prefix/bin:$PATH" AGENTAGE_CONFIG_DIR="$work/config"
 export AGENTAGE_DAEMON_PORT=$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')
