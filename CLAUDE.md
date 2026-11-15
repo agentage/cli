@@ -190,13 +190,20 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   `npmFromFixtures` playing npm installs and updates (`npmPublishing(more)` with versions a test
   publishes) and `manifestFromFixtures(more)` playing `npm pack --dry-run` and `npm view`;
   `src/test/account.ts` is an account in memory (`fakeAccount`: `/v1/profile` with ETags, 304, 404,
-  412 and creation, `/v1/machines`, a request log, `fail` per route) for the `account` injected dependency; all
+  412 and creation, `/v1/machines`, a request log, `fail` per route) for the `account` injected dependency;
+  `src/test/kit-internal.ts` imports a kit file no export names, for a test that holds a cli copy
+  (`kit-lock.ts`, `up-guard.ts`) equal to the kit's; all
   excluded from the build and from coverage
 - `docs/extensions.md` - "Writing an extension": the author guide (manifest, lifecycle, `ctx`);
   keep it true to `src/extension.ts` and `src/core/loader/`
 - `fixtures/` - test-only extension packages (`@agentage/fixture-*`), never published
 - `e2e/registry/` - in-process npm registry serving `npm pack` output to e2e on loopback
 - `scripts/bump-version.js` - release helper (`node scripts/bump-version.js patch|minor|major`)
+- `scripts/pack-smoke.sh`, `scripts/update-smoke.sh` - the `Pack smoke` CI job: the packed cli with
+  only its declared dependencies (bin, daemon `/health`, express, PGlite), and a 0.51.1 user's
+  update over its own state (D6, reads npm); both run locally on a tarball
+- `scripts/mutate.mjs` - the mutation check of the rule tests (`node scripts/mutate.mjs [ids]`):
+  each mutation must turn its tests red; it edits `src`, so never run it beside verify
 - `src/package-guard.test.ts` - CI guard: no product or agent-runtime imports; runtime deps stay
   exactly `@agentage/extension + chalk + commander + open` (the kit's tool only; it never loads
   the kit's server stack outside the daemon process) plus `express` and `@electric-sql/pglite`,

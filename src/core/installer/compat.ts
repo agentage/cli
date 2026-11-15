@@ -1,7 +1,7 @@
 import { EXTENSION_API_VERSION } from '../../extension.js';
 import { isRecord } from '../../lib/fs/json-file.js';
 import { kitVersion } from '../kit-version.js';
-import { manifestInfo } from '../loader/manifest.js';
+import { manifestInfo, onPreviousKit } from '../loader/manifest.js';
 import { isRange, newestFirst, satisfies } from '../semver-range.js';
 
 // One published version and its engines.agentage: over the kit when `kit`, else the extension API.
@@ -29,9 +29,11 @@ export const cliGate = (): Gate => ({ api: EXTENSION_API_VERSION, kit: kitVersio
 export const fitsApi = (engine: string, api: string = EXTENSION_API_VERSION): boolean =>
   isRange(engine) && satisfies(api, engine);
 
-// The gate picks the API by manifest shape.
+// The gate picks the API by manifest shape; a kit-shaped range may also be the previous kit minor.
 export const fits = (p: Omit<Published, 'version'>, gate: Gate = cliGate()): boolean =>
-  fitsApi(p.engine, p.kit ? gate.kit : gate.api);
+  p.kit
+    ? fitsApi(p.engine, gate.kit) || onPreviousKit(p.engine, gate.kit)
+    : fitsApi(p.engine, gate.api);
 
 export const needsText = ({ engine, kit }: Omit<Published, 'version'>): string =>
   `needs ${kit ? 'kit' : 'extension API'} ${engine}`;

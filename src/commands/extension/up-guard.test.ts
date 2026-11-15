@@ -1,20 +1,16 @@
 import { type IncomingMessage } from 'node:http';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { kitInternal } from '../../test/kit-internal.js';
 import { refusedBy } from './up-guard.js';
 
 // The installed kit's guard, not a copy: the cli's fallback must refuse exactly what it refuses.
 // A kit that allows [::1] fails this table: that bump deletes up-guard.ts and uses the kit's.
-const KIT_GUARD = join(
-  import.meta.dirname,
-  '../../../node_modules/@agentage/extension/dist/host/daemon/guard.js'
-);
 type Handler = (req: unknown, res: unknown, next: () => void) => void;
 type LocalOnly = (port: () => number) => Handler;
 
 const kitRefuses = async (headers: Record<string, string>, port: number): Promise<boolean> => {
-  const { localOnly } = (await import(pathToFileURL(KIT_GUARD).href)) as { localOnly: LocalOnly };
+  const guard = 'dist/host/daemon/guard.js';
+  const { localOnly } = await kitInternal<{ localOnly: LocalOnly }>(guard, 'up-guard.ts');
   const req = { get: (name: string) => headers[name.toLowerCase()], socket: { localPort: port } };
   try {
     let passed = false;

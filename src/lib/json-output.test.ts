@@ -37,6 +37,7 @@ describe('the error codes', () => {
     expect([...block.matchAll(/`([a-z_]+)`/g)].map((m) => m[1])).toEqual([...CODES]);
   });
 
+  // A site with no market is no error there: the installer resolves on npm (as 0.51 did).
   it("list each code the cli's installer sends through the daemon, the market ones in upper case", () => {
     const text = readFileSync(REFERENCE, 'utf8');
     const source = readFileSync(
@@ -44,7 +45,7 @@ describe('the error codes', () => {
       'utf8'
     );
     const sent = [...source.matchAll(/installError\('([A-Z_]+)'/g)].map((m) => m[1]);
-    const market = CODES.filter((c) => /market|discovery/.test(c)).map((c) => c.toUpperCase());
+    const market = CODES.filter((c) => /^market_/.test(c)).map((c) => c.toUpperCase());
     for (const code of [...sent, ...market]) expect(text, code).toContain(`\`${code}\``);
   });
 });

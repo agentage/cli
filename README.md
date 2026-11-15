@@ -144,6 +144,15 @@ npm registry that serves `fixtures/`.
 GitHub Actions publishes to npm when a release PR merges to `master` as a `chore(release): X.Y.Z`
 commit that touches `package.json`. It skips a version already on npm.
 
+- The publish worked but the tag push failed: push the tag by hand on the release commit
+  (`git tag v0.52.0 <release commit> && git push origin v0.52.0`); never publish again.
+- The agentage/e2e cli tier (`e2e.yml` on a PR) is not a required check; `release.yml` runs only
+  its `@smoke` tests before the publish. No workflow runs its lifecycle tests
+  (`AGENTAGE_CLI_LIFECYCLE=1`).
+- Before the release PR merges, check: the PR checks of the release commit are green, and the
+  lifecycle tests of agentage/e2e pass 17 of 17 against the packed tarball of that commit
+  (`AGENTAGE_CLI_TARBALL=<tgz> AGENTAGE_CLI_LIFECYCLE=1 npm run e2e -- cli p0 local`).
+
 ## Documentation
 
 - [docs/reference.md](docs/reference.md): every flag, exit code and environment variable.

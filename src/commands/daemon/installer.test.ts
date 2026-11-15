@@ -1,8 +1,15 @@
+import { createServer } from 'node:http';
+import { type AddressInfo } from 'node:net';
 import { describe, expect, vi } from 'vitest';
-import { test } from '../../test/config-dir.js';
-import { manifestFromFixtures, npmFromFixtures } from '../../test/npm-fixtures.js';
+import { output, test } from '../../test/config-dir.js';
+import {
+  manifestFromFixtures,
+  npmFromFixtures,
+  npmPublishing,
+  type Publishes,
+} from '../../test/npm-fixtures.js';
 import { CliError } from '../../lib/json-output.js';
-import { type Market } from '../../lib/net/market.js';
+import { openMarket, type Market } from '../../lib/net/market.js';
 import { cliInstaller } from './installer.js';
 
 const PKG = '@agentage/fixture-probe';
@@ -61,25 +68,76 @@ describe('the daemon installer', () => {
     await expect(none.install({ id: 'nosuch' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  const RESTART = ', then agentage daemon restart (the daemon reads the site at its start)';
   test.each([
-    ['no_discovery', 'NO_DISCOVERY', RESTART],
-    ['no_market', 'NO_MARKET', RESTART],
-    ['market_unreachable', 'MARKET_UNREACHABLE', ''],
-    ['market_failed', 'MARKET_FAILED', ''],
-    ['market_timeout', 'MARKET_TIMEOUT', ''],
-  ] as const)('a market that fails with %s, no version given: %s 502', async (why, code, hint) => {
-    const reason = new CliError(why, 'agentage.io has no extension market: the reason');
-    const { install, npm } = await installer({
-      latest: vi.fn(async () => null),
-      down: () => reason,
+    ['market_unreachable', 'MARKET_UNREACHABLE'],
+    ['market_failed', 'MARKET_FAILED'],
+    ['market_timeout', 'MARKET_TIMEOUT'],
+  ] as const)(
+    'a market that fails with %s, no version given: %s 502, no npm',
+    async (why, code) => {
+      const reason = new CliError(why, 'agentage.io market: the reason');
+      const { install, npm } = await installer({
+        latest: vi.fn(async () => null),
+        down: () => reason,
+      });
+      const err = await install({ id: 'probe' }).catch((e: unknown) => e);
+      expect(err).toMatchObject({ code, status: 502 });
+      expect((err as Error).message).toBe('probe: agentage.io market: the reason');
+      expect(npm).not.toHaveBeenCalled();
+    }
+  );
+
+  // 0.51: a site with no market resolves @agentage/extension-<id> on the configured registry.
+  const EXT = '@agentage/extension-probe';
+  const probeAt = (engine: string) => ({
+    agentage: { id: 'probe', parts: { api: true, cli: { entry: './cli.js' } }, commands: [] },
+    engines: { agentage: engine },
+  });
+  const onSite = async (answer: number, run: (fqdn: string) => Promise<void>) => {
+    const site = createServer((_req, res) => res.writeHead(answer).end());
+    await new Promise<void>((done) => site.listen(0, '127.0.0.1', done));
+    const fqdn = `127.0.0.1:${(site.address() as AddressInfo).port}`;
+    vi.stubEnv('AGENTAGE_SITE_FQDN', fqdn);
+    try {
+      await run(fqdn);
+    } finally {
+      vi.unstubAllEnvs();
+      site.close();
+    }
+  };
+  const fromRegistry = async (fqdn: string, published: Publishes) => {
+    const npm = vi.fn(await npmPublishing(published)());
+    const manifest = manifestFromFixtures(published);
+    return cliInstaller({ npm: async () => npm, manifest, market: () => openMarket(fqdn) });
+  };
+
+  test('a site with no discovery document: the newest fitting version npm has, one stderr line', async ({
+    dir,
+  }) => {
+    await onSite(404, async (fqdn) => {
+      const published = { [EXT]: { '0.3.0': probeAt('^0.12'), '0.4.0': probeAt('^9') } };
+      const install = await fromRegistry(fqdn, published);
+      let got: unknown;
+      const run = await output(async () => {
+        got = await install({ id: 'probe' });
+      });
+      expect(run.error).toBeNull();
+      expect(got).toEqual({
+        id: 'probe',
+        version: '0.3.0',
+        dir: dir.at(`extensions/packages/trees/probe@0.3.0/node_modules/${EXT}`),
+      });
+      expect(run.stderr).toBe(
+        `${fqdn} has no extension market; probe resolves from npm, as cli 0.51 did`
+      );
     });
-    const err = await install({ id: 'probe' }).catch((e: unknown) => e);
-    expect(err).toMatchObject({ code, status: 502 });
-    expect((err as Error).message).toBe(
-      `probe: agentage.io has no extension market: the reason${hint}`
-    );
-    expect(npm).not.toHaveBeenCalled();
+  });
+
+  test('a site whose discovery answers 500 stays an error: MARKET_FAILED 502, no npm', async () => {
+    await onSite(500, async (fqdn) => {
+      const install = await fromRegistry(fqdn, { [EXT]: { '0.3.0': probeAt('^0.12') } });
+      await expect(install({ id: 'probe' })).rejects.toMatchObject({ status: 502 });
+    });
   });
 
   test('a failed npm install is INSTALL_FAILED 502 with the npm reason', async () => {

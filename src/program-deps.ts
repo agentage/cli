@@ -1,6 +1,6 @@
 import { type SetupDeps } from './commands/auth/setup.js';
 import { runDaemonRestart, runDaemonStatus, runDaemonStop } from './commands/daemon/daemon.js';
-import { cliInstaller } from './commands/daemon/installer.js';
+import { cliInstaller, npmNewest } from './commands/daemon/installer.js';
 import { moveBeforeStart } from './commands/daemon/move.js';
 import { runDaemon } from './commands/daemon/run.js';
 import { signedInAccount } from './commands/extension/account.js';
@@ -21,6 +21,7 @@ import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { ensureDaemon } from './lib/daemon/daemon-client.js';
 import { hostClient } from './lib/daemon/host-client.js';
 import { listMarket, openMarket } from './lib/net/market.js';
+import { noSiteMarket } from './lib/net/market-error.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { type ProgramDeps } from './program.js';
 
@@ -43,7 +44,19 @@ const installer = () =>
 
 // The daemon is started on request by every lifecycle command.
 const lifecycle = { host: async () => hostClient(await ensureDaemon()) };
-const listDeps = { ...lifecycle, available: () => listMarket(), market: () => openMarket() };
+const listDeps = {
+  ...lifecycle,
+  available: () => listMarket(),
+  market: () => openMarket(),
+  npmNewest: npmNewest(() => prepareManifest()),
+};
+
+// After a bare-id install: did the site have no market (so npm resolved it)?
+const noMarket = async (id: string): Promise<boolean> => {
+  const market = openMarket();
+  await market.latest(id);
+  return noSiteMarket(market.down());
+};
 
 export const defaultDeps: ProgramDeps = {
   setup: (opts) =>
@@ -55,7 +68,7 @@ export const defaultDeps: ProgramDeps = {
     }),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
-  extensionInstall: (opts) => runInstall(opts, lifecycle),
+  extensionInstall: (opts) => runInstall(opts, { ...lifecycle, noMarket }),
   extensionRemove: (opts) => runRemove(opts, { ...lifecycle, io: terminalIo() }),
   extensionList: (opts) => runList(opts, listDeps),
   extensionUpdate: (opts) => runExtensionUpdate(opts, listDeps),

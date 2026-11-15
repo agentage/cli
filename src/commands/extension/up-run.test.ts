@@ -110,6 +110,8 @@ describe('extension up with no Docker: the kit host in this process', () => {
     expect(takeExit()).toBe(130);
     expect(readRecord(demo)).toBeNull();
     await expect(fetch(`${at}/health`)).rejects.toThrow();
+    // D7: up changes no installation and starts no daemon.
+    expect(['installation.json', 'daemon.json'].filter((f) => dir.exists(f))).toEqual([]);
   });
 
   test('a second up of the same folder while the first answers: already_running; SIGTERM exits 0', async ({

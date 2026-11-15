@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { manifestInfo, manifestProblem } from './manifest.js';
+import { kitWarning, manifestInfo, manifestProblem, PREVIOUS_KIT_WARNING } from './manifest.js';
 
 const NAME = '@agentage/fixture-x';
 
@@ -136,6 +136,25 @@ describe('a kit-shaped package.json (agentage.parts)', () => {
     expect(problem({}, { engines: { agentage: 'next' } })).toBe(
       'engines.agentage "next" is not a supported range'
     );
+  });
+
+  // Kit 0.13: only a range kit 0.12.x satisfies is let through, as a warning.
+  it.each([
+    ['^0.5', 'engines.agentage "^0.5" does not match kit 0.13.0', null],
+    ['^0.12', null, PREVIOUS_KIT_WARNING],
+    ['~0.12.3', null, PREVIOUS_KIT_WARNING],
+    ['^0.13', null, null],
+    ['^0.20', 'engines.agentage "^0.20" does not match kit 0.13.0', null],
+    ['^1', 'engines.agentage "^1" does not match kit 0.13.0', null],
+  ])('on kit 0.13 the range %s: problem %s, warning %s', (engine, refused, warned) => {
+    const extra = { engines: { agentage: engine } };
+    expect(problem({}, extra, '0.13.0')).toBe(refused);
+    expect(kitWarning(manifestInfo(kit({}, extra)), '0.13.0')).toBe(warned);
+  });
+
+  it('a missing engines.agentage stays refused on kit 0.13', () => {
+    expect(problem({}, { engines: {} }, '0.13.0')).toBe('engines.agentage is missing');
+    expect(kitWarning(manifestInfo(kit({}, { engines: {} })), '0.13.0')).toBeNull();
   });
 
   it('needs a valid id and a sound block; without parts.cli it has no entry and no commands', () => {

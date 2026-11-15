@@ -8,6 +8,13 @@ const CHOOSE = 'choose another site with AGENTAGE_SITE_FQDN=<site>';
 
 export const marketError = (code: MarketCode, text: string): CliError => new CliError(code, text);
 
+// 0.51: a site with no market resolves an id on npm. An unreachable or failing market stays an error.
+export const noSiteMarket = (err: CliError | null): boolean =>
+  err?.code === 'no_discovery' || err?.code === 'no_market';
+
+export const fromNpmLine = (fqdn: string, what: string): string =>
+  `${fqdn} has no extension market; ${what} from npm, as cli 0.51 did`;
+
 export const noDiscovery = (fqdn: string, url: string, why: string): CliError =>
   marketError('no_discovery', `${fqdn} has no extension market: ${url} ${why}; ${CHOOSE}`);
 

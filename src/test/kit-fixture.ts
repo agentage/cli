@@ -17,7 +17,12 @@ const SETTINGS = {
   'echo.repeat': { type: 'integer', default: 1 },
 };
 
-export const writeKitExtension = (dir: string, id: string, version: string): string => {
+export const writeKitExtension = (
+  dir: string,
+  id: string,
+  version: string,
+  engine = '>=0.12'
+): string => {
   for (const sub of ['dist/api', 'dist/cli']) mkdirSync(join(dir, sub), { recursive: true });
   const command = `${id}-ping`;
   const agentage = {
@@ -30,7 +35,7 @@ export const writeKitExtension = (dir: string, id: string, version: string): str
   const built = { id, version, parts: { api: {}, cli: {} }, commands: [command] };
   writeFileSync(
     join(dir, 'package.json'),
-    JSON.stringify({ ...pkg, engines: { node: '>=22', agentage: '>=0.12' } })
+    JSON.stringify({ ...pkg, engines: { node: '>=22', agentage: engine } })
   );
   writeFileSync(join(dir, 'dist/agentage-extension.json'), JSON.stringify(built));
   writeFileSync(join(dir, 'dist/api/index.js'), API);

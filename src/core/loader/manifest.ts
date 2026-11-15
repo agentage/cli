@@ -118,11 +118,26 @@ const engineProblem = (engine: string, version: string, against: string): string
   return `engines.agentage "${engine}" does not match ${against} ${version}`;
 };
 
+// The one previous kit minor: every package cli 0.51 installed is built on it, and this kit hosts it.
+export const PREVIOUS_KIT_MINOR = '0.12';
+const PREVIOUS_KIT = Array.from({ length: 100 }, (_, patch) => `${PREVIOUS_KIT_MINOR}.${patch}`);
+export const PREVIOUS_KIT_WARNING = `built on kit ${PREVIOUS_KIT_MINOR}, update the extension`;
+
+// A range this kit does not satisfy and kit 0.12.x does: a warning, never a problem.
+export const onPreviousKit = (engine: string, kit: string = kitVersion()): boolean =>
+  isRange(engine) && !satisfies(kit, engine) && PREVIOUS_KIT.some((v) => satisfies(v, engine));
+
+export const kitWarning = (info: ManifestInfo, kit: string = kitVersion()): string | null =>
+  info.kind === 'kit' && onPreviousKit(info.engine, kit) ? PREVIOUS_KIT_WARNING : null;
+
+const kitRangeProblem = (engine: string, kit: string): string | null => {
+  if (engine === '') return 'engines.agentage is missing';
+  return onPreviousKit(engine, kit) ? null : engineProblem(engine, kit, 'kit');
+};
+
 // A kit-shaped range is over the kit's version; it has no default.
 const kitProblem = (info: ManifestInfo, kit: string): string | null =>
-  idProblem(info.id) ??
-  info.shape ??
-  (info.engine === '' ? 'engines.agentage is missing' : engineProblem(info.engine, kit, 'kit'));
+  idProblem(info.id) ?? info.shape ?? kitRangeProblem(info.engine, kit);
 
 // Commands are named after the id, so no two extensions, nor the core, can claim one.
 const commandsProblem = (id: string, commands: string[]): string | null => {

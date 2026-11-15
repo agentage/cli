@@ -124,7 +124,8 @@ export const gatherFrom = (
     plan: found.plan.summary,
     extensions,
   };
-  const warnings = [...(parsed?.ok ? parsed.warnings : []), ...found.found.warnings];
+  const old = found.found.extensions.flatMap((p) => (p.warning ? [`${p.id}: ${p.warning}`] : []));
+  const warnings = [...(parsed?.ok ? parsed.warnings : []), ...found.found.warnings, ...old];
   return { status, warnings, drift: found.drift, verbs: seen.verbs };
 };
 

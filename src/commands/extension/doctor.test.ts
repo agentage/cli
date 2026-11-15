@@ -2,6 +2,7 @@ import { describe, expect, vi } from 'vitest';
 import { install } from '../../test/old-install.js';
 import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
+import { writeKitExtension } from '../../test/kit-fixture.js';
 import { runExtensionDoctor } from './doctor.js';
 import { type KitTool } from './kit-tool.js';
 
@@ -111,5 +112,17 @@ describe('agentage extension doctor', () => {
     ]);
     expect(run.error).toBe('1 extension failed to load: pong');
     expect(dir.json('state/pong.json')).toMatchObject({ state: 'failed' });
+  });
+
+  test('a kit 0.12 extension is ok, with one warning to update it, not a problem', async ({
+    dir,
+  }) => {
+    const old = writeKitExtension(dir.at('dev/old'), 'old', '0.1.0', '^0.12');
+    dir.machine({ '@agentage/extension-old': old });
+    const { tool } = kitChecking();
+    const run = await output(() => runExtensionDoctor({}, tool));
+    expect(run.lines[0]).toMatch(/^old {2}ok /);
+    expect(run.stderr).toContain('warning: old: built on kit 0.12, update the extension');
+    expect(run.error).toBeNull();
   });
 });

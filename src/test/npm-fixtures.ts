@@ -18,7 +18,10 @@ export type Publishes = Record<string, Record<string, Record<string, unknown>>>;
 
 const fixtureManifest = (name: string): Manifest | null => {
   const path = join(fixture(name), 'package.json');
-  return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf-8')) as Manifest) : null;
+  if (!existsSync(path)) return null;
+  const m = JSON.parse(readFileSync(path, 'utf-8')) as Manifest;
+  // `@agentage/extension-<x>` reuses the fixture folder only for what `more` publishes.
+  return m.name === name ? m : null;
 };
 
 // Every version the registry has for `name`, as its package.json.

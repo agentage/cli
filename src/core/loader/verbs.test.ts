@@ -19,6 +19,7 @@ const ext = (id: string, commands: string[], kind: 'api' | 'kit' = 'kit'): Disco
   secrets: [],
   descriptions: {},
   problem: null,
+  warning: null,
   missing: false,
 });
 

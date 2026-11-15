@@ -31,8 +31,7 @@
     "url": "https://github.com/agentage/cli/issues"
   },
   "files": [
-    "dist",
-    "CHANGELOG.md"
+    "dist"
   ],
   "engines": {
     "node": ">=22.0.0",
@@ -43,8 +42,8 @@
     "type-check": "tsc --noEmit && tsc -p fixtures",
     "lint": "eslint src e2e fixtures",
     "lint:fix": "eslint src e2e fixtures --fix",
-    "format": "prettier --write \"{src,e2e}/**/*.ts\" \"fixtures/**/*.{js,json}\"",
-    "format:check": "prettier --check \"{src,e2e}/**/*.ts\" \"fixtures/**/*.{js,json}\"",
+    "format": "prettier --write \"{src,e2e}/**/*.ts\" \"fixtures/**/*.{js,json}\" \"{docs,e2e}/**/*.md\" README.md CLAUDE.md",
+    "format:check": "prettier --check \"{src,e2e}/**/*.ts\" \"fixtures/**/*.{js,json}\" \"{docs,e2e}/**/*.md\" README.md CLAUDE.md",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
