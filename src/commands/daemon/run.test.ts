@@ -26,10 +26,12 @@ describe('daemon run: the daemon process', () => {
     vi.stubEnv('AGENTAGE_DAEMON_PORT', String(port));
     const before = vi.fn(async () => undefined);
     const running = runDaemon({ installer: noInstaller, before });
-    await vi.waitFor(async () => expect((await probe(port)).kind).not.toBe('none'), {
-      timeout: 10_000,
-    });
-    expect(readDaemonFile()).toMatchObject({ pid: process.pid, port, startedBy: 'cli' });
+    // daemon.json is written after the port opens: wait for the file, not the port.
+    await vi.waitFor(
+      () => expect(readDaemonFile()).toMatchObject({ pid: process.pid, port, startedBy: 'cli' }),
+      { timeout: 10_000 }
+    );
+    expect((await probe(port)).kind).not.toBe('none');
     expect(before).toHaveBeenCalledOnce();
     process.emit('SIGTERM');
     await running;

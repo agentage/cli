@@ -3,6 +3,7 @@ import { testClientHeader } from './e2e/client-type.js';
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './src/test/global-tmp.ts',
   timeout: 120_000,
   expect: { timeout: 10_000 },
   forbidOnly: !!process.env.CI,
