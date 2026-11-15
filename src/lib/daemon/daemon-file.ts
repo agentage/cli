@@ -27,8 +27,11 @@ export const daemonOff = (env: NodeJS.ProcessEnv = process.env): boolean =>
 
 export const daemonFilePath = (): string => join(getConfigDir(), 'daemon.json');
 
+// A pid the cli may signal: 0 and -1 name process groups, 1 is init.
+export const isPid = (pid: unknown): pid is number => Number.isInteger(pid) && (pid as number) > 1;
+
 const isDaemonFile = (value: unknown): value is DaemonFile =>
-  isRecord(value) && Number.isInteger(value['pid']) && Number.isInteger(value['port']);
+  isRecord(value) && isPid(value['pid']) && Number.isInteger(value['port']);
 
 export const readDaemonFile = (): DaemonFile | null => readJson(daemonFilePath(), isDaemonFile);
 
@@ -36,6 +39,7 @@ export const removeDaemonFile = (): void => unlinkQuiet(daemonFilePath());
 
 // EPERM: the pid lives, under another user.
 export const isAlive = (pid: number): boolean => {
+  if (!isPid(pid)) return false;
   try {
     process.kill(pid, 0);
     return true;

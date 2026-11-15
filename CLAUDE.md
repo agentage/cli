@@ -91,6 +91,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   - `create.ts` is `extension create`: a shallow clone of the template, the other parts dropped,
     the word `template` rewritten to the id; `create-install.ts` then runs `npm ci`, the package
     build and `POST {source}` to the daemon (`--no-install` skips that), and prints the URL.
+  - `install-once.ts`: the add is the check; the daemon's `CONFLICT` is "already installed"
+    (`install` and the profile install of `setup` use it, so two runs cannot race).
   - `setup.ts` is the extensions `setup` flow; its only deps are the network ones, npm and the
     account. `setup-cloud.ts` is its signed-in half: account check, machine registration, pull or
     create, `--disconnect`. `plan.ts` is `setup --dry-run` and `setup --check`.
@@ -134,10 +136,12 @@ Each row names the doc first, then the code that proves it. Read the doc before 
     bearer + one shared refresh per process), introspect, sign-in (`ensureSignedIn`,
     `signIn`, `signOut`), credentials (PAT), env-match
   - `fs/` - config (`~/.agentage`, guarded 0600 auth.json), json-file (`readJson` with a type
-    guard, `writeJsonAtomic`), file-lock (`withFileLock` around sync or async work; options:
+    guard, `writeJsonAtomic`), kit-lock (the kit daemon's own `<file>.lock` protocol, for a
+    write beside the daemon: the D6 move), file-lock (`withFileLock` around sync or async work; options:
     ttl, hard-stale, max wait, onWait; `refreshFileLock` heartbeat)
   - `net/` - origins (one FQDN -> site, api, auth URLs; `apiOrigin` for the `/v1` routes), fetch (`cliFetch`: pinned fetch,
-    timeout, CLI headers, no redirects), http (unref'd node:http/https GET), user-agent
+    timeout, CLI headers, no redirects), market and market-error (one code per way a site's
+    market fails), http (unref'd node:http/https GET), user-agent
   - `npm/` - npm-cli (`resolveNpmCli`, `runNpm` as `node npm-cli.js`, `requireNpm10`)
   - `status/` - status-info (the `status` report)
   - `update/` - update-check, update-cache

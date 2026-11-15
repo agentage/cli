@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+import { type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { serve, type Served } from '../../test/serve.js';
 import { hostClient } from './host-client.js';
@@ -51,5 +53,27 @@ describe('the C5 client of the daemon', () => {
     await served.close();
     served = undefined;
     await expect(hostClient(port).list()).rejects.toMatchObject({ code: 'daemon_unavailable' });
+  });
+
+  it('a daemon that takes too long is timeout; a change may still finish, and says how to look', async () => {
+    const silent = createServer(() => undefined);
+    await new Promise<void>((done) => silent.listen(0, '127.0.0.1', done));
+    const { port } = silent.address() as AddressInfo;
+    const host = hostClient(port, { read: 100, change: 200 });
+    await expect(host.list()).rejects.toMatchObject({
+      code: 'timeout',
+      message: `the daemon on 127.0.0.1:${port} did not answer in 0.1 s; agentage daemon status`,
+    });
+    await expect(host.add({ id: 'probe' })).rejects.toMatchObject({
+      code: 'timeout',
+      message: expect.stringMatching(/in 0\.2 s; the install may still run .* no row shows until/),
+    });
+    await expect(host.change('probe', { enabled: false })).rejects.toMatchObject({
+      message: expect.stringMatching(
+        /; the change may still finish; run agentage extension list again/
+      ),
+    });
+    silent.closeAllConnections();
+    await new Promise((done) => silent.close(done));
   });
 });

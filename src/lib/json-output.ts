@@ -5,6 +5,7 @@ import { TokenRequestError } from './auth/oauth.js';
 
 // Every code of the cli's own: docs/reference.md lists the same, and a test keeps them equal.
 export const CODES = [
+  'already_installed',
   'already_running',
   'auth_required',
   'auth_unavailable',
@@ -14,19 +15,27 @@ export const CODES = [
   'daemon_disabled',
   'daemon_unavailable',
   'daemon_unresponsive',
+  'disk_full',
   'error',
   'extension_failed',
   'integrity_drift',
   'invalid_argument',
-  'market_unavailable',
+  'market_failed',
+  'market_timeout',
+  'market_unreachable',
   'needed_by_dependents',
+  'network_unavailable',
+  'no_discovery',
+  'no_market',
   'not_conforming',
   'not_installed',
   'not_pushed',
+  'permission_denied',
   'port_in_use',
   'profile_invalid',
   'release_refused',
   'stop_failed',
+  'timeout',
   'token_request_failed',
   'uncommitted_changes',
   'usage',
@@ -61,9 +70,25 @@ const KNOWN: [new (...args: never[]) => Error, Code][] = [
   [TokenRequestError, 'token_request_failed'],
 ];
 
+// What the system says of an expected failure: a folder or file we may not use, a full disk.
+const ERRNO: Record<string, Code> = {
+  EACCES: 'permission_denied',
+  EPERM: 'permission_denied',
+  EROFS: 'permission_denied',
+  ENOSPC: 'disk_full',
+  EDQUOT: 'disk_full',
+};
+
+const systemCode = (err: unknown): Code | undefined => {
+  if (!(err instanceof Error)) return undefined;
+  if (err.name === 'TimeoutError') return 'timeout';
+  if (err instanceof TypeError && err.message === 'fetch failed') return 'network_unavailable';
+  return ERRNO[(err as NodeJS.ErrnoException).code ?? ''];
+};
+
 export const codeOf = (err: unknown): string => {
   if (err instanceof CliError || err instanceof DaemonError) return err.code;
-  return KNOWN.find(([type]) => err instanceof type)?.[1] ?? 'error';
+  return KNOWN.find(([type]) => err instanceof type)?.[1] ?? systemCode(err) ?? 'error';
 };
 
 export interface JsonIo {
@@ -75,6 +100,21 @@ export interface Failure {
   err: unknown;
   shown: boolean;
 }
+
+// A command's answer with `meta` beside `data` in the --json envelope.
+export class WithMeta {
+  constructor(
+    readonly data: unknown,
+    readonly meta: Record<string, unknown>
+  ) {}
+}
+
+const envelope = (data: unknown): string =>
+  JSON.stringify(
+    data instanceof WithMeta
+      ? { success: true, data: data.data, meta: data.meta }
+      : { success: true, data }
+  );
 
 let active = false;
 
@@ -90,8 +130,13 @@ export const attempt = async (run: () => Promise<unknown>): Promise<Failure | nu
     (err: unknown) => ({ err, shown: false })
   );
 
-export const messageOf = (err: unknown): string =>
-  err instanceof Error ? err.message : String(err);
+// fetch says only "fetch failed"; its cause names the host and why (ECONNREFUSED, ENOTFOUND).
+export const messageOf = (err: unknown): string => {
+  if (!(err instanceof Error)) return String(err);
+  const cause = (err as { cause?: unknown }).cause;
+  const why = err.message === 'fetch failed' && cause instanceof Error ? `: ${cause.message}` : '';
+  return `${err.message}${why}`;
+};
 
 export const writeError = (io: JsonIo, err: unknown, code: string = codeOf(err)): void =>
   io.writeOut(`${JSON.stringify({ success: false, error: { code, message: messageOf(err) } })}\n`);
@@ -129,7 +174,7 @@ export const runJson = async (
       data = (await run()) ?? null;
     });
     if (failure) return failureOf(io, failure, log.wrote());
-    if (!legacy) io.writeOut(`${JSON.stringify({ success: true, data })}\n`);
+    if (!legacy) io.writeOut(`${envelope(data)}\n`);
     return null;
   } finally {
     log.restore();

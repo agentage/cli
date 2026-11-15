@@ -3,8 +3,11 @@ import { type Profile } from '../../core/profile/schema.js';
 import { type HostClient } from '../../lib/daemon/host-client.js';
 import { CliError, messageOf } from '../../lib/json-output.js';
 import { line } from './line.js';
+import { addOnce } from './install-once.js';
+import { kitInstallsDisabled } from './kit-tool.js';
 import {
   accountProfileInstalled,
+  NOT_EXTENSION,
   profileEntries,
   profileMarkerPath,
   type ProfileEntry,
@@ -19,6 +22,8 @@ export interface ProfileInstallDeps {
   daemonOff: boolean;
   // account: plain setup, once per machine; file: `setup --profile`, an explicit ask, never gated.
   from: 'account' | 'file';
+  // The daemon takes enabled: false on the add (the kit lists installDisabled).
+  installsDisabled?: () => Promise<boolean>;
 }
 
 const KEPT =
@@ -41,12 +46,16 @@ const disable = (host: HostClient, id: string) =>
     (err: unknown) => ({ row: null, notDisabled: messageOf(err) })
   );
 
-// One entry through POST /host/extensions, as `extension install <id>` sends it; off: then disabled.
-const installOne = async (host: HostClient, entry: ProfileEntry & { id: string }) => {
-  const added = await host.add(bodyOf(entry.id, entry.range));
-  if (!entry.off) return added;
-  const { row, notDisabled } = await disable(host, entry.id);
-  return row ?? { ...added, notDisabled };
+type Entry = ProfileEntry & { id: string };
+
+// One entry through POST /host/extensions; off: added disabled when the daemon can, else disabled after.
+const installOne = async (host: HostClient, entry: Entry, offOnAdd: boolean) => {
+  const off = entry.off && offOnAdd ? { enabled: false as const } : {};
+  const { row, already } = await addOnce(host, { ...bodyOf(entry.id, entry.range), ...off });
+  if (already) return { ...row, already };
+  if (!entry.off || offOnAdd) return row;
+  const done = await disable(host, entry.id);
+  return done.row ?? { ...row, notDisabled: done.notDisabled };
 };
 
 // An entry that installed but could not be turned off, or that failed to start.
@@ -59,22 +68,16 @@ const problemOf = (id: string, row: Awaited<ReturnType<typeof installOne>>): Pro
   return row.state === 'failed' ? failed(`${id}: ${row.error ?? 'failed'}`) : null;
 };
 
-const tryOne = async (
-  host: HostClient,
-  entry: ProfileEntry,
-  have: Set<string>
-): Promise<Problem | null> => {
-  if (entry.id === null) return failed(`${entry.name}: not an @agentage/extension-<id> package`);
-  if (have.has(entry.id)) {
-    console.log(`${entry.id} already installed`);
-    return null;
-  }
+// A package that is not an extension is said and skipped: the daemon cannot install it, ever.
+const tryOne = async (host: HostClient, entry: ProfileEntry, offOnAdd: boolean) => {
+  if (entry.id === null) return void console.log(`${entry.name}: ${NOT_EXTENSION}`);
   const id = entry.id;
-  const row = await installOne(host, { ...entry, id }).catch((err: unknown) => ({
+  const row = await installOne(host, { ...entry, id }, offOnAdd).catch((err: unknown) => ({
     id,
     error: messageOf(err),
   }));
   if ('error' in row && !('state' in row)) return failed(`${id}: ${row.error}`);
+  if ('already' in row) return void console.log(`${id} already installed`);
   console.log(`${row.id} ${row.version} ${row.state}`);
   return problemOf(id, row);
 };
@@ -103,10 +106,10 @@ export const installThroughDaemon = async (
   if (entries.length > 0 && deps.daemonOff)
     return console.log(line('extensions', 'the daemon is off, nothing installed'));
   const host = entries.length > 0 ? await deps.host() : null;
-  const have = new Set(host ? (await host.list()).map((row) => row.id) : []);
+  const offOnAdd = host !== null && (await (deps.installsDisabled ?? kitInstallsDisabled)());
   const problems: Problem[] = [];
   for (const entry of host ? entries : []) {
-    const problem = await tryOne(host as HostClient, entry, have);
+    const problem = await tryOne(host as HostClient, entry, offOnAdd);
     if (problem) problems.push(problem);
   }
   // An empty profile tried nothing: a later setup still installs one with entries.

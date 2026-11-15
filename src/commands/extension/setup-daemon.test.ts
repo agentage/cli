@@ -9,6 +9,9 @@ import { writeKitExtension } from '../../test/kit-fixture.js';
 import { cliInstaller } from '../daemon/installer.js';
 import { runDaemon } from '../daemon/run.js';
 import { installThroughDaemon } from './setup-install.js';
+import { CliError } from '../../lib/json-output.js';
+
+const OFFLINE = new CliError('market_unreachable', 'cannot reach the market: offline');
 
 const freePort = async (): Promise<number> => {
   const server = createServer();
@@ -32,7 +35,7 @@ const offline = () =>
   cliInstaller({
     npm: async () => Promise.reject(new Error('npm offline')),
     manifest: async () => Promise.reject(new Error('npm offline')),
-    market: () => ({ latest: async () => null, down: () => true }),
+    market: () => ({ latest: async () => null, down: () => OFFLINE }),
   });
 
 const profile = (extensions: Record<string, string>): Profile => ({

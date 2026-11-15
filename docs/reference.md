@@ -53,10 +53,13 @@ plain `setup` installs nothing and prints
 so an extension you removed does not come back. An `extension install` before the first `setup`
 does not block it. `setup --profile <file>` is an explicit ask and is never gated: it installs
 each entry of the file that is not installed yet. Either way, an entry already in
-`installation.json` is left as it is (`<id> already installed`). Each `@agentage/extension-<id>`
-entry goes to the daemon by id (`POST /host/extensions`, as `extension install <id>` sends it):
-an exact version as it is, a range at the market's newest version. An entry this machine's
-profile turns `off` is installed, then disabled. The daemon runs it; `setup` loads no extension
+`installation.json` is left as it is (`<id> already installed`, on the daemon's `CONFLICT`
+answer). Each `@agentage/extension-<id>` entry goes to the daemon by id
+(`POST /host/extensions`, as `extension install <id>` sends it): an exact version as it is, a
+range at the market's newest version; any other package is `<name>: not an extension, skipped`.
+An entry this machine's profile turns `off` is installed disabled in one step when the kit lists
+the capability `installDisabled` (`enabled: false` on the add); else it is installed, then
+disabled, and a disable that fails is reported as `installed but NOT disabled`. The daemon runs it; `setup` loads no extension
 itself, and nothing else installs. A failed entry is reported and does not stop the others;
 `setup` then exits 1 (`extension_failed`) naming each. With the daemon off (`--no-daemon`,
 `AGENTAGE_NO_DAEMON=1`) it prints `extensions the daemon is off, nothing installed` and writes no
@@ -118,20 +121,30 @@ stderr. `setup --profile` registers nothing.
 | `add`       | `+ add <name> <range>`                      | in the profile, not installed: setup installs it              |
 | `off`       | `o off <name> <range> (installed disabled)` | the same, turned off on this machine: installed disabled      |
 | `unchanged` | (not printed)                               | installed already (or the account profile was installed here) |
+| (skipped)   | `- <name>: not an extension, skipped`       | no `@agentage/extension-` prefix: the daemon can never install it |
 
-`update` and `remove` stay in the summary and are always 0: setup changes no installed entry.
+`update` and `remove` stay in the summary and are always 0: setup changes no installed entry. A
+skipped entry is not a change, so it never fails `--check`; plain `setup` prints the same line and
+installs the others.
 
 ```
 dry run    nothing written
 registry   default    https://registry.npmjs.org
 + add @agentage/extension-notes ^1
 plan: 1 to add, 0 off, 2 already installed
+from       profile.json on this machine; plain setup installs your account profile
 ```
+
+The last line names the profile the plan is of: the `--profile` file, `profile.json`, or the
+built-in default profile when there is no `profile.json`. Plain `setup`, signed in, installs the
+profile of your account instead, which `--check` does not read.
 
 `--check` prints the same lines without the header and exits 1 when anything would be installed
 (`not converged: 1 to add, 1 to install disabled`) or when `machine.json` is missing (it is read,
-never created); else 0. It writes nothing. With `--json`, both print the plan object, `--check`
-adding `problems`; the shape is the one of 0.51, `current` is `"installed"` or `null`:
+never created) or does not parse (`machine.json: invalid, fix or delete it`); else 0. It writes
+nothing. With `--json`, both print the plan object, `--check` adding `problems`; the shape is the
+one of 0.51 plus `skipped` (the names) and `source` (the profile it is of); `current` is
+`"installed"` or `null`:
 
 ```json
 {
@@ -139,7 +152,9 @@ adding `problems`; the shape is the one of 0.51, `current` is `"installed"` or `
     { "verb": "add", "name": "@agentage/extension-notes", "wanted": "^1", "current": null }
   ],
   "summary": { "add": 1, "update": 0, "remove": 0, "off": 0, "unchanged": 0 },
-  "problems": []
+  "skipped": [],
+  "problems": [],
+  "source": "profile.json"
 }
 ```
 
@@ -295,19 +310,17 @@ in the config folder and runs each extension as its own process: its api at
   `--off` is the old name of install, then `disable`, and says so on stderr. A package name of
   another scope and an `https:` tarball URL, which 0.51 installed, are refused
   (`invalid_argument`) with what to type instead: install the unpacked folder (`./path`).
-  The installer's errors reach you with the daemon's code:
-
-  | Code                 | When                                                               |
-  | -------------------- | ------------------------------------------------------------------ |
-  | `NOT_FOUND`          | the market and npm know no such id, or no such version (404)       |
-  | `MARKET_UNAVAILABLE` | no version given and the market did not answer (502)               |
-  | `INSTALL_FAILED`     | npm could not install it; the message holds npm's last lines (502) |
-  | `PRIVATE_ENTRY`      | the market entry has no npm package (400)                          |
-  | `VALIDATION_ERROR`   | the package's `agentage.id` is another id (400)                    |
+  The installer's errors reach you with the daemon's code (see
+  [The --json envelope](#the---json-envelope)). An install over an installed id is idempotent:
+  the daemon's `CONFLICT` answer prints the installed row with `(already installed)`, and only
+  another version, or the same id from another folder (`already_installed`), is not that.
 
 - **list** prints the daemon's rows; a folder row shows `folder` and `--json` adds its `path`.
   `--available` reads the market (paged, 200 per page, at most 20 pages; past that it stops
-  with `market_unavailable` naming the cap), not the daemon.
+  with `market_failed` naming the cap), not the daemon. A row without a version asks the
+  market's `/latest` (8 at a time); a row whose `/latest` fails or is refused is left out, one
+  stderr line names each (`skipped <id> (<reason>)`), and the command exits 0. Only a failed
+  discovery or list call fails it.
 - **update** compares each market row with the market's newest version and changes the ones that
   differ; folders are left alone. `--check` only prints `<id> <from> to <to> (available)`. After a
   change the folder of the old version goes (below).
@@ -360,8 +373,16 @@ the daemon log and in `daemon status` (`move skipped <entry>: <reason>`). Secret
 does not declare, is dropped and listed (`move skipped <id> setting <key>: ...`), so the extension
 still starts. An extension that declares no settings keeps its values as they are.
 
-The marker `installation.moved` is written once every entry is moved or skipped; with it the move
-never runs again. An invalid `profile.json` or `machine.json` moves nothing and writes no marker:
+The move writes `installation.json` and `settings.json` under the daemon's own lock
+(`<file>.lock`, the kit's rules: a dead holder's lock is taken over, pid 1 counts as live, and
+this process's own pid in a lock it does not hold is stale), so a daemon that serves already
+never loses a write to it. A move that fails (the lock is held for over 5 s, the disk is full)
+does not stop the daemon start: it writes no marker, `daemon status` shows
+`move: the move stopped (<reason>); the next daemon start tries again`, and the next start moves
+the rest. The marker
+`installation.moved` is written once every entry is moved or skipped; with it the move
+never runs again. An invalid `profile.json` or `machine.json`, or an `installation.json` or
+`settings.json` that does not parse, moves nothing and writes no marker:
 the daemon still starts, `daemon status` shows `move: <file> is invalid ...`, and the next start
 after you fix the file moves it. A stop half way loses nothing: an id already in
 `installation.json` keeps its row, and the next start adds the rest. The old files stay as they
@@ -621,7 +642,9 @@ runs each installed extension as a child process and serves `/api/{id}/*`, `/hea
 A daemon counts as this machine's daemon only with proof: `/health` on the port of
 `<config>/daemon.json` answers `service: "agentage-daemon"` with the same `pid` as the file.
 Requests go only to a proven daemon, and `stop` signals only a proven pid (SIGTERM, then SIGKILL
-after 30 s). The command reads `daemon.json` and then:
+after 30 s); `stop` says `stopped` only once the pid is gone, and a pid that outlives SIGKILL by
+5 s is `stop_failed` naming the pid, with `daemon.json` kept. A pid in `daemon.json` must be an
+integer above 1. The command reads `daemon.json` and then:
 
 | Found                                                        | What happens                                                                                                                          |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -635,7 +658,10 @@ after 30 s). The command reads `daemon.json` and then:
 A start that waits over 3 s, and a stop that waits over 3 s, print one line on stderr (never on
 stdout, so `--json` stays one object). A start that times out checks `daemon.json` and `/health`
 once more and uses a proven daemon found there; else it fails with `daemon_unavailable`, naming
-`agentage daemon status` and the log path. `agentage update` restarts a running daemon after the install. `AGENTAGE_NO_DAEMON=1` makes
+`agentage daemon status` and the log path. A command that starts the daemon prints
+`daemon started on 127.0.0.1:<port>` on stderr; when the command then fails (a refused install,
+no market), the daemon keeps running, as the service it is, and the failure is the last line and
+the exit code. `agentage update` restarts a running daemon after the install. `AGENTAGE_NO_DAEMON=1` makes
 every command that needs the daemon fail with `daemon_disabled`; nothing starts.
 The daemon writes its output, and each extension's, to `<config>/logs/daemon.log`; at each start
 a log over 5 MB moves to `daemon.log.1` (one old file is kept). A daemon that cannot bind its port
@@ -674,18 +700,66 @@ and nothing else there (progress lines go to stderr), and never prompts:
 ```
 
 An error exits 1, success 0. The one other exit code is 130: `extension up` (also with `--json`)
-stopped by Ctrl-C, after its envelope. `code` is snake_case and stable:
+stopped by Ctrl-C, after its envelope. A `code` is stable, in one of two forms: the cli's own
+codes are lowercase snake_case, the daemon's codes are UPPER_SNAKE and pass through unchanged.
+An expected failure (no network, a full disk, a folder you may not write, a market that is not
+there) has its own code and a one-line message, never a stack trace.
+
+The cli's own codes:
 
 <!-- codes: the same list as CODES in src/lib/json-output.ts; a test keeps them equal -->
-`already_running`, `auth_required`, `auth_unavailable`, `build_failed`, `cancelled`,
-`confirmation_required`, `daemon_disabled`, `daemon_unavailable`, `daemon_unresponsive`,
-`error` (any other), `extension_failed`, `integrity_drift`, `invalid_argument`,
-`market_unavailable`, `needed_by_dependents`, `not_conforming`, `not_installed`, `not_pushed`,
-`port_in_use`, `profile_invalid`, `release_refused`, `stop_failed`, `token_request_failed`,
-`uncommitted_changes`, `usage`.
+`already_installed`, `already_running`, `auth_required`, `auth_unavailable`, `build_failed`,
+`cancelled`, `confirmation_required`, `daemon_disabled`, `daemon_unavailable`,
+`daemon_unresponsive`, `disk_full`, `error` (any other), `extension_failed`, `integrity_drift`,
+`invalid_argument`, `market_failed`, `market_timeout`, `market_unreachable`,
+`needed_by_dependents`, `network_unavailable`, `no_discovery`, `no_market`, `not_conforming`,
+`not_installed`, `not_pushed`, `permission_denied`, `port_in_use`, `profile_invalid`,
+`release_refused`, `stop_failed`, `timeout`, `token_request_failed`, `uncommitted_changes`,
+`usage`.
 <!-- /codes -->
 
-A code from the daemon (such as `NOT_FOUND` or `INVALID_SETTING`) passes through unchanged.
+| Code                  | When                                                                        |
+| --------------------- | --------------------------------------------------------------------------- |
+| `no_discovery`        | the site answers 404 for `/.well-known/agentage.json`                        |
+| `no_market`           | the site's discovery document names no market                                |
+| `market_unreachable`  | the site or its market cannot be reached (refused, no DNS name, offline), or the site answers a redirect or a page that is no JSON object (a network's sign-in page): not the discovery document |
+| `market_failed`       | the site or its market answered another 4xx or 5xx, or a market answer that is not JSON |
+| `market_timeout`      | the market did not answer in 5 s                                             |
+| `network_unavailable` | another outbound call could not connect; the message names the host and why |
+| `timeout`             | another outbound call did not answer in its time. After an install, the daemon may still run it and shows no row until it ends: the message says so and names `agentage daemon status` (its `/health` names no install in progress) |
+| `permission_denied`   | a file or folder (the config folder, a log) may not be read or written      |
+| `disk_full`           | a write failed: no space left on the disk, or over the quota                 |
+| `already_installed`   | `install` of an id that the daemon runs from another folder                  |
+| `stop_failed`         | `daemon stop` or `extension down`: the process still runs after the signals  |
+| `build_failed`        | npm (the build script, `npm ci`) failed (`exited 3`, `exited by signal SIGINT`), did not finish in 10 min (SIGTERM, then SIGKILL after 5 s), or is not on the PATH |
+
+`no_discovery` and `no_market` name the site and say how to choose another one
+(`AGENTAGE_SITE_FQDN=<site>`); from the daemon's installer they add
+`then agentage daemon restart`, since the daemon reads the site when it starts. The other market
+codes name the URL and why. With `AGENTAGE_DEBUG=1` a failed command also prints the original
+error and its cause, with their stacks, on stderr (never on stdout).
+Until the cutover the default site `agentage.io` has no market, so `extension install <id>` and
+`extension list --available` fail there with `no_discovery`; the extensions are on
+`next.agentage.io`.
+
+The daemon's codes (the kit's envelope, and the cli's installer, which runs in the daemon):
+
+| Code                 | When                                                                     |
+| -------------------- | ------------------------------------------------------------------------ |
+| `NOT_FOUND`          | no such extension (404); from the installer: no such id or version on npm |
+| `VALIDATION_ERROR`   | a body the daemon refuses (400); the package's `agentage.id` is another id |
+| `INVALID_SETTING`    | `configure` of an undeclared key, or a value of the wrong type (400)       |
+| `START_FAILED`       | a change whose new child did not start; the old one runs on (400)          |
+| `CONFLICT`           | the id is installed (409); `install` turns it into "already installed"     |
+| `FORBIDDEN`          | a Host or Origin that is not this machine (403)                            |
+| `UNAVAILABLE`        | the daemon has no installer (501), or the extension is not running (503)   |
+| `INSTALL_FAILED`     | npm could not install it; the message holds npm's last lines (502)        |
+| `PRIVATE_ENTRY`      | the market entry has no npm package (400)                                 |
+| `NO_DISCOVERY`, `NO_MARKET`, `MARKET_UNREACHABLE`, `MARKET_FAILED`, `MARKET_TIMEOUT` | the market codes above, from the installer (502), when no version is given |
+
+The installer runs in the daemon, so it uses the site the daemon had when it started: to install
+from another site, `AGENTAGE_SITE_FQDN=<site> agentage daemon restart`, then install.
+
 A usage error (an unknown flag, a missing argument) exits 2 with no object; with `--json` it
 exits 1 with the error object, code `usage`, and the usage line on stderr.
 
@@ -694,7 +768,7 @@ exits 1 with the error object, code `usage`, and the usage line on stderr.
 | `setup`                                               | `{ extensions: [...] }`, the rows as `extension doctor` has them                                    |
 | `extension install`, `disable`, `enable`, `configure` | the daemon's row `{ id, version, source, state, enabled, error? }`                                  |
 | `extension list`                                      | the daemon's rows; a folder row has `source: "folder"` and `path`                                   |
-| `extension list --available`                          | `[{ id, version }]` from the market                                                                 |
+| `extension list --available`                          | `[{ id, version }]` from the market; `meta.skipped` is `[{ id, reason }]` for the rows left out      |
 | `extension update`                                    | `[{ id, from, to, updated }]`                                                                       |
 | `extension remove`                                    | `{ id, purged }`                                                                                    |
 | `update`                                              | `{ installed, status, latest, updated }`                                                            |
@@ -747,6 +821,6 @@ Otherwise it is `extensions` inside the config directory. The config directory i
 | `AGENTAGE_TOKEN`          | Personal access token for CI and headless machines                   | unset                 |
 | `NO_COLOR`                | Disable colored output (any non-empty value)                         | unset                 |
 | `AGENTAGE_EXTENSIONS_DIR` | Extensions directory (trees, lock, `current`)                        | `<config>/extensions` |
-| `AGENTAGE_DEBUG`          | `1` prints one stderr line for each call that registers this machine | unset                 |
+| `AGENTAGE_DEBUG`          | `1` prints one stderr line for each call that registers this machine, and the stack of a failed command | unset                 |
 | `AGENTAGE_DAEMON_PORT`    | The daemon's port on 127.0.0.1                                       | `4243`                |
 | `AGENTAGE_NO_DAEMON`      | `1`: no daemon is started or used (`daemon_disabled`)                | unset                 |

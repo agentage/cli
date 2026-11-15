@@ -1,6 +1,7 @@
 import { type IncomingMessage, type RequestListener } from 'node:http';
 
-const LOOPBACK = ['127.0.0.1', 'localhost', '[::1]'];
+// The rule set of the kit 0.13 guard, which a test holds equal: the server binds 127.0.0.1 only.
+const LOOPBACK = ['127.0.0.1', 'localhost'];
 
 // Why a request does not come from this machine's own pages, or null when it does.
 export const refusedBy = (req: IncomingMessage, port: number): string | null => {
@@ -10,7 +11,7 @@ export const refusedBy = (req: IncomingMessage, port: number): string | null => 
   const site = req.headers['sec-fetch-site'];
   if (site === 'cross-site' || site === 'same-site') return 'sec-fetch-site';
   const origin = req.headers.origin;
-  if (origin && !hosts.some((host) => origin === `http://${host}`)) return 'origin';
+  if (origin !== undefined && !hosts.some((host) => origin === `http://${host}`)) return 'origin';
   return null;
 };
 

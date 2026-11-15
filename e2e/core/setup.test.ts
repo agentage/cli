@@ -30,8 +30,9 @@ test.describe('agentage setup --profile @p0 @offline', () => {
     expect(run.lines).toContain('dry run    nothing written');
     expect(run.lines).toContain(`registry   @agentage  ${cli.registry.url}`);
     expect(run.lines).toContain('registry   default    https://registry.npmjs.org');
-    expect(run.lines).toContain('+ add @agentage/fixture-hello ^1.0.0');
-    expect(run.lines).toContain('plan: 2 to add, 0 off, 0 already installed');
+    // The fixtures are no @agentage/extension- packages: the daemon can never install them.
+    expect(run.lines).toContain('- @agentage/fixture-hello: not an extension, skipped');
+    expect(run.lines).toContain('plan: nothing to change');
     // update-check.json is the CLI's own update throttle, written after any command.
     expect(cli.list('').filter((name) => name !== 'update-check.json')).toEqual([]);
   });

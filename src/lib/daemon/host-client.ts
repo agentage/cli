@@ -1,5 +1,5 @@
 import { isRecord } from '../fs/json-file.js';
-import { CliError, DaemonError } from '../json-output.js';
+import { CliError, DaemonError, messageOf } from '../json-output.js';
 
 // One row of GET /host/extensions (C5); the daemon may add fields, they pass through.
 export interface HostRow {
@@ -28,14 +28,16 @@ export interface HostPatch {
 
 export interface HostClient {
   list: () => Promise<HostRow[]>;
-  add: (body: { id: string; version?: string } | { source: string }) => Promise<HostSummary>;
+  // enabled: false only to a daemon whose kit lists installDisabled.
+  add: (
+    body: ({ id: string; version?: string } | { source: string }) & { enabled?: false }
+  ) => Promise<HostSummary>;
   change: (id: string, patch: HostPatch) => Promise<HostSummary>;
   remove: (id: string, purge: boolean) => Promise<{ id: string }>;
 }
 
-// An install runs npm, a change starts a new child: both can take minutes.
-const CHANGE_MS = 10 * 60_000;
-const READ_MS = 10_000;
+// An install runs npm (up to 10 min in the daemon), then starts the child: past that it is stuck.
+const WAITS = { read: 10_000, change: 12 * 60_000 };
 
 // The daemon's own codes (UPPER_SNAKE: NOT_FOUND, INVALID_SETTING) pass through unchanged.
 const failure = (status: number, body: unknown): DaemonError => {
@@ -45,21 +47,38 @@ const failure = (status: number, body: unknown): DaemonError => {
   return new DaemonError(code, message);
 };
 
-const unreachable = (port: number, err: unknown): CliError =>
-  new CliError('daemon_unavailable', `the daemon on 127.0.0.1:${port}: ${(err as Error).message}`);
+// What the user can see after a timeout: the kit adds the row only once the install ends, and its
+// /health names no install in progress.
+const LOOK: Record<string, string> = {
+  GET: 'agentage daemon status',
+  POST:
+    'the install may still run in the daemon, and no row shows until it ends; ' +
+    'agentage daemon status says the daemon runs; run agentage extension list again in a few minutes',
+  PATCH: 'the change may still finish; run agentage extension list again in a few minutes',
+};
+
+// A timed-out change may still finish in the daemon: say how to look, never that it failed.
+const unreachable = (port: number, err: unknown, ms: number, method: string): CliError => {
+  if ((err as Error).name !== 'TimeoutError')
+    return new CliError('daemon_unavailable', `the daemon on 127.0.0.1:${port}: ${messageOf(err)}`);
+  const after = `the daemon on 127.0.0.1:${port} did not answer in ${ms / 1000} s`;
+  const look = LOOK[method] ?? LOOK['PATCH'];
+  return new CliError('timeout', `${after}; ${look}`);
+};
 
 type Send = <T>(method: string, path: string, body?: object) => Promise<T>;
 
 const sender =
-  (port: number): Send =>
+  (port: number, waits: typeof WAITS): Send =>
   async <T>(method: string, path: string, body?: object): Promise<T> => {
+    const ms = method === 'GET' ? waits.read : waits.change;
     const res = await fetch(`http://127.0.0.1:${port}${path}`, {
       method,
       headers: body ? { 'content-type': 'application/json' } : {},
       body: body && JSON.stringify(body),
-      signal: AbortSignal.timeout(method === 'GET' ? READ_MS : CHANGE_MS),
+      signal: AbortSignal.timeout(ms),
     }).catch((err: unknown) => {
-      throw unreachable(port, err);
+      throw unreachable(port, err, ms, method);
     });
     const parsed: unknown = await res.json().catch(() => null);
     if (!res.ok || !isRecord(parsed) || parsed['success'] !== true)
@@ -69,8 +88,8 @@ const sender =
 
 const at = (id: string): string => `/host/extensions/${encodeURIComponent(id)}`;
 
-export const hostClient = (port: number): HostClient => {
-  const send = sender(port);
+export const hostClient = (port: number, waits = WAITS): HostClient => {
+  const send = sender(port, waits);
   return {
     list: () => send('GET', '/host/extensions'),
     add: (body) => send('POST', '/host/extensions', body),

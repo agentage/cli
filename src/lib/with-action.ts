@@ -11,6 +11,13 @@ type Legacy = (opts: never) => boolean;
 export const notPinned: Legacy = () => false;
 export const pinned: Legacy = () => true;
 
+// AGENTAGE_DEBUG=1: the original error and its cause, with stacks, on stderr; never on stdout.
+const debugStack = (io: { writeErr: (text: string) => void }, err: unknown): void => {
+  if (process.env['AGENTAGE_DEBUG'] !== '1') return;
+  for (let e: unknown = err; e instanceof Error; e = (e as { cause?: unknown }).cause)
+    io.writeErr(`${e.stack ?? String(e)}\n`);
+};
+
 // One failure path: a red stderr line, exit 1, or with --json the error envelope on stdout.
 // `legacy` marks a run whose own JSON is pinned; an extension's --help or usage error keeps its code.
 export const withAction =
@@ -28,6 +35,7 @@ export const withAction =
     if (!failure) return;
     const { err, shown } = failure;
     if (err instanceof CommanderError) throw err;
+    debugStack(io, err);
     if (!shown) io.writeErr(`${chalk.red(`${prefix}${messageOf(err)}`)}\n`);
     throw new CommanderError(EXIT_FAILED, ACTION_FAILED, messageOf(err));
   };

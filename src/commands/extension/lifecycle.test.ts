@@ -1,4 +1,12 @@
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  unlinkSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
@@ -33,10 +41,58 @@ describe('extension install', () => {
     const { host, deps } = fakeHost([marketRow('probe', '0.7.0')]);
     await output(() => runInstall({ name: 'probe@0.6.2' }, deps));
     expect(host.change).toHaveBeenCalledWith('probe', { version: '0.6.2' });
-    await output(() => runInstall({ name: 'probe@0.6.2' }, deps));
-    await output(() => runInstall({ name: 'probe' }, deps));
+    const same = await output(() => runInstall({ name: 'probe@0.6.2' }, deps));
+    const bare = await output(() => runInstall({ name: 'probe' }, deps));
     expect(host.change).toHaveBeenCalledOnce();
-    expect(host.add).not.toHaveBeenCalled();
+    expect([same.lines, bare.lines]).toEqual([
+      ['probe 0.6.2 running (already installed)'],
+      ['probe 0.6.2 running (already installed)'],
+    ]);
+  });
+
+  test('two installs at once: the daemon adds one, the other is told it is installed', async () => {
+    const { host, deps } = fakeHost();
+    const run = await output(() =>
+      Promise.all([runInstall({ name: 'probe' }, deps), runInstall({ name: 'probe' }, deps)])
+    );
+    expect(run.lines).toEqual(['probe 0.7.0 running', 'probe 0.7.0 running (already installed)']);
+    expect(host.add).toHaveBeenCalledTimes(2);
+    expect(host.list).toHaveBeenCalledOnce();
+  });
+
+  test('an id the daemon runs from a folder, or a folder of an id from elsewhere, is refused', async () => {
+    const demo = { ...marketRow('demo', '0.1.0'), source: '/work/extension-demo' };
+    const { deps } = fakeHost([demo]);
+    expect(await output(() => runInstall({ name: 'demo' }, deps))).toMatchObject({
+      code: 'already_installed',
+      error: 'demo runs from the folder /work/extension-demo; agentage extension remove demo first',
+    });
+    const dir = mkdtempSync(join(tmpdir(), 'agentage-demo-'));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ agentage: { id: 'demo' } }));
+    expect(await output(() => runInstall({ name: dir }, deps))).toMatchObject({
+      code: 'already_installed',
+      error:
+        'demo is installed from the market or another folder; agentage extension remove demo first',
+    });
+  });
+
+  test('the same folder again is installed already', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'agentage-demo-')));
+    const { deps } = fakeHost([{ ...marketRow('demo', '0.1.0'), source: dir }]);
+    expect((await output(() => runInstall({ name: dir }, deps))).lines).toEqual([
+      'demo 0.1.0 running (already installed)',
+    ]);
+  });
+
+  test('the same folder through a link, stored with a trailing slash, is installed already', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'agentage-demo-')));
+    const link = `${dir}-link`;
+    symlinkSync(dir, link);
+    const { deps } = fakeHost([{ ...marketRow('demo', '0.1.0'), source: `${link}/` }]);
+    expect((await output(() => runInstall({ name: dir }, deps))).lines).toEqual([
+      'demo 0.1.0 running (already installed)',
+    ]);
+    unlinkSync(link);
   });
 
   test('a folder goes by its real path; one another user can write is refused', async () => {

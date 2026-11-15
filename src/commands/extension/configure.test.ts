@@ -1,5 +1,5 @@
 import { describe, expect, vi } from 'vitest';
-import { runJson } from '../../lib/json-output.js';
+import { DaemonError, runJson } from '../../lib/json-output.js';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost, marketRow } from '../../test/host.js';
 import { EventEmitter } from 'node:events';
@@ -27,6 +27,31 @@ describe('extension configure', () => {
       settings: { 'echo.prefix': 'hey', a: 'b=c' },
     });
     expect(run.lines).toEqual(['probe 0.7.0 running', 'settings set: echo.prefix, a']);
+  });
+
+  test('an undeclared key: the answer adds what the extension declares, or how to see it', async ({
+    dir,
+  }) => {
+    const { host, deps } = setup();
+    const refused = new DaemonError(
+      'INVALID_SETTING',
+      'setting echo.prefx: not declared in the manifest'
+    );
+    vi.mocked(host.change).mockRejectedValue(refused);
+    const run = () =>
+      output(() => runConfigure({ id: 'probe', pairs: ['echo.prefx=hey'] }, deps()));
+    expect(await run()).toMatchObject({
+      code: 'INVALID_SETTING',
+      error: `${refused.message}; see agentage.settings in its package.json`,
+    });
+    const settings = { 'echo.prefix': { type: 'string' }, 'mcp.listing': { type: 'boolean' } };
+    dir.write('ext/package.json', { name: 'x', agentage: { id: 'probe', settings } });
+    dir.write('installation.json', { extensions: [{ id: 'probe', source: dir.at('ext') }] });
+    expect((await run()).error).toBe(
+      `${refused.message}; probe declares: echo.prefix, mcp.listing`
+    );
+    dir.write('ext/package.json', { name: 'x', agentage: { id: 'probe' } });
+    expect((await run()).error).toBe(`${refused.message}; probe declares no settings`);
   });
 
   test('--secret: the values are secrets and never printed; a bare key reads stdin', async () => {

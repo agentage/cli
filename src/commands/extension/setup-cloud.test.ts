@@ -11,7 +11,7 @@ import {
 } from '../../test/account.js';
 import { MACHINE_ID, output, test } from '../../test/config-dir.js';
 import { type SetupOptions } from '../auth/setup.js';
-import { runExtensionSetup } from './setup.js';
+import { runExtensionSetup, type ExtensionSetupDeps } from './setup.js';
 
 // The profile's extensions go to the daemon (a fake here), as `extension install` sends them.
 const HELLO_OK = 'hello 0.7.0 running';
@@ -25,9 +25,14 @@ const NO_PLATFORM = 'FAIL discovery: https://x.test/.well-known/agentage.json ha
 let daemon = fakeHost();
 
 // Signed in already; besides the daemon, the account is all this flow reaches.
-const setup = (account: FakeAccount | null, opts: SetupOptions = {}) =>
+const setup = (
+  account: FakeAccount | null,
+  opts: SetupOptions = {},
+  more: Partial<ExtensionSetupDeps> = {}
+) =>
   output(() =>
     runExtensionSetup(opts, {
+      installsDisabled: async () => false,
       ensureSignedIn: async () => 'already',
       signOut: async () => console.log('(signed out)'),
       printStatus: async () => undefined,
@@ -35,6 +40,7 @@ const setup = (account: FakeAccount | null, opts: SetupOptions = {}) =>
       host: async () => daemon.host,
       updateExtensions: async () => undefined,
       ...editDeps(account),
+      ...more,
     })
   );
 
@@ -134,7 +140,8 @@ describe('agentage setup, signed in, and the profile in the account', () => {
       extensions: [{ id: 'hello', version: '0.7.0' }],
     });
     expect((await setup(account)).lines).toContain('hello already installed');
-    expect(daemon.host.add).not.toHaveBeenCalled();
+    expect(daemon.host.change).not.toHaveBeenCalled();
+    expect(daemon.rows).toEqual([marketRow('hello', '0.7.0')]);
     expect(dir.exists('setup.profile-installed')).toBe(true);
     expect((await setup(account)).lines).toContain(
       'extensions your account profile was installed here already; setup installs nothing (agentage extension install)'
@@ -164,15 +171,34 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     expect(daemon.host.change).toHaveBeenCalledWith('hello', { enabled: false });
   });
 
-  test('a profile entry the daemon refuses fails setup naming it, after the others', async () => {
+  test('a profile entry the daemon refuses fails setup naming it; a package that is no extension is skipped', async () => {
     const account = fakeAccount();
     account.store({ version: 1, extensions: { [HELLO_PKG]: '^1', '@other/thing': '^1' } });
     vi.mocked(daemon.host.add).mockRejectedValueOnce(new DaemonError('NOT_FOUND', 'no hello'));
     const run = await setup(account);
     expect(run).toMatchObject({ code: 'extension_failed' });
-    expect(run.error).toBe(
-      'not installed:\n  hello: no hello\n  @other/thing: not an @agentage/extension-<id> package'
-    );
+    expect(run.error).toBe('not installed:\n  hello: no hello');
+    expect(run.lines).toContain('@other/thing: not an extension, skipped');
+  });
+
+  test('a profile of packages that are no extension only: setup says so and passes', async () => {
+    const account = fakeAccount();
+    account.store({ version: 1, extensions: { '@other/thing': '^1' } });
+    const run = await setup(account);
+    expect(run.error).toBeNull();
+    expect(run.lines).toContain('@other/thing: not an extension, skipped');
+    expect(daemon.host.add).not.toHaveBeenCalled();
+  });
+
+  test('a daemon that installs disabled (installDisabled) gets enabled: false on the add', async ({
+    dir,
+  }) => {
+    dir.machine({});
+    const account = fakeAccount();
+    account.store({ ...HELLO_DOC, machines: { [MACHINE_ID]: { off: [HELLO_PKG], config: {} } } });
+    await setup(account, {}, { installsDisabled: async () => true });
+    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'hello', enabled: false });
+    expect(daemon.host.change).not.toHaveBeenCalled();
   });
 
   test('with the daemon off, setup pulls the profile and installs nothing', async () => {

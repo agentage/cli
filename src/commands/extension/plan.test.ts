@@ -51,6 +51,7 @@ describe('agentage setup --dry-run: what setup would send to the daemon', () => 
       `+ add ${B} 2.0.0`,
       `o off ${C} ^3 (installed disabled)`,
       'plan: 1 to add, 1 off, 1 already installed',
+      'from       profile.json on this machine; plain setup installs your account profile',
     ]);
     expect(dir.list('')).toEqual(before);
   });
@@ -73,12 +74,13 @@ describe('agentage setup --dry-run: what setup would send to the daemon', () => 
   }) => {
     machineWith(dir);
     dir.write('setup.profile-installed', '');
-    expect((await setup({ dryRun: true })).lines.slice(2)).toEqual(['plan: nothing to change']);
+    expect((await setup({ dryRun: true })).lines.slice(2, 3)).toEqual(['plan: nothing to change']);
     const file = dir.at('p.json');
     dir.write('p.json', { version: 1, extensions: { [B]: '2.0.0' } });
     expect((await setup({ profile: file, dryRun: true })).lines.slice(2)).toEqual([
       `+ add ${B} 2.0.0`,
       'plan: 1 to add, 0 off, 0 already installed',
+      `from       ${file}`,
     ]);
   });
 
@@ -96,6 +98,7 @@ describe('agentage setup --dry-run: what setup would send to the daemon', () => 
       'registry   default  https://registry.npmjs.org',
       `+ add ${A} ^1`,
       'plan: 1 to add, 0 off, 0 already installed',
+      `from       ${path}`,
     ]);
     expect(dir.list('')).toEqual(['v2.json']);
   });
@@ -114,12 +117,44 @@ describe('agentage setup --check', () => {
     machineWith(dir);
     dir.write('setup.profile-installed', '');
     expect(await setup({ check: true })).toMatchObject({
-      lines: ['plan: nothing to change'],
+      lines: [
+        'plan: nothing to change',
+        'from       profile.json on this machine; plain setup installs your account profile',
+      ],
       error: null,
     });
     rmSync(dir.at('machine.json'));
     const run = await setup({ check: true, json: true });
-    expect(JSON.parse(run.stdout).problems).toEqual(['machine.json: missing']);
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      problems: ['machine.json: missing'],
+      source: 'profile.json',
+    });
     expect(run.error).toBe('machine.json: missing');
+    dir.write('machine.json', '{ nope');
+    expect((await setup({ check: true })).error).toBe('machine.json: invalid, fix or delete it');
+  });
+
+  test('an entry with no @agentage/extension- prefix is no extension: skipped, exit 0', async ({
+    dir,
+  }) => {
+    dir.machine({});
+    dir.write('profile.json', { version: 1, extensions: { '@other/thing': '^1' } });
+    const run = await setup({ check: true });
+    expect(run).toMatchObject({ error: null });
+    expect(run.lines.slice(0, 2)).toEqual([
+      '- @other/thing: not an extension, skipped',
+      'plan: nothing to change',
+    ]);
+    const json = JSON.parse((await setup({ check: true, json: true })).stdout);
+    expect(json).toMatchObject({ skipped: ['@other/thing'], extensions: [] });
+  });
+
+  test('with no profile.json the plan is of the built-in default profile, and says so', async ({
+    dir,
+  }) => {
+    dir.machine({});
+    expect((await setup({ dryRun: true })).lines.at(-1)).toBe(
+      'from       the built-in default profile on this machine; plain setup installs your account profile'
+    );
   });
 });
