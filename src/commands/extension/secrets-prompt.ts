@@ -19,7 +19,7 @@ const typed = (answer: string, char: string): string | null => {
 };
 
 // Raw mode keeps the answer off the screen; Ctrl+C still interrupts once the terminal is restored.
-const readHidden = (question: string): Promise<string> =>
+export const readHidden = (question: string): Promise<string> =>
   new Promise((resolve) => {
     const { stdin, stderr } = process;
     let answer = '';

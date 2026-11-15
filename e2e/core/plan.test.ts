@@ -1,7 +1,7 @@
 /**
  * @offline - the plan: what `setup` would change to bring this machine (the installed tree) to its
  * profile. `setup --dry-run` prints it, `setup --check` verifies it and exits 1 when anything
- * would change, `extension list` and `status` show the drift.
+ * would change, and `status` shows the drift.
  */
 import { expect, test, type Machine } from './cli.js';
 
@@ -52,20 +52,12 @@ test.describe('agentage setup --dry-run @p0 @offline', () => {
   });
 });
 
-test.describe('agentage extension list and status show the drift @p0 @offline', () => {
-  test('after world is taken out of profile.json by hand, agentage extension list shows world to remove and status says "extensions 2 (1 to remove)"', async ({
+test.describe('agentage status shows the drift @p0 @offline', () => {
+  test('after world is taken out of profile.json by hand, status says "extensions 2 (1 to remove)"', async ({
     cli,
   }) => {
     await cli.run(`setup --profile ${cli.profile(TWO)}`);
     handEdit(cli, { [HELLO]: '^1.0.0' });
-    const list = await cli.run('extension list');
-    expect(list.lines).toContainEqual(
-      expect.stringMatching(
-        /^world {2}installed {2}remove {2}@agentage\/fixture-world 1\.0\.0 \(not in profile\)/
-      )
-    );
-    const json = JSON.parse((await cli.run('extension list --json')).stdout);
-    expect(json.plan).toEqual({ add: 0, update: 0, remove: 1, off: 0, unchanged: 1 });
     expect((await cli.run('status')).lines).toContain('extensions 2 (1 to remove)');
   });
 });
@@ -120,16 +112,11 @@ test.describe('agentage setup --check @p0 @offline', () => {
 });
 
 test.describe('integrity drift @p0 @offline', () => {
-  test("after a hand edit of hello's integrity in the lock, extension list shows hello invalid, and setup --profile and extension doctor exit 1", async ({
+  test("after a hand edit of hello's integrity in the lock, setup --profile and extension doctor exit 1", async ({
     cli,
   }) => {
     await cli.run(`setup --profile ${cli.profile(TWO)}`);
     tamper(cli);
-    expect((await cli.run('extension list')).lines).toContainEqual(
-      expect.stringMatching(
-        /^hello {2}invalid .* integrity drift: @agentage\/fixture-hello@1\.0\.0$/
-      )
-    );
     const setup = await cli.run(`setup --profile ${cli.profile(TWO)}`);
     expect(setup.code).toBe(1);
     expect(setup.stderr).toContain(`Setup failed: integrity drift: ${HELLO}@1.0.0`);

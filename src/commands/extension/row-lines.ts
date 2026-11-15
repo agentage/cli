@@ -66,25 +66,22 @@ interface Widths {
   drift: number;
 }
 
-export type Latest = ReadonlyMap<string, string | null>;
-
-const rowLine = (row: ExtensionRow, widths: Widths, latest?: Latest): string => {
+const rowLine = (row: ExtensionRow, widths: Widths): string => {
   const id = (row.id ?? '?').padEnd(widths.id);
   const state = COLOR[row.state](row.state.padEnd(STATE_WIDTH));
   const drift = widths.drift === 0 ? '' : `${driftOf(row).padEnd(widths.drift)}  `;
   const pkg = `${row.package} ${row.installed ?? '-'} (${wantedText(row)})`;
-  const newest = latest ? `  latest ${latest.get(row.id ?? '') ?? '-'}` : '';
   const commands = row.commands.length > 0 ? `  commands: ${row.commands.join(', ')}` : '';
   // A failed load quotes the extension's own message; the core's reasons print as they are.
   const reason = row.state === 'failed' ? `"${row.error}"` : row.error;
   const error = row.error === null ? '' : chalk.dim(`  ${reason}`);
-  return `${id}  ${state}  ${drift}${pkg}${newest}${commands}${lastRunText(row.lastRun)}${error}`;
+  return `${id}  ${state}  ${drift}${pkg}${commands}${lastRunText(row.lastRun)}${error}`;
 };
 
-export const rowLines = (rows: ExtensionRow[], latest?: Latest): string[] => {
+export const rowLines = (rows: ExtensionRow[]): string[] => {
   const id = Math.max(0, ...rows.map((row) => (row.id ?? '?').length));
   const drift = Math.max(0, ...rows.map((row) => driftOf(row).length));
-  return rows.map((row) => rowLine(row, { id, drift }, latest));
+  return rows.map((row) => rowLine(row, { id, drift }));
 };
 
 export const printWarnings = (warnings: string[]): void => {

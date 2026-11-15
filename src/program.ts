@@ -9,9 +9,13 @@ import {
 import { type ExtensionCreateOptions } from './commands/extension/create.js';
 import { registerDelegates } from './commands/extension/delegate.js';
 import { type ExtensionDoctorOptions } from './commands/extension/doctor.js';
-import { type ExtensionInstallOptions } from './commands/extension/install.js';
-import { registerExtension, type ExtensionListOptions } from './commands/extension/list.js';
-import { type ExtensionRemoveOptions } from './commands/extension/remove.js';
+import { type ConfigureOptions } from './commands/extension/configure.js';
+import { type InstallOptions, type RemoveOptions } from './commands/extension/lifecycle.js';
+import {
+  type ExtensionUpdateOptions,
+  type ListOptions,
+} from './commands/extension/lifecycle-list.js';
+import { registerExtension } from './commands/extension/list.js';
 import { KIT_EXIT } from './commands/extension/kit-commands.js';
 import { type LoadKitTool } from './commands/extension/kit-tool.js';
 import { type ExtensionReleaseOptions } from './commands/extension/release.js';
@@ -40,9 +44,12 @@ export interface ProgramDeps {
   setup: (opts: SetupOptions) => Promise<unknown>;
   status: (opts: StatusOptions) => Promise<unknown>;
   update: (opts: UpdateOptions) => Promise<unknown>;
-  extensionInstall: (opts: ExtensionInstallOptions) => Promise<unknown>;
-  extensionRemove: (opts: ExtensionRemoveOptions) => Promise<unknown>;
-  extensionList: (opts: ExtensionListOptions) => Promise<unknown>;
+  extensionInstall: Run<InstallOptions>;
+  extensionRemove: Run<RemoveOptions>;
+  extensionList: Run<ListOptions>;
+  extensionUpdate: Run<ExtensionUpdateOptions>;
+  extensionEnabled: Run<{ id: string; enabled: boolean; json?: boolean }>;
+  extensionConfigure: Run<ConfigureOptions>;
   extensionDoctor: (opts: ExtensionDoctorOptions) => Promise<unknown>;
   extensionCreate: (opts: ExtensionCreateOptions) => Promise<unknown>;
   extensionCheck: (opts: ExtensionCheckOptions) => Promise<unknown>;
@@ -75,7 +82,10 @@ const addExtensions = (program: Command, deps: ProgramDeps, argv: string[]): voi
   registerExtension(program, {
     install: withAction(deps, deps.extensionInstall),
     remove: withAction(deps, deps.extensionRemove),
-    list: withAction(deps, deps.extensionList, '', pinned),
+    list: withAction(deps, deps.extensionList),
+    update: withAction(deps, deps.extensionUpdate),
+    enabled: withAction(deps, deps.extensionEnabled),
+    configure: withAction(deps, deps.extensionConfigure),
     doctor: withAction(deps, deps.extensionDoctor, '', pinned),
     create: withAction(deps, deps.extensionCreate),
     check: withAction(deps, deps.extensionCheck, '', pinned),

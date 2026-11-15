@@ -15,6 +15,7 @@ const deps: ExtensionSetupDeps = {
   signOut: async () => console.log('(signed out)'),
   printStatus: async () => console.log('(status)'),
   startDaemon: async () => 4243,
+  updateExtensions: async () => undefined,
   npm: npmFromFixtures,
   ...noAccount,
 };

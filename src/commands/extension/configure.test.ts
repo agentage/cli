@@ -1,0 +1,72 @@
+import { describe, expect, vi } from 'vitest';
+import { runJson } from '../../lib/json-output.js';
+import { output, test } from '../../test/config-dir.js';
+import { fakeHost, marketRow } from '../../test/host.js';
+import { runConfigure, type SecretInput } from './configure.js';
+
+const input = (over: Partial<SecretInput> = {}): SecretInput => ({
+  isTTY: false,
+  readStdin: vi.fn(async () => 's3cret\n'),
+  prompt: vi.fn(async () => 'typed'),
+  ...over,
+});
+
+const setup = () => {
+  const { host, deps } = fakeHost([marketRow('probe', '0.7.0')]);
+  return { host, deps: (over: Partial<SecretInput> = {}) => ({ ...deps, input: input(over) }) };
+};
+
+describe('extension configure', () => {
+  test('key=value pairs are settings; the line names the keys', async () => {
+    const { host, deps } = setup();
+    const run = await output(() =>
+      runConfigure({ id: 'probe', pairs: ['echo.prefix=hey', 'a=b=c'] }, deps())
+    );
+    expect(host.change).toHaveBeenCalledWith('probe', {
+      settings: { 'echo.prefix': 'hey', a: 'b=c' },
+    });
+    expect(run.lines).toEqual(['probe 0.7.0 running', 'settings set: echo.prefix, a']);
+  });
+
+  test('--secret: the values are secrets and never printed; a bare key reads stdin', async () => {
+    const { host, deps } = setup();
+    const run = await output(() =>
+      runConfigure({ id: 'probe', pairs: ['token'], secret: true }, deps())
+    );
+    expect(host.change).toHaveBeenCalledWith('probe', { secrets: { token: 's3cret' } });
+    expect(`${run.stdout}${run.stderr}`).not.toContain('s3cret');
+    expect(run.lines.at(-1)).toBe('secrets set: token');
+  });
+
+  test('a bare key on a terminal is asked for; with --json it is refused, never prompted', async () => {
+    const { host, deps } = setup();
+    const prompt = vi.fn(async () => 'typed');
+    await output(() =>
+      runConfigure({ id: 'probe', pairs: ['token'], secret: true }, deps({ isTTY: true, prompt }))
+    );
+    expect(prompt).toHaveBeenCalledWith('token: ');
+    expect(host.change).toHaveBeenLastCalledWith('probe', { secrets: { token: 'typed' } });
+    const out: string[] = [];
+    const io = { writeOut: (t: string) => void out.push(t) };
+    const opts = { id: 'probe', pairs: ['token'], secret: true };
+    await runJson(io, () => runConfigure(opts, deps({ isTTY: true, prompt })));
+    expect(JSON.parse(out.join(''))).toMatchObject({
+      success: false,
+      error: { code: 'confirmation_required' },
+    });
+    expect(prompt).toHaveBeenCalledOnce();
+  });
+
+  test('a bare key without --secret, or beside other pairs, is usage', async () => {
+    const { deps } = setup();
+    const bare = await output(() => runConfigure({ id: 'probe', pairs: ['echo.prefix'] }, deps()));
+    expect(bare).toMatchObject({
+      code: 'invalid_argument',
+      error: 'echo.prefix: expected <key>=<value>',
+    });
+    const mixed = await output(() =>
+      runConfigure({ id: 'probe', pairs: ['a=1', 'token'], secret: true }, deps())
+    );
+    expect(mixed.code).toBe('invalid_argument');
+  });
+});

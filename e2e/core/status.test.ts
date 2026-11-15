@@ -105,14 +105,11 @@ test.describe('a machine upgraded from 0.39 @p0 @offline', () => {
     ]);
   });
 
-  test('without AGENTAGE_EXTENSIONS, or with it set to 0, agentage setup --profile, extension list and agentage hello work', async ({
+  test('without AGENTAGE_EXTENSIONS, or with it set to 0, agentage setup --profile and agentage hello work', async ({
     cli,
   }) => {
     const install = await cli.run(`setup --profile ${cli.profile(TWO)}`, UNSET);
     expect(install.code).toBe(0);
-    const list = await cli.run('extension list', { AGENTAGE_EXTENSIONS: '0' });
-    expect(list.code).toBe(0);
-    expect(list.lines).toContainEqual(expect.stringMatching(/^hello {2}installed /));
     const hello = await cli.run('hello', { AGENTAGE_EXTENSIONS: '0' });
     expect(hello.code).toBe(0);
     expect(hello.lines).toContain('hello from hello');

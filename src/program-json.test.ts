@@ -22,6 +22,9 @@ const harness = (over: Partial<ProgramDeps> = {}) => {
     extensionUp: ok,
     extensionDown: ok,
     extensionToken: ok,
+    extensionUpdate: ok,
+    extensionEnabled: ok,
+    extensionConfigure: ok,
     daemon: { status: ok, stop: ok, restart: ok, run: ok },
     kitTool: vi.fn(async () => {
       throw new Error('no kit');
@@ -41,6 +44,10 @@ const NEW: [string, string[], keyof ProgramDeps][] = [
   ['update', ['update'], 'update'],
   ['extension install', ['extension', 'install', 'probe'], 'extensionInstall'],
   ['extension remove', ['extension', 'remove', 'probe'], 'extensionRemove'],
+  ['extension list', ['extension', 'list'], 'extensionList'],
+  ['extension update', ['extension', 'update'], 'extensionUpdate'],
+  ['extension disable', ['extension', 'disable', 'probe'], 'extensionEnabled'],
+  ['extension configure', ['extension', 'configure', 'probe', 'a=b'], 'extensionConfigure'],
   ['extension create', ['extension', 'create', 'demo'], 'extensionCreate'],
   ['extension build', ['extension', 'build'], 'extensionBuild'],
   ['extension release', ['extension', 'release'], 'extensionRelease'],
@@ -125,7 +132,6 @@ describe('--json envelope', () => {
 describe('--json on a command whose own shape is pinned', () => {
   const own = [
     ['status', ['status'], 'status'],
-    ['extension list', ['extension', 'list'], 'extensionList'],
     ['extension doctor', ['extension', 'doctor'], 'extensionDoctor'],
     ['extension check', ['extension', 'check'], 'extensionCheck'],
     ['setup --dry-run', ['setup', '--dry-run'], 'setup'],

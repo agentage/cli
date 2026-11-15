@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { openMarket } from './market.js';
+import { listMarket, openMarket } from './market.js';
 
 const DISCOVERY = 'https://next.agentage.io/.well-known/agentage.json';
 const LATEST = 'https://market.test/api/v1/extensions/probe/latest';
@@ -97,4 +97,30 @@ describe('openMarket', () => {
       expect(warn).toHaveBeenCalledWith('market unavailable, versions not checked');
     }
   );
+});
+
+describe('listMarket: extension list --available', () => {
+  const LIST = 'https://market.test/api/v1/extensions?limit=200';
+  const row = (id: string, version?: string) => ({
+    id,
+    package: null,
+    ...(version && { version }),
+  });
+
+  it('reads every page by meta.nextCursor; a row without a version asks /latest', async () => {
+    const get = serving({
+      [DISCOVERY]: doc(named),
+      [LIST]: doc({ success: true, data: [row('notes', '1.2.0')], meta: { nextCursor: 'c 2' } }),
+      [`${LIST}&cursor=c%202`]: doc({ success: true, data: [row('probe'), row('gone')] }),
+      [LATEST]: doc(entry),
+    });
+    expect(await listMarket('next.agentage.io', get)).toEqual([
+      { id: 'notes', version: '1.2.0' },
+      { id: 'probe', version: '0.3.0' },
+    ]);
+  });
+
+  it('no market: it throws, so the command fails', async () => {
+    await expect(listMarket('next.agentage.io', serving({}))).rejects.toThrow();
+  });
 });

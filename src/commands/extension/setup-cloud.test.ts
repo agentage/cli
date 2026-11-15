@@ -27,6 +27,7 @@ const setup = (account: FakeAccount | null, opts: SetupOptions = {}) =>
       signOut: async () => console.log('(signed out)'),
       printStatus: async () => undefined,
       startDaemon: async () => 4243,
+      updateExtensions: async () => undefined,
       ...editDeps(account),
     })
   );
@@ -46,6 +47,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
           signOut: async () => undefined,
           printStatus: async () => undefined,
           startDaemon: async () => 4243,
+          updateExtensions: async () => undefined,
           ...editDeps(account),
           account: failing,
         }

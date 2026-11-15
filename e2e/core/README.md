@@ -35,16 +35,14 @@ the one file that proves it.
   'missing')` makes a route answer 503, never, or 404 `NOT_FOUND` as an API without that route,
   and `cli.site.machines()` lists the registered machines. `site.ts` builds it over the
   stub's state (`e2e/stub/account.ts`, `profile.ts`, `machines.ts`).
-- `setup.test.ts` (install), `setup-load.test.ts` (load), `extension-install.test.ts`,
-  `extension-remove.test.ts`, `extension-list.test.ts`, `extension-doctor.test.ts` (and its
+- `setup.test.ts` (install), `setup-load.test.ts` (load), `extension-doctor.test.ts` (and its
   old name `check`), `delegate.test.ts` (`agentage <extension command>`), `kit-extension.test.ts`
-  (an extension built on the kit: `extension install <path>`, `agentage ping`, `agentage probe
+  (an extension built on the kit, linked in `machine.json`: `agentage ping`, `agentage probe
   ping`, the name clash, `extension up`, `down` and `token` reaching the kit), `status.test.ts` (with a machine upgraded
   from 0.39: `setup` and `status` as before, plus the extension lines) - one `test.describe` per
-  command; `latest.test.ts` - `setup --latest` and the extension API gate behind it and
-  `extension install`; `plan.test.ts` - the plan: `setup --dry-run`, `setup --check`, the drift in
-  `extension list` and `status`, integrity drift; `cloud.test.ts` - the profile in your account
-  (pull, create, push, the replay on a conflict, the account check); `machines.test.ts` - this
+  command; `plan.test.ts` - the plan: `setup --dry-run`, `setup --check`, the drift in
+  `status`, integrity drift; `cloud.test.ts` - the profile in your account
+  (pull, create, the account check); `machines.test.ts` - this
   machine in your account (register, seen, disconnected; failures change nothing);
   `platform-token.test.ts` - a site naming a platform (`cli.site.platform()`): the JWT PAT setup
   mints with the session, reuses, replaces and revokes.

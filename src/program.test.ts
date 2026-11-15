@@ -24,6 +24,9 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     extensionUp: vi.fn(async () => undefined),
     extensionDown: vi.fn(async () => undefined),
     extensionToken: vi.fn(async () => undefined),
+    extensionUpdate: vi.fn(async () => undefined),
+    extensionEnabled: vi.fn(async () => undefined),
+    extensionConfigure: vi.fn(async () => undefined),
     daemon: {
       status: vi.fn(async () => undefined),
       stop: vi.fn(async () => undefined),
@@ -235,30 +238,33 @@ describe('createProgram', () => {
     expect(await makeDeps({ extensionUp: boom }).exec('extension', 'up')).toBe(1);
   });
 
-  test('extension install and remove pass the name and their flags; extension --help lists them all', async () => {
+  test('the lifecycle commands pass their arguments and flags; extension --help lists C1 in order', async () => {
     const h = makeDeps();
     expect(await h.exec('extension', 'install', 'hello', '--off')).toBe(0);
     expect(h.deps.extensionInstall).toHaveBeenCalledWith({ name: 'hello', off: true });
     expect(await h.exec('extension', 'remove', 'hello', '--purge', '--yes')).toBe(0);
     expect(h.deps.extensionRemove).toHaveBeenCalledWith({ name: 'hello', purge: true, yes: true });
+    expect(await h.exec('extension', 'list', '--available')).toBe(0);
+    expect(h.deps.extensionList).toHaveBeenCalledWith({ available: true });
+    expect(await h.exec('extension', 'update', 'probe', '--check')).toBe(0);
+    expect(h.deps.extensionUpdate).toHaveBeenCalledWith({ id: 'probe', check: true });
+    expect(await h.exec('extension', 'disable', 'probe')).toBe(0);
+    expect(h.deps.extensionEnabled).toHaveBeenLastCalledWith({ id: 'probe', enabled: false });
+    expect(await h.exec('extension', 'enable', 'probe')).toBe(0);
+    expect(h.deps.extensionEnabled).toHaveBeenLastCalledWith({ id: 'probe', enabled: true });
+    expect(await h.exec('extension', 'configure', 'probe', 'a=1', 'b=2', '--secret')).toBe(0);
+    expect(h.deps.extensionConfigure).toHaveBeenCalledWith({
+      id: 'probe',
+      pairs: ['a=1', 'b=2'],
+      secret: true,
+    });
     expect(await h.exec('extension', 'install')).toBe(2);
     expect(h.stderr()).toContain("missing required argument 'name'");
     expect(await h.exec('extension', '--help')).toBe(0);
-    const listed = h
-      .stdout()
-      .match(/^ {2}(install|remove|list|doctor|create|check|build|up|down|token)\b/gm);
-    expect(listed).toEqual([
-      '  install',
-      '  remove',
-      '  list',
-      '  doctor',
-      '  create',
-      '  check',
-      '  build',
-      '  up',
-      '  down',
-      '  token',
-    ]);
+    const words =
+      'install|list|update|disable|enable|configure|remove|doctor|create|check|build|up';
+    const listed = h.stdout().match(new RegExp(`^ {2}(${words})\\b`, 'gm'));
+    expect(listed?.map((l) => l.trim())).toEqual(words.split('|'));
   });
 
   test('extension create passes the id, the parts and --from; no id is usage', async () => {

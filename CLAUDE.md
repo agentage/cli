@@ -33,11 +33,15 @@ Each row names the doc first, then the code that proves it. Read the doc before 
 
 - **Extensions** extend the CLI through `src/core/`, always on (no env switch).
 - **Profile** is the desired state. The installed tree plus `state/<id>.json` is the current state.
-  `setup` converges them. The plan (`setup --dry-run`, `setup --check`, the `extension list` drift
-  column, the `status` count) says what it would change.
-- **Commands:** `setup --profile` installs and loads a profile file. `setup --latest` runs
-  `npm update` in a staged tree and makes the new tree current only after a clean load.
-  `extension install` and `remove` change one extension. `extension list` and `doctor` show them.
+  `setup` converges them. The plan (`setup --dry-run`, `setup --check`, the `status` count) says what it would change.
+- **Commands:** `setup --profile` installs and loads a profile file. The lifecycle (C1:
+  `extension install | list | update | disable | enable | configure | remove`) is a client of
+  the daemon's `/host/extensions` (`lifecycle*.ts`, `configure.ts`, `lib/daemon/host-client.ts`);
+  the daemon's installer is `commands/daemon/installer.ts`, one npm tree per `<id>@<version>`
+  (`core/installer/package-dir.ts`). `installation.json` is the one list; `core/loader/installed.ts`
+  reads it for the commands and `--help` without the daemon, and `commands/daemon/move.ts` moves
+  the 0.51 lists into it once (D6). `setup --latest` is the old name of `extension update`.
+  `extension doctor` shows the profile rows.
   `extension check [dir]` is the kit's conformance check of a working copy.
 - **Two manifest kinds:**
   - The 1.0 API: `register(ctx)`, with `engines.agentage` over `EXTENSION_API_VERSION`.
@@ -46,7 +50,7 @@ Each row names the doc first, then the code that proves it. Read the doc before 
     `agentage {command}` and `agentage {id} {command}`. Its exit code is the CLI's.
 - **Verbs:** a verb that a core command, an extension id or an earlier install has stays
   namespaced. `commands.json` keeps who holds each verb.
-- **Versions:** without a range, `extension install` pins the newest release whose
+- **Versions (profile path):** without a range, `setup` pins the newest release whose
   `engines.agentage` fits `EXTENSION_API_VERSION`. After a successful install only the tree that
   `extensions/current` names is kept.
 - **Account sync** (signed in): the profile lives in the account at `/v1/profile`, under one ETag
@@ -54,8 +58,6 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   - Plain `setup` pulls it and never pushes. On `404 PROFILE_NOT_FOUND` it creates it. After any
     other failure or 404 it uses the local `profile.json`, or installs nothing and prints one dim
     line.
-  - `extension install`, `remove`, `--off` and `setup --latest` push after the new tree loaded,
-    and replay once on a 412.
   - `setup`, `status` and `setup --disconnect` register the machine at `/v1/machines` (fire and
     forget).
 - Memory, vault, sync and MCP code lives in git history up to v0.37.2 and returns as
@@ -84,9 +86,7 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   - `setup.ts` is the extensions `setup` flow; its only deps are the network ones, npm and the
     account. `setup-cloud.ts` is its signed-in half: account check, machine registration, pull or
     create, `--disconnect`. `plan.ts` is `setup --dry-run` and `setup --check`.
-  - `sync.ts` is the edit path of `install`, `remove` and `--off`: pull whole, change, install,
-    load, push with one replay. `latest.ts` is `setup --latest`: the diff and summary, the new
-    tree loaded before it becomes current, then the same push with the lock counting.
+  - `sync.ts` holds the account check and the edit helpers the profile path still uses.
   - `account.ts` is the account dependency. `signedInAccount` does a bearer fetch to the API
     origin plus the account id from introspection, and gives null when signed out.
   - `secrets-prompt.ts` asks for or lists missing secrets; `isTTY`/`prompt` are its only injected
@@ -127,7 +127,7 @@ Each row names the doc first, then the code that proves it. Read the doc before 
 - `src/core/` - the core; imports nothing product-shaped (the package guard enforces it)
   - `profile/` (schema v1 validator incl. `registries`, `profile.json` reader and writer plus
     the default profile, `machine.json` incl. dev paths, `accountId` and `profileEtag`,
-    install/load set merge, `edit.ts`: one extension in or out of the profile, `cloud.ts`: the
+    install/load set merge, `cloud.ts`: the
     `/v1/profile` wire (conditional GET, PUT with `If-Match` or `If-None-Match: *`; the `CloudFetch`
     injected dependency), `push.ts`: push with one replay on 412 and the npm-major lock rule (`lockCounts`: a new
     lock alone is a change, for `setup --latest`), `register.ts`: the
@@ -155,8 +155,6 @@ Each row names the doc first, then the code that proves it. Read the doc before 
     locked versions, integrity drift), `compat.ts` (the gate: `engines.agentage` against
     `EXTENSION_API_VERSION`, or the kit's version for a kit-shaped release (`agentage.parts` in
     `npm view`), newest compatible version, `npm view` output),
-    `latest.ts` (`setup --latest`: `npm update` in a staged tree, held-back extensions whose new
-    version fails the gate, the version diff, a check before the tree becomes current),
     `plan.ts` (desired vs current: `add`, `update`, `remove`, `off`, `unchanged` per package, from
     the lock's root dependencies; lock drift), `installer.ts` (install plan, install, refuses
     integrity drift; npm is the only injected dep), `resolve.ts` (what `extension install <name>`

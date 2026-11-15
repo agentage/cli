@@ -11,14 +11,16 @@ import {
 import { type Profile, type ProfileParse } from '../../core/profile/schema.js';
 import { type SetupDeps, type SetupOptions } from '../auth/setup.js';
 import { extensionsResult, installAndLoad } from './install-load.js';
-import { runSetupLatest } from './latest.js';
 import { printDryRun, runSetupCheck } from './plan.js';
 import { printWarnings } from './row-lines.js';
 import { accountSetup, disconnect } from './setup-cloud.js';
 import { type EditDeps } from './sync.js';
 
 // Sign-in and status reach the site; npm and the account are the other seams.
-export interface ExtensionSetupDeps extends SetupDeps, EditDeps {}
+export interface ExtensionSetupDeps extends SetupDeps, EditDeps {
+  // `extension update`, which --latest now runs.
+  updateExtensions: () => Promise<unknown>;
+}
 
 interface Source {
   profile: Profile;
@@ -84,7 +86,10 @@ const setupFlow = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<
   const file = opts.profile === undefined ? null : fileSource(opts.profile);
   if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts);
   if (file) return fromFile(file, deps);
-  if (opts.latest) return runSetupLatest(deps);
+  if (opts.latest) {
+    console.error('setup --latest is now: agentage extension update');
+    return void (await deps.updateExtensions());
+  }
   const token = process.env['AGENTAGE_TOKEN'];
   await signIn(opts, deps);
   const failure = await accountSetup(deps).then(
