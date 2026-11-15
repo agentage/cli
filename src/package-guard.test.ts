@@ -36,16 +36,11 @@ const CORE_FORBIDDEN: RegExp[] = [
   /['"]express['"]/,
 ];
 
-// The local extension up mounts the kit's express guard in front of the kit app: its one express use.
-const allowed = (file: string, token: string): boolean =>
-  ["from 'express'", "import('express')"].includes(token) &&
-  file.endsWith(join('commands', 'extension', 'up-run.ts'));
-
 describe('package guard (the core)', () => {
   it('source contains no product or agent-runtime imports', () => {
     for (const file of sourceFiles(SRC)) {
       const content = readFileSync(file, 'utf-8');
-      for (const token of FORBIDDEN.filter((t) => !allowed(file, t))) {
+      for (const token of FORBIDDEN) {
         expect(content.includes(token), `${file} contains forbidden token "${token}"`).toBe(false);
       }
     }

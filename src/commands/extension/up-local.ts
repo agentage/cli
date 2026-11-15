@@ -1,14 +1,9 @@
 import { createServer, type RequestListener, type Server } from 'node:http';
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { isRecord, readJson, writeTextAtomic } from '../../lib/fs/json-file.js';
 import { CliError, messageOf } from '../../lib/json-output.js';
+import { waitFor } from '../../lib/wait.js';
 
 // D7: a local up takes the first free port from here; the daemon keeps 4243.
 export const UP_FROM = 4244;
@@ -25,15 +20,17 @@ export interface UpRecord {
 export const recordPath = (dir: string): string => join(resolve(dir), LOCAL, 'up.json');
 export const dataDirOf = (dir: string): string => join(resolve(dir), LOCAL, 'data');
 
-export const readRecord = (dir: string): UpRecord | null => {
-  const file = recordPath(dir);
-  if (!existsSync(file)) return null;
-  try {
-    return JSON.parse(readFileSync(file, 'utf8')) as UpRecord;
-  } catch {
-    return null;
-  }
-};
+const isUpRecord = (value: unknown): value is UpRecord =>
+  isRecord(value) &&
+  Number.isInteger(value['pid']) &&
+  (value['pid'] as number) > 0 &&
+  Number.isInteger(value['port']) &&
+  (value['port'] as number) >= 1024 &&
+  (value['port'] as number) <= 65535 &&
+  typeof value['id'] === 'string' &&
+  typeof value['instance'] === 'string';
+
+export const readRecord = (dir: string): UpRecord | null => readJson(recordPath(dir), isUpRecord);
 
 // The run state stays out of git: `.agentage/` goes into the folder's .gitignore when missing.
 export const ignoreLocal = (dir: string): void => {
@@ -48,7 +45,7 @@ export const ignoreLocal = (dir: string): void => {
 export const writeRecord = (dir: string, record: UpRecord): void => {
   mkdirSync(join(resolve(dir), LOCAL), { recursive: true });
   ignoreLocal(dir);
-  writeFileSync(recordPath(dir), `${JSON.stringify(record)}\n`, { mode: 0o600 });
+  writeTextAtomic(recordPath(dir), `${JSON.stringify(record)}\n`);
 };
 
 export const removeRecord = (dir: string): void => rmSync(recordPath(dir), { force: true });
@@ -100,13 +97,8 @@ export const untilSignal = (): Promise<string> =>
     process.once('SIGTERM', on);
   });
 
-const gone = async (record: UpRecord, timeoutMs: number): Promise<boolean> => {
-  for (const end = Date.now() + timeoutMs; Date.now() < end;) {
-    if ((await answerOf(record, 500)) === 'none') return true;
-    await new Promise((done) => setTimeout(done, 100));
-  }
-  return false;
-};
+const gone = (record: UpRecord, timeoutMs: number): Promise<boolean> =>
+  waitFor(async () => (await answerOf(record, 500)) === 'none', timeoutMs);
 
 export type LocalDown = 'stopped' | 'stale' | 'none';
 

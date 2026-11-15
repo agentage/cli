@@ -172,8 +172,9 @@ declare are passed through. Secret keys never enter `ctx.config`.
 ### Secrets
 
 `ctx.secrets.get(key)`, `set(key, value)` and `delete(key)` use `secrets.json` in the config
-directory, keyed by extension id (mode 0600, never synced). `setup` asks for each missing secret
-on a terminal, without echo, and elsewhere lists them as `secrets to set: <id>.<key>`.
+directory, keyed by extension id (mode 0600, never synced). A user sets one with
+`agentage extension configure <id> <key> --secret` (the value from stdin, or asked without echo
+on a terminal); `setup` neither asks for nor lists missing secrets.
 
 ### Data and cache
 

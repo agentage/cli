@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, vi } from 'vitest';
-import { CliError } from '../../lib/json-output.js';
+import { DaemonError } from '../../lib/json-output.js';
 import { fakeHost, marketRow } from '../../test/host.js';
 import {
   connected,
@@ -147,7 +147,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     dir.machine({});
     const account = fakeAccount();
     account.store({ ...HELLO_DOC, machines: { [MACHINE_ID]: { off: [HELLO_PKG], config: {} } } });
-    vi.mocked(daemon.host.change).mockRejectedValueOnce(new CliError('UNAVAILABLE', 'busy'));
+    vi.mocked(daemon.host.change).mockRejectedValueOnce(new DaemonError('UNAVAILABLE', 'busy'));
     const run = await setup(account);
     expect(run.error).toBe(
       'installed but NOT disabled:\n  hello: busy; run agentage extension disable hello'
@@ -167,7 +167,7 @@ describe('agentage setup, signed in, and the profile in the account', () => {
   test('a profile entry the daemon refuses fails setup naming it, after the others', async () => {
     const account = fakeAccount();
     account.store({ version: 1, extensions: { [HELLO_PKG]: '^1', '@other/thing': '^1' } });
-    vi.mocked(daemon.host.add).mockRejectedValueOnce(new CliError('NOT_FOUND', 'no hello'));
+    vi.mocked(daemon.host.add).mockRejectedValueOnce(new DaemonError('NOT_FOUND', 'no hello'));
     const run = await setup(account);
     expect(run).toMatchObject({ code: 'extension_failed' });
     expect(run.error).toBe(

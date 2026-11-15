@@ -76,7 +76,7 @@ const addChanges = (group: Command, { update, enabled }: LifecycleActions): void
     ).action((id: string, opts: { json?: boolean }) => enabled({ ...opts, id, enabled: on }));
 };
 
-const addSettings = (group: Command, { configure, remove }: LifecycleActions): void => {
+const addConfigure = (group: Command, configure: LifecycleActions['configure']): void => {
   addJson(
     group
       .command('configure')
@@ -89,6 +89,9 @@ const addSettings = (group: Command, { configure, remove }: LifecycleActions): v
     .action((id: string, pairs: string[], opts: { secret?: boolean; json?: boolean }) =>
       configure({ ...opts, id, pairs })
     );
+};
+
+const addRemove = (group: Command, remove: LifecycleActions['remove']): void => {
   addJson(
     group
       .command('remove')
@@ -106,5 +109,6 @@ const addSettings = (group: Command, { configure, remove }: LifecycleActions): v
 export const addLifecycle = (group: Command, actions: LifecycleActions): void => {
   addInstall(group, actions);
   addChanges(group, actions);
-  addSettings(group, actions);
+  addConfigure(group, actions.configure);
+  addRemove(group, actions.remove);
 };

@@ -4,14 +4,16 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
-import { type NextFunction, type Request, type Response } from 'express';
 import { describe, expect, vi } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { takeExit } from '../../lib/exit-code.js';
 import { type KitTool } from './kit-tool.js';
 import { runExtensionDown } from './up.js';
 import { listenFrom, portOf, readRecord, recordPath, stopLocal, writeRecord } from './up-local.js';
-import { localUpDeps, runLocalUp, type LocalUpDeps } from './up-run.js';
+import { type RequestListener } from 'node:http';
+import type { HostedExtension } from '@agentage/extension/host';
+import { satisfies } from '../../core/semver-range.js';
+import { handlerOf, loadKitHost, localUpDeps, runLocalUp, type LocalUpDeps } from './up-run.js';
 
 const API = `export const create = () => (req, res) =>
   res.status(200).json({ success: true, data: { path: req.url } });
@@ -145,30 +147,17 @@ describe('extension up with no Docker: the kit host in this process', () => {
     await run;
   });
 
-  test("mounts the kit's guard, an express middleware, in front of the kit app; its refusal is a 403 envelope", async ({
+  test('a kit that guards on its own gets the kit app as it is: the cli adds no second guard', async ({
     dir,
   }) => {
     const demo = folder(dir.at(''));
     const { deps, stop } = controlled();
     const real = await deps.kit();
-    const ports: number[] = [];
-    // The kit's shape: req.get, and next(err) on refusal.
-    const guard = (port: () => number) => (req: Request, _res: Response, next: NextFunction) => {
-      ports.push(port());
-      if (req.get('host') === `127.0.0.1:${port()}`) return next();
-      next(Object.assign(new Error('not this machine'), { status: 403, code: 'FORBIDDEN' }));
-    };
-    const { run, record } = await started(demo, { ...deps, kit: async () => ({ ...real, guard }) });
-    const res = await rawRequest(record.port, { host: 'evil.example' });
-    expect(res.status).toBe(403);
-    expect(JSON.parse(res.body)).toEqual({
-      success: false,
-      error: { code: 'FORBIDDEN', message: 'not this machine' },
+    const { run, record } = await started(demo, {
+      ...deps,
+      kit: async () => ({ ...real, kitGuards: true }),
     });
-    // localhost passes the cli's guard but not this kit guard: the kit's guard is the one mounted.
-    expect((await rawRequest(record.port, { host: `localhost:${record.port}` })).status).toBe(403);
-    expect((await rawRequest(record.port, { host: `127.0.0.1:${record.port}` })).status).toBe(200);
-    expect(ports).toContain(record.port);
+    expect(await rawGet(record.port, { host: 'evil.example' })).toBe(200);
     stop('SIGTERM');
     await run;
   });
@@ -220,19 +209,13 @@ describe('extension up with no Docker: the kit host in this process', () => {
   });
 });
 
-const rawRequest = (port: number, headers: Record<string, string>) =>
-  new Promise<{ status: number; body: string }>((done, fail) => {
+// node:http, not fetch: fetch cannot set the Host header.
+const rawGet = (port: number, headers: Record<string, string>) =>
+  new Promise<number>((done, fail) => {
     const options = { host: '127.0.0.1', port, path: '/health', headers, agent: false };
-    const req = request(options, (res) => {
-      let body = '';
-      res.on('data', (chunk) => (body += String(chunk)));
-      res.on('end', () => done({ status: res.statusCode ?? 0, body }));
-    });
+    const req = request(options, (res) => (res.resume(), done(res.statusCode ?? 0)));
     req.once('error', fail).end();
   });
-
-const rawGet = async (port: number, headers: Record<string, string>): Promise<number> =>
-  (await rawRequest(port, headers)).status;
 
 const HEALTH = `require('node:http').createServer((q, s) => s.end(JSON.stringify({ data: { extension: 'demo', instance: 'abc' } }))).listen(+process.argv[1], '127.0.0.1', () => console.log('ready'));`;
 
@@ -309,5 +292,70 @@ describe('extension down: the local run of this folder', () => {
     expect(dir.exists('ext/.agentage/up.json')).toBe(false);
     expect(await stopLocal(demo)).toBe('none');
     expect(recordPath(demo)).toBe(join(demo, '.agentage', 'up.json'));
+  });
+
+  test('an up.json of another shape, a pid under 1, a port outside 1024..65535, or not JSON, reads as no record', ({
+    dir,
+  }) => {
+    const demo = dir.at('ext');
+    const good = { pid: 7, port: 4400, id: 'demo', instance: 'x' };
+    for (const bad of [
+      { ...good, pid: '1' },
+      { ...good, pid: 0 },
+      { ...good, port: 1023 },
+      { ...good, port: 65536 },
+    ]) {
+      dir.write('ext/.agentage/up.json', bad);
+      expect(readRecord(demo), JSON.stringify(bad)).toBeNull();
+    }
+    dir.write('ext/.agentage/up.json', '{ nope');
+    expect(readRecord(demo)).toBeNull();
+  });
+
+  test('up.json is one JSON line', ({ dir }) => {
+    const demo = dir.at('ext');
+    const record = { pid: 7, port: 4400, id: 'demo', instance: 'x' };
+    writeRecord(demo, record);
+    expect(readFileSync(recordPath(demo), 'utf8')).toBe(`${JSON.stringify(record)}\n`);
+    expect(readRecord(demo)).toEqual(record);
+  });
+});
+
+describe('the kit host and its guard', () => {
+  const app: RequestListener = (_req, res) => void res.end('ok');
+
+  test('a kit listing localOnly in capabilities gets localOnly: true and no second guard', async () => {
+    const hostExtension = vi.fn(async () => ({}) as HostedExtension);
+    const kit = await loadKitHost(async () => ({ capabilities: ['localOnly'], hostExtension }));
+    await kit.host('/x', { dataDir: '/d' });
+    expect(hostExtension).toHaveBeenCalledWith('/x', { dataDir: '/d', localOnly: true });
+    expect(kit.kitGuards).toBe(true);
+    expect(handlerOf(kit, app, () => 1)).toBe(app);
+  });
+
+  test("a kit with no such capability gets the options as they are and the cli's loopbackOnly in front", async () => {
+    const hostExtension = vi.fn(async () => ({}) as HostedExtension);
+    const kit = await loadKitHost(async () => ({ hostExtension }));
+    await kit.host('/x', { dataDir: '/d' });
+    expect(hostExtension).toHaveBeenCalledWith('/x', { dataDir: '/d' });
+    const handler = handlerOf(kit, app, () => 4400);
+    expect(handler).not.toBe(app);
+    const res = { writeHead: vi.fn(), end: vi.fn() };
+    handler({ headers: { host: 'evil.example' } } as never, res as never);
+    expect(res.writeHead).toHaveBeenCalledWith(403, { 'content-type': 'application/json' });
+  });
+
+  test('the kit range still allows a kit without localOnly, so up-guard.ts stays', () => {
+    const pkg = JSON.parse(
+      readFileSync(join(import.meta.dirname, '../../../package.json'), 'utf8')
+    ) as {
+      dependencies: Record<string, string>;
+    };
+    const range = pkg.dependencies['@agentage/extension'] ?? '';
+    expect(
+      satisfies('0.13.0', range),
+      `@agentage/extension ${range} no longer allows kit 0.13.0, the last kit without localOnly: ` +
+        'delete src/commands/extension/up-guard.ts, the loopbackOnly branch of handlerOf and this test'
+    ).toBe(true);
   });
 });

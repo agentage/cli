@@ -1,5 +1,5 @@
 import { isRecord } from '../fs/json-file.js';
-import { CliError } from '../json-output.js';
+import { CliError, DaemonError } from '../json-output.js';
 
 // One row of GET /host/extensions (C5); the daemon may add fields, they pass through.
 export interface HostRow {
@@ -38,12 +38,11 @@ const CHANGE_MS = 10 * 60_000;
 const READ_MS = 10_000;
 
 // The daemon's own codes (UPPER_SNAKE: NOT_FOUND, INVALID_SETTING) pass through unchanged.
-const codeOf = (code: unknown): string => (typeof code === 'string' && code ? code : 'error');
-
-const failure = (status: number, body: unknown): CliError => {
+const failure = (status: number, body: unknown): DaemonError => {
   const error = isRecord(body) && isRecord(body['error']) ? body['error'] : {};
   const message = typeof error['message'] === 'string' ? error['message'] : `HTTP ${status}`;
-  return new CliError(codeOf(error['code']), message);
+  const code = typeof error['code'] === 'string' && error['code'] ? error['code'] : 'error';
+  return new DaemonError(code, message);
 };
 
 const unreachable = (port: number, err: unknown): CliError =>

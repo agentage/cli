@@ -164,13 +164,12 @@ list, and unscoped packages, come from `https://registry.npmjs.org`. The install
 `@scope:registry=<url>` line per entry into the tree's own `.npmrc`, so the same profile builds the
 same tree on every machine.
 
-After installing, `setup` prints one `install` line, lists the secrets to set, loads every
+After installing, `setup` prints one `install` line, loads every
 extension this machine can run once, then prints the `extension doctor` rows with the result of
 that load:
 
 ```
 install    4 extensions in tree 3f9c1a0b7d2e4c51 (npm install)
-secrets to set: secret.token
 hello   ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello
 secret  ok         @agentage/fixture-secret 1.0.0 (wants ^1)
 throws  failed     @agentage/fixture-throws 1.0.0 (wants ^1)  "boom"
@@ -185,10 +184,9 @@ and `blocked` extensions are never loaded. `AGENTAGE_TOKEN` is removed from the 
 before the first extension is imported, and what an extension prints while loading goes to
 stderr. `setup` exits 1 when any extension `failed`.
 
-Secrets an extension declares (`"secret": true` in its `configuration`) and this machine has not
-set are asked for before loading, without echo, when `setup` runs on a terminal; anywhere else
-they are listed as `secrets to set: <id>.<key>`. A failed install loads nothing: the rows show
-what is still current.
+Secrets an extension declares (`"secret": true` in its `configuration`) are set with
+`agentage extension configure <id> <key> --secret`; `setup` neither asks for nor lists them. A
+failed install loads nothing: the rows show what is still current.
 
 Extension authors: see [`extensions.md`](extensions.md).
 
@@ -198,7 +196,7 @@ What they keep, and what the CLI keeps about them, lives in the config directory
 | Path              | What                                                                                   |
 | ----------------- | -------------------------------------------------------------------------------------- |
 | `state/<id>.json` | the last load, written by the CLI: `{ at, pid, state, error, version, lastOk }`        |
-| `commands.json`   | which kit-built extension holds each top-level command, `{ "<command>": "<package>" }` |
+| `commands.json`   | written by cli 0.51 only: who held each top-level command; read, never written now     |
 | `secrets.json`    | secrets per extension id (mode 0600, never synced)                                     |
 | `logs/<id>.log`   | the extension's own log, one JSON line per entry (0600, kept under 1 MB)               |
 | `data/<id>/`      | the extension's durable data (`ctx.data`); only `remove --purge` deletes it            |
@@ -332,9 +330,7 @@ After `remove` and `update`, each folder `extensions/packages/trees/<id>@<versio
 answers. A refused change keeps the old folder. Only the daemon's own trees are deleted, never the
 0.51 tree.
 
-Error codes: the cli's own are lowercase snake_case (`confirmation_required`); a code the daemon
-answers with is UPPER_SNAKE (`NOT_FOUND`, `CONFLICT`, `INVALID_SETTING`) and passes through
-unchanged, in the text and in the `--json` envelope.
+Error codes: see [The --json envelope](#the---json-envelope).
 
 `extension install` and `remove` no longer change `profile.json` or the profile in your account:
 `installation.json` is this machine's one list. The commands of an installed extension
@@ -554,9 +550,8 @@ failure.
 
 A command whose name is a core command, an extension id, or a command an earlier-installed
 extension already took keeps only its namespaced form, `agentage <id> <command>`; the install says
-so in one line, and `extension doctor` shows that form in its commands column. Which extension holds
-each top-level command is kept in `commands.json`, so the earlier install keeps it whatever is
-installed later.
+so in one line, and `extension doctor` shows that form in its commands column. A holder that cli
+0.51 recorded in `commands.json` keeps its command; this cli reads that file and never writes it.
 
 ## Extension context
 
@@ -679,14 +674,20 @@ and nothing else there (progress lines go to stderr), and never prompts:
 ```
 
 An error exits 1, success 0. The one other exit code is 130: `extension up` (also with `--json`)
-stopped by Ctrl-C, after its envelope. `code` is snake_case and stable: `not_installed`, `needed_by_dependents`,
-`confirmation_required`, `extension_failed`, `profile_invalid`, `integrity_drift`,
-`invalid_argument`, `invalid_option`, `not_conforming`, `uncommitted_changes`, `release_refused`,
-`auth_required`, `auth_unavailable`, `not_pushed`, `token_request_failed`, `daemon_unavailable`,
-`daemon_unresponsive`, `daemon_disabled`, `port_in_use`, `market_unavailable`, `already_running`,
-`stop_failed`, `build_failed`, `cancelled`, `error` (any other).
-A code from the daemon (UPPER_SNAKE, such as `NOT_FOUND` or `INVALID_SETTING`) passes through unchanged.
-A usage error (exit 2) happens before the command runs and prints no object.
+stopped by Ctrl-C, after its envelope. `code` is snake_case and stable:
+
+<!-- codes: the same list as CODES in src/lib/json-output.ts; a test keeps them equal -->
+`already_running`, `auth_required`, `auth_unavailable`, `build_failed`, `cancelled`,
+`confirmation_required`, `daemon_disabled`, `daemon_unavailable`, `daemon_unresponsive`,
+`error` (any other), `extension_failed`, `integrity_drift`, `invalid_argument`,
+`market_unavailable`, `needed_by_dependents`, `not_conforming`, `not_installed`, `not_pushed`,
+`port_in_use`, `profile_invalid`, `release_refused`, `stop_failed`, `token_request_failed`,
+`uncommitted_changes`, `usage`.
+<!-- /codes -->
+
+A code from the daemon (such as `NOT_FOUND` or `INVALID_SETTING`) passes through unchanged.
+A usage error (an unknown flag, a missing argument) exits 2 with no object; with `--json` it
+exits 1 with the error object, code `usage`, and the usage line on stderr.
 
 | Command                                               | `data`                                                                                              |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -705,7 +706,7 @@ A usage error (exit 2) happens before the command runs and prints no object.
 
 `setup` with `--json` does not open a browser: when it must sign in it needs `--no-browser`, else
 it fails with `confirmation_required`. `extension remove --purge` with `--json` needs `--yes`, else
-`confirmation_required`. Secrets are listed, never asked.
+`confirmation_required`.
 
 `status`, `extension doctor` and `check`, and `setup` with `--dry-run` or `--check`, keep
 their own JSON (described under each command) because tools read it today. An error they hit

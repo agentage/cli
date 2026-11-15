@@ -124,6 +124,10 @@ export const terminalIo = (): ConfirmIo => ({
   prompt: askLine,
 });
 
+// Only y or yes (any case) says yes.
+export const confirmed = async (io: ConfirmIo, question: string): Promise<boolean> =>
+  /^y(es)?$/i.test((await io.prompt(question)).trim());
+
 // Asked before anything changes; without a terminal (or with --json) only --yes deletes.
 const purgeConfirmed = async (id: string, opts: RemoveOptions, io: ConfirmIo) => {
   const data = join(getConfigDir(), 'data', id);
@@ -134,7 +138,7 @@ const purgeConfirmed = async (id: string, opts: RemoveOptions, io: ConfirmIo) =>
       `--purge without a terminal needs --yes: agentage extension remove ${id} --purge --yes ` +
         `(it deletes ${data})`
     );
-  return /^y(es)?$/i.test((await io.prompt(`delete ${data} and everything in it? [y/N] `)).trim());
+  return confirmed(io, `delete ${data} and everything in it? [y/N] `);
 };
 
 const peersOf = (dir: string): string[] => {
@@ -157,13 +161,16 @@ const checkDependents = (id: string, force: boolean | undefined): void => {
   );
 };
 
+// The daemon answers once the old child is stopped: the folders no row uses can go.
+export const pruneUnused = (id: string): string[] => prunePackages(id, versionsInUse(id));
+
 export const runRemove = async (opts: RemoveOptions, deps: LifecycleDeps & { io: ConfirmIo }) => {
   const { id } = specOf(opts.name);
   checkDependents(id, opts.force);
   const purge = opts.purge === true && (await purgeConfirmed(id, opts, deps.io));
   if (opts.purge && !purge) throw new CliError('confirmation_required', 'nothing removed');
   await (await deps.host()).remove(id, purge);
-  prunePackages(id, versionsInUse(id));
+  pruneUnused(id);
   console.log(`removed ${id}${purge ? ', its data deleted' : ''}`);
   return { id, purged: purge };
 };

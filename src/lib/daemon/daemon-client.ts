@@ -2,11 +2,14 @@ import { spawn } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { childEnv } from '../child-env.js';
 import { getConfigDir } from '../fs/config.js';
 import { CliError } from '../json-output.js';
 import { compareVersions } from '../update/update-check.js';
 import { VERSION } from '../../utils/version.js';
+import { waitFor } from '../wait.js';
 import {
+  daemonOff,
   daemonPort,
   EADDRINUSE_EXIT,
   isAlive,
@@ -21,7 +24,6 @@ import {
   PROGRESS_MS,
   PROTOCOL,
   proven,
-  sleep,
   unresponsive,
   type Probe,
 } from './daemon-probe.js';
@@ -37,22 +39,14 @@ export interface EnsureDeps {
 }
 
 const START_MS = 30_000;
-const POLL_MS = 100;
 // Over this the log moves to daemon.log.1 at the next start; one old file is kept.
 export const LOG_CAP = 5 * 1024 * 1024;
 
-export const waitForHealth = async (port: number, timeoutMs = START_MS): Promise<boolean> => {
-  const deadline = Date.now() + timeoutMs;
-  const note = Date.now() + PROGRESS_MS;
-  let noted = false;
-  while (Date.now() < deadline) {
-    if ((await probe(port, 500)).kind === 'ours') return true;
-    if (!noted && Date.now() >= note)
-      noted = (console.error(`waiting for the daemon to start on 127.0.0.1:${port}...`), true);
-    await sleep(POLL_MS);
-  }
-  return false;
-};
+export const waitForHealth = (port: number, timeoutMs = START_MS): Promise<boolean> =>
+  waitFor(async () => (await probe(port, 500)).kind === 'ours', timeoutMs, {
+    afterMs: PROGRESS_MS,
+    line: `waiting for the daemon to start on 127.0.0.1:${port}...`,
+  });
 
 const CLI_ENTRY = fileURLToPath(new URL('../../cli.js', import.meta.url));
 
@@ -67,20 +61,13 @@ export const openDaemonLog = (cap = LOG_CAP): number => {
   return openSync(path, 'a', 0o600);
 };
 
-// The token never reaches the daemon: it needs no account.
-const daemonEnv = (port: number): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = { ...process.env, AGENTAGE_DAEMON_PORT: String(port) };
-  delete env['AGENTAGE_TOKEN'];
-  return env;
-};
-
 // Detached in its own process group, so it outlives this cli; the first to exit or answer wins.
 export const spawnDaemon = async (port: number, entry = CLI_ENTRY): Promise<SpawnOutcome> => {
   const out = openDaemonLog();
   const child = spawn(process.execPath, [entry, 'daemon', 'run'], {
     detached: true,
     stdio: ['ignore', out, out],
-    env: daemonEnv(port),
+    env: { ...childEnv(), AGENTAGE_DAEMON_PORT: String(port) },
   });
   closeSync(out);
   const exited = new Promise<SpawnOutcome>((resolve) =>
@@ -147,7 +134,7 @@ const fromFile = async (file: DaemonFile, deps: EnsureDeps): Promise<number | nu
 };
 
 export const ensureDaemon = async (deps: EnsureDeps = defaultEnsureDeps): Promise<number> => {
-  if (process.env['AGENTAGE_NO_DAEMON'] === '1')
+  if (daemonOff())
     throw new CliError('daemon_disabled', 'AGENTAGE_NO_DAEMON=1 is set: no daemon is used');
   const file = readDaemonFile();
   const live = file ? await fromFile(file, deps) : null;

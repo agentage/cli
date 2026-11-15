@@ -2,17 +2,11 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { CheckReport } from '@agentage/extension/tool';
+import { childEnv } from '../../lib/child-env.js';
 import { CliError } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
 const STEP_MS = 600_000;
-
-// The cli's own token never reaches the author's scripts or extension code.
-export const childEnv = (env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => {
-  const copy = { ...env };
-  delete copy['AGENTAGE_TOKEN'];
-  return copy;
-};
 
 export type Npm = (dir: string, args: string[]) => Promise<void>;
 

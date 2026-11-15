@@ -1,30 +1,15 @@
 import { isAlive, readDaemonFile, removeDaemonFile } from './daemon-file.js';
-import {
-  PROGRESS_MS,
-  probeRetry,
-  proven,
-  sleep,
-  unresponsive,
-  type Probe,
-} from './daemon-probe.js';
+import { waitFor } from '../wait.js';
+import { PROGRESS_MS, probeRetry, proven, unresponsive, type Probe } from './daemon-probe.js';
 
 // The daemon drains each child for up to 10 s; past this it is killed.
 const STOP_MS = 30_000;
-const POLL_MS = 100;
 
-// One stderr line once the wait passes PROGRESS_MS; never on stdout, so --json stays one object.
-const gone = async (pid: number, timeoutMs: number, progressMs = PROGRESS_MS): Promise<boolean> => {
-  const deadline = Date.now() + timeoutMs;
-  const note = Date.now() + progressMs;
-  let noted = false;
-  while (isAlive(pid)) {
-    if (Date.now() >= deadline) return false;
-    if (!noted && Date.now() >= note)
-      noted = (console.error(`waiting for the daemon (pid ${pid}) to stop...`), true);
-    await sleep(POLL_MS);
-  }
-  return true;
-};
+const gone = (pid: number, timeoutMs: number, afterMs = PROGRESS_MS): Promise<boolean> =>
+  waitFor(() => !isAlive(pid), timeoutMs, {
+    afterMs,
+    line: `waiting for the daemon (pid ${pid}) to stop...`,
+  });
 
 const signal = (pid: number, name: NodeJS.Signals): void => {
   try {

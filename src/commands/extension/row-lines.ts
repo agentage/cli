@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { pendingChanges, type PlanSummary } from '../../core/installer/plan.js';
+import { line } from './line.js';
 import {
   type ExtensionRow,
   type ExtensionsStatus,
@@ -18,8 +19,6 @@ const COLOR: Record<RowState, (text: string) => string> = {
 };
 
 const STATE_WIDTH = Math.max(...Object.keys(COLOR).map((state) => state.length));
-
-const line = (label: string, value: string): string => `${label.padEnd(10)} ${value}`;
 
 const cloudText = ({ version, etag }: { version: number; etag: string }): string =>
   chalk.yellow(`; account: version ${version}, etag ${etag} - run agentage setup`);

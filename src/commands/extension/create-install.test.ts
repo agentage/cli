@@ -2,7 +2,8 @@ import { describe, expect, vi } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost } from '../../test/host.js';
 import { installCreated, trustFrom, type CreateInstallDeps } from './create-install.js';
-import { buildPackage, childEnv } from './package-build.js';
+import { buildPackage } from './package-build.js';
+import { childEnv } from '../../lib/child-env.js';
 import { type KitTool } from './kit-tool.js';
 
 const report = (conforms: boolean) => ({

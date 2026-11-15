@@ -1,5 +1,5 @@
 import { CliError, isJsonRun } from '../../lib/json-output.js';
-import { report, specOf, type LifecycleDeps } from './lifecycle.js';
+import { report, specOf, type ConfirmIo, type LifecycleDeps } from './lifecycle.js';
 
 export interface ConfigureOptions {
   id: string;
@@ -9,11 +9,45 @@ export interface ConfigureOptions {
 }
 
 // A secret with no `=value`: stdin when it is not a terminal, else a hidden prompt.
-export interface SecretInput {
-  isTTY: boolean;
+export interface SecretInput extends ConfirmIo {
   readStdin: () => Promise<string>;
-  prompt: (question: string) => Promise<string>;
 }
+
+const ENTER = ['\r', '\n', '\u0004'];
+const CTRL_C = '\u0003';
+const BACKSPACE = '\u007f';
+
+// One keypress: the answer so far, or null once Enter ends it.
+const typed = (answer: string, char: string): string | null => {
+  if (ENTER.includes(char)) return null;
+  return char === BACKSPACE ? answer.slice(0, -1) : answer + char;
+};
+
+// Raw mode keeps the answer off the screen; Ctrl+C still interrupts once the terminal is restored.
+type Tty = Pick<NodeJS.ReadStream, 'on' | 'off' | 'setRawMode' | 'resume' | 'pause'>;
+
+export const readHidden = (
+  question: string,
+  { stdin, stderr }: { stdin: Tty; stderr: Pick<NodeJS.WriteStream, 'write'> } = process
+): Promise<string> =>
+  new Promise((resolve) => {
+    let answer = '';
+    const onData = (chunk: Buffer): void => {
+      for (const char of chunk.toString('utf-8')) {
+        const next = char === CTRL_C ? null : typed(answer, char);
+        if (next === null) return finish(char === CTRL_C);
+        answer = next;
+      }
+    };
+    const finish = (interrupted: boolean): void => {
+      stdin.off('data', onData).setRawMode(false).pause();
+      stderr.write('\n');
+      resolve(answer);
+      if (interrupted) process.kill(process.pid, 'SIGINT');
+    };
+    stderr.write(question);
+    stdin.setRawMode(true).resume().on('data', onData);
+  });
 
 const readAll = async (): Promise<string> => {
   let text = '';

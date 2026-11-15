@@ -42,9 +42,6 @@ export const probe = async (port: number, timeoutMs = 2000): Promise<Probe> => {
   }
 };
 
-export const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
 // A slow daemon is asked again before it counts as silent.
 export const probeRetry = async (port: number, tries = 3, timeoutMs = 2000): Promise<Probe> => {
   let last: Probe = { kind: 'silent' };

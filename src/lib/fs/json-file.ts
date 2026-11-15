@@ -20,7 +20,7 @@ export const readJson = <T>(path: string, guard: (value: unknown) => value is T)
   }
 };
 
-const unlinkQuiet = (path: string): void => {
+export const unlinkQuiet = (path: string): void => {
   try {
     unlinkSync(path);
   } catch {

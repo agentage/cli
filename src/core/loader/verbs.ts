@@ -1,7 +1,4 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
-import { isRecord, readJson, writeJsonAtomic } from '../../lib/fs/json-file.js';
+import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { commandsPath } from '../paths.js';
 import { type DiscoveredExtension } from './discover.js';
 import { CORE_COMMANDS } from './manifest.js';
@@ -27,15 +24,6 @@ const isHeld = (value: unknown): value is Record<string, string> =>
 // Who held each top-level verb after the last install; absent or unreadable: nobody.
 export const readHeld = (): Map<string, string> =>
   new Map(Object.entries(readJson(commandsPath(), isHeld) ?? {}));
-
-// Written only when it changed, so a machine without kit commands never gets the file.
-export const writeHeld = (top: Map<string, string>): void => {
-  const next = Object.fromEntries(top);
-  const current = Object.fromEntries(readHeld());
-  if (isDeepStrictEqual(next, current)) return;
-  mkdirSync(dirname(commandsPath()), { recursive: true, mode: 0o700 });
-  writeJsonAtomic(commandsPath(), next);
-};
 
 // Core commands and every extension id are namespaces; 1.0 commands are named after their id.
 const takenNames = (extensions: DiscoveredExtension[]): Map<string, string> => {
