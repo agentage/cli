@@ -5,14 +5,19 @@ import { missingSecrets } from '../../core/loader/secrets.js';
 import { writeHeld } from '../../core/loader/verbs.js';
 import { failedError, loadAndGather } from './doctor.js';
 import { printWarnings, rowLines } from './row-lines.js';
-import { gatherExtensions, type ExtensionsGather } from './rows.js';
+import { gatherExtensions, type ExtensionRow, type ExtensionsGather } from './rows.js';
 import { askSecrets } from './secrets-prompt.js';
 
 export const line = (label: string, value: string): string => `${label.padEnd(10)} ${value}`;
 
-// What a --json run of install, remove or setup answers: the rows as they stand now.
-export const extensionsResult = async (json?: boolean): Promise<unknown> =>
-  json ? { extensions: (await gatherExtensions()).status.extensions } : undefined;
+let lastRows: ExtensionRow[] | null = null;
+
+// What a --json run of install, remove or setup answers: the rows its own load gathered.
+export const extensionsResult = (json?: boolean): unknown => {
+  const rows = lastRows;
+  lastRows = null;
+  return json && rows ? { extensions: rows } : undefined;
+};
 
 export const counted = (n: number): string =>
   n === 0 ? 'no extensions' : `${n} extension${n === 1 ? '' : 's'}`;
@@ -46,7 +51,8 @@ export const installAndLoad = async (
   if (outcome.result) console.log(installLine(outcome.result));
   if (outcome.result) await installed();
   const gathered = outcome.result ? await loadAndGather(listSecrets) : await gatherExtensions();
-  for (const text of rowLines(gathered.status.extensions)) console.log(text);
+  lastRows = gathered.status.extensions;
+  for (const text of rowLines(lastRows)) console.log(text);
   if (outcome.result) settleVerbs(gathered);
   printWarnings(gathered.warnings);
   if (outcome.error) throw outcome.error;

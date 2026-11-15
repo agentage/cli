@@ -81,6 +81,21 @@ const read = (path: string) => readFileSync(join(root, 'extension-market', path)
 const manifest = () => JSON.parse(read('package.json')) as typeof MANIFEST;
 
 describe('extension create', () => {
+  test('--json answers with the id, folder, template and kept parts; a bad id has the code invalid_argument', async () => {
+    const result = await runExtensionCreate(
+      { id: 'market', parts: ['api'], json: true },
+      () => url
+    );
+    expect(result).toEqual({
+      id: 'market',
+      dir: 'extension-market',
+      from: 'agentage/extension-template',
+      kept: ['api'],
+    });
+    const bad = await create('Bad');
+    expect(bad.code).toBe('invalid_argument');
+  });
+
   test('keeps the named parts only: their folders, tests and manifest keys', async () => {
     const printed = await create('market', ['mcp', 'api']);
     expect(printed.error).toBeNull();

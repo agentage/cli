@@ -44,7 +44,15 @@ import {
 import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
 import { npmMajor, prepareManifest, prepareNpm } from './core/installer/npm.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
-import { attempt, isJson, runJson } from './lib/json-output.js';
+import { messageOf, writeError } from './lib/json-output.js';
+import {
+  ACTION_FAILED,
+  EXIT_FAILED,
+  EXIT_OK,
+  EXIT_USAGE,
+  pinned,
+  withAction,
+} from './lib/with-action.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
 
@@ -107,35 +115,6 @@ const defaultDeps: ProgramDeps = {
   writeErr: (text) => void process.stderr.write(text),
 };
 
-export const EXIT_OK = 0;
-export const EXIT_FAILED = 1;
-export const EXIT_USAGE = 2;
-const ACTION_FAILED = 'agentage.actionFailed';
-
-const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-
-type Legacy = (opts: never) => boolean;
-const never: Legacy = () => false;
-
-// One failure path: a red stderr line, exit 1; an extension's --help or usage error keeps its code.
-// With --json the same path writes the error envelope on stdout. `legacy` marks a run whose own
-// JSON shape is pinned, so it prints its report itself.
-const withAction =
-  <T>(deps: ProgramDeps, fn: (opts: T) => Promise<unknown>, prefix = '', legacy: Legacy = never) =>
-  async (opts: T): Promise<void> => {
-    const run = () => fn(opts);
-    const failure = isJson(opts)
-      ? await runJson(deps, run, legacy(opts as never))
-      : await attempt(run);
-    if (!failure) return;
-    const { err, shown } = failure;
-    if (err instanceof CommanderError) throw err;
-    if (!shown) deps.writeErr(`${chalk.red(`${prefix}${messageOf(err)}`)}\n`);
-    throw new CommanderError(EXIT_FAILED, ACTION_FAILED, messageOf(err));
-  };
-
-const pinned: Legacy = () => true;
-
 // status and update report update state themselves; the hint never touches --json stdout.
 const hintAfter =
   (deps: ProgramDeps) =>
@@ -191,15 +170,18 @@ export const createProgram = (
   return program;
 };
 
-// --help and --version stay 0; a kit command keeps its code; any other commander error is usage.
-const exitCodeOf = (err: unknown, deps: ProgramDeps): number => {
+// --help and --version stay 0; a kit command keeps its code; other commander errors are usage.
+const exitCodeOf = (err: unknown, deps: ProgramDeps, argv: string[]): number => {
   if (!(err instanceof CommanderError)) {
     deps.writeErr(`${chalk.red(messageOf(err))}\n`);
     return EXIT_FAILED;
   }
   if (err.code === ACTION_FAILED) return EXIT_FAILED;
   if (err.code === KIT_EXIT) return err.exitCode;
-  return err.exitCode === 0 ? EXIT_OK : EXIT_USAGE;
+  if (err.exitCode === 0) return EXIT_OK;
+  if (!argv.includes('--json')) return EXIT_USAGE;
+  writeError(deps, err, 'usage'); // a usage error under --json is still one envelope
+  return EXIT_FAILED;
 };
 
 // Returns the exit code instead of exiting, so piped stdout is never cut short.
@@ -212,6 +194,6 @@ export const run = async (
     await createProgram(deps, argv).parseAsync(argv);
     return EXIT_OK;
   } catch (err) {
-    return exitCodeOf(err, deps);
+    return exitCodeOf(err, deps, argv);
   }
 };

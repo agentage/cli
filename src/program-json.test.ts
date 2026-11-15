@@ -107,13 +107,27 @@ describe('--json envelope', () => {
 });
 
 describe('--json on a command whose own shape is pinned', () => {
-  test('status, list, doctor and check keep their JSON: no envelope on success', async () => {
-    const h = harness({
-      status: async () => void console.log('{"own":true}'),
+  const own = [
+    ['status', ['status'], 'status'],
+    ['extension list', ['extension', 'list'], 'extensionList'],
+    ['extension doctor', ['extension', 'doctor'], 'extensionDoctor'],
+    ['extension check', ['extension', 'check'], 'extensionCheck'],
+    ['setup --dry-run', ['setup', '--dry-run'], 'setup'],
+    ['setup --check', ['setup', '--check'], 'setup'],
+  ] as const;
+
+  for (const [name, argv, dep] of own) {
+    test(`${name}: its own line reaches stdout and no envelope follows`, async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const h = harness({
+        [dep]: async () => void console.log('{"own":true}'),
+      });
+      expect(await h.exec(...argv, '--json')).toBe(0);
+      expect(log).toHaveBeenCalledWith('{"own":true}');
+      expect(h.stdout()).toBe('');
+      log.mockRestore();
     });
-    expect(await h.exec('status', '--json')).toBe(0);
-    expect(h.stdout()).toBe('');
-  });
+  }
 
   test('an error before any output is the envelope; after output it stays stderr text', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -136,12 +150,35 @@ describe('--json on a command whose own shape is pinned', () => {
     log.mockRestore();
   });
 
-  test('setup --dry-run and --check keep the plan JSON; plain setup --json gets the envelope', async () => {
+  test('plain setup --json gets the envelope', async () => {
     const h = harness({ setup: async () => undefined });
-    await h.exec('setup', '--dry-run', '--json');
-    expect(h.stdout()).toBe('');
     await h.exec('setup', '--json');
     expect(JSON.parse(h.stdout())).toEqual({ success: true, data: null });
+  });
+});
+
+describe('usage errors with --json', () => {
+  test.each([
+    [['extension', 'token', '--json']],
+    [['extension', 'remove', '--json']],
+    [['status', '--nope', '--json']],
+  ])('%s is one usage envelope on stdout, exit 1', async (argv) => {
+    const h = harness();
+    expect(await h.exec(...argv)).toBe(1);
+    const out = JSON.parse(h.stdout());
+    expect(out.success).toBe(false);
+    expect(out.error.code).toBe('usage');
+  });
+
+  test('without the flag a usage error stays exit 2 with an empty stdout', async () => {
+    const h = harness();
+    expect(await h.exec('extension', 'token')).toBe(2);
+    expect(h.stdout()).toBe('');
+  });
+
+  test('--help with --json still exits 0', async () => {
+    const h = harness();
+    expect(await h.exec('update', '--help', '--json')).toBe(0);
   });
 });
 

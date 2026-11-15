@@ -49,41 +49,58 @@ export const attempt = async (run: () => Promise<unknown>): Promise<Failure | nu
     (err: unknown) => ({ err, shown: false })
   );
 
-// Runs one command with stdout reserved for the envelope: progress lines go to stderr.
-// `legacy` keeps the command's own JSON on stdout (its shape is pinned); only an error before
-// it printed anything becomes the error envelope.
-export const runJson = async (
-  io: JsonIo,
-  run: () => Promise<unknown>,
-  legacy = false
-): Promise<Failure | null> => {
+export const messageOf = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
+export const writeError = (io: JsonIo, err: unknown, code = codeOf(err)): void =>
+  io.writeOut(`${JSON.stringify({ success: false, error: { code, message: messageOf(err) } })}\n`);
+
+// Progress goes to stderr; a pinned command keeps stdout and we note that it printed.
+const redirectLog = (legacy: boolean): { wrote: () => boolean; restore: () => void } => {
   const log = console.log;
   let wrote = false;
-  active = true;
   console.log = (...args: unknown[]): void => {
     if (!legacy) return console.error(...args);
     wrote = true;
     log(...args);
   };
+  return { wrote: () => wrote, restore: () => void (console.log = log) };
+};
+
+const failureOf = (io: JsonIo, { err }: Failure, wrote: boolean): Failure => {
+  if (err instanceof CommanderError) return { err, shown: true };
+  if (wrote) return { err, shown: false };
+  writeError(io, err);
+  return { err, shown: true };
+};
+
+// Stdout is reserved for the envelope; `legacy` keeps a command's own pinned JSON instead.
+export const runJson = async (
+  io: JsonIo,
+  run: () => Promise<unknown>,
+  legacy = false
+): Promise<Failure | null> => {
+  const log = redirectLog(legacy);
+  active = true;
   try {
     let data: unknown = null;
     const failure = await attempt(async () => {
       data = (await run()) ?? null;
     });
-    if (!failure) {
-      if (!legacy) io.writeOut(`${JSON.stringify({ success: true, data })}\n`);
-      return null;
-    }
-    const { err } = failure;
-    if (err instanceof CommanderError) return { err, shown: true };
-    if (wrote) return { err, shown: false };
-    const error = { code: codeOf(err), message: err instanceof Error ? err.message : String(err) };
-    io.writeOut(`${JSON.stringify({ success: false, error })}\n`);
-    return { err, shown: true };
+    if (failure) return failureOf(io, failure, log.wrote());
+    if (!legacy) io.writeOut(`${JSON.stringify({ success: true, data })}\n`);
+    return null;
   } finally {
-    console.log = log;
+    log.restore();
     active = false;
   }
+};
+
+// A copy of the options without the flag, for a call that hands them on.
+export const omitJson = <T extends { json?: boolean }>(opts: T): Omit<T, 'json'> => {
+  const copy = { ...opts };
+  delete copy.json;
+  return copy;
 };
 
 // The one --json option every command carries.

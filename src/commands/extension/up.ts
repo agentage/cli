@@ -1,5 +1,5 @@
 import { InvalidArgumentError, type Command } from 'commander';
-import { addJson } from '../../lib/json-output.js';
+import { addJson, omitJson } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { execIn, type Exec } from './release-guard.js';
 import { assertOwnStack } from './stack-owner.js';
@@ -26,22 +26,22 @@ const printed = (): { lines: string[]; onLine: (line: string) => void } => {
 
 // Each step's line as the kit reports it, the ready line last.
 export const runExtensionUp = async (
-  { json: _json, ...opts }: ExtensionUpOptions = {},
+  opts: ExtensionUpOptions = {},
   tool: LoadKitTool = loadKitTool
 ): Promise<unknown> => {
   const { up } = await tool();
   const { lines, onLine } = printed();
-  await up({ ...opts, onLine });
+  await up({ ...omitJson(opts), onLine });
   return { lines };
 };
 
 export const runExtensionDown = async (
-  { json: _json, ...opts }: ExtensionDownOptions = {},
+  opts: ExtensionDownOptions = {},
   tool: LoadKitTool = loadKitTool
 ): Promise<unknown> => {
   const { down } = await tool();
   const { lines, onLine } = printed();
-  await down({ ...opts, onLine });
+  await down({ ...omitJson(opts), onLine });
   return { lines };
 };
 

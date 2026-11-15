@@ -7,6 +7,7 @@ import chalk from 'chalk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthRequiredError, TransientAuthError } from './auth-errors.js';
 import { type CallbackServer } from './callback-server.js';
+import { runJson } from '../json-output.js';
 import { ensureSignedIn, signOut, type SignInDeps } from './sign-in.js';
 import { readAuth, saveAuth, type AuthState } from '../fs/config.js';
 import { links } from '../net/origins.js';
@@ -131,6 +132,25 @@ describe('sign-in flow', () => {
     const url = new URL(vi.mocked(deps.openBrowser).mock.calls[0]?.[0] ?? '');
     expect(url.searchParams.get('client_id')).toBe('client-1');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+  });
+
+  it('in a --json run a browser sign-in is refused: confirmation_required, no browser, no server', async () => {
+    const { deps } = makeDeps();
+    const out: string[] = [];
+    await runJson({ writeOut: (t) => void out.push(t) }, () => ensureSignedIn({}, deps));
+    expect(JSON.parse(out.join('')).error.code).toBe('confirmation_required');
+    expect(deps.openBrowser).not.toHaveBeenCalled();
+    expect(deps.startServer).not.toHaveBeenCalled();
+  });
+
+  it('in a --json run --no-browser still signs in, printing the URL on stderr', async () => {
+    const { deps } = makeDeps();
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const failure = await runJson({ writeOut: () => undefined }, () =>
+      ensureSignedIn({ browser: false }, deps)
+    );
+    expect(failure).toBeNull();
+    spy.mockRestore();
   });
 
   it('skips the browser with --no-browser and says so', async () => {

@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { type Command } from 'commander';
 import type { BuildOptions } from '@agentage/extension/tool';
-import { addJson, CliError } from '../../lib/json-output.js';
+import { addJson, CliError, omitJson } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
 export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'> & {
@@ -61,9 +61,7 @@ export const runExtensionBuild = async (
 ): Promise<unknown> => {
   await committed(opts.dir ?? '.');
   const { build, buildLines } = await tool();
-  const options = { ...opts };
-  delete options.json;
-  const result = await build(options);
+  const result = await build(omitJson(opts));
   for (const line of buildLines(result)) console.log(line);
   return result;
 };

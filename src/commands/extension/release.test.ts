@@ -100,8 +100,11 @@ const release = async (w: World = {}, env: Record<string, string> = ENV) => {
     tool: async () => tool as KitTool,
     env: { ...env },
   };
-  const printed = await output(() => runExtensionRelease({ dir }, deps));
-  return { ...printed, calls, seen, unbounded, bounds, env: deps.env };
+  let result: unknown;
+  const printed = await output(async () => {
+    result = await runExtensionRelease({ dir }, deps);
+  });
+  return { ...printed, result, calls, seen, unbounded, bounds, env: deps.env };
 };
 
 describe('extension release', () => {
@@ -122,6 +125,13 @@ describe('extension release', () => {
       'docker manifest inspect ghcr.io/agentage/probe-pages:0.1.0',
       'docker manifest inspect ghcr.io/agentage/probe-api:0.1.0',
     ]);
+    expect(run.result).toEqual({
+      id: 'probe',
+      version: '0.1.0',
+      tag: 'v0.1.0',
+      built: true,
+      published: true,
+    });
     expect(run.calls).toContain('build push=true');
     expect(run.calls).toContain(
       'gh release create v0.1.0 dist/agentage-extension.json --title v0.1.0 --notes Images by digest: agentage-extension.json -R agentage/probe'
@@ -176,6 +186,7 @@ describe('extension release', () => {
       'FAIL id: this repo is the starting point for extensions: create one, release that'
     );
     expect(run.calls).toEqual([]);
+    expect(run.code).toBe('release_refused');
   });
 
   test('refuses a commit not on master, a tag that is not the version, and an npm without OIDC', async () => {
