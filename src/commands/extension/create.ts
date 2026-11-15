@@ -95,9 +95,15 @@ const renameLock = (dir: string, id: string): void => {
   save(join(dir, LOCK), lock);
 };
 
+// --from owner/repo[#branch], checked by refusal() first.
+const repoRef = (from: string): { repo: string; ref?: string } => {
+  const [repo = from, ref] = from.split('#');
+  return { repo, ...(ref && { ref }) };
+};
+
 // Bounded, a partial folder removed; git's own first line says why (no repo, no network, no access).
 const clone = async (url: string, from: string, dir: string): Promise<void> => {
-  const ref = from.split('#')[1];
+  const { ref } = repoRef(from);
   const branch = ref ? ['--branch', ref] : [];
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
   await run('git', ['clone', '-q', '--depth', '1', ...branch, url, dir], {
@@ -145,7 +151,7 @@ const printNext = (dir: string, from: string, id: string, kept: string[]): void 
   const kit = String(
     json(join(dir, 'package.json'))['dependencies']?.['@agentage/extension'] ?? '?'
   );
-  const [repo, ref] = from.split('#');
+  const { repo, ref } = repoRef(from);
   const branch = ref ? `branch ${ref}` : 'default branch';
   console.log(` template  ${repo} (${branch}, kit ${kit.replace(/^[\^~]/, '')})`);
   console.log(` kept      ${kept.join(', ')}`);
@@ -167,7 +173,7 @@ export const runExtensionCreate = async (
   if (refused) throw new CliError('invalid_argument', refused);
   await trustFrom(from, opts, opts.json ? { ...io, isTTY: false } : io);
   const dir = `extension-${id}`;
-  await clone(url(from.split('#')[0] ?? from), from, dir);
+  await clone(url(repoRef(from).repo), from, dir);
   const ci = shape(dir, from, id, kept);
   printNext(dir, from, id, kept);
   if (ci) console.log(ci);
