@@ -23,12 +23,11 @@ export const installError = (code: string, status: 400 | 404 | 502, message: str
   Object.assign(new Error(message), { code, status });
 
 // The daemon reads the site once, when it starts: another site needs a restart with it set.
-const RESTART =
-  'the daemon reads it when it starts: AGENTAGE_SITE_FQDN=<site> agentage daemon restart';
+const RESTART = 'then agentage daemon restart (the daemon reads the site at its start)';
 
 // The market's own reason, in the daemon's case (no_market is NO_MARKET).
 const marketDown = (id: string, why: CliError): Error =>
-  installError(why.code.toUpperCase(), 502, `${id}: ${why.message}; ${RESTART}`);
+  installError(why.code.toUpperCase(), 502, `${id}: ${why.message}, ${RESTART}`);
 
 // The market names the package and its newest version; without it npm alone decides.
 const inputOf = async (id: string, version: string | undefined, market: Market) => {

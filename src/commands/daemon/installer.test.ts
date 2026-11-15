@@ -76,8 +76,8 @@ describe('the daemon installer', () => {
     const err = await install({ id: 'probe' }).catch((e: unknown) => e);
     expect(err).toMatchObject({ code, status: 502 });
     expect((err as Error).message).toBe(
-      'probe: agentage.io has no extension market: the reason; the daemon reads it when it starts: ' +
-        'AGENTAGE_SITE_FQDN=<site> agentage daemon restart'
+      'probe: agentage.io has no extension market: the reason, ' +
+        'then agentage daemon restart (the daemon reads the site at its start)'
     );
     expect(npm).not.toHaveBeenCalled();
   });
