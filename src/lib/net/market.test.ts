@@ -43,22 +43,33 @@ describe('openMarket', () => {
   });
 
   it.each([
-    ['no markets field', serving({ [DISCOVERY]: doc({ platform: 'https://p.test' }) })],
-    ['no discovery document', serving({})],
-    ['a market answering 503', serving({ [DISCOVERY]: doc(named), [LATEST]: doc({}, 503) })],
     [
-      'a market that times out',
-      serving({ [DISCOVERY]: doc(named), [LATEST]: new Error('timeout') }),
+      'no markets field',
+      'no_market',
+      serving({ [DISCOVERY]: doc({ platform: 'https://p.test' }) }),
     ],
-  ])('prints one line and answers null on %s', async (_name, get) => {
-    const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const market = openMarket('next.agentage.io', get);
-    expect(await market.latest('probe')).toBeNull();
-    expect(await market.latest('fixture')).toBeNull();
-    expect(market.down()).toBe(true);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith('market unavailable, versions not checked');
-  });
+    ['no discovery document', 'no_discovery', serving({})],
+    [
+      'a market answering 503',
+      'market_failed',
+      serving({ [DISCOVERY]: doc(named), [LATEST]: doc({}, 503) }),
+    ],
+    [
+      'a market that cannot be reached',
+      'market_unreachable',
+      serving({ [DISCOVERY]: doc(named), [LATEST]: new Error('offline') }),
+    ],
+  ])(
+    'answers null on %s and keeps the first reason, %s, printing nothing',
+    async (_n, code, get) => {
+      const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const market = openMarket('next.agentage.io', get);
+      expect(await market.latest('probe')).toBeNull();
+      expect(await market.latest('fixture')).toBeNull();
+      expect(market.down()).toMatchObject({ code });
+      expect(warn).not.toHaveBeenCalled();
+    }
+  );
 
   it.each([
     ['a foreign package', { version: '1.0.0', package: '@evil/probe' }],
@@ -91,10 +102,10 @@ describe('openMarket', () => {
   it.each(['http://market.test/', 'ftp://market.test/', 'market.test'])(
     'treats the market address %s as no market',
     async (url) => {
-      const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const get = serving({ [DISCOVERY]: doc({ markets: [url] }) });
-      expect(await openMarket('next.agentage.io', get).latest('probe')).toBeNull();
-      expect(warn).toHaveBeenCalledWith('market unavailable, versions not checked');
+      const market = openMarket('next.agentage.io', get);
+      expect(await market.latest('probe')).toBeNull();
+      expect(market.down()).toMatchObject({ code: 'no_market' });
     }
   );
 });
@@ -133,6 +144,8 @@ describe('listMarket: extension list --available', () => {
   });
 
   it('no market: it throws, so the command fails', async () => {
-    await expect(listMarket('next.agentage.io', serving({}))).rejects.toThrow();
+    await expect(listMarket('next.agentage.io', serving({}))).rejects.toMatchObject({
+      code: 'no_discovery',
+    });
   });
 });

@@ -4,7 +4,15 @@ import { describe, expect, it } from 'vitest';
 import { NotPushedError } from '../core/profile/cloud.js';
 import { AuthRequiredError, TransientAuthError } from './auth/auth-errors.js';
 import { TokenRequestError } from './auth/oauth.js';
-import { CliError, CODES, codeOf, DaemonError, isJsonRun, runJson } from './json-output.js';
+import {
+  CliError,
+  CODES,
+  codeOf,
+  DaemonError,
+  isJsonRun,
+  messageOf,
+  runJson,
+} from './json-output.js';
 
 const REFERENCE = join(import.meta.dirname, '..', '..', 'docs', 'reference.md');
 
@@ -26,6 +34,45 @@ describe('the error codes', () => {
     const text = readFileSync(REFERENCE, 'utf8');
     const block = /<!-- codes:[^>]*-->([\s\S]*?)<!-- \/codes -->/.exec(text)?.[1] ?? '';
     expect([...block.matchAll(/`([a-z_]+)`/g)].map((m) => m[1])).toEqual([...CODES]);
+  });
+
+  it("list each code the cli's installer sends through the daemon, the market ones in upper case", () => {
+    const text = readFileSync(REFERENCE, 'utf8');
+    const source = readFileSync(
+      join(import.meta.dirname, '../commands/daemon/installer.ts'),
+      'utf8'
+    );
+    const sent = [...source.matchAll(/installError\('([A-Z_]+)'/g)].map((m) => m[1]);
+    const market = CODES.filter((c) => /market|discovery/.test(c)).map((c) => c.toUpperCase());
+    for (const code of [...sent, ...market]) expect(text, code).toContain(`\`${code}\``);
+  });
+});
+
+describe('expected failures of the system', () => {
+  const errno = (code: string, message: string) => Object.assign(new Error(message), { code });
+
+  it.each([
+    ['EACCES', 'permission_denied'],
+    ['EPERM', 'permission_denied'],
+    ['EROFS', 'permission_denied'],
+    ['ENOSPC', 'disk_full'],
+    ['EDQUOT', 'disk_full'],
+  ])('%s is %s', (code, want) => {
+    expect(codeOf(errno(code, `${code}: no, open '/x'`))).toBe(want);
+  });
+
+  it('fetch failed is network_unavailable, with the host and the reason on one line', () => {
+    const cause = errno('ECONNREFUSED', 'connect ECONNREFUSED 127.0.0.1:1');
+    const err = new TypeError('fetch failed', { cause });
+    expect(codeOf(err)).toBe('network_unavailable');
+    expect(messageOf(err)).toBe('fetch failed: connect ECONNREFUSED 127.0.0.1:1');
+  });
+
+  it('a timed-out call is timeout', () => {
+    const err = Object.assign(new Error('The operation was aborted due to timeout'), {
+      name: 'TimeoutError',
+    });
+    expect(codeOf(err)).toBe('timeout');
   });
 });
 

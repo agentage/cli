@@ -295,19 +295,14 @@ in the config folder and runs each extension as its own process: its api at
   `--off` is the old name of install, then `disable`, and says so on stderr. A package name of
   another scope and an `https:` tarball URL, which 0.51 installed, are refused
   (`invalid_argument`) with what to type instead: install the unpacked folder (`./path`).
-  The installer's errors reach you with the daemon's code:
-
-  | Code                 | When                                                               |
-  | -------------------- | ------------------------------------------------------------------ |
-  | `NOT_FOUND`          | the market and npm know no such id, or no such version (404)       |
-  | `MARKET_UNAVAILABLE` | no version given and the market did not answer (502)               |
-  | `INSTALL_FAILED`     | npm could not install it; the message holds npm's last lines (502) |
-  | `PRIVATE_ENTRY`      | the market entry has no npm package (400)                          |
-  | `VALIDATION_ERROR`   | the package's `agentage.id` is another id (400)                    |
+  The installer's errors reach you with the daemon's code (see
+  [The --json envelope](#the---json-envelope)). An install over an installed id is idempotent:
+  the daemon's `CONFLICT` answer prints the installed row with `(already installed)`, and only
+  another version, or the same id from another folder (`already_installed`), is not that.
 
 - **list** prints the daemon's rows; a folder row shows `folder` and `--json` adds its `path`.
   `--available` reads the market (paged, 200 per page, at most 20 pages; past that it stops
-  with `market_unavailable` naming the cap), not the daemon.
+  with `market_failed` naming the cap), not the daemon.
 - **update** compares each market row with the market's newest version and changes the ones that
   differ; folders are left alone. `--check` only prints `<id> <from> to <to> (available)`. After a
   change the folder of the old version goes (below).
@@ -674,18 +669,62 @@ and nothing else there (progress lines go to stderr), and never prompts:
 ```
 
 An error exits 1, success 0. The one other exit code is 130: `extension up` (also with `--json`)
-stopped by Ctrl-C, after its envelope. `code` is snake_case and stable:
+stopped by Ctrl-C, after its envelope. A `code` is stable, in one of two forms: the cli's own
+codes are lowercase snake_case, the daemon's codes are UPPER_SNAKE and pass through unchanged.
+An expected failure (no network, a full disk, a folder you may not write, a market that is not
+there) has its own code and a one-line message, never a stack trace.
+
+The cli's own codes:
 
 <!-- codes: the same list as CODES in src/lib/json-output.ts; a test keeps them equal -->
-`already_running`, `auth_required`, `auth_unavailable`, `build_failed`, `cancelled`,
-`confirmation_required`, `daemon_disabled`, `daemon_unavailable`, `daemon_unresponsive`,
-`error` (any other), `extension_failed`, `integrity_drift`, `invalid_argument`,
-`market_unavailable`, `needed_by_dependents`, `not_conforming`, `not_installed`, `not_pushed`,
-`port_in_use`, `profile_invalid`, `release_refused`, `stop_failed`, `token_request_failed`,
-`uncommitted_changes`, `usage`.
+`already_installed`, `already_running`, `auth_required`, `auth_unavailable`, `build_failed`,
+`cancelled`, `confirmation_required`, `daemon_disabled`, `daemon_unavailable`,
+`daemon_unresponsive`, `disk_full`, `error` (any other), `extension_failed`, `integrity_drift`,
+`invalid_argument`, `market_failed`, `market_timeout`, `market_unreachable`,
+`needed_by_dependents`, `network_unavailable`, `no_discovery`, `no_market`, `not_conforming`,
+`not_installed`, `not_pushed`, `permission_denied`, `port_in_use`, `profile_invalid`,
+`release_refused`, `stop_failed`, `timeout`, `token_request_failed`, `uncommitted_changes`,
+`usage`.
 <!-- /codes -->
 
-A code from the daemon (such as `NOT_FOUND` or `INVALID_SETTING`) passes through unchanged.
+| Code                  | When                                                                        |
+| --------------------- | --------------------------------------------------------------------------- |
+| `no_discovery`        | the site serves no `/.well-known/agentage.json` (404, or another 3xx or 4xx) |
+| `no_market`           | the site's discovery document names no market                                |
+| `market_unreachable`  | the site or its market cannot be reached (refused, no DNS name, offline)     |
+| `market_failed`       | the site or its market answered 5xx, or an answer that is not JSON           |
+| `market_timeout`      | the market did not answer in 5 s                                             |
+| `network_unavailable` | another outbound call could not connect; the message names the host and why |
+| `timeout`             | another outbound call did not answer in its time                           |
+| `permission_denied`   | a file or folder (the config folder, a log) may not be read or written      |
+| `disk_full`           | a write failed: no space left on the disk, or over the quota                 |
+| `already_installed`   | `install` of an id that the daemon runs from another folder                  |
+| `stop_failed`         | `daemon stop` or `extension down`: the process still runs after the signals  |
+| `build_failed`        | npm (the build script, `npm ci`) failed, did not finish in 10 min, or is not on the PATH |
+
+A market code names the site and says how to choose another one (`AGENTAGE_SITE_FQDN=<site>`).
+Until the cutover the default site `agentage.io` has no market, so `extension install <id>` and
+`extension list --available` fail there with `no_discovery`; the extensions are on
+`next.agentage.io`.
+
+The daemon's codes (the kit's envelope, and the cli's installer, which runs in the daemon):
+
+| Code                 | When                                                                     |
+| -------------------- | ------------------------------------------------------------------------ |
+| `NOT_FOUND`          | no such extension (404); from the installer: no such id or version on npm |
+| `VALIDATION_ERROR`   | a body the daemon refuses (400); the package's `agentage.id` is another id |
+| `INVALID_SETTING`    | `configure` of an undeclared key, or a value of the wrong type (400)       |
+| `START_FAILED`       | a change whose new child did not start; the old one runs on (400)          |
+| `CONFLICT`           | the id is installed (409); `install` turns it into "already installed"     |
+| `FORBIDDEN`          | a Host or Origin that is not this machine (403)                            |
+| `UNAVAILABLE`        | the daemon has no installer (501), or the extension is not running (503)   |
+| `INSTALL_FAILED`     | npm could not install it; the message holds npm's last lines (502)        |
+| `PRIVATE_ENTRY`      | the market entry has no npm package (400)                                 |
+| `NO_DISCOVERY`, `NO_MARKET`, `MARKET_UNREACHABLE`, `MARKET_FAILED`, `MARKET_TIMEOUT` | the market codes above, from the installer (502), when no version is given |
+
+The installer runs in the daemon, so it uses the site the daemon had when it started: to install
+from another site, `AGENTAGE_SITE_FQDN=<site> agentage daemon restart`, then install.
+
 A usage error (an unknown flag, a missing argument) exits 2 with no object; with `--json` it
 exits 1 with the error object, code `usage`, and the usage line on stderr.
 

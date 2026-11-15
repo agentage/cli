@@ -1,6 +1,7 @@
 import { describe, expect, vi } from 'vitest';
 import { test } from '../../test/config-dir.js';
 import { manifestFromFixtures, npmFromFixtures } from '../../test/npm-fixtures.js';
+import { CliError } from '../../lib/json-output.js';
 import { type Market } from '../../lib/net/market.js';
 import { cliInstaller } from './installer.js';
 
@@ -8,7 +9,7 @@ const PKG = '@agentage/fixture-probe';
 
 const market = (latest: Awaited<ReturnType<Market['latest']>>): Market => ({
   latest: vi.fn(async () => latest),
-  down: () => false,
+  down: () => null,
 });
 
 const installer = async (m: Market) => {
@@ -60,13 +61,24 @@ describe('the daemon installer', () => {
     await expect(none.install({ id: 'nosuch' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  test('a silent market without a version is MARKET_UNAVAILABLE 502', async () => {
-    const down: Market = { latest: vi.fn(async () => null), down: () => true };
-    const { install, npm } = await installer(down);
-    await expect(install({ id: 'probe' })).rejects.toMatchObject({
-      code: 'MARKET_UNAVAILABLE',
-      status: 502,
+  test.each([
+    ['no_discovery', 'NO_DISCOVERY'],
+    ['no_market', 'NO_MARKET'],
+    ['market_unreachable', 'MARKET_UNREACHABLE'],
+    ['market_failed', 'MARKET_FAILED'],
+    ['market_timeout', 'MARKET_TIMEOUT'],
+  ] as const)('a market that fails with %s, no version given: %s 502', async (why, code) => {
+    const reason = new CliError(why, 'agentage.io has no extension market: the reason');
+    const { install, npm } = await installer({
+      latest: vi.fn(async () => null),
+      down: () => reason,
     });
+    const err = await install({ id: 'probe' }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ code, status: 502 });
+    expect((err as Error).message).toBe(
+      'probe: agentage.io has no extension market: the reason; the daemon reads it when it starts: ' +
+        'AGENTAGE_SITE_FQDN=<site> agentage daemon restart'
+    );
     expect(npm).not.toHaveBeenCalled();
   });
 
@@ -85,7 +97,10 @@ describe('the daemon installer', () => {
     dir,
   }) => {
     dir.tree('probe');
-    const offline = await installer({ latest: vi.fn(async () => null), down: () => true });
+    const offline = await installer({
+      latest: vi.fn(async () => null),
+      down: () => new CliError('no_market', 'none'),
+    });
     const got = await offline.install({ id: 'probe', version: '0.2.0' });
     expect(got.dir).toMatch(/extensions\/trees\/[^/]+\/node_modules\/@agentage\/fixture-probe$/);
     expect(offline.npm).not.toHaveBeenCalled();

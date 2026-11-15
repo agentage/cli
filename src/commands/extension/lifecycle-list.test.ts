@@ -1,12 +1,15 @@
 import { describe, expect, vi } from 'vitest';
+import { CliError } from '../../lib/json-output.js';
 import { type Market } from '../../lib/net/market.js';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost, marketRow } from '../../test/host.js';
 import { runList, runUpdate, table } from './lifecycle-list.js';
 
+const NO_MARKET = new CliError('no_market', 'agentage.io has no extension market');
+
 const market = (latest: Record<string, string>, down = false): Market => ({
   latest: vi.fn(async (id: string) => (latest[id] ? { version: latest[id], package: null } : null)),
-  down: () => down,
+  down: () => (down ? NO_MARKET : null),
 });
 
 const listDeps = (rows = [marketRow('probe', '0.6.2')], latest: Record<string, string> = {}) => {
@@ -42,9 +45,9 @@ describe('extension list', () => {
     const run = await output(() => runList({ available: true }, deps));
     expect(run.lines).toEqual(['ID     VERSION', 'notes  1.2.0']);
     expect(host.list).not.toHaveBeenCalled();
-    deps.available.mockRejectedValueOnce(new Error('no market'));
+    deps.available.mockRejectedValueOnce(NO_MARKET);
     const down = await output(() => runList({ available: true }, deps));
-    expect(down).toMatchObject({ code: 'market_unavailable' });
+    expect(down).toMatchObject({ code: 'no_market', error: NO_MARKET.message });
     deps.available.mockResolvedValueOnce([]);
     expect((await output(() => runList({ available: true }, deps))).lines).toEqual([
       'the market lists nothing',
@@ -111,6 +114,9 @@ describe('extension update', () => {
     ]);
     expect((await output(() => runUpdate({ id: 'demo' }, deps))).code).toBe('not_installed');
     const down = { ...deps, market: () => market({}, true) };
-    expect((await output(() => runUpdate({}, down))).code).toBe('market_unavailable');
+    expect(await output(() => runUpdate({}, down))).toMatchObject({
+      code: 'no_market',
+      error: NO_MARKET.message,
+    });
   });
 });

@@ -6,7 +6,7 @@ import { type Npm, type NpmManifest } from '../../core/installer/npm.js';
 import { registryLookup, resolveName, type Found } from '../../core/installer/resolve.js';
 import { editableProfile } from '../../core/profile/profile.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
-import { messageOf } from '../../lib/json-output.js';
+import { type CliError, messageOf } from '../../lib/json-output.js';
 import { type Market } from '../../lib/net/market.js';
 
 export interface InstallerDeps {
@@ -22,14 +22,22 @@ type Registry = ReturnType<typeof registryLookup>;
 export const installError = (code: string, status: 400 | 404 | 502, message: string): Error =>
   Object.assign(new Error(message), { code, status });
 
+// The daemon reads the site once, when it starts: another site needs a restart with it set.
+const RESTART =
+  'the daemon reads it when it starts: AGENTAGE_SITE_FQDN=<site> agentage daemon restart';
+
+// The market's own reason, in the daemon's case (no_market is NO_MARKET).
+const marketDown = (id: string, why: CliError): Error =>
+  installError(why.code.toUpperCase(), 502, `${id}: ${why.message}; ${RESTART}`);
+
 // The market names the package and its newest version; without it npm alone decides.
 const inputOf = async (id: string, version: string | undefined, market: Market) => {
   const latest = await market.latest(id);
   if (latest?.package === null)
     throw installError('PRIVATE_ENTRY', 400, `${id}: private entry, no npm package to install`);
   if (latest) return `${latest.package}@${version ?? latest.version}`;
-  if (!version && market.down())
-    throw installError('MARKET_UNAVAILABLE', 502, `${id}: the market did not answer; try again`);
+  const down = market.down();
+  if (!version && down) throw marketDown(id, down);
   return version ? `${id}@${version}` : id;
 };
 

@@ -12,6 +12,9 @@ import { writeOldConfig } from '../../test/old-config.js';
 import { cliInstaller } from './installer.js';
 import { MOVE_REPORT, MOVED_MARKER, moveOldLists } from './move.js';
 import { runDaemon } from './run.js';
+import { CliError } from '../../lib/json-output.js';
+
+const OFFLINE = new CliError('market_unreachable', 'cannot reach the market: offline');
 
 const freePort = async (): Promise<number> => {
   const server = createServer();
@@ -26,7 +29,7 @@ const offline = () =>
   cliInstaller({
     npm: async () => Promise.reject(new Error('offline')),
     manifest: async () => Promise.reject(new Error('offline')),
-    market: () => ({ latest: async () => null, down: () => true }),
+    market: () => ({ latest: async () => null, down: () => OFFLINE }),
   });
 
 const get = async <T = { msg: string }>(port: number, path: string): Promise<T> =>

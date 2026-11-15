@@ -1,5 +1,5 @@
 import { type HostRow } from '../../lib/daemon/host-client.js';
-import { CliError, messageOf } from '../../lib/json-output.js';
+import { CliError } from '../../lib/json-output.js';
 import { type Market, type Offered } from '../../lib/net/market.js';
 import { pruneUnused, type LifecycleDeps } from './lifecycle.js';
 
@@ -40,9 +40,7 @@ const printRows = (rows: HostRow[]): void => {
 };
 
 const available = async (deps: ListDeps): Promise<Offered[]> => {
-  const offered = await deps.available().catch((err: unknown) => {
-    throw new CliError('market_unavailable', `the market did not answer: ${messageOf(err)}`);
-  });
+  const offered = await deps.available();
   const lines = table([['ID', 'VERSION'], ...offered.map((o) => [o.id, o.version])]);
   for (const line of offered.length > 0 ? lines : ['the market lists nothing']) console.log(line);
   return offered;
@@ -67,7 +65,8 @@ const movesOf = async (rows: HostRow[], market: Market): Promise<Move[]> => {
     const to = (await market.latest(row.id))?.version;
     if (to && to !== row.version) moves.push({ id: row.id, from: row.version, to });
   }
-  if (market.down()) throw new CliError('market_unavailable', 'the market did not answer');
+  const down = market.down();
+  if (down) throw down;
   return moves;
 };
 

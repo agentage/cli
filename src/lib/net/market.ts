@@ -1,5 +1,14 @@
 import { isRecord } from '../fs/json-file.js';
+import { CliError, messageOf } from '../json-output.js';
 import { cliFetch } from './fetch.js';
+import {
+  answered,
+  isTimeout,
+  marketError,
+  noDiscovery,
+  noMarket,
+  unreached,
+} from './market-error.js';
 import { links, siteFqdn } from './origins.js';
 
 type Get = (url: string) => Promise<Response>;
@@ -13,33 +22,54 @@ export interface Latest {
 // `latest` is null for an id the market does not know, or when no market answers.
 export interface Market {
   latest: (id: string) => Promise<Latest | null>;
-  // True once a call failed to reach a market: the answers are not to be shown.
-  down: () => boolean;
+  // Why a call failed to reach a market (null while none did): the answers are not to be shown.
+  down: () => CliError | null;
 }
 
 const TIMEOUT_MS = 5_000;
-const UNAVAILABLE = 'market unavailable, versions not checked';
 
 const EXACT = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 
 const timed: Get = (url) => cliFetch(url, {}, { timeoutMs: TIMEOUT_MS });
 
+const fetched = (get: Get, url: string): Promise<Response> =>
+  get(url).catch((err: unknown) => {
+    throw unreached(url, err, TIMEOUT_MS);
+  });
+
+const bodyOf = (res: Response, url: string): Promise<unknown> =>
+  res.json().catch((err: unknown) => {
+    throw isTimeout(err) ? unreached(url, err, TIMEOUT_MS) : answered(url, res.status, 'no JSON');
+  });
+
 const json = async (get: Get, url: string): Promise<Record<string, unknown> | null> => {
-  const res = await get(url);
+  const res = await fetched(get, url);
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`${url} answered ${res.status}`);
-  const body: unknown = await res.json();
+  if (!res.ok) throw answered(url, res.status);
+  const body = await bodyOf(res, url);
   return isRecord(body) ? body : null;
+};
+
+// The site's discovery document: 404 (or any 3xx, 4xx) means the site has none; 5xx is a failure.
+const discovery = async (fqdn: string, get: Get): Promise<Record<string, unknown>> => {
+  const url = `${links(fqdn).site}/.well-known/agentage.json`;
+  const res = await fetched(get, url);
+  if (res.status >= 500) throw answered(url, res.status);
+  if (!res.ok) throw noDiscovery(fqdn, url, `answered ${res.status}`);
+  const doc = await res.json().catch(() => null);
+  if (!isRecord(doc)) throw noDiscovery(fqdn, url, 'is not a JSON object');
+  return doc;
 };
 
 // The first market the site's discovery document names: https, or http when the site is local.
 const marketUrl = async (fqdn: string, get: Get): Promise<string> => {
+  const doc = await discovery(fqdn, get);
   const { site } = links(fqdn);
-  const doc = await json(get, `${site}/.well-known/agentage.json`);
-  const first = Array.isArray(doc?.['markets']) ? doc['markets'][0] : undefined;
-  const url = new URL(String(first));
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && site.startsWith('http:')))
-    throw new Error('no market');
+  const first = Array.isArray(doc['markets']) ? doc['markets'][0] : undefined;
+  const url = typeof first === 'string' && URL.canParse(first) ? new URL(first) : null;
+  const local = url?.protocol === 'http:' && site.startsWith('http:');
+  if (!url || (url.protocol !== 'https:' && !local))
+    throw noMarket(fqdn, `${site}/.well-known/agentage.json`);
   return url.origin;
 };
 
@@ -53,24 +83,23 @@ const accept = (id: string, { version, package: pkg }: Record<string, unknown>):
   return { version, package: pkg };
 };
 
-// Never throws: a missing or silent market prints one line on stderr and answers null.
+// Never throws for a missing or silent market: it answers null and `down` keeps the first reason.
 export const openMarket = (fqdn: string = siteFqdn(), get: Get = timed): Market => {
   let base: Promise<string> | undefined;
-  let told = false;
+  let failure: CliError | null = null;
   const latest = async (id: string): Promise<Latest | null> => {
     let data: unknown;
     try {
       base ??= marketUrl(fqdn, get);
       const path = `/api/v1/extensions/${encodeURIComponent(id)}/latest`;
       data = (await json(get, `${await base}${path}`))?.['data'];
-    } catch {
-      if (!told) console.error(UNAVAILABLE);
-      told = true;
+    } catch (err) {
+      failure ??= err instanceof CliError ? err : marketError('market_failed', messageOf(err));
       return null;
     }
     return isRecord(data) ? accept(id, data) : null;
   };
-  return { latest, down: () => told };
+  return { latest, down: () => failure };
 };
 
 export interface Offered {
@@ -86,7 +115,10 @@ export const MAX_PAGES = 20;
 // Every row of the market list, page after page while `meta.nextCursor` names one.
 const pages = async (get: Get, url: string, cursor?: string, page = 1): Promise<unknown[]> => {
   if (page > MAX_PAGES)
-    throw new Error(`the market list has more than ${MAX_PAGES} pages of ${PAGE}; stopped there`);
+    throw marketError(
+      'market_failed',
+      `the market list has more than ${MAX_PAGES} pages of ${PAGE}; stopped there`
+    );
   const query = `?limit=${PAGE}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
   const body = await json(get, `${url}${query}`);
   const data = Array.isArray(body?.['data']) ? body['data'] : [];
