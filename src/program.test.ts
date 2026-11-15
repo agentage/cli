@@ -301,6 +301,8 @@ describe('createProgram', () => {
     });
     expect(await h.exec('extension', 'build', '--container')).toBe(0);
     expect(h.deps.extensionBuild).toHaveBeenLastCalledWith({ container: true });
+    expect(await h.exec('extension', 'build', '--docker')).toBe(0);
+    expect(h.deps.extensionBuild).toHaveBeenLastCalledWith({ docker: true });
     expect(await h.exec('extension', 'build', '--dir')).toBe(2);
     const failing = makeDeps({ extensionBuild: boom });
     expect(await failing.exec('extension', 'build')).toBe(1);

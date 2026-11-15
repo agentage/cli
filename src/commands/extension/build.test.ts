@@ -233,6 +233,19 @@ describe('extension build: the package, with no Docker', () => {
     expect(alone.error).toContain('--registry names where images go');
   });
 
+  test('--docker: the part images from a committed tree, no push, the flag kept away from the kit', async () => {
+    const { tool, calls: kit } = fakeTool();
+    const { deps, calls } = flagDeps();
+    const run = await output(() =>
+      runExtensionBuild({ docker: true, dir: 'ext' }, { ...deps, tool })
+    );
+    expect(run.error).toBeNull();
+    expect(calls).toEqual(['committed']);
+    expect(kit).toEqual([{ dir: 'ext' }]);
+    const both = await output(() => runExtensionBuild({ docker: true, container: true }, deps));
+    expect(both.error).toBe('--container and --docker: pick one');
+  });
+
   test('--container on a kit without the one-image build says so before anything runs', async () => {
     const { deps, calls } = flagDeps(true, false);
     const printed = await output(() => runExtensionBuild({ container: true }, deps));

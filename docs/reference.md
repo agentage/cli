@@ -417,6 +417,7 @@ writes the contracts the package commits (the kit's `writeContracts`, `@agentage
 ```bash
 agentage extension build                       # the package in this folder, no Docker
 agentage extension build --dir ../my-ext       # another package folder
+agentage extension build --docker              # one image per part, on this machine
 agentage extension build --container           # one image of the extension (needs a kit with it)
 agentage extension build --push                # one image per part, pushed, and the build record
 ```
@@ -430,12 +431,13 @@ conform. `--json` answers `{ dir, built, contracts, conforms }`.
 `--container` hands `container: true` to the kit's `build`: one image,
 `ghcr.io/agentage/<id>:<version>`. Only a kit that has the one-image build does that; with this
 cli's kit (0.13) it exits 1 (`invalid_argument`) before anything runs and names the kit version.
-`--push` builds one image per server part from the kit recipe (`node:26-alpine`, production
+`--docker` builds one image per server part from the kit recipe, on this machine; `--push`
+builds the same (`node:26-alpine`, production
 dependencies, non-root), tagged `ghcr.io/agentage/<id>-<part>:<version>` with the labels
 `org.opencontainers.image.revision` and `org.opencontainers.image.created`, pushes each (run
 `docker login ghcr.io` first) and writes the build record `dist/agentage-extension.json` with
 every image by digest; `extension release` runs this. `--registry <host/owner>` goes with
-`--container` or `--push` (alone it is refused). Both need `docker`, git and a committed tree.
+`--docker`, `--container` or `--push` (alone it is refused). Each needs `docker`, git and a committed tree.
 
 ## extension release
 

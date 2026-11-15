@@ -9,6 +9,8 @@ import { buildPackage, type PackageBuild } from './package-build.js';
 // `container` is in the kit's BuildOptions from the minor after 0.13.
 export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'> & {
   container?: boolean;
+  // The part images on this machine, as --push builds them, without the push.
+  docker?: boolean;
   json?: boolean;
 };
 
@@ -54,7 +56,9 @@ export const runImageBuild = async (
 ): Promise<unknown> => {
   await committed(opts.dir ?? '.');
   const { build, buildLines } = await tool();
-  const result = await build(omitJson(opts) as Parameters<typeof build>[0]);
+  const kit = omitJson(opts);
+  delete kit.docker;
+  const result = await build(kit as Parameters<typeof build>[0]);
   for (const line of buildLines(result)) console.log(line);
   return result;
 };
@@ -74,8 +78,9 @@ const defaultFlagDeps: BuildFlagDeps = {
 };
 
 const refusedFlags = (opts: ExtensionBuildOptions, deps: BuildFlagDeps): string => {
-  if (opts.registry && !opts.push && !opts.container)
-    return '--registry names where images go: use it with --container or --push';
+  if (opts.container && opts.docker) return '--container and --docker: pick one';
+  if (opts.registry && !opts.push && !opts.container && !opts.docker)
+    return '--registry names where images go: use it with --docker, --container or --push';
   if (opts.container && !deps.container())
     return `build --container needs a kit that builds one image (this cli has @agentage/extension ${kitVersion()}): update the cli`;
   return '';
@@ -91,14 +96,14 @@ const packageOnly = async (dir: string | undefined, deps: BuildFlagDeps): Promis
   return { ...done, conforms: true };
 };
 
-// No flag: the package. --container: one image (kit); --push: the part images and their record.
+// No flag: the package. --docker: the part images; --container: one image; --push: pushed, with the record.
 export const runExtensionBuild = async (
   opts: ExtensionBuildOptions = {},
   deps: BuildFlagDeps = defaultFlagDeps
 ): Promise<unknown> => {
   const refused = refusedFlags(opts, deps);
   if (refused) throw new CliError('invalid_argument', refused);
-  if (!opts.push && !opts.container) return packageOnly(opts.dir, deps);
+  if (!opts.push && !opts.container && !opts.docker) return packageOnly(opts.dir, deps);
   return runImageBuild(opts, deps.tool, deps.committed);
 };
 
@@ -109,10 +114,10 @@ check. Any folder state works, committed or not. Exits 1 when a step fails or th
 not conform.
 
 --container builds one image of the extension, ghcr.io/agentage/<id>:<version>, with the kit's
-recipe (needs a kit that has it; this cli says so when its kit does not). --push builds one image
-per server part, pushes them (run docker login first) and writes dist/agentage-extension.json,
-the build record with every image by digest; with --container it pushes the one image. Both need
-docker and a committed tree.`;
+recipe (needs a kit that has it; this cli says so when its kit does not). --docker builds one
+image per server part on this machine. --push builds those, pushes them (run docker login first)
+and writes dist/agentage-extension.json, the build record with every image by digest; with
+--container it pushes the one image. Each needs docker and a committed tree.`;
 
 export interface BuildActions {
   check: (opts: ExtensionCheckOptions) => Promise<void>;
@@ -133,6 +138,7 @@ export const addBuild = (group: Command, { check, build }: BuildActions): void =
     group
       .command('build')
       .description('Build the extension package; --container = one image, all parts')
+      .option('--docker', 'one image per server part on this machine (needs docker)')
       .option('--container', 'one image of the extension (needs docker)')
       .option('--push', 'build and push the images, write the build record with their digests')
       .option('--dir <path>', 'the extension package folder (default: the current folder)')

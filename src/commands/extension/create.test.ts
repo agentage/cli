@@ -268,8 +268,44 @@ describe('extension create', () => {
     expect(existsSync(join(root, `extension-${id}`))).toBe(false);
   });
 
-  test('refuses a --from that is not owner/repo', async () => {
-    expect((await create('market', [], '../../x')).error).toBe('--from ../../x: owner/repo');
+  test.for(['../../x', 'a/b#--upload-pack=x', 'a/b#x/../y', 'a/b#'])(
+    'refuses a --from %s that is not owner/repo[#branch]',
+    async (from) => {
+      expect((await create('market', [], from)).error).toBe(
+        `--from ${from}: owner/repo or owner/repo#branch`
+      );
+    }
+  );
+
+  test('--from owner/repo#branch clones that branch of the repo', async () => {
+    const repo = url.replace('file://', '');
+    execFileSync('git', ['-C', repo, 'checkout', '-q', '-b', 'feature/kit']);
+    writeFileSync(join(repo, 'branch.txt'), 'kit');
+    execFileSync('git', ['-C', repo, 'add', '.']);
+    execFileSync('git', [
+      '-C',
+      repo,
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'user.name=t',
+      'commit',
+      '-q',
+      '-m',
+      'b',
+    ]);
+    execFileSync('git', ['-C', repo, 'checkout', '-q', '-']);
+    const asked: string[] = [];
+    const printed = await output(() =>
+      runExtensionCreate(
+        { id: 'market', parts: [], from: 'x/y#feature/kit' },
+        (from) => (asked.push(from), url),
+        scaffoldOnly
+      )
+    );
+    expect(printed.error).toBeNull();
+    expect(asked).toEqual(['x/y']);
+    expect(read('branch.txt')).toBe('kit');
   });
 
   test('refuses an existing folder and leaves it as it was', async () => {

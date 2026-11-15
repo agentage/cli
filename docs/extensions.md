@@ -296,14 +296,14 @@ on Docker.
 
 ## Author commands
 
-| Command                                                   | What it does                                                                   |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `agentage extension create <id> [part...]`                | New `./extension-<id>`, built and installed in the daemon (`--no-install`)     |
-| `agentage extension check [dir] [--write]`                | Check that an extension package conforms (the six kit rules)                   |
-| `agentage extension build [--container] [--push]`         | Build the package (no Docker); `--container`: one image; `--push`: part images |
-| `agentage extension release`                              | Release from a tag in CI: guard, images, record, npm package                   |
-| `agentage extension up [--docker]` / `down`               | Run the working copy in the terminal (`--docker`: on Docker), then stop        |
-| `agentage extension token --scope <scope> [--dir <path>]` | Print a token from the dev issuer `extension up` started for that folder       |
+| Command                                                     | What it does                                                                                       |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `agentage extension create <id> [part...]`                  | New `./extension-<id>`, built and installed in the daemon (`--no-install`)                         |
+| `agentage extension check [dir] [--write]`                  | Check that an extension package conforms (the six kit rules)                                       |
+| `agentage extension build [--docker\|--container] [--push]` | Build the package (no Docker); `--docker`: part images; `--container`: one image; `--push`: pushed |
+| `agentage extension release`                                | Release from a tag in CI: guard, images, record, npm package                                       |
+| `agentage extension up [--docker]` / `down`                 | Run the working copy in the terminal (`--docker`: on Docker), then stop                            |
+| `agentage extension token --scope <scope> [--dir <path>]`   | Print a token from the dev issuer `extension up` started for that folder                           |
 
 `token --dir` is on master and needs a cli newer than 0.51.0. A new project pins the template's cli
 version, so check that version first.
@@ -316,7 +316,8 @@ parts, `create` sets `MIN_EXECUTED` to 1. `MIN_EXECUTED` is the least number of 
 must run. After the first green run, set it to the real count. When `create` cannot find that
 line, it says so and you set it by hand.
 
-After the clone, `create` runs `npm ci`, builds the package (as `extension build` does) and gives
+`--from <owner/repo>` takes another template repo, and `--from <owner/repo#branch>` one of its
+branches. After the clone, `create` runs `npm ci`, builds the package (as `extension build` does) and gives
 the folder to the daemon (`agentage extension install <folder>`), unless `--no-install`. It ends
 with `url       <the first public route of the api that answers>`.
 

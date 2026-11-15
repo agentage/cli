@@ -13,6 +13,8 @@ const ROUTED = ['pages', 'ui', 'api', 'mcp'];
 // `_` is a separator here, so `template__echo` is the id too.
 const WORD = /(?<![A-Za-z0-9])template(?![A-Za-z0-9])/g;
 const LOCK = 'package-lock.json';
+// owner/repo, optionally #branch: a git ref that cannot pass for a flag or leave the repo.
+const FROM = /^[\w.-]+\/[\w.-]+(?:#\w[\w./-]*)?$/;
 // What else goes with a dropped part: manifest keys the kit refuses without it, the store's SQL, the contract file of api and mcp.
 const PRUNE: Record<string, { keys?: string[][]; paths?: string[] }> = {
   cli: { keys: [['agentage', 'commands']] },
@@ -38,7 +40,8 @@ const refusal = ({ id, parts, from = TEMPLATE }: ExtensionCreateOptions, kept: s
   if (PARTS.includes(id)) return `id ${id} is a part name: pick another id`;
   if (!kept.some((part) => ROUTED.includes(part)))
     return `an extension needs at least one of ${ROUTED.join(', ')}`;
-  if (!/^[\w.-]+\/[\w.-]+$/.test(from)) return `--from ${from}: owner/repo`;
+  if (!FROM.test(from) || from.includes('..'))
+    return `--from ${from}: owner/repo or owner/repo#branch`;
   return existsSync(`extension-${id}`)
     ? `extension-${id} exists: pick another id or remove it`
     : '';
@@ -91,14 +94,17 @@ const renameLock = (dir: string, id: string): void => {
 
 // Bounded, a partial folder removed; git's own first line says why (no repo, no network, no access).
 const clone = async (url: string, from: string, dir: string): Promise<void> => {
+  const ref = from.split('#')[1];
+  const branch = ref ? ['--branch', ref] : [];
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
-  await run('git', ['clone', '-q', '--depth', '1', url, dir], { env, timeout: 120_000 }).catch(
-    (err: { stderr?: string; message: string }) => {
-      rmSync(dir, { recursive: true, force: true });
-      const why = (err.stderr?.trim() || err.message).split('\n')[0];
-      throw new Error(`cannot clone template ${from}: ${why}`);
-    }
-  );
+  await run('git', ['clone', '-q', '--depth', '1', ...branch, url, dir], {
+    env,
+    timeout: 120_000,
+  }).catch((err: { stderr?: string; message: string }) => {
+    rmSync(dir, { recursive: true, force: true });
+    const why = (err.stderr?.trim() || err.message).split('\n')[0];
+    throw new Error(`cannot clone template ${from}: ${why}`);
+  });
   rmSync(join(dir, '.git'), { recursive: true, force: true });
 };
 
@@ -136,13 +142,15 @@ const printNext = (dir: string, from: string, id: string, kept: string[]): void 
   const kit = String(
     json(join(dir, 'package.json'))['dependencies']?.['@agentage/extension'] ?? '?'
   );
-  console.log(` template  ${from} (default branch, kit ${kit.replace(/^[\^~]/, '')})`);
+  const [repo, ref] = from.split('#');
+  const branch = ref ? `branch ${ref}` : 'default branch';
+  console.log(` template  ${repo} (${branch}, kit ${kit.replace(/^[\^~]/, '')})`);
   console.log(` kept      ${kept.join(', ')}`);
   console.log(` id        ${id}  ·  host ${id}.next.agentage.io  ·  contract ${id}.mcpc.json`);
   console.log(` next      cd ${dir} && agentage extension up`);
 };
 
-// Clones the template's default branch into ./extension-<id> as a new working copy, no history;
+// Clones the template's default branch (or the #branch of --from) into ./extension-<id> as a new working copy, no history;
 // then installs its dependencies, builds it and (unless --no-install) gives it to the daemon.
 export const runExtensionCreate = async (
   opts: ExtensionCreateOptions,
@@ -154,7 +162,7 @@ export const runExtensionCreate = async (
   const refused = refusal(opts, kept);
   if (refused) throw new CliError('invalid_argument', refused);
   const dir = `extension-${id}`;
-  await clone(url(from), from, dir);
+  await clone(url(from.split('#')[0] ?? from), from, dir);
   const ci = shape(dir, from, id, kept);
   printNext(dir, from, id, kept);
   if (ci) console.log(ci);
@@ -168,7 +176,7 @@ export const addCreate = (group: Command, create: (o: ExtensionCreateOptions) =>
       .description('Create ./extension-<id> from the extension template with the parts named')
       .argument('<id>', 'the extension id, also its host and contract name')
       .argument('[parts...]', `parts to keep (default: all seven): ${PARTS.join(', ')}`)
-      .option('--from <owner/repo>', `the template repo (default: ${TEMPLATE})`)
+      .option('--from <owner/repo[#branch]>', `the template repo (default: ${TEMPLATE})`)
       .option('--no-install', 'build the folder, but do not give it to the daemon')
   ).action((id: string, parts: string[], o: { from?: string; install?: boolean; json?: boolean }) =>
     create({ id, parts, ...o })
