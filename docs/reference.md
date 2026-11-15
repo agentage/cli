@@ -626,15 +626,18 @@ A daemon counts as this machine's daemon only with proof: `/health` on the port 
 Requests go only to a proven daemon, and `stop` signals only a proven pid (SIGTERM, then SIGKILL
 after 30 s). The command reads `daemon.json` and then:
 
-| Found                                                        | What happens                                                                                                                          |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| no file, or its pid is gone                                  | the stale file is removed and `agentage daemon run` starts detached, in its own process group; the command waits for `/health` (30 s) |
-| the pid lives, the port is another program or another pid    | the file is stale: it is removed, nothing is signalled, a new daemon starts                                                           |
-| the pid lives, `/health` does not answer (3 tries, 2 s each) | the file stays; `daemon_unresponsive`, exit 1                                                                                         |
-| a proven daemon of another cli version or protocol           | it is stopped and started again; one line on stderr (`daemon restarted: ...`)                                                         |
-| the port is held by another program at the start             | `port_in_use`, naming the port and `AGENTAGE_DAEMON_PORT`                                                                             |
+| Found                                                        | What happens                                                                                                                                                                                                                       |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| no file, or its pid is gone                                  | the stale file is removed and `agentage daemon run` starts detached, in its own process group; the command waits for `/health` (30 s)                                                                                              |
+| the pid lives, the port is another program or another pid    | it waits 5 s for that pid to exit (a daemon that stops); then the file goes and a daemon starts, else `daemon_unavailable`: no second daemon starts beside a live pid, and `agentage daemon stop` clears the file without a signal |
+| the pid lives, `/health` does not answer (3 tries, 2 s each) | the file stays; `daemon_unresponsive`, exit 1                                                                                                                                                                                      |
+| a proven daemon of another protocol, or an older version     | it is stopped and started again; one line on stderr (`daemon restarted: ...`); a newer daemon serves as it is, never downgraded                                                                                                    |
+| the port is held by another program at the start             | `port_in_use`, naming the port and `AGENTAGE_DAEMON_PORT`                                                                                                                                                                          |
 
-`agentage update` restarts a running daemon after the install. `AGENTAGE_NO_DAEMON=1` makes
+A start that waits over 3 s, and a stop that waits over 3 s, print one line on stderr (never on
+stdout, so `--json` stays one object). A start that times out checks `daemon.json` and `/health`
+once more and uses a proven daemon found there; else it fails with `daemon_unavailable`, naming
+`agentage daemon status` and the log path. `agentage update` restarts a running daemon after the install. `AGENTAGE_NO_DAEMON=1` makes
 every command that needs the daemon fail with `daemon_disabled`; nothing starts.
 The daemon writes its output, and each extension's, to `<config>/logs/daemon.log`; at each start
 a log over 5 MB moves to `daemon.log.1` (one old file is kept). A daemon that cannot bind its port

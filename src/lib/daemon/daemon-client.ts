@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getConfigDir } from '../fs/config.js';
 import { CliError } from '../json-output.js';
+import { compareVersions } from '../update/update-check.js';
 import { VERSION } from '../../utils/version.js';
 import {
   daemonPort,
@@ -17,6 +18,7 @@ import {
   portInUse,
   probe,
   probeRetry,
+  PROGRESS_MS,
   PROTOCOL,
   proven,
   sleep,
@@ -32,17 +34,24 @@ export interface EnsureDeps {
   spawn: (port: number) => Promise<SpawnOutcome>;
   stop: () => Promise<StopResult>;
   log: (line: string) => void;
+  exitWaitMs?: number;
 }
 
 const START_MS = 30_000;
 const POLL_MS = 100;
+// A pid that lives on with its port closed is a daemon that is stopping: wait this long for it.
+const EXIT_WAIT_MS = 5_000;
 // Over this the log moves to daemon.log.1 at the next start; one old file is kept.
 export const LOG_CAP = 5 * 1024 * 1024;
 
 export const waitForHealth = async (port: number, timeoutMs = START_MS): Promise<boolean> => {
   const deadline = Date.now() + timeoutMs;
+  const note = Date.now() + PROGRESS_MS;
+  let noted = false;
   while (Date.now() < deadline) {
     if ((await probe(port, 500)).kind === 'ours') return true;
+    if (!noted && Date.now() >= note)
+      noted = (console.error(`waiting for the daemon to start on 127.0.0.1:${port}...`), true);
     await sleep(POLL_MS);
   }
   return false;
@@ -92,6 +101,18 @@ export const defaultEnsureDeps: EnsureDeps = {
   log: (line) => console.error(line),
 };
 
+// A start that timed out may still have come up late: a proven daemon in daemon.json serves.
+const lateDaemon = async (deps: EnsureDeps): Promise<number | null> => {
+  const file = readDaemonFile();
+  return file && proven(file, await deps.probe(file.port)) ? file.port : null;
+};
+
+const notStarted = (): CliError =>
+  new CliError(
+    'daemon_unavailable',
+    `the daemon did not start: it did not answer; see agentage daemon status and ${daemonLogPath()}`
+  );
+
 // Another cli may have started one on the same port at the same time: that one serves.
 const start = async (deps: EnsureDeps, port: number): Promise<number> => {
   const outcome = await deps.spawn(port);
@@ -100,12 +121,31 @@ const start = async (deps: EnsureDeps, port: number): Promise<number> => {
     throw portInUse(port);
   }
   if (outcome !== 'ok') {
-    const why = 'it did not answer (see logs/daemon.log in the config folder)';
-    throw new CliError('daemon_unavailable', `the daemon did not start: ${why}`);
+    const late = await lateDaemon(deps);
+    if (late === null) throw notStarted();
+    return late;
   }
   deps.log(`daemon started on 127.0.0.1:${port}`);
   return port;
 };
+
+const exited = async (pid: number, timeoutMs = EXIT_WAIT_MS): Promise<boolean> => {
+  const deadline = Date.now() + timeoutMs;
+  while (isAlive(pid) && Date.now() < deadline) await sleep(POLL_MS);
+  return !isAlive(pid);
+};
+
+// The pid of daemon.json lives and is not proven: a second daemon never starts beside it.
+const stillAlive = (file: DaemonFile): CliError =>
+  new CliError(
+    'daemon_unavailable',
+    `daemon.json names pid ${file.pid}, which is alive, but no daemon answers as it on port ` +
+      `${file.port}; when that pid is not the daemon, agentage daemon stop clears daemon.json`
+  );
+
+// Restart only for another protocol or an older daemon: a newer one serves as it is.
+const outdated = (health: { version: string; protocol: number }): boolean =>
+  health.protocol !== PROTOCOL || compareVersions(health.version, VERSION) < 0;
 
 // daemon.json's daemon when proven; a dead pid or another program there means the file is stale.
 const fromFile = async (file: DaemonFile, deps: EnsureDeps): Promise<number | null> => {
@@ -113,8 +153,11 @@ const fromFile = async (file: DaemonFile, deps: EnsureDeps): Promise<number | nu
   const found = await deps.probe(file.port);
   if (found.kind === 'silent') throw unresponsive(file);
   const health = proven(file, found);
-  if (!health) return (removeDaemonFile(), null);
-  if (health.version === VERSION && health.protocol === PROTOCOL) return file.port;
+  if (!health) {
+    if (!(await exited(file.pid, deps.exitWaitMs))) throw stillAlive(file);
+    return (removeDaemonFile(), null);
+  }
+  if (!outdated(health)) return file.port;
   await deps.stop();
   const port = await start({ ...deps, log: () => undefined }, daemonPort());
   deps.log(`daemon restarted: it ran ${health.version}, this cli is ${VERSION}`);

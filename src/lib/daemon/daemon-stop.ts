@@ -1,14 +1,26 @@
 import { isAlive, readDaemonFile, removeDaemonFile } from './daemon-file.js';
-import { probeRetry, proven, sleep, unresponsive, type Probe } from './daemon-probe.js';
+import {
+  PROGRESS_MS,
+  probeRetry,
+  proven,
+  sleep,
+  unresponsive,
+  type Probe,
+} from './daemon-probe.js';
 
 // The daemon drains each child for up to 10 s; past this it is killed.
 const STOP_MS = 30_000;
 const POLL_MS = 100;
 
-const gone = async (pid: number, timeoutMs: number): Promise<boolean> => {
+// One stderr line once the wait passes PROGRESS_MS; never on stdout, so --json stays one object.
+const gone = async (pid: number, timeoutMs: number, progressMs = PROGRESS_MS): Promise<boolean> => {
   const deadline = Date.now() + timeoutMs;
+  const note = Date.now() + progressMs;
+  let noted = false;
   while (isAlive(pid)) {
     if (Date.now() >= deadline) return false;
+    if (!noted && Date.now() >= note)
+      noted = (console.error(`waiting for the daemon (pid ${pid}) to stop...`), true);
     await sleep(POLL_MS);
   }
   return true;
@@ -28,6 +40,7 @@ export type StopResult = { stopped: number } | { stale: number } | null;
 export interface StopDeps {
   probe: (port: number) => Promise<Probe>;
   timeoutMs: number;
+  progressMs?: number;
 }
 
 const DEPS: StopDeps = { probe: (port) => probeRetry(port), timeoutMs: STOP_MS };
@@ -41,7 +54,7 @@ export const stopDaemon = async (deps: StopDeps = DEPS): Promise<StopResult> => 
   if (found.kind === 'silent') throw unresponsive(file);
   if (!proven(file, found)) return (removeDaemonFile(), { stale: file.pid });
   signal(file.pid, 'SIGTERM');
-  if (!(await gone(file.pid, deps.timeoutMs))) signal(file.pid, 'SIGKILL');
+  if (!(await gone(file.pid, deps.timeoutMs, deps.progressMs))) signal(file.pid, 'SIGKILL');
   await gone(file.pid, 5_000);
   removeDaemonFile();
   return { stopped: file.pid };

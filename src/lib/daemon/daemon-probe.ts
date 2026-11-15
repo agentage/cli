@@ -3,6 +3,9 @@ import { CliError } from '../json-output.js';
 import { type DaemonFile } from './daemon-file.js';
 
 // C4/C5: the protocol this cli speaks; a daemon with another one is restarted.
+// A wait longer than this prints one line on stderr, so a slow start or stop does not look hung.
+export const PROGRESS_MS = 3_000;
+
 export const PROTOCOL = 1;
 export const DAEMON_SERVICE = 'agentage-daemon';
 

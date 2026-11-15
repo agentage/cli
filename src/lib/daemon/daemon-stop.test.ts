@@ -68,7 +68,11 @@ describe('daemon stop', () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     const pid = deaf.pid ?? 0;
     dir.write('daemon.json', { pid, port: 4243 });
-    expect(await stopDaemon(deps(ours(pid), 200))).toEqual({ stopped: pid });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const slow = { ...deps(ours(pid), 400), progressMs: 100 };
+    expect(await stopDaemon(slow)).toEqual({ stopped: pid });
     expect(isAlive(pid)).toBe(false);
+    expect(errors.mock.calls).toEqual([[`waiting for the daemon (pid ${pid}) to stop...`]]);
+    errors.mockRestore();
   });
 });

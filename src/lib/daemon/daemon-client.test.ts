@@ -38,21 +38,30 @@ describe('the daemon start', () => {
     expect(d.probe).toHaveBeenCalledWith(4999);
   });
 
-  test('a dead pid, or a live pid whose port is not that daemon: the file goes, one spawns', async ({
-    dir,
-  }) => {
+  test('a dead pid: the file goes, one spawns', async ({ dir }) => {
     vi.stubEnv('AGENTAGE_DAEMON_PORT', '4555');
-    for (const [pid, found] of [
-      [2 ** 22 + 7, ours()],
-      [process.pid, ours(1)],
-      [process.pid, { kind: 'foreign' }],
-    ] as const) {
-      dir.write('daemon.json', { pid, port: 4556 });
-      const d = deps({ probe: vi.fn(async () => found as Probe) });
+    for (const found of [ours(), { kind: 'foreign' }, { kind: 'none' }] as Probe[]) {
+      dir.write('daemon.json', { pid: 2 ** 22 + 7, port: 4556 });
+      const d = deps({ probe: vi.fn(async () => found) });
       expect(await ensureDaemon(d)).toBe(4555);
       expect(dir.exists('daemon.json')).toBe(false);
       expect(d.spawn).toHaveBeenCalledWith(4555);
       expect(d.log).toHaveBeenCalledWith('daemon started on 127.0.0.1:4555');
+    }
+  });
+
+  test('a live pid that is not the daemon on its port: nothing spawns beside it', async ({
+    dir,
+  }) => {
+    for (const found of [ours(1), { kind: 'foreign' }, { kind: 'none' }] as Probe[]) {
+      dir.write('daemon.json', { pid: process.pid, port: 4556 });
+      const d = deps({ probe: vi.fn(async () => found), exitWaitMs: 50 });
+      await expect(ensureDaemon(d)).rejects.toMatchObject({
+        code: 'daemon_unavailable',
+        message: expect.stringContaining(`pid ${process.pid}, which is alive`),
+      });
+      expect(dir.exists('daemon.json')).toBe(true);
+      expect(d.spawn).not.toHaveBeenCalled();
     }
   });
 
@@ -66,7 +75,18 @@ describe('the daemon start', () => {
     expect(d.spawn).not.toHaveBeenCalled();
   });
 
-  test('another version or protocol: stop, start, one line on stderr', async ({ dir }) => {
+  test('a same or newer daemon serves as it is; never a downgrade restart', async ({ dir }) => {
+    const [major, minor] = VERSION.split('.').map(Number);
+    for (const version of [VERSION, `${major}.${(minor ?? 0) + 1}.0`, `${(major ?? 0) + 1}.0.0`]) {
+      dir.write('daemon.json', { pid: process.pid, port: 4243 });
+      const d = deps({ probe: vi.fn(async () => ours(process.pid, version)) });
+      expect(await ensureDaemon(d)).toBe(4243);
+      expect(d.stop).not.toHaveBeenCalled();
+      expect(d.spawn).not.toHaveBeenCalled();
+    }
+  });
+
+  test('an older version or another protocol: stop, start, one line on stderr', async ({ dir }) => {
     for (const found of [ours(process.pid, '0.0.1'), ours(process.pid, VERSION, 2)]) {
       dir.write('daemon.json', { pid: process.pid, port: 4243 });
       const d = deps({ probe: vi.fn(async () => found) });
@@ -92,7 +112,20 @@ describe('the daemon start', () => {
       message: expect.stringMatching(/port 4243 .*AGENTAGE_DAEMON_PORT/),
     });
     const silent = deps({ spawn: vi.fn(async () => 'unreachable' as const) });
-    await expect(ensureDaemon(silent)).rejects.toThrow('it did not answer');
+    await expect(ensureDaemon(silent)).rejects.toThrow(
+      /it did not answer; see agentage daemon status and .*daemon\.log/
+    );
+  });
+
+  test('a start that timed out uses a proven daemon that came up late', async ({ dir }) => {
+    const late = deps({
+      spawn: vi.fn(async () => {
+        dir.write('daemon.json', { pid: process.pid, port: 4243 });
+        return 'unreachable' as const;
+      }),
+      probe: vi.fn(async () => ours()),
+    });
+    expect(await ensureDaemon(late)).toBe(4243);
   });
 
   test('AGENTAGE_NO_DAEMON=1: daemon_disabled, nothing probed or spawned', async () => {
