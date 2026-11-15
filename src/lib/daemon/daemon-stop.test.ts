@@ -75,4 +75,22 @@ describe('daemon stop', () => {
     expect(errors.mock.calls).toEqual([[`waiting for the daemon (pid ${pid}) to stop...`]]);
     errors.mockRestore();
   });
+
+  test('a pid that outlives SIGKILL is stop_failed with the pid, and daemon.json stays', async ({
+    dir,
+  }) => {
+    const pid = 2 ** 22 + 9;
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    dir.write('daemon.json', { pid, port: 4243 });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const stuck = { ...deps(ours(pid), 50), killMs: 50 };
+    await expect(stopDaemon(stuck)).rejects.toMatchObject({
+      code: 'stop_failed',
+      message: `the daemon (pid ${pid}) did not stop, not even on SIGKILL`,
+    });
+    expect(kill.mock.calls.map((call) => call[1])).toContain('SIGKILL');
+    expect(dir.exists('daemon.json')).toBe(true);
+    kill.mockRestore();
+    errors.mockRestore();
+  });
 });

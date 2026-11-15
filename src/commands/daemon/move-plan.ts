@@ -1,4 +1,7 @@
 import { existsSync } from 'node:fs';
+import { basename } from 'node:path';
+import { installationPath, settingsPath } from '../../core/loader/installed.js';
+import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { scan } from '../../core/loader/scan.js';
 import { NO_MACHINE, readMachine } from '../../core/profile/machine.js';
@@ -28,11 +31,15 @@ export interface MovePlan {
 
 const PACKAGE_ID = /^(?:@agentage\/extension-|agentage-extension-)([a-z][a-z0-9-]*)$/;
 
+// A file that is there but does not parse would be written over as empty: its rows would be lost.
+const unparsed = (path: string): boolean => existsSync(path) && readJson(path, isRecord) === null;
+
 const invalidList = (): string | null => {
   const parsed = readProfile();
   if (parsed !== null && !parsed.ok) return `profile.json is invalid (${parsed.errors.join('; ')})`;
   if (existsSync(machinePath()) && readMachine() === null) return 'machine.json is invalid';
-  return null;
+  const bad = [installationPath(), settingsPath()].find(unparsed);
+  return bad ? `${basename(bad)} does not parse` : null;
 };
 
 // Why an entry stays behind: never run a folder 0.51 refused, or a package that is not there.

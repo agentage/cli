@@ -1,3 +1,4 @@
+import { CliError } from '../json-output.js';
 import { isAlive, readDaemonFile, removeDaemonFile } from './daemon-file.js';
 import { waitFor } from '../wait.js';
 import { PROGRESS_MS, probeRetry, proven, unresponsive, type Probe } from './daemon-probe.js';
@@ -26,9 +27,15 @@ export interface StopDeps {
   probe: (port: number) => Promise<Probe>;
   timeoutMs: number;
   progressMs?: number;
+  // After SIGKILL: how long the pid may take to go.
+  killMs?: number;
 }
 
 const DEPS: StopDeps = { probe: (port) => probeRetry(port), timeoutMs: STOP_MS };
+
+// Said only once the pid is gone; a pid that outlives SIGKILL keeps daemon.json, so it stays known.
+const stillThere = (pid: number): CliError =>
+  new CliError('stop_failed', `the daemon (pid ${pid}) did not stop, not even on SIGKILL`);
 
 // A pid is signalled only when its own port answers as our daemon with that pid.
 export const stopDaemon = async (deps: StopDeps = DEPS): Promise<StopResult> => {
@@ -39,8 +46,10 @@ export const stopDaemon = async (deps: StopDeps = DEPS): Promise<StopResult> => 
   if (found.kind === 'silent') throw unresponsive(file);
   if (!proven(file, found)) return (removeDaemonFile(), { stale: file.pid });
   signal(file.pid, 'SIGTERM');
-  if (!(await gone(file.pid, deps.timeoutMs, deps.progressMs))) signal(file.pid, 'SIGKILL');
-  await gone(file.pid, 5_000);
+  if (!(await gone(file.pid, deps.timeoutMs, deps.progressMs))) {
+    signal(file.pid, 'SIGKILL');
+    if (!(await gone(file.pid, deps.killMs ?? 5_000))) throw stillThere(file.pid);
+  }
   removeDaemonFile();
   return { stopped: file.pid };
 };

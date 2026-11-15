@@ -1,6 +1,7 @@
 import { createServer, type RequestListener, type Server } from 'node:http';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { isPid } from '../../lib/daemon/daemon-file.js';
 import { isRecord, readJson, writeTextAtomic } from '../../lib/fs/json-file.js';
 import { CliError, messageOf } from '../../lib/json-output.js';
 import { waitFor } from '../../lib/wait.js';
@@ -22,8 +23,7 @@ export const dataDirOf = (dir: string): string => join(resolve(dir), LOCAL, 'dat
 
 const isUpRecord = (value: unknown): value is UpRecord =>
   isRecord(value) &&
-  Number.isInteger(value['pid']) &&
-  (value['pid'] as number) > 0 &&
+  isPid(value['pid']) &&
   Number.isInteger(value['port']) &&
   (value['port'] as number) >= 1024 &&
   (value['port'] as number) <= 65535 &&
