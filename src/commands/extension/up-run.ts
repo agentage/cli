@@ -107,12 +107,8 @@ const runHosted = async (
   try {
     server = await serve(kit, hosted);
     const port = portOf(server);
-    writeRecord(dir, {
-      pid: process.pid,
-      port,
-      id: hosted.id,
-      instance: (await hosted.health()).data.instance,
-    });
+    const { instance } = (await hosted.health()).data;
+    writeRecord(dir, { pid: process.pid, port, id: hosted.id, instance });
     const url = `http://127.0.0.1:${port}/api/${hosted.id}/`;
     ready(hosted, url, port, json);
     const stoppedBy = await deps.stopped();
@@ -133,13 +129,8 @@ export const runLocalUp = async (
   await warnProblems(await deps.build(dir));
   delete process.env['AGENTAGE_TOKEN'];
   const kit = await deps.kit();
-  const done = await runHosted(
-    dir,
-    await kit.host(dir, { dataDir: dataDirOf(dir) }),
-    kit,
-    deps,
-    json
-  );
+  const hosted = await kit.host(dir, { dataDir: dataDirOf(dir) });
+  const done = await runHosted(dir, hosted, kit, deps, json);
   console.log(`stopped   ${done.id} (${done.stoppedBy})`);
   if (done.stoppedBy === 'SIGINT') setExit(130);
   return done;

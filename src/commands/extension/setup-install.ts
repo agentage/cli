@@ -49,6 +49,16 @@ const installOne = async (host: HostClient, entry: ProfileEntry & { id: string }
   return row ?? { ...added, notDisabled };
 };
 
+// An entry that installed but could not be turned off, or that failed to start.
+const problemOf = (id: string, row: Awaited<ReturnType<typeof installOne>>): Problem | null => {
+  if ('notDisabled' in row && row.notDisabled)
+    return {
+      kind: 'disable',
+      text: `${id}: ${row.notDisabled}; run agentage extension disable ${id}`,
+    };
+  return row.state === 'failed' ? failed(`${id}: ${row.error ?? 'failed'}`) : null;
+};
+
 const tryOne = async (
   host: HostClient,
   entry: ProfileEntry,
@@ -66,12 +76,7 @@ const tryOne = async (
   }));
   if ('error' in row && !('state' in row)) return failed(`${id}: ${row.error}`);
   console.log(`${row.id} ${row.version} ${row.state}`);
-  if ('notDisabled' in row && row.notDisabled)
-    return {
-      kind: 'disable',
-      text: `${id}: ${row.notDisabled}; run agentage extension disable ${id}`,
-    };
-  return row.state === 'failed' ? failed(`${id}: ${row.error ?? 'failed'}`) : null;
+  return problemOf(id, row);
 };
 
 const listed = (title: string, items: string[]) =>

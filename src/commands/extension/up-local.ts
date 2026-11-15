@@ -1,13 +1,7 @@
 import { createServer, type RequestListener, type Server } from 'node:http';
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { isRecord, readJson, writeJsonAtomic } from '../../lib/fs/json-file.js';
 import { CliError, messageOf } from '../../lib/json-output.js';
 import { waitFor } from '../../lib/wait.js';
 
@@ -26,15 +20,14 @@ export interface UpRecord {
 export const recordPath = (dir: string): string => join(resolve(dir), LOCAL, 'up.json');
 export const dataDirOf = (dir: string): string => join(resolve(dir), LOCAL, 'data');
 
-export const readRecord = (dir: string): UpRecord | null => {
-  const file = recordPath(dir);
-  if (!existsSync(file)) return null;
-  try {
-    return JSON.parse(readFileSync(file, 'utf8')) as UpRecord;
-  } catch {
-    return null;
-  }
-};
+const isUpRecord = (value: unknown): value is UpRecord =>
+  isRecord(value) &&
+  Number.isInteger(value['pid']) &&
+  Number.isInteger(value['port']) &&
+  typeof value['id'] === 'string' &&
+  typeof value['instance'] === 'string';
+
+export const readRecord = (dir: string): UpRecord | null => readJson(recordPath(dir), isUpRecord);
 
 // The run state stays out of git: `.agentage/` goes into the folder's .gitignore when missing.
 export const ignoreLocal = (dir: string): void => {
@@ -49,7 +42,7 @@ export const ignoreLocal = (dir: string): void => {
 export const writeRecord = (dir: string, record: UpRecord): void => {
   mkdirSync(join(resolve(dir), LOCAL), { recursive: true });
   ignoreLocal(dir);
-  writeFileSync(recordPath(dir), `${JSON.stringify(record)}\n`, { mode: 0o600 });
+  writeJsonAtomic(recordPath(dir), record);
 };
 
 export const removeRecord = (dir: string): void => rmSync(recordPath(dir), { force: true });

@@ -49,6 +49,12 @@ export interface MoveHooks {
   entry?: (moved: Moved) => void;
 }
 
+const addEntry = (moved: Moved, hooks: MoveHooks): void => {
+  addRow(moved.row);
+  addSettings(moved.row.id, moved.settings);
+  hooks.entry?.(moved);
+};
+
 // D6, before the daemon reads the file. An old list that does not parse moves nothing and writes
 // no marker: the daemon still starts, and the next start tries again.
 export const moveOldLists = async (hooks: MoveHooks = {}): Promise<void> => {
@@ -64,11 +70,7 @@ export const moveOldLists = async (hooks: MoveHooks = {}): Promise<void> => {
     writeReport(report);
     return console.error(`move: ${plan.warning}; nothing moved, fix it and restart the daemon`);
   }
-  for (const moved of plan.moved) {
-    addRow(moved.row);
-    addSettings(moved.row.id, moved.settings);
-    hooks.entry?.(moved);
-  }
+  for (const moved of plan.moved) addEntry(moved, hooks);
   writeReport(report);
   writeFileSync(marker, `${new Date().toISOString()}\n`);
   say(report);
