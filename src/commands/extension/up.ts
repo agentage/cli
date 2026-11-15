@@ -1,10 +1,12 @@
 import { InvalidArgumentError, type Command } from 'commander';
+import { addJson } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { execIn, type Exec } from './release-guard.js';
 import { assertOwnStack } from './stack-owner.js';
 
 export interface ExtensionUpOptions {
   dir?: string;
+  json?: boolean;
 }
 
 export interface ExtensionDownOptions extends ExtensionUpOptions {
@@ -16,34 +18,45 @@ export interface ExtensionTokenOptions extends ExtensionUpOptions {
   issuer?: string;
 }
 
-const print = (line: string): void => console.log(line);
+// Prints each line as the kit reports it and keeps them for the --json answer.
+const printed = (): { lines: string[]; onLine: (line: string) => void } => {
+  const lines: string[] = [];
+  return { lines, onLine: (line) => void (console.log(line), lines.push(line)) };
+};
 
 // Each step's line as the kit reports it, the ready line last.
 export const runExtensionUp = async (
-  opts: ExtensionUpOptions = {},
+  { json: _json, ...opts }: ExtensionUpOptions = {},
   tool: LoadKitTool = loadKitTool
-): Promise<void> => {
+): Promise<unknown> => {
   const { up } = await tool();
-  await up({ ...opts, onLine: print });
+  const { lines, onLine } = printed();
+  await up({ ...opts, onLine });
+  return { lines };
 };
 
 export const runExtensionDown = async (
-  opts: ExtensionDownOptions = {},
+  { json: _json, ...opts }: ExtensionDownOptions = {},
   tool: LoadKitTool = loadKitTool
-): Promise<void> => {
+): Promise<unknown> => {
   const { down } = await tool();
-  await down({ ...opts, onLine: print });
+  const { lines, onLine } = printed();
+  await down({ ...opts, onLine });
+  return { lines };
 };
 
 // The token alone on stdout, so a script can take it as it is.
 export const runExtensionToken = async (
-  { dir = '.', ...opts }: ExtensionTokenOptions,
+  { dir = '.', json, ...opts }: ExtensionTokenOptions,
   tool: LoadKitTool = loadKitTool,
   exec: Exec = execIn('.', 10)
-): Promise<void> => {
+): Promise<unknown> => {
   if (!opts.issuer) await assertOwnStack(dir, exec, tool);
   const { token } = await tool();
-  console.log(await token(opts));
+  const value = await token(opts);
+  if (json) return { token: value };
+  console.log(value);
+  return undefined;
 };
 
 // A usage error (exit 2) before the kit is asked: the issuer is an http: or https: URL.
@@ -88,31 +101,37 @@ const DIR = '--dir <path>';
 const DIR_TEXT = 'the extension package folder (default: the current folder)';
 
 const addUp = (group: Command, up: KitActions['up']): void => {
-  group
-    .command('up')
-    .description('Run the extension package on this machine: images, store, issuer, gateway')
-    .option(DIR, DIR_TEXT)
+  addJson(
+    group
+      .command('up')
+      .description('Run the extension package on this machine: images, store, issuer, gateway')
+      .option(DIR, DIR_TEXT)
+  )
     .addHelpText('after', UP_HELP)
     .action(up);
 };
 
 const addDown = (group: Command, down: KitActions['down']): void => {
-  group
-    .command('down')
-    .description('Remove what extension up started; --keep-data keeps the store')
-    .option(DIR, DIR_TEXT)
-    .option('--keep-data', "keep the store's volume")
+  addJson(
+    group
+      .command('down')
+      .description('Remove what extension up started; --keep-data keeps the store')
+      .option(DIR, DIR_TEXT)
+      .option('--keep-data', "keep the store's volume")
+  )
     .addHelpText('after', DOWN_HELP)
     .action(down);
 };
 
 const addToken = (group: Command, token: KitActions['token']): void => {
-  group
-    .command('token')
-    .description('Print a token from the dev issuer extension up started')
-    .requiredOption('--scope <scope>', 'the scope the token carries, e.g. probe:write')
-    .option(DIR, DIR_TEXT)
-    .option('--issuer <url>', 'the dev issuer (default: http://localhost:4281)', issuerUrl)
+  addJson(
+    group
+      .command('token')
+      .description('Print a token from the dev issuer extension up started')
+      .requiredOption('--scope <scope>', 'the scope the token carries, e.g. probe:write')
+      .option(DIR, DIR_TEXT)
+      .option('--issuer <url>', 'the dev issuer (default: http://localhost:4281)', issuerUrl)
+  )
     .addHelpText('after', TOKEN_HELP)
     .action(token);
 };

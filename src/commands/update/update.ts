@@ -4,6 +4,7 @@ import { type Command } from 'commander';
 import { getConfigDir } from '../../lib/fs/config.js';
 import { acquireFileLock, releaseFileLock, type LockOptions } from '../../lib/fs/file-lock.js';
 import { requireNpm10, runNpm } from '../../lib/npm/npm-cli.js';
+import { addJson } from '../../lib/json-output.js';
 import { checkForUpdate, INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
 import { VERSION } from '../../utils/version.js';
 
@@ -46,6 +47,14 @@ const defaultDeps: UpdateDeps = {
 
 export interface UpdateOptions {
   check?: boolean;
+  json?: boolean;
+}
+
+export interface UpdateResult {
+  installed: string;
+  status: UpdateInfo['status']['kind'];
+  latest: string | null;
+  updated: boolean;
 }
 
 const describe = (info: UpdateInfo): string => {
@@ -74,17 +83,25 @@ const install = async (deps: UpdateDeps): Promise<void> => {
 export const runUpdate = async (
   opts: UpdateOptions,
   deps: UpdateDeps = defaultDeps
-): Promise<void> => {
+): Promise<UpdateResult> => {
   const info = await deps.check(VERSION);
   deps.log(describe(info));
-  const behind = info.status.kind === 'update-available' || info.status.kind === 'unsupported';
-  if (opts.check || !behind) return;
+  const { status } = info;
+  const result = {
+    installed: VERSION,
+    status: status.kind,
+    latest: 'latest' in status ? (status.latest ?? null) : null,
+    updated: false,
+  };
+  const behind = status.kind === 'update-available' || status.kind === 'unsupported';
+  if (opts.check || !behind) return result;
   if (!deps.acquireLock()) {
     deps.log(chalk.yellow('Another update is already in progress; skipping.'));
-    return;
+    return result;
   }
   try {
     await install(deps);
+    return { ...result, updated: true };
   } finally {
     deps.releaseLock();
   }
@@ -94,9 +111,10 @@ export const registerUpdate = (
   program: Command,
   action: (opts: UpdateOptions) => Promise<void>
 ): void => {
-  program
-    .command('update')
-    .description('Update @agentage/cli to the latest published version')
-    .option('--check', 'report whether an update is available, without installing')
-    .action(action);
+  addJson(
+    program
+      .command('update')
+      .description('Update @agentage/cli to the latest published version')
+      .option('--check', 'report whether an update is available, without installing')
+  ).action(action);
 };

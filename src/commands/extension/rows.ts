@@ -1,3 +1,4 @@
+import { CliError } from '../../lib/json-output.js';
 import { type PlanSummary, type PlanVerb } from '../../core/installer/plan.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { type LoadOutcome } from '../../core/loader/load.js';
@@ -134,5 +135,8 @@ export const gatherExtensions = async (): Promise<ExtensionsGather> =>
 // The report still prints first; an invalid profile.json then fails the step.
 export const invalidProfileError = (profile: ProfileStatus): Error | null =>
   profile.state === 'invalid'
-    ? new Error(`profile.json is invalid:\n${profile.errors.map((e) => `  ${e}`).join('\n')}`)
+    ? new CliError(
+        'profile_invalid',
+        `profile.json is invalid:\n${profile.errors.map((e) => `  ${e}`).join('\n')}`
+      )
     : null;

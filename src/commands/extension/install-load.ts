@@ -10,6 +10,10 @@ import { askSecrets } from './secrets-prompt.js';
 
 export const line = (label: string, value: string): string => `${label.padEnd(10)} ${value}`;
 
+// What a --json run of install, remove or setup answers: the rows as they stand now.
+export const extensionsResult = async (json?: boolean): Promise<unknown> =>
+  json ? { extensions: (await gatherExtensions()).status.extensions } : undefined;
+
 export const counted = (n: number): string =>
   n === 0 ? 'no extensions' : `${n} extension${n === 1 ? '' : 's'}`;
 

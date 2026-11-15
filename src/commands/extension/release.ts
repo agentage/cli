@@ -3,11 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Command } from 'commander';
 import type { ExtensionPackage } from '@agentage/extension/tool';
+import { addJson, CliError } from '../../lib/json-output.js';
 import { runExtensionBuild } from './build.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { execIn, IMAGE_PARTS, RECORD, releaseGuard, type Exec } from './release-guard.js';
 
-export type ExtensionReleaseOptions = { dir?: string; timeout?: number };
+export type ExtensionReleaseOptions = { dir?: string; timeout?: number; json?: boolean };
 
 export interface ReleaseDeps {
   exec: (cwd: string, seconds?: number) => Exec;
@@ -20,7 +21,7 @@ const defaultDeps: ReleaseDeps = { exec: execIn, tool: loadKitTool, env: process
 const step = (line: string): void => console.log(`PASS ${line}`);
 
 const fail = (line: string): never => {
-  throw new Error(`FAIL ${line}`);
+  throw new CliError('release_refused', `FAIL ${line}`);
 };
 
 // Tokens leave the environment, so docker build and npm lifecycle scripts never see them.
@@ -134,7 +135,7 @@ const preflight = async (
 export const runExtensionRelease = async (
   { dir = '.', timeout = 60 }: ExtensionReleaseOptions = {},
   deps: ReleaseDeps = defaultDeps
-): Promise<void> => {
+): Promise<unknown> => {
   const { GITHUB_REF_NAME: tag, GITHUB_SHA: sha, GITHUB_REPOSITORY: repo } = deps.env;
   const missing = ['GITHUB_REF_NAME', 'GITHUB_SHA', 'GITHUB_REPOSITORY'].find((n) => !deps.env[n]);
   if (!tag || !sha || !repo) return fail(`inputs: ${missing} is not set; run it on a tag push`);
@@ -153,23 +154,30 @@ export const runExtensionRelease = async (
     await runExtensionBuild({ push: true, dir }, deps.tool);
     await attach(run, tag, repo);
   }
-  if (isPrivate) return step('npm: private package, not published');
-  const push = scoped(deps.exec(dir, PUBLISH_SECONDS), secrets);
-  await publish(run, push, pkg, secrets['npm']?.['NPM_TOKEN']);
+  if (isPrivate) step('npm: private package, not published');
+  else
+    await publish(
+      run,
+      scoped(deps.exec(dir, PUBLISH_SECONDS), secrets),
+      pkg,
+      secrets['npm']?.['NPM_TOKEN']
+    );
+  return { id, version: pkg.version, tag, built: build, published: !isPrivate };
 };
 
 export const addRelease = (
   group: Command,
   release: (opts: ExtensionReleaseOptions) => Promise<void>
 ): void => {
-  group
-    .command('release')
-    .description('Release an extension from its v* tag in CI: guard, images, record, npm package')
-    .option('--dir <path>', 'the extension package folder (default: the current folder)')
-    .option(
-      '--timeout <seconds>',
-      'bound on each git, GitHub and npm check (default: 60; npm publish: 300)',
-      Number
-    )
-    .action(release);
+  addJson(
+    group
+      .command('release')
+      .description('Release an extension from its v* tag in CI: guard, images, record, npm package')
+      .option('--dir <path>', 'the extension package folder (default: the current folder)')
+      .option(
+        '--timeout <seconds>',
+        'bound on each git, GitHub and npm check (default: 60; npm publish: 300)',
+        Number
+      )
+  ).action(release);
 };

@@ -1,3 +1,4 @@
+import { CliError } from '../../lib/json-output.js';
 import { driftLines } from '../../core/installer/plan.js';
 import { type DiscoveredExtension } from '../../core/loader/discover.js';
 import { loadExtensions } from '../../core/loader/load.js';
@@ -36,12 +37,12 @@ export const failedError = (rows: ExtensionRow[]): Error | null => {
   const failed = rows.filter((row) => row.state === 'failed').map((row) => row.id ?? row.package);
   if (failed.length === 0) return null;
   const count = `${failed.length} extension${failed.length === 1 ? '' : 's'}`;
-  return new Error(`${count} failed to load: ${failed.join(', ')}`);
+  return new CliError('extension_failed', `${count} failed to load: ${failed.join(', ')}`);
 };
 
 // Integrity drift: the extensions it names were not loaded, and setup refuses to build on it.
 const driftError = (drift: string[]): Error | null =>
-  drift.length === 0 ? null : new Error(driftLines(drift).join('\n'));
+  drift.length === 0 ? null : new CliError('integrity_drift', driftLines(drift).join('\n'));
 
 // The rows always print; an invalid profile.json, integrity drift or a failed load fails the step.
 export const runExtensionDoctor = async (

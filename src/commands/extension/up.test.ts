@@ -90,6 +90,18 @@ describe('extension up, down and token: thin commands over the kit tool', () => 
     expect(run.lines).toEqual(['removed  6 containers']);
   });
 
+  test('up and down return their lines for --json; token returns itself and prints nothing', async () => {
+    const { tool } = fakeKit();
+    const up = await output(() => runExtensionUp({ json: true }, tool));
+    expect(up.error).toBeNull();
+    const result = await runExtensionDown({ json: true }, tool);
+    expect(result).toEqual({ lines: ['removed  6 containers'] });
+    const token = await output(() =>
+      runExtensionToken({ scope: 'a:b', issuer: 'http://localhost:4281', json: true }, tool)
+    );
+    expect(token.stdout).toBe('');
+  });
+
   test.for([
     ['the stack up is the one up started here', 'market', 'own'],
     ['a legacy project is up and compose.json here names it', 'legacy', 'agentage-market'],

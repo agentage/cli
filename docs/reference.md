@@ -617,6 +617,41 @@ dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or
 `--token aga_...` per command. A token takes precedence over a stored sign-in. Plain `setup`
 never signs in with `AGENTAGE_TOKEN`. Its account step and its status step use the token.
 
+## The --json envelope
+
+Every core command takes `--json`. With it the command writes exactly one JSON object on stdout
+and nothing else there (progress lines go to stderr), and never prompts:
+
+```json
+{ "success": true, "data": { "extensions": [] } }
+{ "success": false, "error": { "code": "not_installed", "message": "probe is not installed" } }
+```
+
+An error exits 1. `code` is snake_case and stable: `not_installed`, `needed_by_dependents`,
+`confirmation_required`, `extension_failed`, `profile_invalid`, `integrity_drift`,
+`invalid_argument`, `invalid_option`, `not_conforming`, `uncommitted_changes`, `release_refused`,
+`auth_required`, `auth_unavailable`, `not_pushed`, `token_request_failed`, `error` (any other).
+A usage error (exit 2) happens before the command runs and prints no object.
+
+| Command                                | `data`                                                         |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `setup`, `extension install`, `remove` | `{ extensions: [...] }`, the rows as `extension list` has them |
+| `update`                               | `{ installed, status, latest, updated }`                       |
+| `extension create`                     | `{ id, dir, from, kept }`                                      |
+| `extension build`                      | the kit's build result                                         |
+| `extension release`                    | `{ id, version, tag, built, published }`                       |
+| `extension up`, `down`                 | `{ lines }`, the lines the kit reported                        |
+| `extension token`                      | `{ token }`; nothing else is printed                           |
+
+`setup` with `--json` does not open a browser: when it must sign in it needs `--no-browser`, else
+it fails with `confirmation_required`. `extension remove --purge` with `--json` needs `--yes`, else
+`confirmation_required`. Secrets are listed, never asked.
+
+`status`, `extension list`, `doctor` and `check`, and `setup` with `--dry-run` or `--check`, keep
+their own JSON (described under each command) because tools read it today. An error they hit
+before printing anything is the error object; after the report it stays a red line on stderr and
+exit 1. A command an extension adds takes its own `--json`, which the extension owns.
+
 ## Exit codes
 
 | Code | Meaning                                                                                             |

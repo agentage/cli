@@ -104,4 +104,19 @@ describe('installLatest', () => {
     await expect(installLatest(run, old)).rejects.toThrow('found 9.8.1');
     expect(run).not.toHaveBeenCalled();
   });
+
+  it('returns the result for --json: installed, status, latest, updated', async () => {
+    const h = makeDeps({ kind: 'update-available', latest: '0.0.9' });
+    expect(await runUpdate({ json: true }, h.deps)).toMatchObject({
+      status: 'update-available',
+      latest: '0.0.9',
+      updated: true,
+    });
+    const check = makeDeps({ kind: 'current' });
+    expect(await runUpdate({ check: true }, check.deps)).toMatchObject({
+      status: 'current',
+      latest: null,
+      updated: false,
+    });
+  });
 });
