@@ -32,7 +32,6 @@ const setup = (
 ) =>
   output(() =>
     runExtensionSetup(opts, {
-      installsDisabled: async () => false,
       ensureSignedIn: async () => 'already',
       signOut: async () => console.log('(signed out)'),
       printStatus: async () => undefined,
@@ -148,27 +147,17 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     );
   });
 
-  test('an off entry whose disable fails is reported installed but NOT disabled, never not installed', async ({
+  // The bundled kit lists installDisabled: an off entry never starts, and needs no disable after.
+  test("this machine's off entries install disabled: enabled: false on the add", async ({
     dir,
   }) => {
-    dir.machine({});
-    const account = fakeAccount();
-    account.store({ ...HELLO_DOC, machines: { [MACHINE_ID]: { off: [HELLO_PKG], config: {} } } });
-    vi.mocked(daemon.host.change).mockRejectedValueOnce(new DaemonError('UNAVAILABLE', 'busy'));
-    const run = await setup(account);
-    expect(run.error).toBe(
-      'installed but NOT disabled:\n  hello: busy; run agentage extension disable hello'
-    );
-  });
-
-  test("this machine's off entries install disabled", async ({ dir }) => {
     dir.machine({});
     const account = fakeAccount();
     const machines = { [MACHINE_ID]: { off: [HELLO_PKG], config: {} } };
     account.store({ ...HELLO_DOC, machines });
     await setup(account);
-    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'hello' });
-    expect(daemon.host.change).toHaveBeenCalledWith('hello', { enabled: false });
+    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'hello', enabled: false });
+    expect(daemon.host.change).not.toHaveBeenCalled();
   });
 
   test('a profile entry the daemon refuses fails setup naming it; a package that is no extension is skipped', async () => {
@@ -188,17 +177,6 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     expect(run.error).toBeNull();
     expect(run.lines).toContain('@other/thing: not an extension, skipped');
     expect(daemon.host.add).not.toHaveBeenCalled();
-  });
-
-  test('a daemon that installs disabled (installDisabled) gets enabled: false on the add', async ({
-    dir,
-  }) => {
-    dir.machine({});
-    const account = fakeAccount();
-    account.store({ ...HELLO_DOC, machines: { [MACHINE_ID]: { off: [HELLO_PKG], config: {} } } });
-    await setup(account, {}, { installsDisabled: async () => true });
-    expect(daemon.host.add).toHaveBeenCalledWith({ id: 'hello', enabled: false });
-    expect(daemon.host.change).not.toHaveBeenCalled();
   });
 
   test('with the daemon off, setup pulls the profile and installs nothing', async () => {

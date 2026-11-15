@@ -1,6 +1,7 @@
 import { realpathSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { isAbsolute, join, resolve } from 'node:path';
+import { kitIdProblem } from '../../core/kit-id.js';
 import { unsafeDevPath } from '../../core/loader/dev-path.js';
 import { prunePackages } from '../../core/installer/package-dir.js';
 import { installationRows, versionsInUse } from '../../core/loader/installed.js';
@@ -9,8 +10,6 @@ import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type HostClient, type HostSummary } from '../../lib/daemon/host-client.js';
 import { installFolder, installId } from './install-once.js';
 import { CliError, isJsonRun } from '../../lib/json-output.js';
-import { fromNpmLine } from '../../lib/net/market-error.js';
-import { siteFqdn } from '../../lib/net/origins.js';
 
 // Every lifecycle command is a client of the daemon; `host` starts it when none runs.
 export interface LifecycleDeps {
@@ -40,6 +39,14 @@ export interface RemoveOptions {
 const ID = /^[a-z][a-z0-9-]*$/;
 const LOCAL = /^\.{1,2}(?:[/\\]|$)/;
 const PACKAGE_PREFIX = /^(@agentage\/extension-|agentage-extension-)/;
+const UNSCOPED = 'agentage-extension-';
+
+// The daemon takes an id, not a package name: with a market it resolves only the scoped name.
+const unscoped = (name: string): CliError =>
+  new CliError(
+    'invalid_argument',
+    `${name}: an unscoped npm name installs only on a site with no market; nothing installed`
+  );
 
 // What 0.51 installed and the daemon does not: say what to type instead.
 const refusedName = (name: string): string | null => {
@@ -59,6 +66,8 @@ export const specOf = (name: string): { id: string; version?: string } => {
   const version = at < 0 ? undefined : name.slice(at + 1);
   if (!ID.test(id) || version === '')
     throw new CliError('invalid_argument', `${name}: not an id, id@version or a folder (./path)`);
+  const owned = kitIdProblem(id);
+  if (owned) throw new CliError('invalid_argument', `${name}: ${owned}`);
   return { id, ...(version && { version }) };
 };
 
@@ -91,27 +100,24 @@ export const report = (done: HostSummary, note = ''): HostSummary => {
 };
 
 export interface InstallDeps extends LifecycleDeps {
-  // True when the site has no market, so a bare id came from npm.
-  noMarket?: (id: string) => Promise<boolean>;
+  // The stderr line when npm resolved a bare id (the site has no market, or its market lacks it).
+  fromNpm?: (id: string, what: string) => Promise<string | null>;
+  // True when the site has a market: an unscoped npm name is then refused.
+  hasMarket?: (id: string) => Promise<boolean>;
 }
-
-const sayFromNpm = async (
-  id: string,
-  version: string,
-  noMarket: (id: string) => Promise<boolean>
-) => {
-  if (await noMarket(id)) console.error(fromNpmLine(siteFqdn(), `${id} ${version} came`));
-};
 
 export const runInstall = async (opts: InstallOptions, deps: InstallDeps) => {
   const host = await deps.host();
   const folder = LOCAL.test(opts.name) || isAbsolute(opts.name);
   const spec = folder ? null : specOf(opts.name);
+  if (spec && opts.name.startsWith(UNSCOPED) && (await deps.hasMarket?.(spec.id)))
+    throw unscoped(opts.name);
   const { row: done, already } = spec
     ? await installId(host, spec)
     : await installFolder(host, folderOf(opts.name));
   const bare = spec && !spec.version && !already;
-  if (bare && deps.noMarket) await sayFromNpm(spec.id, done.version, deps.noMarket);
+  const line = bare && (await deps.fromNpm?.(spec.id, `${spec.id} ${done.version} came`));
+  if (line) console.error(line);
   if (!opts.off) return report(done, already ? ' (already installed)' : '');
   console.error('install --off is now: agentage extension disable <id>');
   return report(await host.change(done.id, { enabled: false }));

@@ -4,7 +4,6 @@ import { type HostClient } from '../../lib/daemon/host-client.js';
 import { CliError, messageOf } from '../../lib/json-output.js';
 import { line } from './line.js';
 import { addOnce } from './install-once.js';
-import { kitInstallsDisabled } from './kit-tool.js';
 import {
   accountProfileInstalled,
   NOT_EXTENSION,
@@ -22,8 +21,6 @@ export interface ProfileInstallDeps {
   daemonOff: boolean;
   // account: plain setup, once per machine; file: `setup --profile`, an explicit ask, never gated.
   from: 'account' | 'file';
-  // The daemon takes enabled: false on the add (the kit lists installDisabled).
-  installsDisabled?: () => Promise<boolean>;
 }
 
 const KEPT =
@@ -33,65 +30,28 @@ const KEPT =
 const bodyOf = (id: string, range: string): { id: string; version?: string } =>
   EXACT.test(range) ? { id, version: range } : { id };
 
-// install: it is not installed; disable: an off entry installed, but its disable failed.
-interface Problem {
-  kind: 'install' | 'disable';
-  text: string;
-}
-const failed = (text: string): Problem => ({ kind: 'install', text });
-
-const disable = (host: HostClient, id: string) =>
-  host.change(id, { enabled: false }).then(
-    (row) => ({ row, notDisabled: null }),
-    (err: unknown) => ({ row: null, notDisabled: messageOf(err) })
-  );
-
 type Entry = ProfileEntry & { id: string };
 
-// One entry through POST /host/extensions; off: added disabled when the daemon can, else disabled after.
-const installOne = async (host: HostClient, entry: Entry, offOnAdd: boolean) => {
-  const off = entry.off && offOnAdd ? { enabled: false as const } : {};
+// One entry through POST /host/extensions; an off entry is added disabled (it never starts).
+const installOne = async (host: HostClient, entry: Entry) => {
+  const off = entry.off ? { enabled: false as const } : {};
   const { row, already } = await addOnce(host, { ...bodyOf(entry.id, entry.range), ...off });
-  if (already) return { ...row, already };
-  if (!entry.off || offOnAdd) return row;
-  const done = await disable(host, entry.id);
-  return done.row ?? { ...row, notDisabled: done.notDisabled };
-};
-
-// An entry that installed but could not be turned off, or that failed to start.
-const problemOf = (id: string, row: Awaited<ReturnType<typeof installOne>>): Problem | null => {
-  if ('notDisabled' in row && row.notDisabled)
-    return {
-      kind: 'disable',
-      text: `${id}: ${row.notDisabled}; run agentage extension disable ${id}`,
-    };
-  return row.state === 'failed' ? failed(`${id}: ${row.error ?? 'failed'}`) : null;
+  return already ? { ...row, already } : row;
 };
 
 // A package that is not an extension is said and skipped: the daemon cannot install it, ever.
-const tryOne = async (host: HostClient, entry: ProfileEntry, offOnAdd: boolean) => {
+// A problem is the line under "not installed": the entry failed to install or to start.
+const tryOne = async (host: HostClient, entry: ProfileEntry): Promise<string | undefined> => {
   if (entry.id === null) return void console.log(`${entry.name}: ${NOT_EXTENSION}`);
   const id = entry.id;
-  const row = await installOne(host, { ...entry, id }, offOnAdd).catch((err: unknown) => ({
+  const row = await installOne(host, { ...entry, id }).catch((err: unknown) => ({
     id,
     error: messageOf(err),
   }));
-  if ('error' in row && !('state' in row)) return failed(`${id}: ${row.error}`);
+  if ('error' in row && !('state' in row)) return `${id}: ${row.error}`;
   if ('already' in row) return void console.log(`${id} already installed`);
   console.log(`${row.id} ${row.version} ${row.state}`);
-  return problemOf(id, row);
-};
-
-const listed = (title: string, items: string[]) =>
-  items.length > 0 ? [`${title}:`, ...items.map((item) => `  ${item}`)] : [];
-
-const problemText = (problems: Problem[]): string => {
-  const of = (kind: Problem['kind']) => problems.filter((p) => p.kind === kind).map((p) => p.text);
-  const [notInstalled, notDisabled] = [of('install'), of('disable')];
-  return [
-    ...listed('not installed', notInstalled),
-    ...listed('installed but NOT disabled', notDisabled),
-  ].join('\n');
+  return row.state === 'failed' ? `${id}: ${row.error ?? 'failed'}` : undefined;
 };
 
 // The profile's extensions go through the daemon, which runs them; the cli loads nothing itself.
@@ -106,14 +66,17 @@ export const installThroughDaemon = async (
   if (entries.length > 0 && deps.daemonOff)
     return console.log(line('extensions', 'the daemon is off, nothing installed'));
   const host = entries.length > 0 ? await deps.host() : null;
-  const offOnAdd = host !== null && (await (deps.installsDisabled ?? kitInstallsDisabled)());
-  const problems: Problem[] = [];
+  const problems: string[] = [];
   for (const entry of host ? entries : []) {
-    const problem = await tryOne(host as HostClient, entry, offOnAdd);
+    const problem = await tryOne(host as HostClient, entry);
     if (problem) problems.push(problem);
   }
   // An empty profile tried nothing: a later setup still installs one with entries.
   if (account && host)
     writeFileSync(profileMarkerPath(), `${new Date().toISOString()}\n`, { mode: 0o600 });
-  if (problems.length > 0) throw new CliError('extension_failed', problemText(problems));
+  if (problems.length > 0)
+    throw new CliError(
+      'extension_failed',
+      ['not installed:', ...problems.map((p) => `  ${p}`)].join('\n')
+    );
 };

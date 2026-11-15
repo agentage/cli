@@ -24,6 +24,7 @@ describe('extension install', () => {
     expect(specOf('@agentage/extension-probe@1')).toEqual({ id: 'probe', version: '1' });
     expect(() => specOf('Probe')).toThrow('not an id, id@version or a folder');
     expect(() => specOf('probe@')).toThrow('not an id');
+    expect(() => specOf('sync')).toThrow('sync: the id sync is a name the platform owns');
     expect(() => specOf('@other/thing')).toThrow(/only @agentage\/extension-<id> packages install/);
     expect(() => specOf('https://x.test/a.tgz')).toThrow(
       /unpack it, then agentage extension install/
@@ -39,15 +40,29 @@ describe('extension install', () => {
 
   test('a site with no market: a bare id says it came from npm on stderr; id@version does not', async () => {
     const { deps } = fakeHost();
-    const noMarket = vi.fn(async () => true);
-    const run = await output(() => runInstall({ name: 'probe' }, { ...deps, noMarket }));
+    const line = 'agentage.io has no extension market; probe 0.7.0 came from npm, as cli 0.51 did';
+    const fromNpm = vi.fn(async () => line);
+    const run = await output(() => runInstall({ name: 'probe' }, { ...deps, fromNpm }));
     expect(run.lines).toEqual(['probe 0.7.0 running']);
     expect(run.stderr).toBe(
       'agentage.io has no extension market; probe 0.7.0 came from npm, as cli 0.51 did'
     );
-    const pinned = await output(() => runInstall({ name: 'probe@0.7.0' }, { ...deps, noMarket }));
+    const pinned = await output(() => runInstall({ name: 'probe@0.7.0' }, { ...deps, fromNpm }));
     expect(pinned.stderr).toBe('');
-    expect(noMarket).toHaveBeenCalledOnce();
+    expect(fromNpm).toHaveBeenCalledExactlyOnceWith('probe', 'probe 0.7.0 came');
+  });
+
+  test('an unscoped npm name: refused before npm when the site has a market', async () => {
+    const { host, deps } = fakeHost();
+    const name = 'agentage-extension-probe';
+    const market = { ...deps, hasMarket: vi.fn(async () => true) };
+    expect(await output(() => runInstall({ name }, market))).toMatchObject({
+      code: 'invalid_argument',
+      error: `${name}: an unscoped npm name installs only on a site with no market; nothing installed`,
+    });
+    expect(host.add).not.toHaveBeenCalled();
+    await output(() => runInstall({ name }, { ...deps, hasMarket: vi.fn(async () => false) }));
+    expect(host.add).toHaveBeenCalledWith({ id: 'probe' });
   });
 
   test('installed: another version is a PATCH (go back keeps the data); the same is no change', async () => {
@@ -80,12 +95,16 @@ describe('extension install', () => {
       code: 'already_installed',
       error: 'demo runs from the folder /work/extension-demo; agentage extension remove demo first',
     });
+    // The id comes from the 409 details (kit 0.14), not from the folder's package.json.
     const dir = mkdtempSync(join(tmpdir(), 'agentage-demo-'));
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ agentage: { id: 'demo' } }));
     expect(await output(() => runInstall({ name: dir }, deps))).toMatchObject({
       code: 'already_installed',
       error:
-        'demo is installed from the market or another folder; agentage extension remove demo first',
+        'demo is installed from the folder /work/extension-demo; agentage extension remove demo first',
+    });
+    const market = fakeHost([marketRow('demo', '0.1.0')]);
+    expect(await output(() => runInstall({ name: dir }, market.deps))).toMatchObject({
+      error: 'demo is installed from the market; agentage extension remove demo first',
     });
   });
 

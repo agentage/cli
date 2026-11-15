@@ -53,11 +53,13 @@ export class CliError extends Error {
   }
 }
 
-// The daemon's own code (NOT_FOUND, INVALID_SETTING), passed through as it is.
+// The daemon's own code (NOT_FOUND, INVALID_SETTING), passed through as it is, with its details.
 export class DaemonError extends Error {
   constructor(
     readonly code: string,
-    message: string
+    message: string,
+    readonly status = 0,
+    readonly details: Record<string, unknown> = {}
   ) {
     super(message);
   }

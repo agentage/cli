@@ -106,7 +106,7 @@ jobs:
           # Check if package.json version was changed
           VERSION_DIFF=$(printf '%s\n' "$PKG_DIFF" | grep -E '^\+.*"version"' || true)
           if [ -n "$VERSION_DIFF" ]; then
-            ERRORS="${ERRORS}\n- ❌ \`package.json\` version was modified — use \`release-prepare\` workflow instead"
+            ERRORS="${ERRORS}\n- ❌ \`package.json\` version was modified: run the \`prepare-release.yml\` workflow instead"
           fi
 
           if [ -n "$ERRORS" ]; then

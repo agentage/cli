@@ -1,10 +1,10 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { installationPath, settingsPath } from '../../core/loader/installed.js';
+import type * as KitHost from '@agentage/extension/host';
+import { settingsPath } from '../../core/loader/installed.js';
 import { ensureConfigDir, getConfigDir } from '../../lib/fs/config.js';
 import { isRecord, readJson, writeJsonAtomic } from '../../lib/fs/json-file.js';
 import { messageOf } from '../../lib/json-output.js';
-import { kitFileLock, type FileLock } from '../../lib/fs/kit-lock.js';
 import { movePlan, type Moved, type Row, type Skipped } from './move-plan.js';
 
 // Written once every old entry is moved or deliberately skipped; the old files stay as they were.
@@ -18,24 +18,26 @@ export interface MoveReport {
   warning: string | null;
 }
 
+// The kit's own writer and lock, the daemon's path: a daemon already serving may write at the same time.
+export type KitMove = Pick<typeof KitHost, 'updateInstallation' | 'withFileLock'>;
+const kitMove = (): Promise<KitMove> => import('@agentage/extension/host');
+
 // An id in installation.json keeps its row: a rerun after a stop adds only what is missing.
-// Under the daemon's own lock: a daemon already serving may write the file at the same time.
-const addRow = (lock: FileLock, row: Row): Promise<void> =>
-  lock(installationPath(), () => {
-    const doc = readJson(installationPath(), isRecord) ?? { host: 'local' };
-    const have = Array.isArray(doc['extensions']) ? (doc['extensions'] as Row[]) : [];
-    if (have.some((r) => r.id === row.id)) return;
-    writeJsonAtomic(installationPath(), { ...doc, extensions: [...have, row] }, 0o644);
-  });
+const addRow = (kit: KitMove, row: Row): Promise<unknown> =>
+  kit.updateInstallation(getConfigDir(), (doc) =>
+    doc.extensions.some((r) => r.id === row.id)
+      ? doc
+      : { ...doc, extensions: [...doc.extensions, row as KitHost.InstallEntry] }
+  );
 
 // The daemon's own values win over the profile's: they were set after the move.
 const addSettings = async (
-  lock: FileLock,
+  kit: KitMove,
   id: string,
   settings: Record<string, unknown>
 ): Promise<void> => {
   if (Object.keys(settings).length === 0) return;
-  await lock(settingsPath(), () => {
+  await kit.withFileLock(settingsPath(), () => {
     const all = readJson(settingsPath(), isRecord) ?? {};
     const mine = isRecord(all[id]) ? all[id] : {};
     writeJsonAtomic(settingsPath(), { ...all, [id]: { ...settings, ...mine } }, 0o600);
@@ -68,13 +70,29 @@ const say = (report: MoveReport): void => {
 export interface MoveHooks {
   // Runs after each entry; a test stops the move here to check that a rerun finishes it.
   entry?: (moved: Moved) => void;
-  lock?: () => Promise<FileLock>;
+  kit?: () => Promise<KitMove>;
 }
 
-const addEntry = async (lock: FileLock, moved: Moved, hooks: MoveHooks): Promise<void> => {
-  await addRow(lock, moved.row);
-  await addSettings(lock, moved.row.id, moved.settings);
+// A row the kit's check refuses is skipped with its reason; the other rows still move.
+const addEntry = async (kit: KitMove, moved: Moved, hooks: MoveHooks): Promise<Skipped | null> => {
+  try {
+    await addRow(kit, moved.row);
+  } catch (err) {
+    if ((err as { code?: unknown }).code !== 'VALIDATION_ERROR') throw err;
+    return { entry: moved.row.id, reason: `the daemon refuses the row (${messageOf(err)})` };
+  }
+  await addSettings(kit, moved.row.id, moved.settings);
   hooks.entry?.(moved);
+  return null;
+};
+
+const addAll = async (kit: KitMove, report: MoveReport, plan: Moved[], hooks: MoveHooks) => {
+  for (const moved of plan) {
+    const skipped = await addEntry(kit, moved, hooks);
+    if (!skipped) continue;
+    report.skipped.push(skipped);
+    report.moved = report.moved.filter((id) => id !== skipped.entry);
+  }
 };
 
 // D6, before the daemon reads the file. An old list that does not parse moves nothing and writes
@@ -83,28 +101,30 @@ export const moveOldLists = async (hooks: MoveHooks = {}): Promise<void> => {
   const marker = join(ensureConfigDir(), MOVED_MARKER);
   if (existsSync(marker)) return;
   const plan = movePlan();
-  const report = {
+  const report: MoveReport = {
     moved: plan.moved.map((m) => m.row.id),
-    skipped: plan.skipped,
+    skipped: [...plan.skipped],
     warning: plan.warning,
   };
   if (plan.warning) {
     writeReport(report);
     return console.error(`move: ${plan.warning}; nothing moved, fix it and restart the daemon`);
   }
-  const lock = await (hooks.lock ?? kitFileLock)();
-  for (const moved of plan.moved) await addEntry(lock, moved, hooks);
+  const kit = await (hooks.kit ?? kitMove)();
+  await addAll(kit, report, plan.moved, hooks);
   writeReport(report);
   writeFileSync(marker, `${new Date().toISOString()}\n`);
   say(report);
 };
 
 // The daemon's `before`: a move that fails (a held lock, a full disk) never stops the start. No
-// marker is written, so the next start tries again; `daemon status` shows the reason.
+// marker is written, so the next start tries again; `daemon status` shows the reason. Another live
+// daemon on the folder is no move failure: this start ends, and that daemon's report stays.
 export const moveBeforeStart = async (hooks: MoveHooks = {}): Promise<void> => {
   try {
     await moveOldLists(hooks);
   } catch (err) {
+    if ((err as { code?: unknown }).code === 'DAEMON_RUNNING') throw err;
     const warning = `the move stopped (${messageOf(err)}); the next daemon start tries again`;
     console.error(`move: ${warning}`);
     try {

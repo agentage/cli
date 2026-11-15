@@ -15,6 +15,20 @@ export const noSiteMarket = (err: CliError | null): boolean =>
 export const fromNpmLine = (fqdn: string, what: string): string =>
   `${fqdn} has no extension market; ${what} from npm, as cli 0.51 did`;
 
+// After a market lookup found no entry for id: why npm resolves it, or null when it does not
+// (a market that is down stays an error). A market that answers without the id says so too.
+export const npmFallbackLine = (
+  fqdn: string,
+  id: string,
+  what: string,
+  down: CliError | null
+): string | null => {
+  if (noSiteMarket(down)) return fromNpmLine(fqdn, what);
+  return down
+    ? null
+    : `the market of ${fqdn} has no ${id}; ${what} from npm as @agentage/extension-${id}`;
+};
+
 export const noDiscovery = (fqdn: string, url: string, why: string): CliError =>
   marketError('no_discovery', `${fqdn} has no extension market: ${url} ${why}; ${CHOOSE}`);
 

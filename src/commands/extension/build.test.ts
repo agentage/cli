@@ -190,7 +190,7 @@ describe('extension check on the real kit', () => {
 
 const conforming = { id: 'demo', version: '0.1.0', rules: [], problems: [], skipped: {} };
 
-const flagDeps = (conforms = true, container = true) => {
+const flagDeps = (conforms = true) => {
   const calls: string[] = [];
   const { tool: images } = fakeTool();
   const deps: BuildFlagDeps = {
@@ -201,7 +201,6 @@ const flagDeps = (conforms = true, container = true) => {
       const report = { ...conforming, conforms };
       return { dir: dir ?? '.', built: true, contracts: [], report };
     },
-    container: async () => container,
   };
   return { deps, calls };
 };
@@ -244,15 +243,5 @@ describe('extension build: the package, with no Docker', () => {
     expect(kit).toEqual([{ dir: 'ext' }]);
     const both = await output(() => runExtensionBuild({ docker: true, container: true }, deps));
     expect(both.error).toBe('--container and --docker: pick one');
-  });
-
-  test('--container on a kit without the one-image build says so before anything runs', async () => {
-    const { deps, calls } = flagDeps(true, false);
-    const printed = await output(() => runExtensionBuild({ container: true }, deps));
-    expect(printed.code).toBe('invalid_argument');
-    expect(printed.error).toMatch(
-      /^build --container needs a kit that builds one image \(this cli has @agentage\/extension \d+\.\d+\.\d+/
-    );
-    expect(calls).toEqual([]);
   });
 });

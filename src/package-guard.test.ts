@@ -58,13 +58,13 @@ describe('package guard (the core)', () => {
   });
 
   // `import { type X }` still emits `import {}` and loads the module; only `import type` is erased.
-  it('only the daemon run (and its move lock) and the local extension up load the kit host; every other import is `import type`', () => {
+  it('only the daemon run (and its move) and the local extension up load the kit host; every other import is `import type`', () => {
     const files = sourceFiles(SRC).map((file) => [file, readFileSync(file, 'utf-8')] as const);
     const loaders = files.filter(([, text]) => text.includes("import('@agentage/extension/host')"));
     expect(loaders.map(([file]) => file.slice(SRC.length + 1)).sort()).toEqual([
+      'commands/daemon/move.ts',
       'commands/daemon/run.ts',
       'commands/extension/up-run.ts',
-      'lib/fs/kit-lock.ts',
     ]);
     const statics = /^(?:import|export)\b(?!\s+type\b)[^;]*?from '@agentage\/extension\/host'/gm;
     for (const [file, text] of files) expect(text.match(statics), file).toBeNull();

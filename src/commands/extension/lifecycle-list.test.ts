@@ -18,7 +18,9 @@ const listDeps = (rows = [marketRow('probe', '0.6.2')], latest: Record<string, s
   const fake = fakeHost(rows);
   const listing: Listing = { offered: [{ id: 'notes', version: '1.2.0' }], skipped: [] };
   const available = vi.fn(async () => listing);
-  const npmNewest = vi.fn(async (id: string) => (id === 'probe' ? '0.7.0' : '1.0.0'));
+  const npmNewest = vi.fn(async (id: string): Promise<string> =>
+    id === 'probe' ? '0.7.0' : '1.0.0'
+  );
   const deps = { ...fake.deps, available, market: () => market(latest), npmNewest };
   return { ...fake, deps };
 };
@@ -125,7 +127,7 @@ describe('extension update', () => {
   });
 
   test('nothing newer says so; an id not from the market, or an unreachable market, fails', async () => {
-    const { deps } = listDeps(rows(), {});
+    const { deps } = listDeps(rows(), { probe: '0.6.2', notes: '1.0.0' });
     expect((await output(() => runUpdate({}, deps))).lines).toEqual([
       'every extension is at its newest version',
     ]);
@@ -147,5 +149,30 @@ describe('extension update', () => {
     expect(run.stderr).toBe(
       'agentage.io has no extension market; newest versions from npm, as cli 0.51 did'
     );
+  });
+
+  test('a row the market no longer lists keeps its version: one line, no npm, exit 0', async () => {
+    const { deps, host } = listDeps(rows(), { notes: '1.0.0' });
+    const run = await output(() => runUpdate({}, deps));
+    expect(host.change).not.toHaveBeenCalled();
+    expect(deps.npmNewest).not.toHaveBeenCalled();
+    expect(run.stderr).toBe('probe: not in the market any more; 0.6.2 stays');
+    expect(run).toMatchObject({ code: null, lines: ['every extension is at its newest version'] });
+  });
+
+  test('an id npm cannot resolve is named; the others still update; exit 1 at the end', async () => {
+    const { deps, host } = listDeps(rows(), {});
+    deps.npmNewest.mockImplementation(async (id: string) => {
+      if (id === 'probe') throw new Error('probe: npm has no such version');
+      return '1.1.0';
+    });
+    const none = { ...deps, market: () => market({}, NO_MARKET) };
+    const run = await output(() => runUpdate({}, none));
+    expect(vi.mocked(host.change).mock.calls).toEqual([['notes', { version: '1.1.0' }]]);
+    expect(run.lines).toEqual(['notes 1.0.0 to 1.1.0']);
+    expect(run).toMatchObject({
+      code: 'extension_failed',
+      error: 'no newest version found:\n  probe: probe: npm has no such version',
+    });
   });
 });

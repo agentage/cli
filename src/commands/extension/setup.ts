@@ -25,8 +25,6 @@ export interface ExtensionSetupDeps extends SetupDeps, EditDeps {
   host: () => Promise<HostClient>;
   // `extension update`, which --latest now runs.
   updateExtensions: () => Promise<unknown>;
-  // The daemon installs an off entry disabled in one step (kit capability installDisabled).
-  installsDisabled?: () => Promise<boolean>;
 }
 
 interface Source {
@@ -80,7 +78,6 @@ const fromFile = async (source: Source, opts: SetupOptions, deps: ExtensionSetup
     host: deps.host,
     daemonOff: noDaemon(opts),
     from: 'file',
-    installsDisabled: deps.installsDisabled,
   });
 };
 
@@ -98,7 +95,6 @@ const profileDeps = (opts: SetupOptions, deps: ExtensionSetupDeps) => ({
       host: deps.host,
       daemonOff: noDaemon(opts),
       from: 'account',
-      installsDisabled: deps.installsDisabled,
     }),
 });
 

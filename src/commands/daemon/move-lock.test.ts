@@ -1,22 +1,10 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { kitFileLock, withKitLock } from '../../lib/fs/kit-lock.js';
+import { afterAll, beforeAll, describe, expect, vi } from 'vitest';
 import { sleep } from '../../lib/wait.js';
 import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
-import { kitInternal } from '../../test/kit-internal.js';
 import { runDaemonStatus } from './daemon.js';
 import { MOVE_REPORT, MOVED_MARKER, moveBeforeStart, moveOldLists } from './move.js';
-
-// The kit's own lock code, not a copy: the move must wait for the daemon's writer.
-type LockDataDir = (file: string) => Promise<() => Promise<void>>;
-const kitLock = async (): Promise<LockDataDir> =>
-  (
-    await kitInternal<{ lockDataDir: LockDataDir }>(
-      'dist/host/data-lock.js',
-      'src/lib/fs/kit-lock.ts'
-    )
-  ).lockDataDir;
 
 const oldFolder = (dir: ConfigDir) => {
   dir.machine({ [pkg('probe')]: fixture('probe') });
@@ -24,65 +12,11 @@ const oldFolder = (dir: ConfigDir) => {
   dir.tree('hello');
 };
 
-const deadPid = (): number => spawnSync(process.execPath, ['-e', '']).pid ?? 0;
-
-// One try each: true when the lock was taken (then given back), false when it was refused.
-type TakesOnce = (file: string, inside?: (file: string) => Promise<boolean>) => Promise<boolean>;
-const kitTakes: TakesOnce = async (file, inside) => {
-  const release = await (await kitLock())(file).catch(() => null);
-  if (!release) return false;
-  const nested = inside ? await inside(file) : true;
-  await release();
-  return nested;
-};
-const copyTakes: TakesOnce = (file, inside) =>
-  withKitLock(file, () => (inside ? inside(file) : true), 0).catch(() => false);
-
 let sleeper: ChildProcess;
 beforeAll(() => {
   sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
 });
 afterAll(() => void sleeper.kill('SIGKILL'));
-
-const CASES: [string, () => number | null, boolean][] = [
-  ['a dead holder: taken over', deadPid, true],
-  ['a live holder: refused', () => sleeper.pid ?? 0, false],
-  ['pid 1 (a daemon in a container): live, refused', () => 1, false],
-  ['our own pid, a lock this process does not hold: stale, taken', () => process.pid, true],
-  ['our own pid, a lock this process holds: refused', () => null, false],
-];
-
-describe('the copy of the kit lock decides as the kit lock', () => {
-  test.for(CASES)('%s', async ([, pid, takes], { dir }) => {
-    const file = dir.at('installation.json');
-    for (const takesOnce of [kitTakes, copyTakes]) {
-      const holder = pid();
-      if (holder !== null) dir.write('installation.json.lock', String(holder));
-      const got =
-        holder === null ? await takesOnce(file, (f) => takesOnce(f)) : await takesOnce(file);
-      expect(got, takesOnce === kitTakes ? 'the kit lock' : 'the copy').toBe(takes);
-      rmSync(dir.at('installation.json.lock'), { force: true });
-    }
-  });
-});
-
-describe('kit-lock.ts is a copy until the kit ships its lock', () => {
-  it('the installed kit does not ship updateInstallation yet', async () => {
-    const host = (await import('@agentage/extension/host')) as { capabilities?: string[] };
-    expect(
-      host.capabilities?.includes('updateInstallation') ?? false,
-      'the kit ships updateInstallation: delete src/lib/fs/kit-lock.ts and call the kit function'
-    ).toBe(false);
-  });
-
-  it("uses the kit's withFileLock when the kit lists updateInstallation", async () => {
-    const withFileLock = vi.fn();
-    const ships = { capabilities: ['updateInstallation'], withFileLock };
-    expect(await kitFileLock(async () => ships)).toBe(withFileLock);
-    expect(await kitFileLock(async () => ({ capabilities: [], withFileLock }))).toBe(withKitLock);
-    expect(await kitFileLock(async () => ({}))).toBe(withKitLock);
-  });
-});
 
 describe('the move writes under the daemon lock', () => {
   // The holder is another live process, as a serving daemon is: no event or timing race decides it.
@@ -101,12 +35,29 @@ describe('the move writes under the daemon lock', () => {
     expect(dir.exists(MOVED_MARKER)).toBe(true);
   });
 
-  test('a live holder past the wait is a timeout naming it', async ({ dir }) => {
+  test('a live holder past the wait is a refusal naming it; the lock stays', async ({ dir }) => {
+    const { withFileLock } = await import('@agentage/extension/host');
     dir.write('installation.json.lock', String(sleeper.pid));
-    const err = await withKitLock(dir.at('installation.json'), () => 1, 2).catch((e: unknown) => e);
-    expect(err).toMatchObject({ code: 'timeout' });
-    expect((err as Error).message).toContain(`held by process ${sleeper.pid}`);
+    const err = await withFileLock(dir.at('installation.json'), () => 1, 50).catch(
+      (e: unknown) => e
+    );
+    expect((err as Error).message).toContain(`locked by process ${sleeper.pid}`);
     expect(existsSync(dir.at('installation.json.lock'))).toBe(true);
+  });
+
+  test('another live daemon on the folder is no move warning: it ends the start', async ({
+    dir,
+  }) => {
+    oldFolder(dir);
+    const refused = Object.assign(new Error('a daemon runs'), { code: 'DAEMON_RUNNING' });
+    const kit = async () => ({
+      updateInstallation: vi.fn(async () => Promise.reject(refused)),
+      withFileLock: vi.fn(),
+    });
+    const run = await output(() => moveBeforeStart({ kit }));
+    expect(run.error, 'rethrown, not a move warning').toBe('a daemon runs');
+    expect(dir.exists(MOVE_REPORT)).toBe(false);
+    expect(dir.exists(MOVED_MARKER)).toBe(false);
   });
 
   test('a move that fails does not stop the daemon start: no marker, the reason in status', async ({
@@ -114,14 +65,15 @@ describe('the move writes under the daemon lock', () => {
   }) => {
     oldFolder(dir);
     const held = vi.fn(async () => {
-      throw Object.assign(new Error('installation.json is held by process 7; try again'), {
-        code: 'timeout',
+      throw Object.assign(new Error('installation.json is locked by process 7: waited 5000 ms'), {
+        code: 'UNAVAILABLE',
       });
     });
-    const run = await output(() => moveBeforeStart({ lock: async () => held }));
+    const kit = async () => ({ updateInstallation: held, withFileLock: vi.fn() });
+    const run = await output(() => moveBeforeStart({ kit }));
     expect(run.code).toBeNull();
     const warning =
-      'the move stopped (installation.json is held by process 7; try again); ' +
+      'the move stopped (installation.json is locked by process 7: waited 5000 ms); ' +
       'the next daemon start tries again';
     expect(run.stderr).toBe(`move: ${warning}`);
     expect(dir.exists(MOVED_MARKER)).toBe(false);

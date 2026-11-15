@@ -3,13 +3,13 @@ import { promisify } from 'node:util';
 import { type Command } from 'commander';
 import type { BuildOptions } from '@agentage/extension/tool';
 import { addJson, CliError, omitJson } from '../../lib/json-output.js';
-import { kitVersion } from '../../core/kit-version.js';
-import { kitBuildsContainer, loadKitTool, type LoadKitTool } from './kit-tool.js';
+import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { buildPackage, type PackageBuild } from './package-build.js';
 
-// `container` is in the kit's BuildOptions from the minor after 0.13.
-export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'> & {
-  container?: boolean;
+export type ExtensionBuildOptions = Pick<
+  BuildOptions,
+  'push' | 'dir' | 'registry' | 'container'
+> & {
   // The part images on this machine, as --push builds them, without the push.
   docker?: boolean;
   json?: boolean;
@@ -71,22 +71,18 @@ export interface BuildFlagDeps {
   tool: LoadKitTool;
   committed: Committed;
   pkg: (dir?: string) => Promise<PackageBuild>;
-  container: () => Promise<boolean>;
 }
 
 const defaultFlagDeps: BuildFlagDeps = {
   tool: loadKitTool,
   committed: assertCommitted,
   pkg: (dir) => buildPackage(dir),
-  container: () => kitBuildsContainer(),
 };
 
-const refusedFlags = async (opts: ExtensionBuildOptions, deps: BuildFlagDeps): Promise<string> => {
+const refusedFlags = (opts: ExtensionBuildOptions): string => {
   if (opts.container && opts.docker) return '--container and --docker: pick one';
   if (opts.registry && !opts.push && !opts.container && !opts.docker)
     return '--registry names where images go: use it with --docker, --container or --push';
-  if (opts.container && !(await deps.container()))
-    return `build --container needs a kit that builds one image (this cli has @agentage/extension ${kitVersion()}): update the cli`;
   return '';
 };
 
@@ -105,7 +101,7 @@ export const runExtensionBuild = async (
   opts: ExtensionBuildOptions = {},
   deps: BuildFlagDeps = defaultFlagDeps
 ): Promise<unknown> => {
-  const refused = await refusedFlags(opts, deps);
+  const refused = refusedFlags(opts);
   if (refused) throw new CliError('invalid_argument', refused);
   if (!opts.push && !opts.container && !opts.docker) return packageOnly(opts.dir, deps);
   return runImageBuild(opts, deps.tool, deps.committed);
@@ -118,7 +114,7 @@ check. Any folder state works, committed or not. Exits 1 when a step fails or th
 not conform.
 
 --container builds one image of the extension, ghcr.io/agentage/<id>:<version>, with the kit's
-recipe (needs a kit that has it; this cli says so when its kit does not). --docker builds one
+recipe (node:26-alpine, the kit host as its command). --docker builds one
 image per server part on this machine. --push builds those, pushes them (run docker login first)
 and writes dist/agentage-extension.json, the build record with every image by digest; with
 --container it pushes the one image. Each needs docker and a committed tree.`;

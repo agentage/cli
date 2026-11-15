@@ -191,9 +191,7 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   publishes) and `manifestFromFixtures(more)` playing `npm pack --dry-run` and `npm view`;
   `src/test/account.ts` is an account in memory (`fakeAccount`: `/v1/profile` with ETags, 304, 404,
   412 and creation, `/v1/machines`, a request log, `fail` per route) for the `account` injected dependency;
-  `src/test/kit-internal.ts` imports a kit file no export names, for a test that holds a cli copy
-  (`kit-lock.ts`, `up-guard.ts`) equal to the kit's; all
-  excluded from the build and from coverage
+  all excluded from the build and from coverage
 - `docs/extensions.md` - "Writing an extension": the author guide (manifest, lifecycle, `ctx`);
   keep it true to `src/extension.ts` and `src/core/loader/`
 - `fixtures/` - test-only extension packages (`@agentage/fixture-*`), never published

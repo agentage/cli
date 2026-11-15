@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { Installer } from '@agentage/extension/host';
-import { installedDir } from '../../core/installer/old-tree.js';
+import { installedDir, installedName } from '../../core/installer/old-tree.js';
 import { installPackage, packageDir } from '../../core/installer/package-dir.js';
 import { type Npm, type NpmManifest } from '../../core/installer/npm.js';
 import { registryLookup, resolveName, type Found } from '../../core/installer/resolve.js';
@@ -8,7 +8,7 @@ import { editableProfile } from '../../core/profile/profile.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type CliError, messageOf } from '../../lib/json-output.js';
 import { type Market } from '../../lib/net/market.js';
-import { fromNpmLine, noSiteMarket } from '../../lib/net/market-error.js';
+import { npmFallbackLine, noSiteMarket } from '../../lib/net/market-error.js';
 import { siteFqdn } from '../../lib/net/origins.js';
 
 export interface InstallerDeps {
@@ -28,6 +28,11 @@ export const installError = (code: string, status: 400 | 404 | 502, message: str
 const marketDown = (id: string, why: CliError): Error =>
   installError(why.code.toUpperCase(), 502, `${id}: ${why.message}`);
 
+// With a market only the scoped name (anyone can publish the unscoped one); on a site with no
+// market the name id was installed under, else both names, as cli 0.51.1.
+const npmName = (id: string, down: CliError | null): string =>
+  noSiteMarket(down) ? (installedName(id) ?? id) : `@agentage/extension-${id}`;
+
 // The market names the package and its newest version; without it npm alone decides.
 const inputOf = async (id: string, version: string | undefined, market: Market) => {
   const latest = await market.latest(id);
@@ -36,8 +41,10 @@ const inputOf = async (id: string, version: string | undefined, market: Market) 
   if (latest) return `${latest.package}@${version ?? latest.version}`;
   const down = market.down();
   if (!version && down && !noSiteMarket(down)) throw marketDown(id, down);
-  if (!version && down) console.error(fromNpmLine(siteFqdn(), `${id} resolves`));
-  return version ? `${id}@${version}` : id;
+  const line = version ? null : npmFallbackLine(siteFqdn(), id, `${id} resolves`, down);
+  if (line) console.error(line);
+  const name = npmName(id, down);
+  return version ? `${name}@${version}` : name;
 };
 
 // npm's reasons as codes: absent is NOT_FOUND, a registry that fails is INSTALL_FAILED.
@@ -92,8 +99,10 @@ export const cliInstaller =
     return { id, version: found.version, dir };
   };
 
-// The newest version npm has that this cli can run, by the 0.51 names (for update on such a site).
+// The newest version npm has that this cli can run, of the name id was installed under (update
+// on a site with no market); never another npm name for an installed row.
 export const npmNewest =
   (manifest: () => Promise<NpmManifest>) =>
   async (id: string): Promise<string> =>
-    (await exact(id, registryLookup(manifest, editableProfile().registries))).version;
+    (await exact(installedName(id) ?? id, registryLookup(manifest, editableProfile().registries)))
+      .version;

@@ -8,6 +8,7 @@ import {
   npmPublishing,
   type Publishes,
 } from '../../test/npm-fixtures.js';
+import { type NpmManifest } from '../../core/installer/npm.js';
 import { CliError } from '../../lib/json-output.js';
 import { openMarket, type Market } from '../../lib/net/market.js';
 import { cliInstaller } from './installer.js';
@@ -65,7 +66,30 @@ describe('the daemon installer', () => {
       status: 404,
     });
     const none = await installer(market(null));
-    await expect(none.install({ id: 'nosuch' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    const run = await output(async () => {
+      await expect(none.install({ id: 'nosuch' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+    expect(run.stderr).toBe(
+      'the market of agentage.io has no nosuch; nosuch resolves from npm as @agentage/extension-nosuch'
+    );
+  });
+
+  test('a market without the id: npm is asked only for the scoped name, never the unscoped one', async () => {
+    const asked: string[] = [];
+    const base = manifestFromFixtures({
+      'agentage-extension-nosuch': { '1.0.0': probeAt('^0.12') },
+    });
+    const manifest = async (): Promise<NpmManifest> => {
+      const real = await base();
+      return (command, spec, registries) => (asked.push(spec), real(command, spec, registries));
+    };
+    const npm = vi.fn(await npmFromFixtures());
+    const install = cliInstaller({ npm: async () => npm, manifest, market: () => market(null) });
+    await output(async () => {
+      await expect(install({ id: 'nosuch' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.filter((spec) => !spec.startsWith('@agentage/extension-nosuch'))).toEqual([]);
   });
 
   test.each([

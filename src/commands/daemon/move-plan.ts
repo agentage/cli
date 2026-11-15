@@ -7,6 +7,7 @@ import { scan } from '../../core/loader/scan.js';
 import { NO_MACHINE, readMachine } from '../../core/profile/machine.js';
 import { machinePath } from '../../core/paths.js';
 import { readProfile } from '../../core/profile/profile.js';
+import { kitIdProblem } from '../../core/kit-id.js';
 import { movedSettings } from './move-settings.js';
 
 export type Row = Record<string, unknown> & { id: string };
@@ -49,6 +50,8 @@ const reasonOf = (ext: DiscoveredExtension, id: string | undefined): string | nu
     return ext.source === 'dev' ? 'folder missing' : 'not installed in the 0.51 tree';
   if (!id) return 'no agentage.id';
   if (ext.problem) return ext.problem;
+  const refused = kitIdProblem(id);
+  if (refused) return `${refused}: the daemon takes no such row`;
   return ext.source === 'tree' && !ext.version ? 'no exact version' : null;
 };
 

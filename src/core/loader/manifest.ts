@@ -118,17 +118,30 @@ const engineProblem = (engine: string, version: string, against: string): string
   return `engines.agentage "${engine}" does not match ${against} ${version}`;
 };
 
-// The one previous kit minor: every package cli 0.51 installed is built on it, and this kit hosts it.
-export const PREVIOUS_KIT_MINOR = '0.12';
-const PREVIOUS_KIT = Array.from({ length: 100 }, (_, patch) => `${PREVIOUS_KIT_MINOR}.${patch}`);
-export const PREVIOUS_KIT_WARNING = `built on kit ${PREVIOUS_KIT_MINOR}, update the extension`;
+// The older kit minors this kit still hosts: 0.12 is what cli 0.51 installed, 0.13 the one before
+// this kit; their part modules and command contract are those of 0.14 (the update smoke proves it).
+export const OLDER_KIT_MINORS = ['0.12', '0.13'];
+const OLDER = OLDER_KIT_MINORS.map((minor) => ({
+  minor,
+  versions: Array.from({ length: 100 }, (_, patch) => `${minor}.${patch}`),
+}));
 
-// A range this kit does not satisfy and kit 0.12.x does: a warning, never a problem.
+const olderMinorOf = (engine: string, kit: string): string | null => {
+  if (!isRange(engine) || satisfies(kit, engine)) return null;
+  return OLDER.find(({ versions }) => versions.some((v) => satisfies(v, engine)))?.minor ?? null;
+};
+
+export const olderKitWarning = (minor: string): string =>
+  `built on kit ${minor}, update the extension`;
+
+// A range this kit does not satisfy and an older hosted minor does: a warning, never a problem.
 export const onPreviousKit = (engine: string, kit: string = kitVersion()): boolean =>
-  isRange(engine) && !satisfies(kit, engine) && PREVIOUS_KIT.some((v) => satisfies(v, engine));
+  olderMinorOf(engine, kit) !== null;
 
-export const kitWarning = (info: ManifestInfo, kit: string = kitVersion()): string | null =>
-  info.kind === 'kit' && onPreviousKit(info.engine, kit) ? PREVIOUS_KIT_WARNING : null;
+export const kitWarning = (info: ManifestInfo, kit: string = kitVersion()): string | null => {
+  const minor = info.kind === 'kit' ? olderMinorOf(info.engine, kit) : null;
+  return minor ? olderKitWarning(minor) : null;
+};
 
 const kitRangeProblem = (engine: string, kit: string): string | null => {
   if (engine === '') return 'engines.agentage is missing';

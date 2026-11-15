@@ -71,6 +71,7 @@ grep -q 'loose' "$AGENTAGE_CONFIG_DIR/installation.moved.json" && grep -q 'world
   && pass "loose skipped: $(node -p 'JSON.stringify(require(process.argv[1]).skipped)' "$AGENTAGE_CONFIG_DIR/installation.moved.json")" || fail "loose not listed as skipped"
 agentage extension enable probe > /dev/null || fail "enable probe"
 agentage ping | grep -q pong && pass "probe enabled; the moved 0.6.2 keeps its command: agentage ping" || fail "agentage ping"
+curl -fsS "http://127.0.0.1:$AGENTAGE_DAEMON_PORT/api/probe/echo?msg=hi" | grep -q '"msg":"hi"' && pass "the api part of probe 0.6.2 (kit 0.12) answers: /api/probe/echo" || fail "probe api part"
 agentage status 2>&1 | grep -q 'warning: probe: built on kit 0.12, update the extension' && pass "status warns: probe built on kit 0.12" || fail "status: no kit 0.12 warning"
 curl -fsS "http://127.0.0.1:$AGENTAGE_DAEMON_PORT/api/demo/echo?msg=hi" | grep -q '"hey hi"' && pass "the moved setting: demo echo answers hey hi" || fail "setting not moved"
 [ "$(sums)" = "$old" ] && pass "the 0.51 files are byte-identical (sha256)" || fail "0.51 files changed: $(sums)"

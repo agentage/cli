@@ -1,9 +1,12 @@
+import { spawn } from 'node:child_process';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer, type Server } from 'node:net';
 import { type AddressInfo } from 'node:net';
 import { describe, expect, vi } from 'vitest';
 import { probe } from '../../lib/daemon/daemon-probe.js';
 import { readDaemonFile } from '../../lib/daemon/daemon-file.js';
-import { kitInstallsDisabled } from '../extension/kit-tool.js';
+import { CliError, type DaemonError } from '../../lib/json-output.js';
+import { hostClient } from '../../lib/daemon/host-client.js';
 import { test } from '../../test/config-dir.js';
 import { writeKitExtension } from '../../test/kit-fixture.js';
 import { VERSION } from '../../utils/version.js';
@@ -64,32 +67,72 @@ describe('daemon run: the daemon process', () => {
     vi.unstubAllEnvs();
   });
 
-  // setup sends enabled: false on the add only when the kit lists installDisabled; else it disables after.
-  test('the real kit daemon refuses enabled: false on an add until the kit lists installDisabled', async ({
-    dir,
-  }) => {
+  const serving = async (port: number) => {
+    vi.stubEnv('AGENTAGE_DAEMON_PORT', String(port));
+    const running = runDaemon({ installer: noInstaller });
+    await vi.waitFor(() => expect(readDaemonFile()?.port).toBe(port), { timeout: 10_000 });
+    return async () => {
+      process.emit('SIGTERM');
+      await running;
+      vi.unstubAllEnvs();
+    };
+  };
+
+  const freePort = async (): Promise<number> => {
     const free = await listening();
     const port = portOf(free);
     await new Promise((resolve) => free.close(resolve));
-    vi.stubEnv('AGENTAGE_DAEMON_PORT', String(port));
-    const running = runDaemon({ installer: noInstaller });
+    return port;
+  };
+
+  // setup sends enabled: false on the add: the bundled kit lists installDisabled.
+  test('the real kit daemon installs an entry disabled; a second add is 409 with the entry', async ({
+    dir,
+  }) => {
+    const port = await freePort();
+    const stop = await serving(port);
     try {
-      await vi.waitFor(() => expect(readDaemonFile()?.port).toBe(port), { timeout: 10_000 });
       const source = writeKitExtension(dir.at('demo'), 'demo', '0.1.0');
       const res = await fetch(`http://127.0.0.1:${port}/host/extensions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ source, enabled: false }),
       });
-      const listed = await kitInstallsDisabled();
-      expect({ status: res.status, listed }, 'the kit takes it: list installDisabled').toEqual({
-        status: 400,
-        listed: false,
-      });
-      expect(await res.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+      expect(res.status).toBe(201);
+      expect(await res.json()).toMatchObject({ data: { id: 'demo', state: 'disabled' } });
+      // The second add is a 409 whose details name the entry: what installFolder reads.
+      const again = await hostClient(port)
+        .add({ source })
+        .catch((e: unknown) => e);
+      expect(again).toMatchObject({ code: 'CONFLICT', status: 409 });
+      expect((again as DaemonError).details).toEqual({ id: 'demo', version: '0.1.0', source });
     } finally {
-      process.emit('SIGTERM');
-      await running;
+      await stop();
+    }
+  });
+
+  // The kit lets its own process through, so the first daemon is another live process.
+  test('a second daemon run on the same config folder ends with already_running, no stack', async ({
+    dir,
+  }) => {
+    const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
+    const pid = other.pid ?? 0;
+    const health = createHttpServer((_req, res) =>
+      res.end(JSON.stringify({ service: 'agentage-daemon', pid }))
+    );
+    await new Promise<void>((resolve) => health.listen(0, '127.0.0.1', resolve));
+    const port = (health.address() as AddressInfo).port;
+    dir.write('daemon.json', { ...C4, pid, port });
+    try {
+      vi.stubEnv('AGENTAGE_DAEMON_PORT', String(await freePort()));
+      const err = await runDaemon({ installer: noInstaller }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CliError);
+      expect((err as CliError).code).toBe('already_running');
+      expect((err as Error).message).toMatch(`a daemon (pid ${pid} on 127.0.0.1:${port}) runs on `);
+      expect(dir.json('daemon.json')['pid'], 'the first daemon keeps its file').toBe(pid);
+    } finally {
+      other.kill('SIGKILL');
+      await new Promise((resolve) => health.close(resolve));
       vi.unstubAllEnvs();
     }
   });

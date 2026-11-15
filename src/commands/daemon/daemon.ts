@@ -2,6 +2,7 @@ import { type Command } from 'commander';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { isAlive, readDaemonFile, type DaemonFile } from '../../lib/daemon/daemon-file.js';
 import { probeRetry, proven, type Health } from '../../lib/daemon/daemon-probe.js';
+import { degradedReasons, healthLines, type HealthMarks } from '../../lib/daemon/daemon-health.js';
 import { stopDaemon, type StopResult } from '../../lib/daemon/daemon-stop.js';
 import { addJson } from '../../lib/json-output.js';
 import { readMoveReport, type MoveReport } from './move.js';
@@ -14,13 +15,15 @@ export interface DaemonOptions {
 export type DaemonStatus = (
   | { running: false }
   | { running: false; unresponsive: true; pid: number; port: number }
-  | ({ running: true; port: number } & Health)
+  | ({ running: true; port: number; reasons?: string[] } & Health & HealthMarks)
 ) & { move?: MoveReport | null };
 
-const report = (file: DaemonFile, live: Health): DaemonStatus => {
+// Degraded always comes with its reasons, in the lines and in --json.
+const report = (file: DaemonFile, live: Health & HealthMarks): DaemonStatus => {
   console.log(`daemon: ${live.status} on 127.0.0.1:${file.port}, pid ${live.pid}, ${live.version}`);
-  for (const ext of live.extensions) console.log(`  ${ext.id} ${ext.version} ${ext.state}`);
-  return { running: true, port: file.port, ...live };
+  const reasons = degradedReasons(live);
+  for (const line of healthLines(live, reasons)) console.log(line);
+  return { running: true, port: file.port, ...live, ...(reasons.length > 0 && { reasons }) };
 };
 
 // Reads only: a stale daemon.json is left for the next start or stop to remove.
