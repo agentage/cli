@@ -72,12 +72,17 @@ describe('extension create: npm ci, the build, then the daemon runs the folder',
     expect(run.lines.at(-1)).toBe(' url       none answers yet: agentage extension list');
   });
 
-  test('--no-install and the daemon off build and install nothing', async ({ dir }) => {
-    const { all, daemon } = deps();
+  test('--no-install only scaffolds: no npm, no build; the daemon off builds and installs nothing', async ({
+    dir,
+  }) => {
+    const { all, daemon, npm } = deps();
+    const build = vi.spyOn(all, 'build');
     expect(await installCreated(dir.at('demo'), false, all)).toEqual({
       installed: null,
       url: null,
     });
+    expect(npm).not.toHaveBeenCalled();
+    expect(build).not.toHaveBeenCalled();
     vi.stubEnv('AGENTAGE_NO_DAEMON', '1');
     const run = await output(() => installCreated(dir.at('demo'), true, all));
     expect(run.lines).toEqual([
@@ -121,23 +126,44 @@ describe('the package build', () => {
   });
 });
 
+const io = (isTTY: boolean, answer = '') => {
+  const asked: string[] = [];
+  return { asked, io: { isTTY, prompt: async (q: string) => (asked.push(q), answer) } };
+};
+
 describe('extension create --from another repo or a branch', () => {
-  test('the template needs nothing; any other source prints one line, and with no terminal needs --yes or --no-install', async () => {
-    const quiet = await output(async () => trustFrom('agentage/extension-template', {}, false));
+  const NOTICE = (from: string) =>
+    `template  ${from}: code from that repo will be built and run on this machine`;
+
+  test('the template itself asks nothing', async () => {
+    const quiet = await output(() => trustFrom('agentage/extension-template', {}, io(false).io));
     expect(quiet).toMatchObject({ error: null, stderr: '' });
-    for (const from of ['acme/ext', 'agentage/extension-template#feature/x']) {
-      const line = `template  ${from}: code from that repo will be built and run on this machine`;
-      const tty = await output(async () => trustFrom(from, {}, true));
-      expect(tty).toMatchObject({ error: null, stderr: line });
-      const refused = await output(async () => trustFrom(from, {}, false));
+  });
+
+  test.for(['acme/ext', 'agentage/extension-template#feature/x'])(
+    '%s with no terminal needs --yes, --no-install or not',
+    async (from) => {
+      const refused = await output(() => trustFrom(from, {}, io(false).io));
       expect(refused).toMatchObject({
         code: 'invalid_argument',
         error: `--from ${from} with no terminal: pass --yes to run it`,
+        stderr: NOTICE(from),
       });
-      expect((await output(async () => trustFrom(from, { yes: true }, false))).error).toBeNull();
-      expect(
-        (await output(async () => trustFrom(from, { install: false }, false))).error
-      ).toBeNull();
+      expect((await output(() => trustFrom(from, { yes: true }, io(false).io))).error).toBeNull();
     }
+  );
+
+  test('on a terminal it asks y/N: y goes on, anything else creates nothing; --yes asks nothing', async () => {
+    const yes = io(true, 'y');
+    expect((await output(() => trustFrom('acme/ext', {}, yes.io))).error).toBeNull();
+    expect(yes.asked).toEqual(['run it? (y/N) ']);
+    const no = await output(() => trustFrom('acme/ext', {}, io(true, '').io));
+    expect(no).toMatchObject({
+      code: 'cancelled',
+      error: '--from acme/ext: not confirmed, nothing created',
+    });
+    const skipped = io(true, 'n');
+    expect((await output(() => trustFrom('acme/ext', { yes: true }, skipped.io))).error).toBeNull();
+    expect(skipped.asked).toEqual([]);
   });
 });

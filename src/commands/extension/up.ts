@@ -36,10 +36,14 @@ export interface ExtensionUpFlags extends ExtensionUpOptions {
 export const UP_CHANGED =
   'extension up now runs with no Docker; the Docker stack is `extension up --docker`';
 
+// CI=false, 0 or empty is not CI.
+const inCi = (env: NodeJS.ProcessEnv): boolean =>
+  !['', 'false', '0', undefined].includes(env['CI']);
+
 // 0.51's up was Docker: a CI script with neither flag asked for that, so it stops instead.
 const noticeChange = ({ local }: ExtensionUpFlags, env: NodeJS.ProcessEnv, tty: boolean) => {
   if (local) return;
-  if (env['CI'] && !tty) throw new CliError('invalid_argument', `${UP_CHANGED}; or --local`);
+  if (inCi(env) && !tty) throw new CliError('invalid_argument', `${UP_CHANGED}; or --local`);
   console.error(UP_CHANGED);
 };
 

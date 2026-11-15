@@ -1,9 +1,5 @@
-import {
-  type IncomingMessage,
-  type RequestListener,
-  type Server,
-  type ServerResponse,
-} from 'node:http';
+import { type RequestListener, type Server } from 'node:http';
+import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
 import { resolve } from 'node:path';
 import type * as KitHostModule from '@agentage/extension/host';
 import type { HostedExtension, HostOptions } from '@agentage/extension/host';
@@ -23,10 +19,8 @@ import {
   writeRecord,
 } from './up-local.js';
 
-type Next = () => void;
-type Guard = (
-  port: () => number
-) => (req: IncomingMessage, res: ServerResponse, next: Next) => void;
+// The kit's export: an express middleware that refuses with next(err).
+type Guard = (port: () => number) => RequestHandler;
 
 // The kit host and how it keeps other sites out: its own guard (an export, or a host option), else the cli's.
 export interface KitHost {
@@ -81,10 +75,25 @@ const warnProblems = async ({ report }: PackageBuild): Promise<void> => {
   for (const text of (await loadKitTool()).checkLines(report)) console.error(`check     ${text}`);
 };
 
-const handlerOf = (kit: KitHost, app: RequestListener, port: () => number): RequestListener => {
+type Refusal = { status?: number; code?: string; message?: string };
+
+// The kit guard's refusal, as an envelope; 403 unless the error names its own status.
+const refused: ErrorRequestHandler = (err: Refusal, _req, res, _next) => {
+  const error = { code: err.code ?? 'FORBIDDEN', message: err.message ?? 'refused' };
+  res.status(err.status ?? 403).json({ success: false, error });
+};
+
+// The kit's guard in front of the kit app when it exports one; else the cli's own (remove then).
+export const handlerOf = (
+  kit: Pick<KitHost, 'guard' | 'kitGuards'>,
+  app: RequestListener,
+  port: () => number
+): RequestListener => {
   if (kit.kitGuards) return app;
-  const guard = kit.guard?.(port);
-  return guard ? (req, res) => guard(req, res, () => app(req, res)) : loopbackOnly(app, port);
+  if (!kit.guard) return loopbackOnly(app, port);
+  const front = express();
+  front.use(kit.guard(port), app as unknown as RequestHandler, refused);
+  return front;
 };
 
 const serve = async (kit: KitHost, hosted: HostedExtension): Promise<Server> => {

@@ -42,6 +42,7 @@ export const ignoreLocal = (dir: string): void => {
   const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
   if (text.split('\n').some((line) => /^\/?\.agentage\/?$/.test(line.trim()))) return;
   appendFileSync(file, `${text === '' || text.endsWith('\n') ? '' : '\n'}${LOCAL}/\n`);
+  console.error(`gitignore added ${LOCAL}/ to ${file}`);
 };
 
 export const writeRecord = (dir: string, record: UpRecord): void => {

@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
+import { type NextFunction, type Request, type Response } from 'express';
 import { describe, expect, vi } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { takeExit } from '../../lib/exit-code.js';
@@ -103,6 +104,7 @@ describe('extension up with no Docker: the kit host in this process', () => {
       'stopped   demo (SIGINT)',
     ]);
     expect(done.stderr).toContain('check     ');
+    expect(done.stderr).toContain(`gitignore added .agentage/ to ${join(demo, '.gitignore')}`);
     expect(takeExit()).toBe(130);
     expect(readRecord(demo)).toBeNull();
     await expect(fetch(`${at}/health`)).rejects.toThrow();
@@ -143,20 +145,30 @@ describe('extension up with no Docker: the kit host in this process', () => {
     await run;
   });
 
-  test("mounts the kit's own guard when the kit exports one, and not the cli's", async ({
+  test("mounts the kit's guard, an express middleware, in front of the kit app; its refusal is a 403 envelope", async ({
     dir,
   }) => {
     const demo = folder(dir.at(''));
     const { deps, stop } = controlled();
     const real = await deps.kit();
-    const seen: number[] = [];
-    const guard = (port: () => number) => (_q: unknown, _s: unknown, next: () => void) => {
-      seen.push(port());
-      next();
+    const ports: number[] = [];
+    // The kit's shape: req.get, and next(err) on refusal.
+    const guard = (port: () => number) => (req: Request, _res: Response, next: NextFunction) => {
+      ports.push(port());
+      if (req.get('host') === `127.0.0.1:${port()}`) return next();
+      next(Object.assign(new Error('not this machine'), { status: 403, code: 'FORBIDDEN' }));
     };
     const { run, record } = await started(demo, { ...deps, kit: async () => ({ ...real, guard }) });
-    expect(await rawGet(record.port, { host: 'evil.example' })).toBe(200);
-    expect(seen).toContain(record.port);
+    const res = await rawRequest(record.port, { host: 'evil.example' });
+    expect(res.status).toBe(403);
+    expect(JSON.parse(res.body)).toEqual({
+      success: false,
+      error: { code: 'FORBIDDEN', message: 'not this machine' },
+    });
+    // localhost passes the cli's guard but not this kit guard: the kit's guard is the one mounted.
+    expect((await rawRequest(record.port, { host: `localhost:${record.port}` })).status).toBe(403);
+    expect((await rawRequest(record.port, { host: `127.0.0.1:${record.port}` })).status).toBe(200);
+    expect(ports).toContain(record.port);
     stop('SIGTERM');
     await run;
   });
@@ -208,17 +220,19 @@ describe('extension up with no Docker: the kit host in this process', () => {
   });
 });
 
-const rawGet = (port: number, headers: Record<string, string>): Promise<number> =>
-  new Promise((done, fail) => {
-    const req = request(
-      { host: '127.0.0.1', port, path: '/health', headers, agent: false },
-      (res) => {
-        res.resume();
-        done(res.statusCode ?? 0);
-      }
-    );
+const rawRequest = (port: number, headers: Record<string, string>) =>
+  new Promise<{ status: number; body: string }>((done, fail) => {
+    const options = { host: '127.0.0.1', port, path: '/health', headers, agent: false };
+    const req = request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => (body += String(chunk)));
+      res.on('end', () => done({ status: res.statusCode ?? 0, body }));
+    });
     req.once('error', fail).end();
   });
+
+const rawGet = async (port: number, headers: Record<string, string>): Promise<number> =>
+  (await rawRequest(port, headers)).status;
 
 const HEALTH = `require('node:http').createServer((q, s) => s.end(JSON.stringify({ data: { extension: 'demo', instance: 'abc' } }))).listen(+process.argv[1], '127.0.0.1', () => console.log('ready'));`;
 

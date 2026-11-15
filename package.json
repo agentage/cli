@@ -64,6 +64,7 @@
   },
   "devDependencies": {
     "@playwright/test": "latest",
+    "@types/express": "5.0.6",
     "@types/node": "latest",
     "@typescript-eslint/eslint-plugin": "latest",
     "@typescript-eslint/parser": "latest",

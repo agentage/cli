@@ -75,6 +75,8 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+// A terminal whose user answers y to the --from notice.
+const YES = { isTTY: true, prompt: async () => 'y' };
 const afterCalls: [string, boolean][] = [];
 const scaffoldOnly = async (dir: string, install: boolean) => {
   afterCalls.push([dir, install]);
@@ -82,7 +84,7 @@ const scaffoldOnly = async (dir: string, install: boolean) => {
 };
 
 const create = (id: string, parts: string[] = [], from?: string) =>
-  output(() => runExtensionCreate({ id, parts, from }, () => url, scaffoldOnly, true));
+  output(() => runExtensionCreate({ id, parts, from }, () => url, scaffoldOnly, YES));
 const read = (path: string) => readFileSync(join(root, 'extension-market', path), 'utf8');
 const manifest = () => JSON.parse(read('package.json')) as typeof MANIFEST;
 
@@ -213,7 +215,7 @@ describe('extension create', () => {
         { id: 'market', parts: [], from: 'x/none' },
         () => `file://${root}/none`,
         scaffoldOnly,
-        true
+        YES
       )
     );
     expect(printed.error).toMatch(/^cannot clone template x\/none: fatal: .*none/);
@@ -302,7 +304,7 @@ describe('extension create', () => {
         { id: 'market', parts: [], from: 'x/y#feature/kit' },
         (from) => (asked.push(from), url),
         scaffoldOnly,
-        true
+        YES
       )
     );
     expect(printed.error).toBeNull();

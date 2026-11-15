@@ -4,7 +4,7 @@ import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { CliError } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
-import { report, summaryOf } from './lifecycle.js';
+import { report, summaryOf, terminalIo, type ConfirmIo } from './lifecycle.js';
 import { ignoreLocal } from './up-local.js';
 import { buildPackage, npmIn, type Npm, type PackageBuild } from './package-build.js';
 
@@ -64,17 +64,18 @@ const conforms = async (dir: string, deps: CreateInstallDeps): Promise<void> => 
   throw new CliError('not_conforming', `${dir} does not conform: agentage extension check`);
 };
 
-// After the scaffold: npm ci, the package build, then the daemon runs the folder (POST {source}).
+// After the scaffold: npm ci, the package build, then the daemon runs the folder (POST {source});
+// --no-install leaves the scaffold as it is: no npm, no build.
 export const installCreated = async (
   folder: string,
   install: boolean,
   deps = createInstallDeps
 ) => {
+  if (!install) return { installed: null, url: null };
   const dir = resolve(folder);
   await deps.npm(dir, ['ci', '--ignore-scripts', '--no-audit', '--no-fund']);
   await conforms(dir, deps);
   ignoreLocal(dir);
-  if (!install) return { installed: null, url: null };
   if (process.env['AGENTAGE_NO_DAEMON'] === '1') {
     console.log(' install   the daemon is off (AGENTAGE_NO_DAEMON=1): not installed');
     return { installed: null, url: null };
@@ -88,14 +89,18 @@ export const installCreated = async (
 
 const OWN_TEMPLATE = 'agentage/extension-template';
 
-// Another repo, or a branch of ours, is code nobody reviewed for you: say so before it runs.
-export const trustFrom = (
+// Another repo, or a branch of ours, is code nobody reviewed for you: its build script runs here.
+export const trustFrom = async (
   from: string,
-  opts: { yes?: boolean; install?: boolean },
-  tty = process.stdin.isTTY === true
-): void => {
+  opts: { yes?: boolean },
+  io: ConfirmIo = terminalIo()
+): Promise<void> => {
   if (from === OWN_TEMPLATE) return;
   console.error(`template  ${from}: code from that repo will be built and run on this machine`);
-  if (tty || opts.yes || opts.install === false) return;
-  throw new CliError('invalid_argument', `--from ${from} with no terminal: pass --yes to run it`);
+  if (opts.yes) return;
+  if (!io.isTTY)
+    throw new CliError('invalid_argument', `--from ${from} with no terminal: pass --yes to run it`);
+  const answer = (await io.prompt('run it? (y/N) ')).trim().toLowerCase();
+  if (answer !== 'y' && answer !== 'yes')
+    throw new CliError('cancelled', `--from ${from}: not confirmed, nothing created`);
 };

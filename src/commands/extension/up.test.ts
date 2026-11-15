@@ -111,6 +111,8 @@ describe('extension up, down and token: thin commands over the kit tool', () => 
   test('in CI with no terminal, up needs --local or --docker; both at once is refused', async () => {
     const { tool } = fakeKit();
     const run = async () => ({ id: 'probe' });
+    for (const CI of ['false', '0', ''])
+      expect((await output(() => runExtensionUp({}, tool, run, { CI }, false))).error).toBeNull();
     const ci = await output(() => runExtensionUp({}, tool, run, { CI: 'true' }, false));
     expect(ci).toMatchObject({ code: 'invalid_argument', error: `${UP_CHANGED}; or --local` });
     expect(

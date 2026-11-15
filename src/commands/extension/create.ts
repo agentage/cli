@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { type Command } from 'commander';
 import { addJson, CliError } from '../../lib/json-output.js';
 import { installCreated, trustFrom } from './create-install.js';
+import { terminalIo, type ConfirmIo } from './lifecycle.js';
 
 const run = promisify(execFile);
 export const TEMPLATE = 'agentage/extension-template';
@@ -158,13 +159,13 @@ export const runExtensionCreate = async (
   opts: ExtensionCreateOptions,
   url = (from: string) => `https://github.com/${from}`,
   after: typeof installCreated = installCreated,
-  tty = process.stdin.isTTY === true
+  io: ConfirmIo = terminalIo()
 ): Promise<unknown> => {
   const { id, from = TEMPLATE } = opts;
   const kept = opts.parts.length > 0 ? [...new Set(opts.parts)] : PARTS;
   const refused = refusal(opts, kept);
   if (refused) throw new CliError('invalid_argument', refused);
-  trustFrom(from, opts, tty);
+  await trustFrom(from, opts, opts.json ? { ...io, isTTY: false } : io);
   const dir = `extension-${id}`;
   await clone(url(from.split('#')[0] ?? from), from, dir);
   const ci = shape(dir, from, id, kept);
@@ -182,7 +183,7 @@ export const addCreate = (group: Command, create: (o: ExtensionCreateOptions) =>
       .argument('[parts...]', `parts to keep (default: all seven): ${PARTS.join(', ')}`)
       .option('--from <owner/repo[#branch]>', `the template repo (default: ${TEMPLATE})`)
       .option('--no-install', 'build the folder, but do not give it to the daemon')
-      .option('--yes', 'run code from another --from repo or branch with no terminal')
+      .option('--yes', 'run code from another --from repo or branch without asking')
   ).action(
     (
       id: string,

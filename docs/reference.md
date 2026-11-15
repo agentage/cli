@@ -475,7 +475,7 @@ agentage extension token --scope probe:write  # a dev token from this folder's D
 
 `up` with no flag runs the working copy in this terminal (D7). In 0.51 it ran the Docker stack,
 so it first prints one line on stderr: `extension up now runs with no Docker; the Docker stack is
-`extension up --docker``. In CI (`CI` set and stdin not a terminal) with neither `--local` nor
+`extension up --docker``. In CI (`CI` set and not `false`, `0` or empty, and stdin not a terminal) with neither `--local` nor
 `--docker` it exits 1 with that line, so a 0.51 script does not get the other run by surprise;
 `--local` asks for the run with no Docker and prints no notice. It builds the package as
 `extension build` does, prints what the check refuses on stderr without stopping, then hosts it
@@ -487,7 +487,7 @@ cross-site or same-site `Sec-Fetch-Site`, or a foreign `Origin` gets 403. It run
 (exit code 130) or SIGTERM (exit code 0, what `down` sends), then prints `stopped   <id> (SIGINT)`.
 It does not use the daemon and does not change `installation.json`; its store and its record
 (`up.json`: pid, port, instance) are in the folder's `.agentage/`, which `up` adds to the folder's
-`.gitignore` when it is missing. It serves the api part only. A second `up` of the same folder
+`.gitignore` when it is missing, and says so on stderr (`gitignore added .agentage/ to <file>`). It serves the api part only. A second `up` of the same folder
 while the first answers exits 1 (`already_running`). With `--json` the lines go to stderr; stdout
 gets one JSON line when the host is ready, `{ "ready": true, "id", "version", "url", "port" }`,
 and the envelope `{ success, data: { id, version, url, port, stoppedBy } }` when it stops.
@@ -678,11 +678,13 @@ and nothing else there (progress lines go to stderr), and never prompts:
 { "success": false, "error": { "code": "not_installed", "message": "probe is not installed" } }
 ```
 
-An error exits 1. `code` is snake_case and stable: `not_installed`, `needed_by_dependents`,
+An error exits 1, success 0. The one other exit code is 130: `extension up` (also with `--json`)
+stopped by Ctrl-C, after its envelope. `code` is snake_case and stable: `not_installed`, `needed_by_dependents`,
 `confirmation_required`, `extension_failed`, `profile_invalid`, `integrity_drift`,
 `invalid_argument`, `invalid_option`, `not_conforming`, `uncommitted_changes`, `release_refused`,
 `auth_required`, `auth_unavailable`, `not_pushed`, `token_request_failed`, `daemon_unavailable`,
-`daemon_unresponsive`, `daemon_disabled`, `port_in_use`, `market_unavailable`, `error` (any other).
+`daemon_unresponsive`, `daemon_disabled`, `port_in_use`, `market_unavailable`, `already_running`,
+`stop_failed`, `build_failed`, `cancelled`, `error` (any other).
 A code from the daemon (UPPER_SNAKE, such as `NOT_FOUND` or `INVALID_SETTING`) passes through unchanged.
 A usage error (exit 2) happens before the command runs and prints no object.
 

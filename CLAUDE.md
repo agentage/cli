@@ -193,7 +193,7 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   exactly `@agentage/extension + chalk + commander + open` (the kit's tool only; it never loads
   the kit's server stack outside the daemon process) plus `express` and `@electric-sql/pglite`,
   which the kit daemon runs on; only `src/commands/daemon/run.ts` and `src/commands/extension/up-run.ts`
-  load `@agentage/extension/host`
+  load `@agentage/extension/host`; only `up-run.ts` imports `express` (to mount the kit guard)
 
 ## Auth model
 

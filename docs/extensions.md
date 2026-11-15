@@ -318,9 +318,12 @@ line, it says so and you set it by hand.
 
 `--from <owner/repo>` takes another template repo, and `--from <owner/repo#branch>` one of its
 branches. For any source other than `agentage/extension-template` itself, `create` first prints
-that code from that repo will be built and run on this machine; with no terminal it needs `--yes`
-(or `--no-install`). After the clone, `create` runs `npm ci --ignore-scripts`, builds the package (as `extension build` does) and gives
-the folder to the daemon (`agentage extension install <folder>`), unless `--no-install`. It ends
+that code from that repo will be built and run on this machine, and asks `run it? (y/N)`; with
+`--yes` it does not ask, and with no terminal (or `--json`) it needs `--yes`. After the clone,
+`create` runs `npm ci --ignore-scripts`, builds the package (as `extension build` does) and gives
+the folder to the daemon (`agentage extension install <folder>`). `--no-install` only scaffolds:
+the clone, the rename and the parts dropped, no npm and no build. `create` adds `.agentage/` to the
+folder's `.gitignore` when it is missing, and says so. It ends
 with `url       <the first public route of the api that answers>`.
 
 1. Install git and npm for `create`, which clones the template from GitHub. `build --container`,
