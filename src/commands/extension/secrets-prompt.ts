@@ -1,3 +1,4 @@
+import { isJsonRun } from '../../lib/json-output.js';
 import { secretsFor, type SecretKey } from '../../core/loader/secrets.js';
 
 // The one seam besides npm: a real terminal cannot run inside a test.
@@ -39,7 +40,10 @@ const readHidden = (question: string): Promise<string> =>
     stdin.setRawMode(true).resume().on('data', onData);
   });
 
-const terminal = (): SecretsIo => ({ isTTY: process.stdin.isTTY === true, prompt: readHidden });
+const terminal = (): SecretsIo => ({
+  isTTY: process.stdin.isTTY === true && !isJsonRun(),
+  prompt: readHidden,
+});
 
 const nameOf = ({ id, key }: SecretKey): string => `${id}.${key}`;
 

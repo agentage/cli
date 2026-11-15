@@ -45,6 +45,7 @@ More: [docs/reference.md](docs/reference.md#token-auth-ci-and-headless).
 | `agentage status`             | Version, update, target, sign-in, endpoint, then machine, profile, extensions |
 | `agentage update`             | Install the latest published version (`--check` only reports)                 |
 | `agentage extension ...`      | Manage extensions, see [Extensions](#extensions)                              |
+| any command with `--json`     | One JSON object on stdout: `{ success, data }` or `{ success, error }`        |
 
 More: [author commands](docs/extensions.md#author-commands) and [the lifecycle](docs/extensions.md#lifecycle).
 

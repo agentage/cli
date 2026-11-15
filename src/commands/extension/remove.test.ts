@@ -2,6 +2,7 @@ import { describe, expect } from 'vitest';
 import { noAccount } from '../../test/account.js';
 import { fixture, MACHINE_ID, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
+import { runJson } from '../../lib/json-output.js';
 import { runExtensionRemove, type ConfirmIo, type ExtensionRemoveOptions } from './remove.js';
 
 const HELLO_OK = 'hello  ok         @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello';
@@ -40,9 +41,9 @@ describe('agentage extension remove', () => {
     dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } });
     dir.tree('hello', 'world');
     const before = dir.file('profile.json');
-    expect((await remove(pkg('hello'))).error).toBe(
-      '@agentage/fixture-hello is needed by world; remove world first'
-    );
+    const refused = await remove(pkg('hello'));
+    expect(refused.error).toBe('@agentage/fixture-hello is needed by world; remove world first');
+    expect(refused.code).toBe('needed_by_dependents');
     expect(dir.file('profile.json')).toBe(before);
   });
 
@@ -130,6 +131,49 @@ describe('agentage extension remove', () => {
 
   test('a name that is not installed fails saying so', async ({ dir }) => {
     installedHello(dir);
-    expect((await remove('nope')).error).toBe('nope is not installed');
+    const gone = await remove('nope');
+    expect(gone.error).toBe('nope is not installed');
+    expect(gone.code).toBe('not_installed');
+  });
+
+  test('--purge inside a --json run never asks, even on a terminal: confirmation_required', async ({
+    dir,
+  }) => {
+    installedHello(dir);
+    const out: string[] = [];
+    const ask = terminal('y');
+    const deps = { npm: npmFromFixtures, io: ask.io, ...noAccount };
+    const failure = await runJson({ writeOut: (t) => void out.push(t) }, () =>
+      runExtensionRemove({ name: 'hello', purge: true, json: true }, deps)
+    );
+    expect(failure).not.toBeNull();
+    expect(JSON.parse(out.join('')).error.code).toBe('confirmation_required');
+    expect(ask.asked).toEqual([]);
+    expect(dir.file('data/hello/notes.json')).toContain('kept');
+  });
+
+  test('--json returns the rows the step loaded, not a second gather', async ({ dir }) => {
+    dir.profile({ extensions: { hello: '^1.0.0', world: '^1' } });
+    dir.tree('hello', 'world');
+    const deps = { npm: npmFromFixtures, io: noTerminal, ...noAccount };
+    const quiet = await output(async () => {
+      const result = (await runExtensionRemove({ name: pkg('world'), json: true }, deps)) as {
+        extensions: { id: string }[];
+      };
+      expect(result.extensions.map((row) => row.id)).toEqual(['hello']);
+    });
+    expect(quiet.error).toBeNull();
+  });
+
+  test('not installed has the code not_installed', async ({ dir }) => {
+    dir.profile({ extensions: {} });
+    const out: string[] = [];
+    await runJson({ writeOut: (t) => void out.push(t) }, () =>
+      runExtensionRemove(
+        { name: 'nope', json: true },
+        { npm: npmFromFixtures, io: noTerminal, ...noAccount }
+      )
+    );
+    expect(JSON.parse(out.join('')).error.code).toBe('not_installed');
   });
 });

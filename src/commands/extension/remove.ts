@@ -8,13 +8,15 @@ import { dataDir, stateDir } from '../../core/paths.js';
 import { dropExtension } from '../../core/profile/edit.js';
 import { loadMachine, setDev } from '../../core/profile/machine.js';
 import { editableProfile } from '../../core/profile/profile.js';
-import { installAndLoad, line } from './install-load.js';
+import { CliError, isJsonRun } from '../../lib/json-output.js';
+import { extensionsResult, installAndLoad, line } from './install-load.js';
 import { finishEdit, pullForEdit, type EditDeps } from './sync.js';
 
 export interface ExtensionRemoveOptions {
   name: string;
   purge?: boolean;
   yes?: boolean;
+  json?: boolean;
 }
 
 // The one seam besides npm: a real terminal cannot run inside a test.
@@ -58,7 +60,7 @@ const targetOf = (input: string, found: Scan): Target => {
   const pkg =
     [input, ...candidatesFor(input)].find((name) => names.has(name)) ??
     found.found.extensions.find((e) => e.id === input)?.pkg;
-  if (pkg === undefined) throw new Error(`${input} is not installed`);
+  if (pkg === undefined) throw new CliError('not_installed', `${input} is not installed`);
   return { pkg, id: idOf(pkg, found) };
 };
 
@@ -68,17 +70,28 @@ const refuseDependents = (pkg: string, found: Scan): void => {
     .filter((e) => e.pkg !== pkg && e.peers.includes(pkg) && !e.optionalPeers.includes(pkg))
     .map((e) => e.id ?? e.pkg)
     .join(', ');
-  if (dependents) throw new Error(`${pkg} is needed by ${dependents}; remove ${dependents} first`);
+  if (dependents)
+    throw new CliError(
+      'needed_by_dependents',
+      `${pkg} is needed by ${dependents}; remove ${dependents} first`
+    );
 };
 
 // Asked before anything changes, so a refusal or Ctrl+C leaves everything as it was.
 const purgeConfirmed = async (opts: ExtensionRemoveOptions, target: Target, io: ConfirmIo) => {
   if (!opts.purge) return false;
   if (target.id === null)
-    throw new Error(`--purge needs the extension id of ${target.pkg}, which is not installed here`);
+    throw new CliError(
+      'not_installed',
+      `--purge needs the extension id of ${target.pkg}, which is not installed here`
+    );
   const data = dataDir(target.id);
   if (opts.yes) return true;
-  if (!io.isTTY) throw new Error(`--purge without a terminal needs --yes (it deletes ${data})`);
+  if (!io.isTTY || isJsonRun())
+    throw new CliError(
+      'confirmation_required',
+      `--purge without a terminal needs --yes (it deletes ${data})`
+    );
   return /^y(es)?$/i.test((await io.prompt(`delete ${data} and everything in it? [y/N] `)).trim());
 };
 
@@ -96,7 +109,7 @@ const dropHere = async ({ pkg, id }: Target, found: Scan, purge: boolean): Promi
 export const runExtensionRemove = async (
   opts: ExtensionRemoveOptions,
   deps: ExtensionRemoveDeps
-): Promise<void> => {
+): Promise<unknown> => {
   editableProfile(); // an invalid or newer profile.json stops here, before anything changes
   const found = scan(await loadMachine());
   const { pkg, id } = targetOf(opts.name, found);
@@ -105,6 +118,7 @@ export const runExtensionRemove = async (
   const inProfile = pkg in found.eff.install;
   const synced = inProfile ? await pullForEdit(deps) : null;
   await dropHere({ pkg, id }, found, purge);
-  if (!inProfile) return installAndLoad(editableProfile(), deps.npm);
-  await finishEdit(synced, (profile) => dropExtension(profile, pkg, found.machine.id), deps);
+  if (!inProfile) await installAndLoad(editableProfile(), deps.npm);
+  else await finishEdit(synced, (profile) => dropExtension(profile, pkg, found.machine.id), deps);
+  return extensionsResult(opts.json);
 };

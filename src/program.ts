@@ -44,24 +44,33 @@ import {
 import { registerUpdate, runUpdate, type UpdateOptions } from './commands/update/update.js';
 import { npmMajor, prepareManifest, prepareNpm } from './core/installer/npm.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
+import { messageOf, writeError } from './lib/json-output.js';
+import {
+  ACTION_FAILED,
+  EXIT_FAILED,
+  EXIT_OK,
+  EXIT_USAGE,
+  pinned,
+  withAction,
+} from './lib/with-action.js';
 import { refreshUpdateCache, updateHint } from './lib/update/update-cache.js';
 import { VERSION } from './utils/version.js';
 
 export interface ProgramDeps {
-  setup: (opts: SetupOptions) => Promise<void>;
-  status: (opts: StatusOptions) => Promise<void>;
-  update: (opts: UpdateOptions) => Promise<void>;
-  extensionInstall: (opts: ExtensionInstallOptions) => Promise<void>;
-  extensionRemove: (opts: ExtensionRemoveOptions) => Promise<void>;
-  extensionList: (opts: ExtensionListOptions) => Promise<void>;
-  extensionDoctor: (opts: ExtensionDoctorOptions) => Promise<void>;
-  extensionCreate: (opts: ExtensionCreateOptions) => Promise<void>;
-  extensionCheck: (opts: ExtensionCheckOptions) => Promise<void>;
-  extensionBuild: (opts: ExtensionBuildOptions) => Promise<void>;
-  extensionRelease: (opts: ExtensionReleaseOptions) => Promise<void>;
-  extensionUp: (opts: ExtensionUpOptions) => Promise<void>;
-  extensionDown: (opts: ExtensionDownOptions) => Promise<void>;
-  extensionToken: (opts: ExtensionTokenOptions) => Promise<void>;
+  setup: (opts: SetupOptions) => Promise<unknown>;
+  status: (opts: StatusOptions) => Promise<unknown>;
+  update: (opts: UpdateOptions) => Promise<unknown>;
+  extensionInstall: (opts: ExtensionInstallOptions) => Promise<unknown>;
+  extensionRemove: (opts: ExtensionRemoveOptions) => Promise<unknown>;
+  extensionList: (opts: ExtensionListOptions) => Promise<unknown>;
+  extensionDoctor: (opts: ExtensionDoctorOptions) => Promise<unknown>;
+  extensionCreate: (opts: ExtensionCreateOptions) => Promise<unknown>;
+  extensionCheck: (opts: ExtensionCheckOptions) => Promise<unknown>;
+  extensionBuild: (opts: ExtensionBuildOptions) => Promise<unknown>;
+  extensionRelease: (opts: ExtensionReleaseOptions) => Promise<unknown>;
+  extensionUp: (opts: ExtensionUpOptions) => Promise<unknown>;
+  extensionDown: (opts: ExtensionDownOptions) => Promise<unknown>;
+  extensionToken: (opts: ExtensionTokenOptions) => Promise<unknown>;
   // The kit's tool library, which runs the commands of kit-built extensions.
   kitTool: LoadKitTool;
   updateHint: () => string | null;
@@ -106,26 +115,6 @@ const defaultDeps: ProgramDeps = {
   writeErr: (text) => void process.stderr.write(text),
 };
 
-export const EXIT_OK = 0;
-export const EXIT_FAILED = 1;
-export const EXIT_USAGE = 2;
-const ACTION_FAILED = 'agentage.actionFailed';
-
-const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-
-// One failure path: a red stderr line, exit 1; an extension's --help or usage error keeps its code.
-const withAction =
-  <T>(deps: ProgramDeps, fn: (opts: T) => Promise<void>, prefix = '') =>
-  async (opts: T): Promise<void> => {
-    try {
-      await fn(opts);
-    } catch (err) {
-      if (err instanceof CommanderError) throw err;
-      deps.writeErr(`${chalk.red(`${prefix}${messageOf(err)}`)}\n`);
-      throw new CommanderError(EXIT_FAILED, ACTION_FAILED, messageOf(err));
-    }
-  };
-
 // status and update report update state themselves; the hint never touches --json stdout.
 const hintAfter =
   (deps: ProgramDeps) =>
@@ -141,10 +130,10 @@ const addExtensions = (program: Command, deps: ProgramDeps, argv: string[]): voi
   registerExtension(program, {
     install: withAction(deps, deps.extensionInstall),
     remove: withAction(deps, deps.extensionRemove),
-    list: withAction(deps, deps.extensionList),
-    doctor: withAction(deps, deps.extensionDoctor),
+    list: withAction(deps, deps.extensionList, '', pinned),
+    doctor: withAction(deps, deps.extensionDoctor, '', pinned),
     create: withAction(deps, deps.extensionCreate),
-    check: withAction(deps, deps.extensionCheck),
+    check: withAction(deps, deps.extensionCheck, '', pinned),
     build: withAction(deps, deps.extensionBuild),
     release: withAction(deps, deps.extensionRelease),
     up: withAction(deps, deps.extensionUp),
@@ -171,22 +160,28 @@ export const createProgram = (
     .configureOutput({ writeOut: deps.writeOut, writeErr: deps.writeErr })
     .addHelpText('after', '\nNew here? Run: agentage setup to connect this machine.')
     .hook('postAction', hintAfter(deps));
-  registerSetup(program, withAction(deps, deps.setup, 'Setup failed: '));
-  registerStatus(program, withAction(deps, deps.status));
+  registerSetup(
+    program,
+    withAction(deps, deps.setup, 'Setup failed: ', (o: SetupOptions) => !!(o.dryRun || o.check))
+  );
+  registerStatus(program, withAction(deps, deps.status, '', pinned));
   registerUpdate(program, withAction(deps, deps.update));
   addExtensions(program, deps, argv);
   return program;
 };
 
-// --help and --version stay 0; a kit command keeps its code; any other commander error is usage.
-const exitCodeOf = (err: unknown, deps: ProgramDeps): number => {
+// --help and --version stay 0; a kit command keeps its code; other commander errors are usage.
+const exitCodeOf = (err: unknown, deps: ProgramDeps, argv: string[]): number => {
   if (!(err instanceof CommanderError)) {
     deps.writeErr(`${chalk.red(messageOf(err))}\n`);
     return EXIT_FAILED;
   }
   if (err.code === ACTION_FAILED) return EXIT_FAILED;
   if (err.code === KIT_EXIT) return err.exitCode;
-  return err.exitCode === 0 ? EXIT_OK : EXIT_USAGE;
+  if (err.exitCode === 0) return EXIT_OK;
+  if (!argv.includes('--json')) return EXIT_USAGE;
+  writeError(deps, err, 'usage'); // a usage error under --json is still one envelope
+  return EXIT_FAILED;
 };
 
 // Returns the exit code instead of exiting, so piped stdout is never cut short.
@@ -199,6 +194,6 @@ export const run = async (
     await createProgram(deps, argv).parseAsync(argv);
     return EXIT_OK;
   } catch (err) {
-    return exitCodeOf(err, deps);
+    return exitCodeOf(err, deps, argv);
   }
 };

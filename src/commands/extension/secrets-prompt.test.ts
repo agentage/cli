@@ -1,6 +1,8 @@
 import { statSync } from 'node:fs';
 import { describe, expect } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
+import { vi } from 'vitest';
+import { runJson } from '../../lib/json-output.js';
 import { askSecrets } from './secrets-prompt.js';
 
 const MISSING = [
@@ -35,5 +37,17 @@ describe('the secrets setup asks for before loading', () => {
 
   test('with none missing, nothing is printed or asked', async () => {
     expect((await output(() => askSecrets([], { isTTY: true, prompt: never }))).lines).toEqual([]);
+  });
+
+  test('in a --json run the default terminal never asks, even on a tty: the list goes to stderr', async () => {
+    const was = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const failure = await runJson({ writeOut: () => undefined }, () => askSecrets(MISSING));
+    expect(failure).toBeNull();
+    expect(spy).toHaveBeenCalledWith('secrets to set: secret.token, secret.other');
+    spy.mockRestore();
+    if (was) Object.defineProperty(process.stdin, 'isTTY', was);
+    else delete (process.stdin as { isTTY?: boolean }).isTTY;
   });
 });

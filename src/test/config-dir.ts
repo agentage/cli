@@ -1,3 +1,4 @@
+import { codeOf } from '../lib/json-output.js';
 /**
  * The unit-test kit for src/core and src/commands/extension: `test` hands every test `dir`, a
  * brand-new config dir (AGENTAGE_CONFIG_DIR) that the real code reads and writes, removed
@@ -161,6 +162,8 @@ export interface Output {
   lines: string[];
   // The message the command failed with, else null.
   error: string | null;
+  // The stable --json code of that failure (`error` for a plain Error), else null.
+  code: string | null;
 }
 
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
@@ -177,14 +180,22 @@ export const output = async (fn: () => Promise<unknown>): Promise<Output> => {
   console.error = (text: unknown) => void err.push(String(text));
   chalk.level = 0;
   let error: string | null = null;
+  let code: string | null = null;
   try {
     await fn();
   } catch (e) {
     error = (e as Error).message;
+    code = codeOf(e);
   } finally {
     Object.assign(console, { log: saved.log, error: saved.error });
     chalk.level = saved.level;
   }
   const stdout = out.join('\n');
-  return { stdout, stderr: err.join('\n'), lines: stdout === '' ? [] : stdout.split('\n'), error };
+  return {
+    stdout,
+    stderr: err.join('\n'),
+    lines: stdout === '' ? [] : stdout.split('\n'),
+    error,
+    code,
+  };
 };

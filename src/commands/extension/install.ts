@@ -6,12 +6,14 @@ import { loadMachine, setDev } from '../../core/profile/machine.js';
 import { editableProfile } from '../../core/profile/profile.js';
 import { type Market } from '../../lib/net/market.js';
 import { type Profile } from '../../core/profile/schema.js';
-import { installAndLoad, line } from './install-load.js';
+import { CliError } from '../../lib/json-output.js';
+import { extensionsResult, installAndLoad, line } from './install-load.js';
 import { finishEdit, pullForEdit, type EditDeps } from './sync.js';
 
 export interface ExtensionInstallOptions {
   name: string;
   off?: boolean;
+  json?: boolean;
 }
 
 // npm reads what a name resolves to and installs the tree; the account gets the new profile.
@@ -35,7 +37,11 @@ const addPackage = async (target: Package, off: boolean, deps: ExtensionInstallD
 
 // A dev extension is this machine's own: it replaces an installed copy, and never syncs.
 const addDev = async (target: Dev, off: boolean, deps: ExtensionInstallDeps) => {
-  if (off) throw new Error(`--off does not apply to ${target.path}: a dev extension always loads`);
+  if (off)
+    throw new CliError(
+      'invalid_option',
+      `--off does not apply to ${target.path}: a dev extension always loads`
+    );
   await setDev(target.name, target.path);
   if (target.kit) console.log(line('linked', `${target.name} (working copy)`));
   else console.log(line('dev', `${target.name} ${target.path}`));
@@ -57,7 +63,7 @@ const marketName = async (name: string, market?: Market): Promise<string> => {
 export const runExtensionInstall = async (
   opts: ExtensionInstallOptions,
   deps: ExtensionInstallDeps
-): Promise<void> => {
+): Promise<unknown> => {
   const { registries } = editableProfile();
   const target = await resolveName(
     await marketName(opts.name, deps.market),
@@ -65,4 +71,5 @@ export const runExtensionInstall = async (
   );
   if (target.kind === 'dev') await addDev(target, opts.off === true, deps);
   else await addPackage(target, opts.off === true, deps);
+  return extensionsResult(opts.json);
 };

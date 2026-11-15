@@ -36,6 +36,7 @@ describe('agentage extension doctor', () => {
       'throws  failed     @agentage/fixture-throws 1.0.0 (wants ^1)  "boom"',
     ]);
     expect(run.error).toBe('1 extension failed to load: throws');
+    expect(run.code).toBe('extension_failed');
     expect(dir.json('state/throws.json')).toMatchObject({ state: 'failed', error: 'boom' });
   });
 
@@ -78,6 +79,7 @@ describe('agentage extension doctor', () => {
       'hello  invalid    @agentage/fixture-hello 1.0.0 (wants ^1.0.0)  commands: hello  integrity drift: @agentage/fixture-hello@1.0.0',
     ]);
     expect(run.error).toBe('integrity drift: @agentage/fixture-hello@1.0.0');
+    expect(run.code).toBe('integrity_drift');
     expect(dir.exists('state/hello.json')).toBe(false);
   });
 

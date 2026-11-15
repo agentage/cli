@@ -79,7 +79,7 @@ describe('this machine in the account', () => {
         await seenMachine(account.account().machines, BOX.id);
         await disconnectMachine(account.account().machines, BOX.id);
       });
-      expect(run).toEqual({ stdout: '', stderr: '', lines: [], error: null });
+      expect(run).toEqual({ stdout: '', stderr: '', lines: [], error: null, code: null });
       expect(account.requests).toHaveLength(4);
     }
   );

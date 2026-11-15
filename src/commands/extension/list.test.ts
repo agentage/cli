@@ -93,6 +93,7 @@ describe('agentage extension list', () => {
       `profile.json is invalid:\n  extensions["${pkg('world')}"]: file: specs are refused; ` +
         'use a semver range or an https: tarball URL'
     );
+    expect(run.code).toBe('profile_invalid');
   });
 
   test('with no extensions says so, and warns about keys profile.json does not know', async ({

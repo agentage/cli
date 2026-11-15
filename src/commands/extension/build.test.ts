@@ -42,6 +42,7 @@ describe('extension build', () => {
     writeFileSync(join(repo, 'new.ts'), '');
     const printed = await output(() => runExtensionBuild({ dir: repo }, tool));
     expect(printed.error).toBe(`${repo} has uncommitted changes: commit first`);
+    expect(printed.code).toBe('uncommitted_changes');
     expect(calls).toHaveLength(1);
     await expect(assertCommitted(repo)).rejects.toThrow('commit first');
     rmSync(join(repo, '.git'), { recursive: true, force: true });
@@ -63,6 +64,13 @@ describe('extension build', () => {
     expect(calls).toEqual([{ push: true, dir: 'ext', registry: 'localhost:5000/agentage' }]);
     expect(printed.lines).toEqual(['api ghcr.io/agentage/probe-api:0.1.0 pushed']);
     expect(printed.error).toBeNull();
+  });
+
+  test('--json returns the kit result and keeps the flag away from the kit', async () => {
+    const { tool, calls } = fakeTool();
+    const result = await runExtensionBuild({ dir: '.', push: true, json: true }, tool, clean);
+    expect(result).toMatchObject({ id: 'probe', version: '0.1.0', images: [{ part: 'api' }] });
+    expect(calls).toEqual([{ dir: '.', push: true }]);
   });
 
   test('a failed build fails the step with the tool message', async () => {
@@ -122,6 +130,7 @@ describe('extension check', () => {
     expect(dirs).toEqual(['probe']);
     expect(printed.lines).toEqual(['sealing: src/api/index.ts:7 reads process.env']);
     expect(printed.error).toBe('FAIL 1 problem in 1 rule');
+    expect(printed.code).toBe('not_conforming');
   });
 
   test('a report that does not conform fails even when the kit gives no lines', async () => {

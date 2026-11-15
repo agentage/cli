@@ -6,6 +6,7 @@ import { type ExtensionDoctorOptions } from './doctor.js';
 import { type ExtensionInstallOptions } from './install.js';
 import { type ExtensionRemoveOptions } from './remove.js';
 import { printWarnings, rowLines, type Latest } from './row-lines.js';
+import { addJson } from '../../lib/json-output.js';
 import { type Market } from '../../lib/net/market.js';
 import { gatherExtensions, invalidProfileError, type ExtensionsGather } from './rows.js';
 import { addKitTools, type KitActions } from './up.js';
@@ -125,21 +126,27 @@ export interface ExtensionActions extends KitActions, BuildActions {
 }
 
 const addChanges = (group: Command, { install, remove }: ExtensionActions): void => {
-  group
-    .command('install')
-    .description('Add an extension to the profile, then install and load it')
-    .argument('<name>', 'package name[@range], short name, https: tarball URL or local path')
-    .option('--off', 'install it, but do not load it on this machine')
+  addJson(
+    group
+      .command('install')
+      .description('Add an extension to the profile, then install and load it')
+      .argument('<name>', 'package name[@range], short name, https: tarball URL or local path')
+      .option('--off', 'install it, but do not load it on this machine')
+  )
     .addHelpText('after', INSTALL_HELP)
-    .action((name: string, opts: { off?: boolean }) => install({ name, ...opts }));
-  group
-    .command('remove')
-    .description('Remove an extension from the profile, then install and load the rest')
-    .argument('<name>', 'package name, short name or extension id')
-    .option('--purge', "also delete the extension's data, data/<id>/")
-    .option('--yes', 'do not ask before --purge deletes (needed without a terminal)')
+    .action((name: string, opts: { off?: boolean; json?: boolean }) => install({ name, ...opts }));
+  addJson(
+    group
+      .command('remove')
+      .description('Remove an extension from the profile, then install and load the rest')
+      .argument('<name>', 'package name, short name or extension id')
+      .option('--purge', "also delete the extension's data, data/<id>/")
+      .option('--yes', 'do not ask before --purge deletes (needed without a terminal)')
+  )
     .addHelpText('after', REMOVE_HELP)
-    .action((name: string, opts: { purge?: boolean; yes?: boolean }) => remove({ name, ...opts }));
+    .action((name: string, opts: { purge?: boolean; yes?: boolean; json?: boolean }) =>
+      remove({ name, ...opts })
+    );
 };
 
 const addReports = (group: Command, { list, doctor }: ExtensionActions): void => {

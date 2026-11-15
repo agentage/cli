@@ -9,7 +9,7 @@ import {
 } from '../../core/profile/profile.js';
 import { type Profile, type ProfileParse } from '../../core/profile/schema.js';
 import { type SetupDeps, type SetupOptions } from '../auth/setup.js';
-import { installAndLoad } from './install-load.js';
+import { extensionsResult, installAndLoad } from './install-load.js';
 import { runSetupLatest } from './latest.js';
 import { printDryRun, runSetupCheck } from './plan.js';
 import { printWarnings } from './row-lines.js';
@@ -64,10 +64,7 @@ const fromFile = async (source: Source, deps: ExtensionSetupDeps): Promise<void>
   await installAndLoad(source.profile, deps.npm);
 };
 
-export const runExtensionSetup = async (
-  opts: SetupOptions,
-  deps: ExtensionSetupDeps
-): Promise<void> => {
+const setupFlow = async (opts: SetupOptions, deps: ExtensionSetupDeps): Promise<void> => {
   if (opts.disconnect) return disconnect(deps);
   const file = opts.profile === undefined ? null : fileSource(opts.profile);
   if (opts.check || opts.dryRun) return readOnly(file ?? localSource(), opts);
@@ -81,4 +78,12 @@ export const runExtensionSetup = async (
   );
   await deps.printStatus({ token });
   if (failure) throw failure;
+};
+
+export const runExtensionSetup = async (
+  opts: SetupOptions,
+  deps: ExtensionSetupDeps
+): Promise<unknown> => {
+  await setupFlow(opts, deps);
+  return opts.check || opts.dryRun ? undefined : extensionsResult(opts.json);
 };

@@ -124,9 +124,11 @@ describe('agentage extension install', () => {
   test('--off with a local path is refused, writing nothing: a dev extension always loads', async ({
     dir,
   }) => {
-    expect((await install(fixture('hello'), { off: true })).error).toBe(
+    const refused = await install(fixture('hello'), { off: true });
+    expect(refused.error).toBe(
       `--off does not apply to ${HELLO_DIR}: a dev extension always loads`
     );
+    expect(refused.code).toBe('invalid_option');
     expect(dir.list('')).toEqual([]);
   });
 

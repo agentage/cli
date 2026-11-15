@@ -2,9 +2,12 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { type Command } from 'commander';
 import type { BuildOptions } from '@agentage/extension/tool';
+import { addJson, CliError, omitJson } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
-export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'>;
+export type ExtensionBuildOptions = Pick<BuildOptions, 'push' | 'dir' | 'registry'> & {
+  json?: boolean;
+};
 
 export type ExtensionCheckOptions = { dir?: string; json?: boolean; write?: boolean };
 
@@ -35,7 +38,7 @@ export const runExtensionCheck = async (
   const lines = checkLines(report);
   const fail = report.conforms ? undefined : lines.pop();
   for (const line of json ? [JSON.stringify(report, null, 2)] : lines) console.log(line);
-  if (!report.conforms) throw new Error(fail);
+  if (!report.conforms) throw new CliError('not_conforming', fail ?? 'does not conform');
 };
 
 export type Committed = (dir: string) => Promise<void>;
@@ -46,7 +49,8 @@ export const assertCommitted: Committed = async (dir) => {
   const { stdout } = await status.catch(() => {
     throw new Error(`${dir} is not a git checkout: commit first`);
   });
-  if (stdout.trim()) throw new Error(`${dir} has uncommitted changes: commit first`);
+  if (stdout.trim())
+    throw new CliError('uncommitted_changes', `${dir} has uncommitted changes: commit first`);
 };
 
 // One line per image on stdout (part, tag, digest when pushed), then the record path.
@@ -54,10 +58,12 @@ export const runExtensionBuild = async (
   opts: ExtensionBuildOptions = {},
   tool: LoadKitTool = loadKitTool,
   committed: Committed = assertCommitted
-): Promise<void> => {
+): Promise<unknown> => {
   await committed(opts.dir ?? '.');
   const { build, buildLines } = await tool();
-  for (const line of buildLines(await build(opts))) console.log(line);
+  const result = await build(omitJson(opts));
+  for (const line of buildLines(result)) console.log(line);
+  return result;
 };
 
 const BUILD_HELP = `
@@ -83,12 +89,14 @@ export const addBuild = (group: Command, { check, build }: BuildActions): void =
     .action((dir: string | undefined, opts: { json?: boolean; write?: boolean }) =>
       check({ dir, ...opts })
     );
-  group
-    .command('build')
-    .description('Build the part images of an extension package; --push pushes them')
-    .option('--push', 'push the images and write the build record with their digests')
-    .option('--dir <path>', 'the extension package folder (default: the current folder)')
-    .option('--registry <host/owner>', 'image registry and owner (default: ghcr.io/agentage)')
+  addJson(
+    group
+      .command('build')
+      .description('Build the part images of an extension package; --push pushes them')
+      .option('--push', 'push the images and write the build record with their digests')
+      .option('--dir <path>', 'the extension package folder (default: the current folder)')
+      .option('--registry <host/owner>', 'image registry and owner (default: ghcr.io/agentage)')
+  )
     .addHelpText('after', BUILD_HELP)
     .action(build);
 };

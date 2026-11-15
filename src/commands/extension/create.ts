@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSyn
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { type Command } from 'commander';
+import { addJson, CliError } from '../../lib/json-output.js';
 
 const run = promisify(execFile);
 export const TEMPLATE = 'agentage/extension-template';
@@ -23,6 +24,7 @@ export interface ExtensionCreateOptions {
   id: string;
   parts: string[];
   from?: string;
+  json?: boolean;
 }
 
 const refusal = ({ id, parts, from = TEMPLATE }: ExtensionCreateOptions, kept: string[]) => {
@@ -141,23 +143,27 @@ const printNext = (dir: string, from: string, id: string, kept: string[]): void 
 export const runExtensionCreate = async (
   opts: ExtensionCreateOptions,
   url = (from: string) => `https://github.com/${from}`
-): Promise<void> => {
+): Promise<unknown> => {
   const { id, from = TEMPLATE } = opts;
   const kept = opts.parts.length > 0 ? [...new Set(opts.parts)] : PARTS;
   const refused = refusal(opts, kept);
-  if (refused) throw new Error(refused);
+  if (refused) throw new CliError('invalid_argument', refused);
   const dir = `extension-${id}`;
   await clone(url(from), from, dir);
   const ci = shape(dir, from, id, kept);
   printNext(dir, from, id, kept);
   if (ci) console.log(ci);
+  return { id, dir, from, kept };
 };
 
 export const addCreate = (group: Command, create: (o: ExtensionCreateOptions) => Promise<void>) =>
-  group
-    .command('create')
-    .description('Create ./extension-<id> from the extension template with the parts named')
-    .argument('<id>', 'the extension id, also its host and contract name')
-    .argument('[parts...]', `parts to keep (default: all seven): ${PARTS.join(', ')}`)
-    .option('--from <owner/repo>', `the template repo (default: ${TEMPLATE})`)
-    .action((id: string, parts: string[], o: { from?: string }) => create({ id, parts, ...o }));
+  addJson(
+    group
+      .command('create')
+      .description('Create ./extension-<id> from the extension template with the parts named')
+      .argument('<id>', 'the extension id, also its host and contract name')
+      .argument('[parts...]', `parts to keep (default: all seven): ${PARTS.join(', ')}`)
+      .option('--from <owner/repo>', `the template repo (default: ${TEMPLATE})`)
+  ).action((id: string, parts: string[], o: { from?: string; json?: boolean }) =>
+    create({ id, parts, ...o })
+  );

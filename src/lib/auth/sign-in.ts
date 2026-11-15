@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { deleteAuth, ensureConfigDir, mutateAuth, readAuth, type AuthState } from '../fs/config.js';
 import { discoverTarget } from '../net/discovery.js';
 import { siteFqdn, type Links } from '../net/origins.js';
+import { CliError, isJsonRun } from '../json-output.js';
 import { AuthRequiredError } from './auth-errors.js';
 import { startCallbackServer, type CallbackServer } from './callback-server.js';
 import { credentialLinks, detectEnvMismatch, type AuthEnvMismatch } from './env-match.js';
@@ -86,6 +87,8 @@ export const signIn = async (
   opts: SignInOptions,
   deps: SignInDeps = defaultDeps
 ): Promise<void> => {
+  if (isJsonRun() && opts.browser !== false)
+    throw new CliError('confirmation_required', 'sign-in opens a browser: pass --no-browser');
   const fqdn = siteFqdn();
   const to = await deps.discover(fqdn);
   const authUrl = to.auth;
