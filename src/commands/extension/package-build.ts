@@ -10,7 +10,7 @@ import { compareVersions } from '../../lib/update/update-check.js';
 import { kitVersion } from '../../core/kit-version.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
-const STEP_MS = 600_000;
+export const STEP_MS = 600_000;
 const GRACE_MS = 5_000;
 
 export type Npm = (dir: string, args: string[]) => Promise<void>;
@@ -30,7 +30,8 @@ const spawnNpm = (dir: string, args: string[], npmCli: () => string): ChildProce
     windowsHide: true,
   });
 
-const deadline = (child: ChildProcess, timeoutMs: number, graceMs: number) => {
+// Past its time SIGTERM, then SIGKILL after the grace time.
+export const deadline = (child: ChildProcess, timeoutMs: number, graceMs: number) => {
   let late = false;
   let kill: NodeJS.Timeout | undefined;
   const timer = setTimeout(() => {

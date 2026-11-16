@@ -144,6 +144,9 @@ describe('the watchers of extension up', () => {
     expect(await runRest(dir.at('w'), 'bundle')).toBe(true);
     expect(dir.exists('w/made.txt')).toBe(true);
     expect(await runRest(dir.at('w'), 'exit 3')).toBe(false);
+    const hung = Date.now();
+    expect(await runRest(dir.at('w'), 'exec sleep 30', 200)).toBe(false);
+    expect(Date.now() - hung).toBeLessThan(5_000);
   });
 
   test('a tsc that exits by itself or cannot start is reported once, as the watch dying', async ({
