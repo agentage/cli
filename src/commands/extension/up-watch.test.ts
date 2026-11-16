@@ -1,8 +1,8 @@
-import { chmodSync, existsSync, readlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
-import { prepareStage, seedNext, upModeOf } from './up-build.js';
+import { prepareStage, removeStage, seedNext, stageOf, upModeOf } from './up-build.js';
 import { coalesced, runRest, watchFolder, watchTsc, type TscBuilt } from './up-watch.js';
 
 // A stand-in for the folder's tsc: one first build, then a change with an error, then a clean one.
@@ -27,10 +27,11 @@ describe('the build mode of extension up (D13 revised)', () => {
   }) => {
     dir.write('t/package.json', pkg('tsc -p tsconfig.build.json && agentage-widget bundle'));
     expect(upModeOf(dir.at('t'))).toEqual({ kind: 'stage', script: expect.any(String) });
-    dir.write('t/node_modules/.bin/tsc', '');
+    dir.write('t/node_modules/typescript/package.json', { name: 'typescript', version: '6.0.0' });
+    dir.write('t/node_modules/typescript/bin/tsc', '');
     expect(upModeOf(dir.at('t'))).toEqual({
       kind: 'tsc',
-      tsc: join(dir.at('t'), 'node_modules/.bin/tsc'),
+      tsc: join(realpathSync(dir.at('t')), 'node_modules/typescript/bin/tsc'),
       config: 'tsconfig.build.json',
       rest: 'agentage-widget bundle',
     });
@@ -46,18 +47,33 @@ describe('the build mode of extension up (D13 revised)', () => {
     expect(upModeOf(dir.at('t'))).toEqual({ kind: 'stage', script: null });
   });
 
-  test('the stage copies the folder but node_modules (linked), dist, dist.next, .agentage, .git', ({
+  test('the stage is in the config cache: no .env*, coverage, .git, dist*; node_modules linked, kept at the remove', ({
     dir,
   }) => {
-    for (const path of ['src/a.js', 'dist/a.js', 'dist.next/a.js', '.git/HEAD', 'build.mjs'])
+    const names = ['src/a.js', 'dist/a.js', 'dist.next/a.js', 'dist-ui/a.js', '.git/HEAD'];
+    for (const path of [...names, 'build.mjs', '.env', '.env.local', 'coverage/x', '.agentage/u'])
       dir.write(`w/${path}`, '');
     dir.write('w/node_modules/m/index.js', '');
     const stage = prepareStage(dir.at('w'));
+    expect(stage).toBe(stageOf(dir.at('w')));
+    expect(stage.startsWith(dir.at('cache/up-stage/w-'))).toBe(true);
     expect(existsSync(join(stage, 'src/a.js'))).toBe(true);
     expect(existsSync(join(stage, 'build.mjs'))).toBe(true);
-    for (const gone of ['dist', 'dist.next', '.git', '.agentage'])
-      expect(existsSync(join(stage, gone)), gone).toBe(false);
+    const gone = [
+      'dist',
+      'dist.next',
+      'dist-ui',
+      '.git',
+      '.agentage',
+      '.env',
+      '.env.local',
+      'coverage',
+    ];
+    for (const name of gone) expect(existsSync(join(stage, name)), name).toBe(false);
     expect(readlinkSync(join(stage, 'node_modules'))).toBe(join(dir.at('w'), 'node_modules'));
+    removeStage(dir.at('w'));
+    expect(existsSync(stage)).toBe(false);
+    expect(dir.exists('w/node_modules/m/index.js')).toBe(true);
     seedNext(dir.at('w'));
     expect(existsSync(join(dir.at('w'), 'dist.next/a.js'))).toBe(true);
   });
@@ -67,16 +83,18 @@ describe('the watchers of extension up', () => {
   test('tsc: out to dist.next with noEmitOnError; each build reported, the first marked; errors to stderr', async ({
     dir,
   }) => {
-    dir.write('t/node_modules/.bin/tsc', FAKE_TSC);
-    const tsc = join(dir.at('t'), 'node_modules/.bin/tsc');
-    chmodSync(tsc, 0o755);
+    dir.write('t/tsc.js', FAKE_TSC);
+    const tsc = dir.at('t/tsc.js');
     const built: TscBuilt[] = [];
+    const onDied = vi.fn();
     const run = await output(async () => {
       const mode = { kind: 'tsc' as const, tsc, config: 'tsconfig.build.json', rest: null };
-      const watcher = watchTsc(dir.at('t'), mode, (b) => built.push(b));
+      const watcher = watchTsc(dir.at('t'), mode, { onBuilt: (b) => built.push(b), onDied });
       await vi.waitFor(() => expect(built).toHaveLength(3), { timeout: 5_000 });
       watcher.stop();
+      await new Promise((done) => setTimeout(done, 200));
     });
+    expect(onDied).not.toHaveBeenCalled();
     expect(built.map(({ errors, first }) => [errors, first])).toEqual([
       [0, true],
       [1, false],
@@ -126,5 +144,34 @@ describe('the watchers of extension up', () => {
     expect(await runRest(dir.at('w'), 'bundle')).toBe(true);
     expect(dir.exists('w/made.txt')).toBe(true);
     expect(await runRest(dir.at('w'), 'exit 3')).toBe(false);
+  });
+
+  test('a tsc that exits by itself or cannot start is reported once, as the watch dying', async ({
+    dir,
+  }) => {
+    dir.write('t/tsc.js', 'process.exit(4);');
+    const mode = { kind: 'tsc' as const, tsc: dir.at('t/tsc.js'), config: 'x', rest: null };
+    const died = await new Promise((done) =>
+      watchTsc(dir.at('t'), mode, { onBuilt: () => undefined, onDied: done })
+    );
+    expect(died).toBe('exited 4');
+    const gone = await new Promise((done) =>
+      watchTsc(dir.at('none'), mode, { onBuilt: () => undefined, onDied: done })
+    );
+    expect(gone).toMatch(/^did not start: /);
+  });
+
+  test('a run that throws prints one line and the next change still runs', async () => {
+    let runs = 0;
+    const go = coalesced(async () => {
+      runs += 1;
+      if (runs === 1) throw new Error("ENOENT: no such file or directory, lstat 'dist/ui'");
+    });
+    const run = await output(async () => {
+      await go();
+      await go();
+    });
+    expect(run.stderr).toContain("watch     ENOENT: no such file or directory, lstat 'dist/ui'");
+    expect(runs).toBe(2);
   });
 });

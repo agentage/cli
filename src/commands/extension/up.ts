@@ -6,7 +6,7 @@ import { CliError, omitJson } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { execIn, type Exec } from './release-guard.js';
 import { assertOwnStack } from './stack-owner.js';
-import { stopLocal, type LocalDown, type UpRecord } from './up-local.js';
+import { readRecord, stopLocal, type LocalDown, type UpRecord } from './up-local.js';
 import { runLocalUp } from './up-run.js';
 
 export interface ExtensionUpOptions {
@@ -85,17 +85,30 @@ const removeAdded = async (dir: string, record: UpRecord | null, host: Host): Pr
 type Host = () => Promise<HostClient>;
 const defaultHost: Host = async () => hostClient(await ensureDaemon());
 
+// The row up added goes even when that up does not stop or is gone (a stop_failed still throws).
+const stopAndRemove = async (dir: string, host: Host, stopMs: number) => {
+  const record = readRecord(dir);
+  const lines: string[] = [];
+  let down: LocalDown = 'none';
+  try {
+    down = (await stopLocal(dir, stopMs)).down;
+    if (down !== 'none') lines.push(LOCAL_LINES[down]);
+  } finally {
+    lines.push(...(await removeAdded(dir, record, host)));
+    for (const line of lines) console.log(line);
+  }
+  return { down, lines };
+};
+
 // The up of the folder stops and its row goes; a Docker stack up --docker started there goes too.
 export const runExtensionDown = async (
   opts: ExtensionDownOptions = {},
   tool: LoadKitTool = loadKitTool,
-  host: Host = defaultHost
+  host: Host = defaultHost,
+  stopMs = 10_000
 ): Promise<unknown> => {
   const dir = resolve(opts.dir ?? '.');
-  const { down, record } = await stopLocal(dir);
-  const lines = [...(down === 'none' ? [] : [LOCAL_LINES[down]])];
-  lines.push(...(await removeAdded(dir, record, host)));
-  for (const line of lines) console.log(line);
+  const { down, lines } = await stopAndRemove(dir, host, stopMs);
   if (existsSync(join(dir, '.agentage', 'compose.json')))
     lines.push(...(await dockerDown(opts, tool)));
   if (lines.length === 0) {

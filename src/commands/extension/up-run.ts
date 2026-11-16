@@ -1,21 +1,24 @@
-import { cpSync, existsSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { markOf, type ProcessMark } from '../../lib/proc/start-time.js';
 import { join, resolve } from 'node:path';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { setExit } from '../../lib/exit-code.js';
-import { CliError, messageOf } from '../../lib/json-output.js';
+import { CliError } from '../../lib/json-output.js';
 import { installFolder } from './install-once.js';
 import { loadKitTool } from './kit-tool.js';
 import { buildPackage, npmIn, type Npm, type PackageBuild } from './package-build.js';
-import { NEXT, seedNext, stagedBuild, stageOf, upModeOf, type UpMode } from './up-build.js';
-import { refuseRunning, untilStopped, writeRecord } from './up-local.js';
-import { coalesced, runRest, watchFolder, watchTsc, type Stoppable } from './up-watch.js';
+import { removeStage, seedNext, upModeOf, type UpMode } from './up-build.js';
+import { refuseRunning, untilStopped, writeRecord, type UpRecord } from './up-local.js';
+import { stageAndReload, startWatch, type Run } from './up-reload.js';
 
 export interface LocalUpDeps {
   build: (dir: string) => Promise<PackageBuild>;
   daemon: () => Promise<{ port: number; host: HostClient }>;
   npm: Npm;
-  stopped: (dir: string) => Promise<string>;
+  // Resolves with why up stops: a signal, `down`, or `watch died` once `ended` resolves.
+  stopped: (dir: string, nonce: string, ended: Promise<string>) => Promise<string>;
 }
 
 export const localUpDeps: LocalUpDeps = {
@@ -25,7 +28,7 @@ export const localUpDeps: LocalUpDeps = {
     return { port, host: hostClient(port) };
   },
   npm: npmIn,
-  stopped: (dir) => untilStopped(dir),
+  stopped: (dir, nonce, ended) => untilStopped(dir, nonce, ended),
 };
 
 export interface LocalUp {
@@ -35,13 +38,6 @@ export interface LocalUp {
   port: number;
   added: boolean;
   stoppedBy: string;
-}
-
-interface Run {
-  dir: string;
-  id: string;
-  host: HostClient;
-  deps: LocalUpDeps;
 }
 
 const real = (path: string): string => (existsSync(path) ? realpathSync(path) : path);
@@ -70,65 +66,6 @@ const warnProblems = async ({ report }: PackageBuild): Promise<void> => {
   for (const text of (await loadKitTool()).checkLines(report)) console.error(`check     ${text}`);
 };
 
-// One line per reload: reloaded and the time, or the daemon's refusal (the last good build runs).
-export const reload = async ({ host, id }: Run, since: number): Promise<void> => {
-  const answer = await host.reload(id).catch((err: unknown) => ({ error: messageOf(err) }));
-  const ms = Date.now() - since;
-  if ('error' in answer) return console.error(`reload    ${id} failed: ${answer.error}`);
-  if (answer.reloaded) return console.log(`reload    ${id} reloaded: true in ${ms} ms`);
-  console.log(
-    `reload    ${id} reloaded: false, refused: ${answer.refused ?? 'no reason'} (${ms} ms)`
-  );
-  console.log(`          ${id} the last good build runs`);
-};
-
-// A build that fails prints the compiler's words (its own stderr) and sends no reload.
-const stageAndReload = async (run: Run): Promise<void> => {
-  const since = Date.now();
-  try {
-    await stagedBuild(run.dir, run.deps.npm);
-  } catch (err) {
-    return console.error(`build     failed, no reload: ${messageOf(err)}`);
-  }
-  await reload(run, since);
-};
-
-// D17: a change under src/ui runs the widget bundle into dist/ui; the daemon serves no ui yet.
-const bundleUi = async (run: Run, rest: string): Promise<void> => {
-  const since = Date.now();
-  if (!(await runRest(run.dir, rest))) return console.error('ui        the bundle failed');
-  cpSync(join(run.dir, 'dist', 'ui'), join(run.dir, NEXT, 'ui'), { recursive: true, force: true });
-  console.log(`ui        bundled into dist/ui in ${Date.now() - since} ms (no reload)`);
-};
-
-const watchWithTsc = (run: Run, mode: Extract<UpMode, { kind: 'tsc' }>): Stoppable[] => {
-  const tsc = watchTsc(run.dir, mode, ({ errors, ms, first }) => {
-    if (errors > 0) return console.error(`build     ${errors} error(s), no reload`);
-    if (!first) void reload(run, Date.now() - ms);
-  });
-  if (!mode.rest) return [tsc];
-  const rest = mode.rest;
-  const ui = watchFolder(
-    join(run.dir, 'src', 'ui'),
-    coalesced(() => bundleUi(run, rest))
-  );
-  return [tsc, ui];
-};
-
-const startWatch = (run: Run, mode: UpMode): Stoppable[] => {
-  if (mode.kind === 'tsc') return watchWithTsc(run, mode);
-  if (!mode.script) console.error('watch     no build script: a change in src/ is not built');
-  if (!existsSync(join(run.dir, 'src')))
-    console.error('watch     no src/ folder: nothing to watch');
-  if (!mode.script) return [];
-  return [
-    watchFolder(
-      join(run.dir, 'src'),
-      coalesced(() => stageAndReload(run))
-    ),
-  ];
-};
-
 // Ready: the line, and with --json one JSON line on stdout before the envelope at exit.
 const ready = (up: Omit<LocalUp, 'stoppedBy'>, json: boolean): void => {
   console.log(`up        ${up.id} ${up.version} on ${up.url} (watching src/; Ctrl-C stops)`);
@@ -143,13 +80,29 @@ const stopLine = (id: string, stoppedBy: string, added: boolean): void => {
 };
 
 // The first build: in the folder while no child runs it, else staged and reloaded.
-const firstBuild = async (run: Run, mode: UpMode): Promise<void> => {
+const firstBuild = async (run: Run, mode: UpMode, build: LocalUpDeps['build']): Promise<void> => {
   if (!(await runsHere(run.host, run.id, run.dir))) {
-    await warnProblems(await run.deps.build(run.dir));
+    await warnProblems(await build(run.dir));
     return seedNext(run.dir);
   }
   seedNext(run.dir);
   if (mode.kind === 'tsc' || mode.script) await stageAndReload(run);
+};
+
+// A watch that ends by itself stops up: one line, and a non-zero exit.
+const deathOf = () => {
+  let died: (why: string) => void = () => undefined;
+  const ended = new Promise<string>((done) => (died = done));
+  const onDied = (why: string): void => {
+    console.error(`watch     tsc ${why}; extension up stops (run it again)`);
+    died('watch died');
+  };
+  return { ended, onDied };
+};
+
+const exitFor = (stoppedBy: string): void => {
+  if (stoppedBy === 'SIGINT') setExit(130);
+  if (stoppedBy === 'watch died') setExit(1);
 };
 
 // D12: build, the folder as a daemon row, a watch that builds to dist.next and reloads that child.
@@ -162,20 +115,40 @@ export const runLocalUp = async (
   const before = refuseRunning(dir);
   const id = idOf(dir);
   const { port, host } = await deps.daemon();
-  const run: Run = { dir, id, host, deps };
+  const run: Run = { dir, id, host, npm: deps.npm };
   const mode = upModeOf(dir);
   // A stage of an earlier up may hold an old package.json: the first staged build copies it again.
-  rmSync(stageOf(dir), { recursive: true, force: true });
-  await firstBuild(run, mode);
-  const { row, already } = await installFolder(host, dir);
-  const added = !already || before?.added === true;
-  writeRecord(dir, { pid: process.pid, id: row.id, added });
-  const url = `http://127.0.0.1:${port}/api/${row.id}/`;
-  ready({ id: row.id, version: row.version, url, port, added }, json);
-  const watchers = startWatch(run, mode);
-  const stoppedBy = await deps.stopped(dir);
+  removeStage(dir);
+  try {
+    return await upAndWatch(run, mode, deps, { port, json, before });
+  } finally {
+    removeStage(dir);
+  }
+};
+
+interface UpContext {
+  port: number;
+  json: boolean;
+  before: UpRecord | null;
+}
+
+const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpContext) => {
+  await firstBuild(run, mode, deps.build);
+  const { row, already } = await installFolder(run.host, run.dir);
+  const added = !already || ctx.before?.added === true;
+  const nonce = randomUUID();
+  const death = deathOf();
+  const { watchers, tscPid } = startWatch(run, mode, death.onDied);
+  const tsc = markOf(tscPid) ?? undefined;
+  writeRecord(run.dir, { up: selfMark(), nonce, id: row.id, added, ...(tsc && { tsc }) });
+  const url = `http://127.0.0.1:${ctx.port}/api/${row.id}/`;
+  ready({ id: row.id, version: row.version, url, port: ctx.port, added }, ctx.json);
+  const stoppedBy = await deps.stopped(run.dir, nonce, death.ended);
   for (const watcher of watchers) watcher.stop();
   stopLine(row.id, stoppedBy, added);
-  if (stoppedBy === 'SIGINT') setExit(130);
-  return { id: row.id, version: row.version, url, port, added, stoppedBy };
+  exitFor(stoppedBy);
+  return { id: row.id, version: row.version, url, port: ctx.port, added, stoppedBy };
 };
+
+// This up: pid and start time; where the start time cannot be read (Windows) it is never proven.
+const selfMark = (): ProcessMark => markOf(process.pid) ?? { pid: process.pid, started: 'unknown' };

@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { isAlive, isPid } from '../../lib/daemon/daemon-file.js';
+import { isMark, proven, stopProven, type ProcessMark } from '../../lib/proc/start-time.js';
 import { isRecord, readJson, writeTextAtomic } from '../../lib/fs/json-file.js';
 import { CliError } from '../../lib/json-output.js';
 import { waitFor } from '../../lib/wait.js';
@@ -8,20 +8,25 @@ import { waitFor } from '../../lib/wait.js';
 // The kit's own folder in a working copy (`.agentage/`, ignored by the template).
 const LOCAL = '.agentage';
 
-// D12: the up of a folder; `added`: up added the daemon row, so down removes it (never another).
+// D12: the up of a folder. `up` and `tsc` are pid plus start time (a reused pid is not them);
+// `nonce` is this up's own; `added`: up added the daemon row, so down removes it (never another).
 export interface UpRecord {
-  pid: number;
+  up: ProcessMark;
+  nonce: string;
   id: string;
   added: boolean;
+  tsc?: ProcessMark;
 }
 
 export const recordPath = (dir: string): string => join(resolve(dir), LOCAL, 'up.json');
 
 const isUpRecord = (value: unknown): value is UpRecord =>
   isRecord(value) &&
-  isPid(value['pid']) &&
+  isMark(value['up']) &&
+  typeof value['nonce'] === 'string' &&
   typeof value['id'] === 'string' &&
-  typeof value['added'] === 'boolean';
+  typeof value['added'] === 'boolean' &&
+  (value['tsc'] === undefined || isMark(value['tsc']));
 
 export const readRecord = (dir: string): UpRecord | null => readJson(recordPath(dir), isUpRecord);
 
@@ -43,18 +48,32 @@ export const writeRecord = (dir: string, record: UpRecord): void => {
 
 export const removeRecord = (dir: string): void => rmSync(recordPath(dir), { force: true });
 
+// A tsc that outlived its up (killed hard): stopped only when proven to be that tsc.
+export const stopOrphan = (record: UpRecord | null): void => {
+  if (!record?.tsc || proven(record.up)) return;
+  if (stopProven(record.tsc))
+    console.error(`stopped   the tsc watch (pid ${record.tsc.pid}) of an up that ended`);
+};
+
 // A live up of the folder is refused; a record of an up that ended keeps only its `added`.
 export const refuseRunning = (dir: string): UpRecord | null => {
   const record = readRecord(dir);
-  if (!record || !isAlive(record.pid) || record.pid === process.pid) return record;
+  if (!record || !proven(record.up) || record.up.pid === process.pid)
+    return (stopOrphan(record), record);
   throw new CliError(
     'already_running',
-    `extension up runs for ${dir} (pid ${record.pid}): agentage extension down`
+    `extension up runs for ${dir} (pid ${record.up.pid}): agentage extension down`
   );
 };
 
-// up ends on Ctrl-C or SIGTERM (the row stays), or when down removes its record (`down`).
-export const untilStopped = (dir: string, everyMs = 300): Promise<string> =>
+// up ends on Ctrl-C or SIGTERM (the row stays), when down removes its record or another up
+// rewrote it (`down`), or when its watch dies (`ended`, with the reason).
+export const untilStopped = (
+  dir: string,
+  nonce: string,
+  ended: Promise<string>,
+  everyMs = 300
+): Promise<string> =>
   new Promise((done) => {
     const finish = (why: string): void => {
       clearInterval(timer);
@@ -64,14 +83,15 @@ export const untilStopped = (dir: string, everyMs = 300): Promise<string> =>
     };
     const onInt = (): void => finish('SIGINT');
     const onTerm = (): void => finish('SIGTERM');
-    const timer = setInterval(() => existsSync(recordPath(dir)) || finish('down'), everyMs);
+    const timer = setInterval(() => readRecord(dir)?.nonce === nonce || finish('down'), everyMs);
     process.once('SIGINT', onInt);
     process.once('SIGTERM', onTerm);
+    void ended.then(finish);
   });
 
 export type LocalDown = 'stopped' | 'stale' | 'none';
 
-// Removing the record is the stop: the up of that pid sees it and exits; no pid is signalled.
+// Removing the record is the stop: the up of that pid sees it and exits; no up is signalled.
 export const stopLocal = async (
   dir: string,
   timeoutMs = 10_000
@@ -79,8 +99,9 @@ export const stopLocal = async (
   const record = readRecord(dir);
   if (!record) return { down: 'none', record };
   removeRecord(dir);
-  if (!isAlive(record.pid)) return { down: 'stale', record };
-  if (!(await waitFor(() => !isAlive(record.pid), timeoutMs)))
-    throw new CliError('stop_failed', `extension up (pid ${record.pid}) did not stop`);
+  if (!proven(record.up)) return (stopOrphan(record), { down: 'stale', record });
+  if (!(await waitFor(() => !proven(record.up), timeoutMs)))
+    throw new CliError('stop_failed', `extension up (pid ${record.up.pid}) did not stop`);
+  stopOrphan(record);
   return { down: 'stopped', record };
 };

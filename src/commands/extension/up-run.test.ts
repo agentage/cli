@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
 import { takeExit } from '../../lib/exit-code.js';
@@ -15,11 +15,24 @@ import {
   stopLocal,
   untilStopped,
   writeRecord,
+  type UpRecord,
 } from './up-local.js';
+import { stageOf } from './up-build.js';
 import { runLocalUp, type LocalUpDeps } from './up-run.js';
+import { markOf, startedAt, type ProcessMark } from '../../lib/proc/start-time.js';
 import { runExtensionDown } from './up.js';
 
 type Dir = ConfigDir;
+
+// An up record: `pid` proven with its real start time, or `started` given (a reused pid).
+const rec = (pid: number, added: boolean, started?: string, tsc?: ProcessMark): UpRecord => ({
+  up: { pid, started: started ?? startedAt(pid) ?? 'gone' },
+  nonce: 'n1',
+  id: 'demo',
+  added,
+  ...(tsc && { tsc }),
+});
+const ENDED = 999_999_999;
 
 const PKG = { name: '@agentage/extension-demo', version: '0.1.0', agentage: { id: 'demo' } };
 
@@ -43,6 +56,15 @@ setTimeout(() => {
 }, 300);
 setTimeout(() => {}, 10000);
 `;
+
+// A working copy whose build is plain tsc, with typescript/bin/tsc a stand-in script.
+const tscCopy = (dir: Dir, tsc: string): string => {
+  const folder = workingCopy(dir);
+  dir.write('demo/package.json', { ...PKG, scripts: { build: 'tsc -p tsconfig.build.json' } });
+  dir.write('demo/node_modules/typescript/package.json', { name: 'typescript', version: '6.0.0' });
+  dir.write('demo/node_modules/typescript/bin/tsc', tsc);
+  return folder;
+};
 
 const REPORT = { conforms: true } as PackageBuild['report'];
 
@@ -91,7 +113,7 @@ describe('extension up on the daemon (D12)', () => {
     expect(readFileSync(join(folder, 'dist.next/agentage-extension.json'), 'utf8')).toContain(
       'demo'
     );
-    expect(readRecord(folder)).toEqual({ pid: process.pid, id: 'demo', added: true });
+    expect(readRecord(folder)).toMatchObject({ up: markOf(process.pid), id: 'demo', added: true });
     expect(run.lines[0]).toBe(
       'up        demo 0.1.0 on http://127.0.0.1:4999/api/demo/ (watching src/; Ctrl-C stops)'
     );
@@ -120,7 +142,7 @@ describe('extension up on the daemon (D12)', () => {
       npm
     );
     const run = await output(() => runLocalUp(folder, made.deps));
-    expect(runs).toEqual([join(folder, '.agentage/stage')]);
+    expect(runs).toEqual([stageOf(folder)]);
     expect(readFileSync(join(folder, 'dist.next/api/index.js'), 'utf8')).toBe('two');
     expect(readFileSync(join(folder, 'dist/api/index.js'), 'utf8')).toBe('one');
     expect(run.lines.find((l) => l.startsWith('reload'))).toMatch(
@@ -169,7 +191,7 @@ describe('extension up on the daemon (D12)', () => {
     expect(fake.host.reload).toHaveBeenCalledWith('demo');
     expect(readRecord(folder)).toMatchObject({ added: false });
     // That up has exited: its pid in the record is not alive any more.
-    writeRecord(folder, { pid: 999_999_999, id: 'demo', added: false });
+    writeRecord(folder, rec(ENDED, false));
     const down = await output(() =>
       runExtensionDown({ dir: folder }, undefined, async () => fake.host)
     );
@@ -182,14 +204,14 @@ describe('extension up on the daemon (D12)', () => {
   }) => {
     const folder = workingCopy(dir);
     const { fake } = depsOf([folderRow(folder)], async () => 'SIGTERM', stageNpm().npm);
-    writeRecord(folder, { pid: 999_999_999, id: 'demo', added: true });
+    writeRecord(folder, rec(ENDED, true));
     const down = await output(() =>
       runExtensionDown({ dir: folder }, undefined, async () => fake.host)
     );
     expect(fake.host.remove).toHaveBeenCalledWith('demo', false);
     expect(down.lines.at(-1)).toBe('removed   demo from the daemon (its data stays)');
     const other = fakeHost([folderRow(dir.at('elsewhere'))]);
-    writeRecord(folder, { pid: 999_999_999, id: 'demo', added: true });
+    writeRecord(folder, rec(ENDED, true));
     await output(() => runExtensionDown({ dir: folder }, undefined, async () => other.host));
     expect(other.host.remove).not.toHaveBeenCalled();
   });
@@ -198,11 +220,14 @@ describe('extension up on the daemon (D12)', () => {
 describe('the up record of a folder', () => {
   test('a live up of the folder is refused; one that ended keeps only its added', ({ dir }) => {
     dir.write('w/package.json', PKG);
-    writeRecord(dir.at('w'), { pid: process.ppid, id: 'demo', added: true });
+    writeRecord(dir.at('w'), rec(process.ppid, true));
     expect(() => refuseRunning(dir.at('w'))).toThrow(
       /extension up runs for .* agentage extension down/
     );
-    writeRecord(dir.at('w'), { pid: 999_999_999, id: 'demo', added: true });
+    writeRecord(dir.at('w'), rec(ENDED, true));
+    expect(refuseRunning(dir.at('w'))).toMatchObject({ added: true });
+    // A reused pid: alive, but it started at another time; it is not that up.
+    writeRecord(dir.at('w'), rec(process.ppid, true, 'another start'));
     expect(refuseRunning(dir.at('w'))).toMatchObject({ added: true });
   });
 
@@ -210,16 +235,18 @@ describe('the up record of a folder', () => {
     dir,
   }) => {
     const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 400)']);
-    writeRecord(dir.at('w'), { pid: child.pid ?? 0, id: 'demo', added: false });
+    writeRecord(dir.at('w'), rec(child.pid ?? 0, false));
     expect((await stopLocal(dir.at('w'))).down).toBe('stopped');
     expect(dir.exists('w/.agentage/up.json')).toBe(false);
     expect((await stopLocal(dir.at('w'))).down).toBe('none');
-    writeRecord(dir.at('w'), { pid: process.ppid, id: 'demo', added: false });
+    writeRecord(dir.at('w'), rec(process.ppid, false));
     await expect(stopLocal(dir.at('w'), 200)).rejects.toThrow(/did not stop/);
+    writeRecord(dir.at('w'), rec(process.ppid, false, 'another start'));
+    expect((await stopLocal(dir.at('w'))).down).toBe('stale');
   });
 
   test('an up.json of another shape or not JSON reads as no record', ({ dir }) => {
-    dir.write('w/.agentage/up.json', { pid: 0, id: 'demo', added: true });
+    dir.write('w/.agentage/up.json', { pid: process.pid, id: 'demo', added: true });
     expect(readRecord(dir.at('w'))).toBeNull();
     writeFileSync(recordPath(dir.at('w')), 'not json');
     expect(readRecord(dir.at('w'))).toBeNull();
@@ -227,24 +254,56 @@ describe('the up record of a folder', () => {
 });
 
 describe('how an up ends', () => {
-  test('down removes the record: up ends with down; a SIGTERM ends it too', async ({ dir }) => {
-    writeRecord(dir.at('w'), { pid: process.pid, id: 'demo', added: true });
-    const ended = untilStopped(dir.at('w'), 50);
+  test('up ends when down removes its record, another up rewrites it, a SIGTERM, or its watch dies', async ({
+    dir,
+  }) => {
+    const never = new Promise<string>(() => undefined);
+    writeRecord(dir.at('w'), rec(process.pid, true));
+    const ended = untilStopped(dir.at('w'), 'n1', never, 50);
     removeRecord(dir.at('w'));
     expect(await ended).toBe('down');
-    writeRecord(dir.at('w'), { pid: process.pid, id: 'demo', added: true });
-    const signalled = untilStopped(dir.at('w'), 50);
+    writeRecord(dir.at('w'), rec(process.pid, true));
+    const rewritten = untilStopped(dir.at('w'), 'n1', never, 50);
+    writeRecord(dir.at('w'), { ...rec(process.pid, true), nonce: 'n2' });
+    expect(await rewritten).toBe('down');
+    const signalled = untilStopped(dir.at('w'), 'n2', never, 50);
     process.emit('SIGTERM');
     expect(await signalled).toBe('SIGTERM');
+    expect(await untilStopped(dir.at('w'), 'n2', Promise.resolve('watch died'), 50)).toBe(
+      'watch died'
+    );
+  });
+
+  test('an orphan tsc of an up that ended is stopped when proven; a reused pid is not signalled', async ({
+    dir,
+  }) => {
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10000)']);
+    const exited = new Promise((done) => child.once('exit', (_c, signal) => done(signal)));
+    const tsc = markOf(child.pid) ?? undefined;
+    writeRecord(dir.at('w'), rec(ENDED, false, undefined, { pid: child.pid ?? 0, started: 'x' }));
+    const reused = await output(() => stopLocal(dir.at('w')));
+    expect(reused.stderr).toBe('');
+    writeRecord(dir.at('w'), rec(ENDED, false, undefined, tsc));
+    const run = await output(async () => void refuseRunning(dir.at('w')));
+    expect(run.stderr).toContain(`stopped   the tsc watch (pid ${child.pid}) of an up that ended`);
+    expect(await exited).toBe('SIGTERM');
+  });
+
+  test('down removes the row up added even when that up does not stop', async ({ dir }) => {
+    const folder = workingCopy(dir);
+    const { fake } = depsOf([folderRow(folder)], async () => 'SIGTERM', stageNpm().npm);
+    writeRecord(folder, rec(process.ppid, true));
+    const down = await output(() =>
+      runExtensionDown({ dir: folder }, undefined, async () => fake.host, 200)
+    );
+    expect(down.error).toMatch(/did not stop/);
+    expect(fake.host.remove).toHaveBeenCalledWith('demo', false);
   });
 
   test('a tsc folder: the first build is not reloaded, a later clean one is, an error is not', async ({
     dir,
   }) => {
-    const folder = workingCopy(dir);
-    dir.write('demo/package.json', { ...PKG, scripts: { build: 'tsc -p tsconfig.build.json' } });
-    dir.write('demo/node_modules/.bin/tsc', FAKE_TSC);
-    chmodSync(join(folder, 'node_modules/.bin/tsc'), 0o755);
+    const folder = tscCopy(dir, FAKE_TSC);
     const made = depsOf(
       [],
       async () => {
@@ -258,5 +317,14 @@ describe('how an up ends', () => {
     const run = await output(() => runLocalUp(folder, made.deps));
     expect(run.stderr).toContain('build     1 error(s), no reload');
     expect(run.lines).toContainEqual(expect.stringMatching(/^reload {4}demo reloaded: true in/));
+    expect(readRecord(folder)?.tsc?.pid).toEqual(expect.any(Number));
+  });
+
+  test('a tsc watch that dies stops up with one line and exit 1', async ({ dir }) => {
+    const folder = tscCopy(dir, 'process.exit(4);');
+    const { deps } = depsOf([], (_dir, _nonce, ended) => ended, stageNpm().npm);
+    const run = await output(() => runLocalUp(folder, deps));
+    expect(run.stderr).toContain('watch     tsc exited 4; extension up stops (run it again)');
+    expect(takeExit()).toBe(1);
   });
 });

@@ -3,6 +3,7 @@ import { existsSync, watch } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { childEnv } from '../../lib/child-env.js';
+import { messageOf } from '../../lib/json-output.js';
 import { NEXT, type UpMode } from './up-build.js';
 
 export interface Stoppable {
@@ -21,16 +22,18 @@ export const watchFolder = (dir: string, onChange: () => void, debounceMs = 200)
 };
 
 // One run at a time; a change during a run gives one more run after it, not one per save.
+// A run that throws prints one line: the watch goes on.
 export const coalesced = (run: () => Promise<void>): (() => Promise<void>) => {
   let busy = false;
   let again = false;
+  const once = () => run().catch((err: unknown) => console.error(`watch     ${messageOf(err)}`));
   const go = async (): Promise<void> => {
     if (busy) return void (again = true);
     busy = true;
     try {
       do {
         again = false;
-        await run();
+        await once();
       } while (again);
     } finally {
       busy = false;
@@ -49,28 +52,58 @@ export interface TscBuilt {
 const FOUND = /Found (\d+) errors?\./;
 const CHANGE = /File change detected/;
 
+export interface TscEvents {
+  // tsc saw a change and is writing dist.next: no reload copies it until onBuilt.
+  onChange?: () => void;
+  onBuilt: (built: TscBuilt) => void;
+  // The watch ended by itself (did not start, or exited): up stops and exits non-zero.
+  onDied: (why: string) => void;
+}
+
+export interface TscWatch extends Stoppable {
+  pid: number | undefined;
+}
+
+const exitWhy = (code: number | null, signal: NodeJS.Signals | null): string =>
+  code === null ? `exited by signal ${signal ?? 'unknown'}` : `exited ${code}`;
+
 // The warm watch of D13: noEmitOnError, out to dist.next; each compiler error line goes to stderr.
 export const watchTsc = (
   dir: string,
   mode: Extract<UpMode, { kind: 'tsc' }>,
-  onBuilt: (built: TscBuilt) => void
-): Stoppable => {
+  events: TscEvents
+): TscWatch => {
   const args = ['-p', mode.config, '--watch', '--preserveWatchOutput', '--noEmitOnError'];
-  const child = spawn(mode.tsc, [...args, '--outDir', NEXT, '--pretty', 'false'], {
-    cwd: dir,
-    env: childEnv(),
-    stdio: ['ignore', 'pipe', 'inherit'],
-  });
+  const child = spawn(
+    process.execPath,
+    [mode.tsc, ...args, '--outDir', NEXT, '--pretty', 'false'],
+    {
+      cwd: dir,
+      env: childEnv(),
+      stdio: ['ignore', 'pipe', 'inherit'],
+      windowsHide: true,
+    }
+  );
+  let stopping = false;
+  child.once('error', (err) => stopping || events.onDied(`did not start: ${err.message}`));
+  child.once('exit', (code, signal) => stopping || events.onDied(exitWhy(code, signal)));
+  readBuilds(child.stdout, events);
+  return { pid: child.pid, stop: () => void ((stopping = true), child.kill()) };
+};
+
+const readBuilds = (out: NodeJS.ReadableStream, events: TscEvents): void => {
   let since = Date.now();
   let first = true;
-  createInterface({ input: child.stdout }).on('line', (line) => {
-    if (CHANGE.test(line)) since = Date.now();
+  createInterface({ input: out }).on('line', (line) => {
+    if (CHANGE.test(line)) {
+      since = Date.now();
+      events.onChange?.();
+    }
     const found = FOUND.exec(line);
     if (!found) return void (/error TS\d+/.test(line) && console.error(line));
-    onBuilt({ errors: Number(found[1]), ms: Date.now() - since, first });
+    events.onBuilt({ errors: Number(found[1]), ms: Date.now() - since, first });
     first = false;
   });
-  return { stop: () => void child.kill() };
 };
 
 // The rest of the build script (the widget bundle) runs in the folder; it writes dist/ui itself.
