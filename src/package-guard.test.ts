@@ -108,12 +108,12 @@ describe('package guard (the core)', () => {
     }
   });
 
-  // 0.15.1: the hosted discovery record is whole and a child's output has its secrets masked.
-  it('the kit is 0.15.1 or newer, in the range and in the installed tree', () => {
+  // 0.16.0: the hosted discovery record is whole and a child's output has its secrets masked.
+  it('the kit is 0.16.0 or newer, in the range and in the installed tree', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as { dependencies: Record<string, string> };
     const floor = (pkg.dependencies['@agentage/extension'] ?? '').replace(/^\^/, '');
-    expect(compareVersions(floor, '0.15.1')).toBeGreaterThanOrEqual(0);
-    expect(compareVersions(kitVersion(), '0.15.1')).toBeGreaterThanOrEqual(0);
+    expect(compareVersions(floor, '0.16.0')).toBeGreaterThanOrEqual(0);
+    expect(compareVersions(kitVersion(), '0.16.0')).toBeGreaterThanOrEqual(0);
   });
 
   it('homepage is set to the canonical site URL', () => {
