@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { isMark, proven, stopProven, type ProcessMark } from '../../lib/proc/start-time.js';
+import { isMark, markOf, proven, stopProven, type ProcessMark } from '../../lib/proc/start-time.js';
+import { withFileLock } from '../../lib/fs/file-lock.js';
 import { isRecord, readJson, writeTextAtomic } from '../../lib/fs/json-file.js';
 import { CliError } from '../../lib/json-output.js';
 import { waitFor } from '../../lib/wait.js';
@@ -67,6 +68,28 @@ export const refuseRunning = (dir: string): UpRecord | null => {
 
 // A closed terminal (SIGHUP) stops as Ctrl-C does: the watch goes, the row stays for the next up.
 const STOPS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+
+// This up: pid and start time; where the start time cannot be read (Windows) it is never proven.
+export const selfMark = (): ProcessMark =>
+  markOf(process.pid) ?? { pid: process.pid, started: 'unknown' };
+
+// Two ups of one folder at once: the check and the claim are one step under the record's lock.
+export const claimFolder = (dir: string, nonce: string, id: string): Promise<UpRecord | null> =>
+  withFileLock(recordPath(dir), () => {
+    const before = refuseRunning(dir);
+    writeRecord(dir, { up: selfMark(), nonce, id, added: before?.added === true });
+    return before;
+  });
+
+// A record that is no longer this up's (down ran during the start) stops the start.
+export const rewriteRecord = (dir: string, record: UpRecord): void => {
+  if (readRecord(dir)?.nonce !== record.nonce)
+    throw new CliError(
+      'cancelled',
+      `extension down ran for ${dir} while up started; run extension down again to remove its row`
+    );
+  writeRecord(dir, record);
+};
 
 // Ends on a signal (the row stays), a removed or rewritten record (`down`) or a dead watch.
 export const untilStopped = (

@@ -4,7 +4,9 @@ import { describe, expect } from 'vitest';
 import { markOf } from '../../lib/proc/start-time.js';
 import { output, test } from '../../test/config-dir.js';
 import { ENDED, rec } from '../../test/up-record.js';
+import { acquireFileLock, releaseFileLock } from '../../lib/fs/file-lock.js';
 import {
+  claimFolder,
   readRecord,
   recordPath,
   refuseRunning,
@@ -71,6 +73,20 @@ describe('how an up ends', () => {
     expect(await untilStopped(dir.at('w'), 'n2', Promise.resolve('watch died'), 50)).toBe(
       'watch died'
     );
+  });
+
+  test('two ups at once: the check and the claim are one step, so the second is refused', async ({
+    dir,
+  }) => {
+    writeRecord(dir.at('w'), rec(ENDED, true));
+    expect(acquireFileLock(recordPath(dir.at('w')))).toBe(true);
+    const second = claimFolder(dir.at('w'), 'n2', 'demo').catch((err: unknown) => err);
+    writeRecord(dir.at('w'), rec(process.ppid, true));
+    releaseFileLock(recordPath(dir.at('w')));
+    expect(await second).toMatchObject({ code: 'already_running' });
+    removeRecord(dir.at('w'));
+    expect(await claimFolder(dir.at('w'), 'n3', 'demo')).toBeNull();
+    expect(readRecord(dir.at('w'))).toMatchObject({ nonce: 'n3', added: false });
   });
 
   test('an orphan tsc of an up that ended is stopped when proven; a reused pid is not signalled', async ({

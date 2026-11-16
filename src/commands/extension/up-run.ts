@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { markOf, type ProcessMark } from '../../lib/proc/start-time.js';
+import { markOf } from '../../lib/proc/start-time.js';
 import { resolve } from 'node:path';
 import { isRecord } from '../../lib/fs/json-file.js';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
@@ -10,7 +10,7 @@ import { folderRow, installFolder } from './install-once.js';
 import { loadKitTool } from './kit-tool.js';
 import { buildPackage, npmIn, packageOf, type Npm, type PackageBuild } from './package-build.js';
 import { removeStage, seedNext, upModeOf, type UpMode } from './up-build.js';
-import { refuseRunning, untilStopped, writeRecord, type UpRecord } from './up-local.js';
+import { claimFolder, rewriteRecord, selfMark, untilStopped, type UpRecord } from './up-local.js';
 import { stageAndReload, startWatch, type Run } from './up-reload.js';
 
 export interface LocalUpDeps {
@@ -106,15 +106,16 @@ export const runLocalUp = async (
   json = false
 ): Promise<LocalUp> => {
   const dir = resolve(folder);
-  const before = refuseRunning(dir);
   const id = idOf(dir);
+  const nonce = randomUUID();
+  const before = await claimFolder(dir, nonce, id);
   const { port, host } = await deps.daemon();
   const run: Run = { dir, id, host, npm: deps.npm };
   const mode = upModeOf(dir);
   // A stage of an earlier up may hold an old package.json: the first staged build copies it again.
   removeStage(dir);
   try {
-    return await upAndWatch(run, mode, deps, { port, json, before });
+    return await upAndWatch(run, mode, deps, { port, json, before, nonce });
   } finally {
     removeStage(dir);
   }
@@ -124,13 +125,14 @@ interface UpContext {
   port: number;
   json: boolean;
   before: UpRecord | null;
+  nonce: string;
 }
 
 const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpContext) => {
   await firstBuild(run, mode, deps.build);
   const { row, already } = await installFolder(run.host, run.dir);
   const added = !already || ctx.before?.added === true;
-  const nonce = randomUUID();
+  const { nonce } = ctx;
   const death = deathOf();
   run.fatal = death.onDied;
   const { watchers, tscPid } = startWatch(run, mode, death.onDied);
@@ -142,10 +144,10 @@ const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpCont
     added,
   };
   let stoppedBy: string;
-  // A record that cannot be written (read-only or full folder) still stops the tsc it started.
+  // A record down removed meanwhile, or one that cannot be written, still stops the tsc it started.
   try {
     const tsc = markOf(tscPid) ?? undefined;
-    writeRecord(run.dir, { up: selfMark(), nonce, id: row.id, added, ...(tsc && { tsc }) });
+    rewriteRecord(run.dir, { up: selfMark(), nonce, id: row.id, added, ...(tsc && { tsc }) });
     ready(up, ctx.json);
     stoppedBy = await deps.stopped(run.dir, nonce, death.ended);
   } finally {
@@ -157,6 +159,3 @@ const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpCont
 };
 
 const urlOf = (port: number, id: string): string => `http://127.0.0.1:${port}/api/${id}/`;
-
-// This up: pid and start time; where the start time cannot be read (Windows) it is never proven.
-const selfMark = (): ProcessMark => markOf(process.pid) ?? { pid: process.pid, started: 'unknown' };
