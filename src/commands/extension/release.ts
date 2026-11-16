@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Command } from 'commander';
@@ -6,7 +6,15 @@ import type { ExtensionPackage } from '@agentage/extension/tool';
 import { addJson, CliError } from '../../lib/json-output.js';
 import { runImageBuild } from './build.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
-import { execIn, IMAGE_PARTS, RECORD, releaseGuard, type Exec } from './release-guard.js';
+import {
+  CONTAINER_RECORD,
+  execIn,
+  imagesOf,
+  PART_SUFFIX,
+  RECORD,
+  releaseGuard,
+} from './release-guard.js';
+import { type Exec } from './release-guard.js';
 
 export type ExtensionReleaseOptions = { dir?: string; timeout?: number; json?: boolean };
 
@@ -37,18 +45,30 @@ const scoped =
   (cmd, args) =>
     exec(cmd, args, secrets[cmd]);
 
-const imageParts = (pkg: ExtensionPackage) =>
-  IMAGE_PARTS.filter((part) => (pkg.agentage.parts[part] ?? false) !== false);
+// Every image is pushed first. The records go up one call each, RECORD last: it is the "done" marker.
+const attach = async (run: Exec, tag: string, repo: string, names: string[]): Promise<void> => {
+  const notes = ['--title', tag, '--notes', `Images by digest: ${names.join(', ')}`];
+  let exists = (await run('gh', ['release', 'view', tag, '-R', repo])).ok;
+  for (const name of names) {
+    const file = join('dist', name);
+    const args = exists ? ['upload', tag, file] : ['create', tag, file, ...notes];
+    const ran = await run('gh', ['release', ...args, '-R', repo]);
+    if (!ran.ok) fail(`record: ${ran.err}`);
+    exists = true;
+  }
+  step(`record: ${names.join(', ')} attached to release ${tag}`);
+};
 
-// The record by digest on the tag's release; the release is created when the tag has none.
-const attach = async (run: Exec, tag: string, repo: string): Promise<void> => {
-  const file = join('dist', RECORD);
-  const exists = (await run('gh', ['release', 'view', tag, '-R', repo])).ok;
-  const notes = ['--title', tag, '--notes', `Images by digest: ${RECORD}`];
-  const args = exists ? ['upload', tag, file] : ['create', tag, file, ...notes];
-  const ran = await run('gh', ['release', ...args, '-R', repo]);
-  if (!ran.ok) fail(`record: ${ran.err}`);
-  step(`record: ${RECORD} attached to release ${tag}`);
+// The part images (v13 rows, the estate) and the one image (app hosts), all pushed by digest.
+const buildImages = async (dir: string, oneImage: boolean, tool: LoadKitTool) => {
+  await runImageBuild({ push: true, dir }, tool);
+  if (!oneImage) return [RECORD];
+  // The second compile may clean dist/: the part record is kept and written back.
+  const record = await readFile(join(dir, 'dist', RECORD));
+  // The first build checked this HEAD; its own dist/ output must not read as a change.
+  await runImageBuild({ push: true, container: true, dir }, tool, async () => undefined);
+  await writeFile(join(dir, 'dist', RECORD), record);
+  return [CONTAINER_RECORD, RECORD];
 };
 
 // Single quotes on purpose: npm expands ${NPM_TOKEN} itself, the token never lands on disk.
@@ -120,6 +140,8 @@ const preflight = async (
   if (pkg.agentage.id === 'template')
     fail('id: this repo is the starting point for extensions: create one, release that');
   step(`id: ${pkg.agentage.id} is not the template`);
+  if (imagesOf(pkg).oneImage && PART_SUFFIX.test(pkg.agentage.id))
+    fail(`id: ${pkg.agentage.id} ends in a part name: it would name another extension's image`);
   const fetched = await run('git', ['fetch', '-q', 'origin', 'master']);
   if (!fetched.ok || !(await run('git', ['merge-base', '--is-ancestor', sha, 'origin/master'])).ok)
     fail(`master: ${sha} is not on master${fetched.err ? `: ${fetched.err}` : ''}`);
@@ -145,15 +167,13 @@ export const runExtensionRelease = async (
   const isPrivate = pkg['private'] === true;
   await preflight(run, pkg, tag, sha, isPrivate);
   const { id } = pkg.agentage;
-  const g = { dir, tag, sha, repo, id, version: pkg.version, parts: imageParts(pkg) };
+  const { parts, oneImage } = imagesOf(pkg);
+  const g = { dir, tag, sha, repo, id, version: pkg.version, parts, oneImage };
   const decision = await releaseGuard(g, run).catch((e: Error) => fail(`guard: ${e.message}`));
   const build = decision === 'build';
   const done = isPrivate ? 'is released' : 'is released: npm only';
   step(`guard: ${tag} ${build ? 'has no record and no image: build' : done}`);
-  if (build) {
-    await runImageBuild({ push: true, dir }, deps.tool);
-    await attach(run, tag, repo);
-  }
+  if (build) await attach(run, tag, repo, await buildImages(dir, oneImage, deps.tool));
   if (isPrivate) step('npm: private package, not published');
   else
     await publish(
@@ -172,7 +192,9 @@ export const addRelease = (
   addJson(
     group
       .command('release')
-      .description('Release an extension from its v* tag in CI: guard, images, record, npm package')
+      .description(
+        'Release an extension from its v* tag in CI: guard, images, one image, records, npm package'
+      )
       .option('--dir <path>', 'the extension package folder (default: the current folder)')
       .option(
         '--timeout <seconds>',

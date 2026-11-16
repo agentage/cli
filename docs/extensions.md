@@ -302,7 +302,7 @@ copy, `agentage extension up` runs it on the daemon and reloads each saved chang
 | `agentage extension create <id> [part...]`                  | New `./extension-<id>`, built and installed in the daemon (`--no-install`)                         |
 | `agentage extension check [dir] [--write]`                  | Check that an extension package conforms (the six kit rules)                                       |
 | `agentage extension build [--docker\|--container] [--push]` | Build the package (no Docker); `--docker`: part images; `--container`: one image; `--push`: pushed |
-| `agentage extension release`                                | Release from a tag in CI: guard, images, record, npm package                                       |
+| `agentage extension release`                                | Release from a tag in CI: guard, part images, one image, records, npm package                      |
 | `agentage extension up [--docker]` / `down`                 | Run the working copy on the daemon, reload each change (`--docker`: on Docker); `down` removes it  |
 | `agentage extension token --scope <scope> [--dir <path>]`   | Print a token from the dev issuer `extension up` started for that folder                           |
 

@@ -2,7 +2,15 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { execIn, IMAGE_PARTS, releaseGuard, type Exec, type Ran } from './release-guard.js';
+import {
+  execIn,
+  IMAGE_PARTS,
+  imagesOf,
+  releaseGuard,
+  type Exec,
+  type Ran,
+} from './release-guard.js';
+import type { ExtensionPackage } from '@agentage/extension/tool';
 
 const SHA = 'a'.repeat(40);
 const id = 'probe';
@@ -12,9 +20,12 @@ const PAGES = `ghcr.io/agentage/${id}-pages:0.1.0`; // the first image part the 
 
 interface Released {
   record?: object;
+  noContainerRecord?: boolean;
   images?: string[];
   ghError?: string;
   dockerError?: string;
+  deniedImages?: string[];
+  pkg?: 'none' | 'ours' | 'other' | 'error';
   ghHang?: boolean;
   dockerHang?: boolean;
 }
@@ -27,15 +38,29 @@ const hang = (dir: string) => execIn(dir, 1)('sleep', ['5']);
 const registry =
   (w: Released, dir: string): Exec =>
   async (cmd, args) => {
+    if (cmd === 'gh' && args[0] === 'api') {
+      if (w.pkg === 'error') return ran(false, 'HTTP 502');
+      if (w.pkg === 'ours' || w.pkg === 'other')
+        return ran(
+          true,
+          JSON.stringify({
+            repository: { full_name: w.pkg === 'ours' ? 'agentage/probe' : 'agentage/market' },
+          })
+        );
+      return ran(false, 'gh: Not Found (HTTP 404)');
+    }
     if (cmd === 'gh') {
       if (w.ghHang) return hang(dir);
       if (w.ghError) return ran(false, w.ghError);
+      if (w.noContainerRecord && args.includes('agentage-container.json'))
+        return ran(false, 'no assets match the file pattern');
       return w.record
         ? ran(true, `${JSON.stringify(w.record, null, 2)}\n`)
         : ran(false, 'release not found');
     }
     if (w.dockerHang) return hang(dir);
     if (w.dockerError) return ran(false, w.dockerError);
+    if ((w.deniedImages ?? []).includes(args[2] ?? '')) return ran(false, 'unauthorized: denied');
     return (w.images ?? []).includes(args[2] ?? '')
       ? ran(true, '{}')
       : ran(false, 'manifest unknown');
@@ -51,6 +76,7 @@ const guard = async (w: Released, sha = SHA) => {
     id,
     version: '0.1.0',
     parts: IMAGE_PARTS,
+    oneImage: true,
   };
   const out = await releaseGuard(input, registry(w, dir)).then(
     (decision) => ({ code: 0, out: decision, err: '' }),
@@ -72,8 +98,7 @@ describe('release guard', () => {
   });
 
   it('builds the first image of a part when the registry denies a package it has never seen', async () => {
-    const denied = 'Get "https://ghcr.io/v2/x/manifests/0.1.0": denied';
-    expect(await guard({ dockerError: denied })).toMatchObject({ code: 0, out: 'build' });
+    expect(await guard({ deniedImages: [PAGES, API] })).toMatchObject({ code: 0, out: 'build' });
   });
 
   it('reuses the released record on a re-run of the same commit', async () => {
@@ -83,6 +108,40 @@ describe('release guard', () => {
     expect(kept).toBe(`${JSON.stringify(RECORD, null, 2)}\n`);
   });
 
+  it('refuses a reuse when the release has the part record but no container record', async () => {
+    const run = await guard({ record: RECORD, noContainerRecord: true });
+    expect(run).toMatchObject({ code: 1, out: '' });
+    expect(run.err).toContain('has agentage-extension.json but no agentage-container.json');
+  });
+
+  const ONE = `ghcr.io/agentage/${id}:0.1.0`;
+
+  it('builds when the one image is denied and the GitHub API has no such package (new name)', async () => {
+    expect(await guard({ deniedImages: [ONE], pkg: 'none' })).toMatchObject({
+      code: 0,
+      out: 'build',
+    });
+  });
+
+  it("builds when the one image is denied and the package is this repo's own", async () => {
+    expect(await guard({ deniedImages: [ONE], pkg: 'ours' })).toMatchObject({
+      code: 0,
+      out: 'build',
+    });
+  });
+
+  it('refuses a one-image name denied and owned by another repo, before any push', async () => {
+    const run = await guard({ deniedImages: [ONE], pkg: 'other' });
+    expect(run.code).toBe(1);
+    expect(run.err).toContain('belongs to another package');
+  });
+
+  it('stops when the GitHub API cannot answer for a denied one-image name', async () => {
+    const run = await guard({ deniedImages: [ONE], pkg: 'error' });
+    expect(run.code).toBe(1);
+    expect(run.err).toContain('cannot tell whether the package ghcr.io/agentage/probe exists');
+  });
+
   it('refuses a tag moved to another commit', async () => {
     const run = await guard({ record: RECORD }, 'b'.repeat(40));
     expect(run.code).toBe(1);
@@ -90,7 +149,11 @@ describe('release guard', () => {
   });
 
   it('refuses an image already pushed without a record, whichever part it is', async () => {
-    for (const image of [API, `ghcr.io/agentage/${id}-worker:0.1.0`]) {
+    for (const image of [
+      API,
+      `ghcr.io/agentage/${id}-worker:0.1.0`,
+      `ghcr.io/agentage/${id}:0.1.0`,
+    ]) {
       const run = await guard({ images: [image] });
       expect(run).toMatchObject({ code: 1, out: '' });
       expect(run.err).toBe(
@@ -131,9 +194,21 @@ describe('release guard', () => {
       id,
       version: '0.1.0',
       parts: IMAGE_PARTS,
+      oneImage: true,
     };
     await expect(releaseGuard(input, missing)).rejects.toThrow(
       /cannot tell whether .* exists: .*ENOENT/
     );
+  });
+
+  it('names the one image only for a package with a server part', () => {
+    const of = (parts: Record<string, unknown>) =>
+      imagesOf({ agentage: { parts } } as unknown as ExtensionPackage);
+    expect(of({ api: true, mcp: false, store: 'postgres' })).toEqual({
+      parts: ['api'],
+      oneImage: true,
+    });
+    expect(of({ worker: true })).toEqual({ parts: ['worker'], oneImage: true });
+    expect(of({ pages: true, ui: true })).toEqual({ parts: ['pages', 'ui'], oneImage: false });
   });
 });
