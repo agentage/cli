@@ -198,6 +198,12 @@ describe('the host token on /host/* (D11)', () => {
     expect(auth).toEqual(['Bearer tok']);
   });
 
+  it('POSTs exactly { part: "app" } for an app reload (S1.2.3)', async () => {
+    served = await serve(() => [200, { success: true, data: { id: 'demo', reloaded: true } }]);
+    await hostClient(served.port, WAITS, () => 'tok').reload('demo', 'app');
+    expect(served.seen[0]?.body).toEqual({ part: 'app' });
+  });
+
   it('a 401 or 403 reads daemon.json again and retries once: a new daemon answers', async () => {
     served = await serve((req) =>
       req.headers.authorization === 'Bearer new'

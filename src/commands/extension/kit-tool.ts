@@ -15,6 +15,8 @@ export type KitTool = Pick<
   | 'token'
   | 'readManifest'
   | 'writeContracts'
+  | 'appBuilder'
+  | 'buildApp'
 >;
 
 export type LoadKitTool = () => Promise<KitTool>;

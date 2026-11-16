@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { AppBuilder } from '@agentage/extension/tool';
 import { markOf } from '../../lib/proc/start-time.js';
 import { resolve } from 'node:path';
 import { isRecord } from '../../lib/fs/json-file.js';
@@ -9,6 +10,7 @@ import { CliError, type Code } from '../../lib/json-output.js';
 import { folderRow, installFolder } from './install-once.js';
 import { loadKitTool } from './kit-tool.js';
 import { buildPackage, npmIn, packageOf, type Npm, type PackageBuild } from './package-build.js';
+import { buildAppOnce, startAppBuilder } from './up-app.js';
 import { removeStage, seedNext, upModeOf, type UpMode } from './up-build.js';
 import { claimFolder, rewriteRecord, selfMark, untilStopped, type UpRecord } from './up-local.js';
 import { stageAndReload, startWatch, type Run } from './up-reload.js';
@@ -19,6 +21,8 @@ export interface LocalUpDeps {
   npm: Npm;
   // Resolves with why up stops: a signal, `down`, or `watch died` once `ended` resolves.
   stopped: (dir: string, nonce: string, ended: Promise<string>) => Promise<string>;
+  // S1.2.3: the warm app build of a package with parts.app (null: none).
+  app?: (dir: string) => Promise<AppBuilder | null>;
 }
 
 export const localUpDeps: LocalUpDeps = {
@@ -68,7 +72,9 @@ const stopLine = (id: string, stoppedBy: string, added: boolean): void => {
 };
 
 // The first build: in the folder while no child runs it (a create or an earlier up), else staged.
+// The app goes into dist/app first, so dist.next starts with it (a full reload swaps dist whole).
 const firstBuild = async (run: Run, mode: UpMode, build: LocalUpDeps['build']): Promise<void> => {
+  if (run.app) await buildAppOnce(run.dir, run.app);
   if (!(await folderRow(run.host, run.id, run.dir))) {
     await warnProblems(await build(run.dir));
     return seedNext(run.dir);
@@ -115,10 +121,12 @@ export const runLocalUp = async (
   const mode = upModeOf(dir);
   // A stage of an earlier up may hold an old package.json: the first staged build copies it again.
   removeStage(dir);
+  run.app = await (deps.app ?? startAppBuilder)(dir);
   try {
     return await upAndWatch(run, mode, deps, { port, json, before, nonce });
   } finally {
     removeStage(dir);
+    await run.app?.dispose();
   }
 };
 

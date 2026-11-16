@@ -12,10 +12,17 @@ export interface Stoppable {
 }
 
 // A recursive watch of one folder of the working copy; saves inside the debounce are one change.
-export const watchFolder = (dir: string, onChange: () => void, debounceMs = 200): Stoppable => {
+// `skip`: a changed path (relative to dir) that is not this watch's change (src/app has its own).
+export const watchFolder = (
+  dir: string,
+  onChange: () => void,
+  debounceMs = 200,
+  skip: (file: string) => boolean = () => false
+): Stoppable => {
   if (!existsSync(dir)) return { stop: () => undefined };
   let timer: NodeJS.Timeout | undefined;
-  const watcher = watch(dir, { recursive: true }, () => {
+  const watcher = watch(dir, { recursive: true }, (_event, file) => {
+    if (file && skip(file)) return;
     clearTimeout(timer);
     timer = setTimeout(onChange, debounceMs);
   });

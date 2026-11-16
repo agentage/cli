@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { type Command } from 'commander';
 import { resolveAuth } from '../../lib/auth/credentials.js';
+import { daemonOfStatus, type StatusDaemon } from './status-daemon.js';
 import { DEFAULT_FQDN, siteFqdn } from '../../lib/net/origins.js';
 import { gatherStatus, type StatusReport } from '../../lib/status/status-info.js';
 import { INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
@@ -60,6 +61,11 @@ export const printStatus = (report: StatusReport): void => {
   if (report.update.message) console.log(chalk.yellow(`\n${report.update.message}`));
 };
 
+const daemonLine = (d: StatusDaemon | null): string =>
+  d
+    ? `${mark(true)} pid ${d.pid} on 127.0.0.1:${d.port} (${d.version})`
+    : chalk.dim('- not running');
+
 export interface StatusOptions {
   json?: boolean;
   token?: string;
@@ -68,6 +74,8 @@ export interface StatusOptions {
 export interface StatusDeps {
   gather: (opts: StatusOptions) => Promise<StatusReport>;
   extensions: (opts: StatusOptions) => Promise<ExtensionsGather>;
+  // S1.2.3 row 6: the one daemon of this config folder, started when none runs.
+  daemon?: () => Promise<StatusDaemon | null>;
 }
 
 // `account` false: the report that closes setup, which reached the account already.
@@ -75,6 +83,7 @@ export const statusDeps = (account = true): StatusDeps => ({
   gather: (opts) => gatherStatus(resolveAuth({ token: opts.token }), siteFqdn()),
   extensions: (opts) =>
     account ? signedInAccount({ token: opts.token }).then(gatherWithAccount) : gatherExtensions(),
+  daemon: () => daemonOfStatus(),
 });
 
 type ExtensionsOutcome = { gathered: ExtensionsGather | null; error: unknown };
@@ -95,9 +104,12 @@ const jsonOf = (report: StatusReport, gathered: ExtensionsGather | null): object
   return { ...report, machine, profile, extensions: extensions.length, plan };
 };
 
-const emit = (report: StatusReport, gathered: ExtensionsGather | null, json?: boolean): void => {
+type Reported = StatusReport & { daemon?: StatusDaemon | null };
+
+const emit = (report: Reported, gathered: ExtensionsGather | null, json?: boolean): void => {
   if (json) return console.log(JSON.stringify(jsonOf(report, gathered), null, 2));
   printStatus(report);
+  if (report.daemon !== undefined) row('daemon', daemonLine(report.daemon));
   for (const text of gathered ? summaryLines(gathered.status) : []) console.log(text);
 };
 
@@ -106,7 +118,8 @@ export const runStatus = async (
   opts: StatusOptions = {},
   deps: StatusDeps = statusDeps()
 ): Promise<void> => {
-  const report = await deps.gather(opts);
+  const report: Reported = await deps.gather(opts);
+  if (deps.daemon) report.daemon = await deps.daemon();
   const { gathered, error } = await settle(deps, opts);
   emit(report, gathered, opts.json);
   printWarnings(gathered?.warnings ?? []);
@@ -121,7 +134,10 @@ Extensions: adds this machine's id and name (machine.json), the local profile ve
 account's when that moved on, and the number of extensions, with what setup would change, e.g.
 (1 to add); agentage extension list shows one row per extension. Signed in, it also marks this
 machine seen in your account (--json: machine.registered). Extension code is never loaded; the
-only file written is machine.json.`;
+only file written is machine.json.
+
+Daemon: the one daemon of this config folder (--json: daemon.pid, port, version), started when
+none runs; with AGENTAGE_NO_DAEMON=1 it is null.`;
 
 export const registerStatus = (
   program: Command,
