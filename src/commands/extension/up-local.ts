@@ -65,6 +65,9 @@ export const refuseRunning = (dir: string): UpRecord | null => {
   );
 };
 
+// A closed terminal (SIGHUP) stops as Ctrl-C does: the watch goes, the row stays for the next up.
+const STOPS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+
 // Ends on a signal (the row stays), a removed or rewritten record (`down`) or a dead watch.
 export const untilStopped = (
   dir: string,
@@ -73,17 +76,14 @@ export const untilStopped = (
   everyMs = 300
 ): Promise<string> =>
   new Promise((done) => {
+    const on = STOPS.map((name) => [name, () => finish(name)] as const);
     const finish = (why: string): void => {
       clearInterval(timer);
-      process.off('SIGINT', onInt);
-      process.off('SIGTERM', onTerm);
+      for (const [name, handler] of on) process.off(name, handler);
       done(why);
     };
-    const onInt = (): void => finish('SIGINT');
-    const onTerm = (): void => finish('SIGTERM');
     const timer = setInterval(() => readRecord(dir)?.nonce === nonce || finish('down'), everyMs);
-    process.once('SIGINT', onInt);
-    process.once('SIGTERM', onTerm);
+    for (const [name, handler] of on) process.once(name, handler);
     void ended.then(finish);
   });
 

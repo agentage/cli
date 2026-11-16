@@ -65,6 +65,9 @@ describe('how an up ends', () => {
     const signalled = untilStopped(dir.at('w'), 'n2', never, 50);
     process.emit('SIGTERM');
     expect(await signalled).toBe('SIGTERM');
+    const hungUp = untilStopped(dir.at('w'), 'n2', never, 50);
+    process.emit('SIGHUP');
+    expect(await hungUp).toBe('SIGHUP');
     expect(await untilStopped(dir.at('w'), 'n2', Promise.resolve('watch died'), 50)).toBe(
       'watch died'
     );

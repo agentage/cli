@@ -88,8 +88,10 @@ const deathOf = () => {
   return { ended, onDied };
 };
 
+// Ctrl-C is 130 and a closed terminal 129.
 const exitFor = (stoppedBy: string): void => {
   if (stoppedBy === 'SIGINT') setExit(130);
+  if (stoppedBy === 'SIGHUP') setExit(129);
   if (stoppedBy === 'watch died') setExit(1);
 };
 
@@ -127,12 +129,17 @@ const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpCont
   const nonce = randomUUID();
   const death = deathOf();
   const { watchers, tscPid } = startWatch(run, mode, death.onDied);
-  const tsc = markOf(tscPid) ?? undefined;
-  writeRecord(run.dir, { up: selfMark(), nonce, id: row.id, added, ...(tsc && { tsc }) });
   const url = `http://127.0.0.1:${ctx.port}/api/${row.id}/`;
-  ready({ id: row.id, version: row.version, url, port: ctx.port, added }, ctx.json);
-  const stoppedBy = await deps.stopped(run.dir, nonce, death.ended);
-  for (const watcher of watchers) watcher.stop();
+  let stoppedBy: string;
+  // A record that cannot be written (read-only or full folder) still stops the tsc it started.
+  try {
+    const tsc = markOf(tscPid) ?? undefined;
+    writeRecord(run.dir, { up: selfMark(), nonce, id: row.id, added, ...(tsc && { tsc }) });
+    ready({ id: row.id, version: row.version, url, port: ctx.port, added }, ctx.json);
+    stoppedBy = await deps.stopped(run.dir, nonce, death.ended);
+  } finally {
+    for (const watcher of watchers) watcher.stop();
+  }
   stopLine(row.id, stoppedBy, added);
   exitFor(stoppedBy);
   return { id: row.id, version: row.version, url, port: ctx.port, added, stoppedBy };

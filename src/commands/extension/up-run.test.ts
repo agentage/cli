@@ -247,4 +247,28 @@ describe('how an up ends', () => {
     expect(run.stderr).toContain('watch     tsc exited 4; extension up stops (run it again)');
     expect(takeExit()).toBe(1);
   });
+
+  test('a closed terminal (SIGHUP) stops the watch, keeps the row, exits 129', async ({ dir }) => {
+    const folder = workingCopy(dir);
+    const { deps, fake } = depsOf([], async () => 'SIGHUP', stageNpm().npm);
+    const run = await output(() => runLocalUp(folder, deps));
+    expect(run.lines.at(-2)).toBe('stopped   watching demo (SIGHUP); the daemon still runs it');
+    expect(fake.host.remove).not.toHaveBeenCalled();
+    expect(takeExit()).toBe(129);
+  });
+
+  test('a record that cannot be written stops the tsc watch it started', async ({ dir }) => {
+    const pidFile = dir.at('tsc.pid');
+    const tsc = `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+setInterval(() => {}, 1000);`;
+    const folder = tscCopy(dir, tsc);
+    writeFileSync(join(folder, '.agentage'), 'a file where the folder goes');
+    const { deps } = depsOf([], async () => 'SIGINT', stageNpm().npm);
+    const run = await output(() => runLocalUp(folder, deps));
+    expect(run.error).toMatch(/^EEXIST: /);
+    // A tsc left running writes its pid within the wait; a stopped one is gone or never wrote it.
+    await new Promise((done) => setTimeout(done, 1_500));
+    const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null;
+    expect(pid === null || markOf(pid) === null).toBe(true);
+  });
 });
