@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validateManifest } from '@agentage/extension/tool';
@@ -26,6 +26,7 @@ interface World {
   viewFails?: string;
   publishTimesOut?: boolean;
   private?: boolean;
+  pagesOnly?: boolean;
 }
 
 const ran = (ok: boolean, text = ''): Ran =>
@@ -57,7 +58,7 @@ const world =
     return ran(true);
   };
 
-// A committed checkout: build refuses a dirty tree before the kit runs.
+// A committed checkout with no .gitignore: build refuses a dirty tree before the kit runs.
 const checkout = (): string => {
   const dir = mkdtempSync(join(tmpdir(), 'agentage-release-'));
   const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
@@ -72,7 +73,9 @@ const release = async (w: World = {}, env: Record<string, string> = ENV) => {
   const unbounded: string[] = [];
   const bounds: string[] = [];
   const dir = checkout();
-  const parts = { pages: true, api: true, mcp: false, store: 'postgres' };
+  const parts = w.pagesOnly
+    ? { pages: true }
+    : { pages: true, api: true, mcp: false, store: 'postgres' };
   const pkg = validateManifest({
     name: NAME,
     version: '0.1.0',
@@ -83,7 +86,9 @@ const release = async (w: World = {}, env: Record<string, string> = ENV) => {
   const tool: Partial<KitTool> = {
     readManifest: async () => pkg,
     build: async (opts) => (
-      calls.push(`build push=${String(opts?.push)}`),
+      mkdirSync(join(dir, 'dist'), { recursive: true }),
+      writeFileSync(join(dir, 'dist', 'agentage-extension.json'), '{}'),
+      calls.push(`build push=${String(opts?.push)}${opts?.container ? ' container' : ''}`),
       { id: 'probe', version: '0.1.0', commit: SHA, buildTime: '', images: [] }
     ),
     buildLines: () => ['api ghcr.io/agentage/probe-api:0.1.0 sha256:bbbbbbbb pushed'],
@@ -118,12 +123,14 @@ describe('extension release', () => {
       'PASS npm: npm 11.7.0',
       'PASS guard: v0.1.0 has no record and no image: build',
       'api ghcr.io/agentage/probe-api:0.1.0 sha256:bbbbbbbb pushed',
-      'PASS record: agentage-extension.json attached to release v0.1.0',
+      'api ghcr.io/agentage/probe-api:0.1.0 sha256:bbbbbbbb pushed',
+      'PASS record: agentage-extension.json, agentage-container.json attached to release v0.1.0',
       `PASS npm: ${NAME}@0.1.0 published`,
     ]);
     expect(run.calls.filter((c) => c.startsWith('docker'))).toEqual([
       'docker manifest inspect ghcr.io/agentage/probe-pages:0.1.0',
       'docker manifest inspect ghcr.io/agentage/probe-api:0.1.0',
+      'docker manifest inspect ghcr.io/agentage/probe:0.1.0',
     ]);
     expect(run.result).toEqual({
       id: 'probe',
@@ -132,18 +139,30 @@ describe('extension release', () => {
       built: true,
       published: true,
     });
-    expect(run.calls).toContain('build push=true');
-    expect(run.calls).toContain(
-      'gh release create v0.1.0 dist/agentage-extension.json --title v0.1.0 --notes Images by digest: agentage-extension.json -R agentage/probe'
-    );
+    const builds = run.calls.filter((c) => c.startsWith('build') || c.startsWith('gh release c'));
+    expect(builds).toEqual([
+      'build push=true',
+      'build push=true container',
+      'gh release create v0.1.0 dist/agentage-extension.json dist/agentage-container.json --title v0.1.0 --notes Images by digest: agentage-extension.json, agentage-container.json -R agentage/probe',
+    ]);
     expect(run.calls).toContain('npm publish --access public --provenance --ignore-scripts');
   });
 
-  test('a tag that already has a release gets the record uploaded to it', async () => {
+  test('a tag that already has a release gets the records uploaded to it', async () => {
     const run = await release({ release: true });
     expect(run.calls).toContain(
-      'gh release upload v0.1.0 dist/agentage-extension.json -R agentage/probe'
+      'gh release upload v0.1.0 dist/agentage-extension.json dist/agentage-container.json -R agentage/probe'
     );
+  });
+
+  test('a package with no server part has no one image: part images and one record', async () => {
+    const run = await release({ pagesOnly: true });
+    expect(run.error).toBeNull();
+    expect(run.calls.filter((c) => c.startsWith('build'))).toEqual(['build push=true']);
+    expect(run.calls.filter((c) => c.startsWith('docker'))).toEqual([
+      'docker manifest inspect ghcr.io/agentage/probe-pages:0.1.0',
+    ]);
+    expect(run.lines).toContain('PASS record: agentage-extension.json attached to release v0.1.0');
   });
 
   test('a re-run of a released commit keeps the images and record and only retries npm', async () => {

@@ -528,8 +528,11 @@ than 11.5.1 (OIDC). Then the guard: a version already released from this commit 
 and record (`dist/agentage-extension.json` is downloaded) and only npm is retried; a tag moved to
 another commit, or an image already pushed without a record, is refused; a GitHub or registry
 call that fails or outlasts `--timeout` (default 60 s) stops the release. A new version runs
-`build --push` and attaches `agentage-extension.json` to the tag's GitHub release (created when
-missing). Last, `npm publish --access public --provenance --ignore-scripts`, skipped when the version is on npm.
+`build --push` (the part images, for v13 rows), then, when the package has an api, mcp or worker
+part, `build --container --push` (the one image `ghcr.io/agentage/<id>:<version>`, for app hosts),
+and attaches `agentage-extension.json` and `agentage-container.json` to the tag's GitHub release
+(created when missing) in one call, after every image is pushed. The guard also refuses a pushed
+one image with no record. Last, `npm publish --access public --provenance --ignore-scripts`, skipped when the version is on npm.
 Only an `E404` from `npm view` counts as not on npm; any other `npm view` error stops the release.
 When the direct publish is not authorized, or `NPM_TOKEN` is set and the name is new, it runs `npm
 stage publish` instead. `GH_TOKEN` (or `GITHUB_TOKEN`) goes only to `gh` and `NPM_TOKEN` only to

@@ -2,7 +2,15 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { execIn, IMAGE_PARTS, releaseGuard, type Exec, type Ran } from './release-guard.js';
+import {
+  execIn,
+  IMAGE_PARTS,
+  imagesOf,
+  releaseGuard,
+  type Exec,
+  type Ran,
+} from './release-guard.js';
+import type { ExtensionPackage } from '@agentage/extension/tool';
 
 const SHA = 'a'.repeat(40);
 const id = 'probe';
@@ -51,6 +59,7 @@ const guard = async (w: Released, sha = SHA) => {
     id,
     version: '0.1.0',
     parts: IMAGE_PARTS,
+    oneImage: true,
   };
   const out = await releaseGuard(input, registry(w, dir)).then(
     (decision) => ({ code: 0, out: decision, err: '' }),
@@ -90,7 +99,11 @@ describe('release guard', () => {
   });
 
   it('refuses an image already pushed without a record, whichever part it is', async () => {
-    for (const image of [API, `ghcr.io/agentage/${id}-worker:0.1.0`]) {
+    for (const image of [
+      API,
+      `ghcr.io/agentage/${id}-worker:0.1.0`,
+      `ghcr.io/agentage/${id}:0.1.0`,
+    ]) {
       const run = await guard({ images: [image] });
       expect(run).toMatchObject({ code: 1, out: '' });
       expect(run.err).toBe(
@@ -131,9 +144,21 @@ describe('release guard', () => {
       id,
       version: '0.1.0',
       parts: IMAGE_PARTS,
+      oneImage: true,
     };
     await expect(releaseGuard(input, missing)).rejects.toThrow(
       /cannot tell whether .* exists: .*ENOENT/
     );
+  });
+
+  it('names the one image only for a package with a server part', () => {
+    const of = (parts: Record<string, unknown>) =>
+      imagesOf({ agentage: { parts } } as unknown as ExtensionPackage);
+    expect(of({ api: true, mcp: false, store: 'postgres' })).toEqual({
+      parts: ['api'],
+      oneImage: true,
+    });
+    expect(of({ worker: true })).toEqual({ parts: ['worker'], oneImage: true });
+    expect(of({ pages: true, ui: true })).toEqual({ parts: ['pages', 'ui'], oneImage: false });
   });
 });

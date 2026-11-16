@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { BuiltImage } from '@agentage/extension/tool';
+import type { BuiltImage, ExtensionPackage } from '@agentage/extension/tool';
 
 export type Ran = { ok: boolean; out: string; err: string };
 
@@ -28,10 +28,22 @@ export const execIn =
     });
 
 export const RECORD = 'agentage-extension.json';
+// The record of the one image (build --container --push), attached beside RECORD.
+export const CONTAINER_RECORD = 'agentage-container.json';
 export const IMAGE_PARTS: readonly BuiltImage['part'][] = ['pages', 'ui', 'api', 'mcp', 'worker'];
+
+const declared = (pkg: ExtensionPackage, part: string) =>
+  ((pkg.agentage.parts as Record<string, unknown>)[part] ?? false) !== false;
+
+// The part images, and the one image when the package has a server part for it to run.
+export const imagesOf = (pkg: ExtensionPackage) => ({
+  parts: IMAGE_PARTS.filter((part) => declared(pkg, part)),
+  oneImage: ['api', 'mcp', 'worker'].some((part) => declared(pkg, part)),
+});
 
 export type GuardInput = Record<'dir' | 'tag' | 'sha' | 'repo' | 'id' | 'version', string> & {
   parts: readonly BuiltImage['part'][];
+  oneImage: boolean;
 };
 
 // Only "not found" means "not released"; any other failure stops the release, never rebuilds it.
@@ -50,15 +62,19 @@ const reuse = async ({ dir, tag, sha }: GuardInput, json: string): Promise<'reus
   return 'reuse';
 };
 
+const refsOf = (g: GuardInput): string[] => [
+  ...g.parts.map((part) => `ghcr.io/agentage/${g.id}-${part}:${g.version}`),
+  ...(g.oneImage ? [`ghcr.io/agentage/${g.id}:${g.version}`] : []),
+];
+
 const ensureNoImages = async (g: GuardInput, exec: Exec): Promise<void> => {
-  for (const part of g.parts) {
-    const image = `ghcr.io/agentage/${g.id}-${part}:${g.version}`;
+  for (const image of refsOf(g)) {
     const ran = await exec('docker', ['manifest', 'inspect', image]);
     if (ran.ok)
       throw new Error(
         `${image} is already pushed but ${g.tag} has no record; release a new version`
       );
-    // denied too: GHCR may answer it for a package that does not exist yet (a new part).
+    // denied too: GHCR may answer it for a package that does not exist yet (a new part or the one image).
     notFound(ran, /manifest unknown|no such manifest|denied/, image);
   }
 };
