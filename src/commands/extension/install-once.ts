@@ -49,13 +49,17 @@ export const installId = async (host: HostClient, spec: IdBody): Promise<Install
   return got;
 };
 
-const real = (path: string): string => {
+export const real = (path: string): string => {
   try {
     return realpathSync(path);
   } catch {
     return path;
   }
 };
+
+// The daemon's row of id when it runs this folder (by real path), else undefined.
+export const folderRow = async (host: HostClient, id: string, dir: string) =>
+  (await host.list()).find((row) => row.id === id && real(row.source) === real(dir));
 
 // A folder: the same folder again (by real path) is installed already; its id from elsewhere is
 // refused.

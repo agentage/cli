@@ -161,5 +161,3 @@ export const runRemove = async (opts: RemoveOptions, deps: LifecycleDeps & { io:
   console.log(`removed ${id}${purge ? ', its data deleted' : ''}`);
   return { id, purged: purge };
 };
-
-export { specOf };

@@ -8,6 +8,7 @@ import { readDaemonFile } from '../../lib/daemon/daemon-file.js';
 import { CliError, type DaemonError } from '../../lib/json-output.js';
 import { hostClient } from '../../lib/daemon/host-client.js';
 import { test } from '../../test/config-dir.js';
+import { freePort } from '../../test/serve.js';
 import { writeKitExtension } from '../../test/kit-fixture.js';
 import { VERSION } from '../../utils/version.js';
 import { clockRateOf, runDaemon } from './run.js';
@@ -29,9 +30,7 @@ const noInstaller = () => async () => {
 
 describe('daemon run: the daemon process', () => {
   test('runs the kit daemon until SIGTERM, then removes daemon.json', async ({ dir }) => {
-    const free = await listening();
-    const port = portOf(free);
-    await new Promise((resolve) => free.close(resolve));
+    const port = await freePort();
     vi.stubEnv('AGENTAGE_DAEMON_PORT', String(port));
     const before = vi.fn(async () => undefined);
     const running = runDaemon({ installer: noInstaller, before });
@@ -85,13 +84,6 @@ describe('daemon run: the daemon process', () => {
       await running;
       vi.unstubAllEnvs();
     };
-  };
-
-  const freePort = async (): Promise<number> => {
-    const free = await listening();
-    const port = portOf(free);
-    await new Promise((resolve) => free.close(resolve));
-    return port;
   };
 
   // setup sends enabled: false on the add: the bundled kit lists installDisabled.

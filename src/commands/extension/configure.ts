@@ -2,7 +2,8 @@ import { join } from 'node:path';
 import { installationRows } from '../../core/loader/installed.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { CliError, DaemonError, isJsonRun } from '../../lib/json-output.js';
-import { report, specOf, type ConfirmIo, type LifecycleDeps } from './lifecycle.js';
+import { specOf } from './install-spec.js';
+import { report, type ConfirmIo, type LifecycleDeps } from './lifecycle.js';
 
 export interface ConfigureOptions {
   id: string;

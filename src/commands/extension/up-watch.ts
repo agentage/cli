@@ -4,6 +4,7 @@ import { delimiter, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { childEnv } from '../../lib/child-env.js';
 import { messageOf } from '../../lib/json-output.js';
+import { how } from './package-build.js';
 import { NEXT, type UpMode } from './up-build.js';
 
 export interface Stoppable {
@@ -64,9 +65,6 @@ export interface TscWatch extends Stoppable {
   pid: number | undefined;
 }
 
-const exitWhy = (code: number | null, signal: NodeJS.Signals | null): string =>
-  code === null ? `exited by signal ${signal ?? 'unknown'}` : `exited ${code}`;
-
 // The warm watch of D13: noEmitOnError, out to dist.next; each compiler error line goes to stderr.
 export const watchTsc = (
   dir: string,
@@ -86,7 +84,7 @@ export const watchTsc = (
   );
   let stopping = false;
   child.once('error', (err) => stopping || events.onDied(`did not start: ${err.message}`));
-  child.once('exit', (code, signal) => stopping || events.onDied(exitWhy(code, signal)));
+  child.once('exit', (code, signal) => stopping || events.onDied(how(code, signal)));
   readBuilds(child.stdout, events);
   return { pid: child.pid, stop: () => void ((stopping = true), child.kill()) };
 };

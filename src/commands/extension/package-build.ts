@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { CheckReport } from '@agentage/extension/tool';
 import { childEnv } from '../../lib/child-env.js';
+import { isRecord } from '../../lib/fs/json-file.js';
 import { CliError, messageOf } from '../../lib/json-output.js';
 import { resolveNpmCli } from '../../lib/npm/npm-cli.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
@@ -15,7 +16,7 @@ export type Npm = (dir: string, args: string[]) => Promise<void>;
 const failed = (what: string, why: string): CliError =>
   new CliError('build_failed', `${what} ${why}`);
 
-const how = (code: number | null, signal: NodeJS.Signals | null): string =>
+export const how = (code: number | null, signal: NodeJS.Signals | null): string =>
   code === null ? `exited by signal ${signal ?? 'unknown'}` : `exited ${code}`;
 
 // npm runs as `node npm-cli.js`: no npm.cmd shim, which Windows cannot spawn with no shell.
@@ -65,16 +66,21 @@ export const npmIn = (
     });
   });
 
-const hasBuildScript = (dir: string): boolean => {
-  if (!existsSync(join(dir, 'package.json')))
+export const packageOf = (dir: string): Record<string, unknown> => {
+  const file = join(dir, 'package.json');
+  if (!existsSync(file))
     throw new CliError(
       'invalid_argument',
       `no package.json in ${dir}: run it in an extension package folder`
     );
-  const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
-    scripts?: Record<string, unknown>;
-  };
-  return typeof pkg.scripts?.['build'] === 'string';
+  const pkg: unknown = JSON.parse(readFileSync(file, 'utf8'));
+  return isRecord(pkg) ? pkg : {};
+};
+
+export const buildScriptOf = (dir: string): string | null => {
+  const scripts = packageOf(dir)['scripts'];
+  const script = isRecord(scripts) ? scripts['build'] : undefined;
+  return typeof script === 'string' ? script : null;
 };
 
 export interface PackageBuild {
@@ -97,7 +103,7 @@ export const buildPackage = async (
   deps: PackageBuildDeps = defaultDeps
 ): Promise<PackageBuild> => {
   const dir = resolve(folder);
-  const built = hasBuildScript(dir);
+  const built = buildScriptOf(dir) !== null;
   if (built) await deps.npm(dir, ['run', 'build']);
   const kit = await deps.tool();
   const contracts = await kit.writeContracts(dir);

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { isPid } from '../daemon/daemon-file.js';
+import { isRecord } from '../fs/json-file.js';
 
 // Field 22 of /proc/<pid>/stat, counted from the state field after the `(comm)` part.
 const STARTTIME = 19;
@@ -40,10 +41,7 @@ export const markOf = (
 };
 
 export const isMark = (value: unknown): value is ProcessMark =>
-  typeof value === 'object' &&
-  value !== null &&
-  isPid((value as ProcessMark).pid) &&
-  typeof (value as ProcessMark).started === 'string';
+  isRecord(value) && isPid(value['pid']) && typeof value['started'] === 'string';
 
 // The same process still runs: the pid lives and started at the recorded time.
 export const proven = (

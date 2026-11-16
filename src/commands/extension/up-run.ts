@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { markOf, type ProcessMark } from '../../lib/proc/start-time.js';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
+import { isRecord } from '../../lib/fs/json-file.js';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { setExit } from '../../lib/exit-code.js';
 import { CliError } from '../../lib/json-output.js';
-import { installFolder } from './install-once.js';
+import { folderRow, installFolder } from './install-once.js';
 import { loadKitTool } from './kit-tool.js';
-import { buildPackage, npmIn, type Npm, type PackageBuild } from './package-build.js';
+import { buildPackage, npmIn, packageOf, type Npm, type PackageBuild } from './package-build.js';
 import { removeStage, seedNext, upModeOf, type UpMode } from './up-build.js';
 import { refuseRunning, untilStopped, writeRecord, type UpRecord } from './up-local.js';
 import { stageAndReload, startWatch, type Run } from './up-reload.js';
@@ -40,25 +40,13 @@ export interface LocalUp {
   stoppedBy: string;
 }
 
-const real = (path: string): string => (existsSync(path) ? realpathSync(path) : path);
-
 // Checked before the daemon starts: a folder that is no extension package starts nothing.
 const idOf = (dir: string): string => {
-  const file = join(dir, 'package.json');
-  if (!existsSync(file))
-    throw new CliError(
-      'invalid_argument',
-      `no package.json in ${dir}: run it in an extension package folder`
-    );
-  const pkg = JSON.parse(readFileSync(file, 'utf8')) as { agentage?: { id?: unknown } };
-  const id = pkg.agentage?.id;
+  const agentage = packageOf(dir)['agentage'];
+  const id = isRecord(agentage) ? agentage['id'] : undefined;
   if (typeof id !== 'string') throw new CliError('invalid_argument', `${dir}: no agentage.id`);
   return id;
 };
-
-// The daemon runs this folder already (a create or an earlier up): its live dist is not rebuilt.
-const runsHere = async (host: HostClient, id: string, dir: string): Promise<boolean> =>
-  (await host.list()).some((row) => row.id === id && real(row.source) === real(dir));
 
 // Problems do not stop a local run; they are printed, as `extension build` would refuse them.
 const warnProblems = async ({ report }: PackageBuild): Promise<void> => {
@@ -79,9 +67,9 @@ const stopLine = (id: string, stoppedBy: string, added: boolean): void => {
   if (added) console.log(`          agentage extension down removes it (its data stays)`);
 };
 
-// The first build: in the folder while no child runs it, else staged and reloaded.
+// The first build: in the folder while no child runs it (a create or an earlier up), else staged.
 const firstBuild = async (run: Run, mode: UpMode, build: LocalUpDeps['build']): Promise<void> => {
-  if (!(await runsHere(run.host, run.id, run.dir))) {
+  if (!(await folderRow(run.host, run.id, run.dir))) {
     await warnProblems(await build(run.dir));
     return seedNext(run.dir);
   }

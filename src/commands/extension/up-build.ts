@@ -5,7 +5,6 @@ import {
   lstatSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -13,7 +12,7 @@ import {
 import { createRequire } from 'node:module';
 import { basename, join, resolve } from 'node:path';
 import { getConfigDir } from '../../lib/fs/config.js';
-import { type Npm } from './package-build.js';
+import { buildScriptOf, type Npm } from './package-build.js';
 
 // D13 revised: the folder's own tsc watches when the build script starts with plain tsc; else
 // the whole build script runs in a staging copy. `rest`: the script after the tsc step (the widget bundle).
@@ -24,14 +23,6 @@ export type UpMode =
 // The live tree the daemon runs is dist; the watcher writes only dist.next (the daemon copies it).
 export const NEXT = 'dist.next';
 const TSC = /^tsc(?:\s+-p\s+(\S+))?$/;
-
-export const buildScriptOf = (dir: string): string | null => {
-  const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
-    scripts?: Record<string, unknown>;
-  };
-  const script = pkg.scripts?.['build'];
-  return typeof script === 'string' ? script : null;
-};
 
 // The folder's own typescript, run as `node typescript/bin/tsc` (no .bin shim, none on Windows).
 const tscOf = (dir: string): string | null => {

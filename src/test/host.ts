@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
-import { DaemonError } from '../lib/json-output.js';
+import { cliInstaller } from '../commands/daemon/installer.js';
+import { CliError, DaemonError } from '../lib/json-output.js';
 import { type HostClient, type HostRow } from '../lib/daemon/host-client.js';
 
 // The kit 0.14 409: the details name the installed entry (no source for a market one).
@@ -8,6 +9,16 @@ const conflict = ({ id, version, source }: HostRow): DaemonError =>
     id,
     version,
     ...(source !== 'market' && { source }),
+  });
+
+const OFFLINE = new CliError('market_unreachable', 'cannot reach the market: offline');
+
+// No network: npm fails and the market is down, so every install must come from disk.
+export const offlineInstaller = () =>
+  cliInstaller({
+    npm: async () => Promise.reject(new Error('npm offline')),
+    manifest: async () => Promise.reject(new Error('npm offline')),
+    market: () => ({ latest: async () => null, down: () => OFFLINE }),
   });
 
 // A daemon in memory for the lifecycle commands: the rows it holds and what was asked of it.

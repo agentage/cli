@@ -15,6 +15,15 @@ const bodyOf = async (req: IncomingMessage): Promise<unknown> => {
   return text ? JSON.parse(text) : undefined;
 };
 
+// A loopback port nothing listens on, for a daemon of a test.
+export const freePort = async (): Promise<number> => {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+};
+
 // A loopback server that answers JSON, for the daemon client tests.
 export const serve = async (answer: Answer): Promise<Served> => {
   const seen: Served['seen'] = [];

@@ -14,7 +14,8 @@ import { DaemonError, writeError } from '../../lib/json-output.js';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost, marketRow } from '../../test/host.js';
 import { writeKitExtension } from '../../test/kit-fixture.js';
-import { runEnabled, runInstall, runRemove, specOf, type ConfirmIo } from './lifecycle.js';
+import { specOf } from './install-spec.js';
+import { runEnabled, runInstall, runRemove, type ConfirmIo } from './lifecycle.js';
 
 const noTerminal: ConfirmIo = { isTTY: false, prompt: vi.fn(async () => 'y') };
 
