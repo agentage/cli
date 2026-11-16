@@ -31,8 +31,8 @@ export interface Run {
 }
 
 // A save between the start of the running build and the end of the first watch build.
-export const editedSince = (dir: string, since?: number): boolean => {
-  const src = join(dir, 'src');
+export const editedSince = (dir: string, since?: number, sub = 'src'): boolean => {
+  const src = join(dir, sub);
   if (since === undefined || !existsSync(src)) return false;
   return readdirSync(src, { recursive: true, withFileTypes: true }).some(
     (f) => f.isFile() && statSync(join(f.parentPath, f.name)).mtimeMs >= since
@@ -132,7 +132,10 @@ const appWatch = (run: Run, inLane: (task: Task) => Promise<void>): Stoppable[] 
   const app = run.app;
   if (!app) return [];
   const go = coalesced(() => inLane(() => appAndReload(run, app)));
-  return [watchFolder(join(run.dir, 'src', 'app'), go)];
+  const watcher = watchFolder(join(run.dir, 'src', 'app'), go);
+  // A save between the start of up and this watch (the page may be open already) is built now.
+  if (editedSince(run.dir, run.builtAt, join('src', 'app'))) void go();
+  return [watcher];
 };
 
 const watchWithTsc = (

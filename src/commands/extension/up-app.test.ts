@@ -94,6 +94,26 @@ describe('extension up and the app part (S1.2.3 row 4)', () => {
     expect(app.rebuild).toHaveBeenCalledTimes(1);
   });
 
+  test('a save in src/app after up began and before the watch is built at the start', async ({
+    dir,
+  }) => {
+    dir.write('w/package.json', APP_PKG);
+    dir.write('w/src/app/index.tsx', 'export default () => "saved early";');
+    const fake = fakeHost([marketRow('demo', '0.1.0')]);
+    const app = fakeBuilder('w', dir.write);
+    const run: Run = { dir: dir.at('w'), id: 'demo', host: fake.host, npm: vi.fn(), app };
+    run.builtAt = Date.now() - 60_000;
+    const { watchers } = startWatch(run, { kind: 'stage', script: null }, () => {});
+    await output(async () => {
+      try {
+        await vi.waitFor(() => expect(fake.host.reload).toHaveBeenCalledWith('demo', 'app'));
+      } finally {
+        for (const w of watchers) w.stop();
+      }
+    });
+    expect(app.rebuild).toHaveBeenCalledOnce();
+  });
+
   test('the kit builder with the cli copy of esbuild and tailwind writes dist/app', async ({
     dir,
   }) => {

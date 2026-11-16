@@ -83,7 +83,8 @@ export const statusDeps = (account = true): StatusDeps => ({
   gather: (opts) => gatherStatus(resolveAuth({ token: opts.token }), siteFqdn()),
   extensions: (opts) =>
     account ? signedInAccount({ token: opts.token }).then(gatherWithAccount) : gatherExtensions(),
-  daemon: () => daemonOfStatus(),
+  // The report that closes setup starts no daemon: setup owns that (and --no-daemon).
+  ...(account && { daemon: () => daemonOfStatus() }),
 });
 
 type ExtensionsOutcome = { gathered: ExtensionsGather | null; error: unknown };

@@ -50,3 +50,11 @@ describe('status names the one daemon (S1.2.3 row 6)', () => {
     err.mockRestore();
   });
 });
+
+describe('the report that closes setup', () => {
+  it('has no daemon step: setup starts the daemon itself, or not at all', async () => {
+    const { statusDeps } = await import('./status.js');
+    expect(statusDeps(false).daemon).toBeUndefined();
+    expect(statusDeps().daemon).toEqual(expect.any(Function));
+  });
+});
