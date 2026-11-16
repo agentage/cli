@@ -89,7 +89,8 @@ const deathOf = () => {
     console.error(`watch     ${why}; extension up stops (run it again)`);
     died('watch died');
   };
-  return { ended, onDied, failure: () => new CliError(code, `extension up stopped: ${reason}`) };
+  const failure = () => new CliError(code, `extension up stopped: ${reason}`);
+  return { ended, onDied, failure, died: () => reason !== '' };
 };
 
 // Ctrl-C is 130 and a closed terminal 129; a watch that died fails, so --json gives the error.
@@ -128,14 +129,17 @@ interface UpContext {
   nonce: string;
 }
 
+type Death = ReturnType<typeof deathOf>;
+type Up = Omit<LocalUp, 'stoppedBy'>;
+
+// The fatal channel is wired before the first build: a second up with no build tool stops too.
 const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpContext) => {
-  await firstBuild(run, mode, deps.build);
-  const { row, already } = await installFolder(run.host, run.dir);
-  const added = !already || ctx.before?.added === true;
-  const { nonce } = ctx;
   const death = deathOf();
   run.fatal = death.onDied;
-  const { watchers, tscPid } = startWatch(run, mode, death.onDied);
+  await firstBuild(run, mode, deps.build);
+  if (death.died()) throw death.failure();
+  const { row, already } = await installFolder(run.host, run.dir);
+  const added = !already || ctx.before?.added === true;
   const up = {
     id: row.id,
     version: row.version,
@@ -143,19 +147,37 @@ const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpCont
     port: ctx.port,
     added,
   };
-  let stoppedBy: string;
-  // A record down removed meanwhile, or one that cannot be written, still stops the tsc it started.
+  const stoppedBy = await watchUntilStopped(run, mode, { deps, ctx, death, up });
+  stopLine(up.id, stoppedBy, added);
+  exitFor(stoppedBy, death.failure);
+  return { ...up, stoppedBy };
+};
+
+interface Watching {
+  deps: LocalUpDeps;
+  ctx: UpContext;
+  death: Death;
+  up: Up;
+}
+
+// A record down removed meanwhile, or one that cannot be written, still stops the tsc it started.
+const watchUntilStopped = async (run: Run, mode: UpMode, w: Watching): Promise<string> => {
+  const { watchers, tscPid } = startWatch(run, mode, w.death.onDied);
   try {
     const tsc = markOf(tscPid) ?? undefined;
-    rewriteRecord(run.dir, { up: selfMark(), nonce, id: row.id, added, ...(tsc && { tsc }) });
-    ready(up, ctx.json);
-    stoppedBy = await deps.stopped(run.dir, nonce, death.ended);
+    const { nonce } = w.ctx;
+    rewriteRecord(run.dir, {
+      up: selfMark(),
+      nonce,
+      id: w.up.id,
+      added: w.up.added,
+      ...(tsc && { tsc }),
+    });
+    ready(w.up, w.ctx.json);
+    return await w.deps.stopped(run.dir, nonce, w.death.ended);
   } finally {
     for (const watcher of watchers) watcher.stop();
   }
-  stopLine(row.id, stoppedBy, added);
-  exitFor(stoppedBy, death.failure);
-  return { ...up, stoppedBy };
 };
 
 const urlOf = (port: number, id: string): string => `http://127.0.0.1:${port}/api/${id}/`;

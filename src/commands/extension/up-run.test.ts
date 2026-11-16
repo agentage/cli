@@ -269,6 +269,38 @@ describe('how an up ends', () => {
     });
   });
 
+  test('a second up whose build tool is missing stops at the first build (build_failed)', async ({
+    dir,
+  }) => {
+    const folder = workingCopy(dir);
+    const missing: Npm = async (cwd) => {
+      throw new Error(`npm run build in ${cwd} exited 127`);
+    };
+    const { deps, fake } = depsOf([folderRow(folder)], async () => 'SIGINT', missing);
+    const run = await output(() => runLocalUp(folder, deps));
+    expect(run).toMatchObject({
+      code: 'build_failed',
+      error: 'extension up stopped: the build tool is missing (npm ci installs it)',
+    });
+    expect(fake.host.reload).not.toHaveBeenCalled();
+    expect(readRecord(folder)?.added).toBe(false);
+  });
+
+  test('a folder that is no extension package starts nothing (invalid_argument)', async ({
+    dir,
+  }) => {
+    const { deps, fake } = depsOf([], async () => 'SIGINT', stageNpm().npm);
+    dir.write('plain/package.json', { name: 'plain' });
+    const noId = await output(() => runLocalUp(dir.at('plain'), deps));
+    expect(noId).toMatchObject({
+      code: 'invalid_argument',
+      error: `${dir.at('plain')}: no agentage.id`,
+    });
+    const none = await output(() => runLocalUp(dir.at('none'), deps));
+    expect(none.error).toMatch(/^no package\.json in .*: run it in an extension package folder$/);
+    expect(fake.host.add).not.toHaveBeenCalled();
+  });
+
   test('a closed terminal (SIGHUP) stops the watch, keeps the row, exits 129', async ({ dir }) => {
     const folder = workingCopy(dir);
     const { deps, fake } = depsOf([], async () => 'SIGHUP', stageNpm().npm);
