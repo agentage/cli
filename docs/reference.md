@@ -72,9 +72,12 @@ profile names each entry and the rule and writes nothing. `--disconnect` skips t
 steps.
 
 Plain `setup` signs in and pulls the profile in your account (below), and installs it once per
-machine: the marker `setup.profile-installed` is written when every entry installed and runs (a
-refused or failed entry is named, and the next `setup` tries the profile again), and a later
-plain `setup` installs nothing and prints
+machine: the marker `setup.profile-installed` is written after the first try, with the ids of
+the entries that were refused or failed (that first `setup` names them and exits 1). A later
+plain `setup` tries only those ids, and exits 0 with one line per entry that still fails
+(`<id>: <why> (still fails; the next setup tries it again)`); a failed row you removed is not
+added again (`<id> was removed here; setup does not add it again`). Once none is left, plain
+`setup` installs nothing and prints
 `extensions your account profile was installed here already; setup installs nothing (agentage extension install)`,
 so an extension you removed does not come back. An `extension install` before the first `setup`
 does not block it. `setup --profile <file>` is an explicit ask and is never gated: it installs
@@ -333,7 +336,10 @@ in the config folder and runs each extension as its own process: its api at
   changes nothing. A path (`.`, `./path`, `../path`, `/path`) sends the folder's real path; a
   folder another user can write to is refused. A failed start exits 1 with `extension_failed`.
   `<id>@<tag>` (a word that is not a version or a range, such as `fixture@broken`) is an npm
-  dist-tag, resolved as npm does; with a market only `@agentage/extension-<id>` is asked. A new id
+  dist-tag, resolved as npm does; with a market only `@agentage/extension-<id>` is asked, with no
+  market `@agentage/extension-<id>`, then `agentage-extension-<id>`. After `@` only a version, a
+  range with no space or a word is taken: a path, `file:`, `git+`, a URL or a flag is
+  `invalid_argument` and npm is never asked (`probe@http` is the tag `http`). A new id
   whose first start fails is refused and rolled back by the daemon (C6): exit 1 with its code and
   message (`VALIDATION_ERROR`, `<id> failed to start: <reason>`), and `--json` keeps its
   `details` (`{ "code": "START_FAILED", "reason" }`). A declared secret with no value keeps the
@@ -554,25 +560,37 @@ Then it watches. `dist.next/` starts as a copy of `dist/`, and every build goes 
 the live `dist/`: the daemon copies `dist.next/` to `dist/` at a reload (it keeps `dist.next/`)
 and goes back to the last good build when the new one does not start.
 
-- A build script that starts with plain `tsc` (`tsc` or `tsc -p <file>`) and a `tsc` in the
-  folder's `node_modules/.bin`: a warm `tsc --watch --noEmitOnError --outDir dist.next`. A type
-  or syntax error prints the compiler lines and `build     <n> error(s), no reload`.
+- A build script that starts with plain `tsc` (`tsc` or `tsc -p <file>`) and the folder's own
+  `typescript`: a warm `node <typescript>/bin/tsc --watch --noEmitOnError --outDir dist.next`
+  (no `.bin` shim, so it runs on Windows too). A type or syntax error prints the compiler lines
+  and `build     <n> error(s), no reload`. A tsc that exits or does not start stops `up` with
+  `watch     tsc <why>; extension up stops (run it again)` and exit 1.
 - Any other build script (it writes `dist/` in place): a save under `src/` (200 ms debounce)
-  copies `src/` into a stage, `.agentage/stage/` (a copy of the folder, `node_modules` linked),
-  runs `npm run build` there and copies its `dist/` over `dist.next/`. A build that fails prints
-  its own output and `build     failed, no reload: ...`.
+  copies `src/` into a stage and runs `npm run build` there (npm as `node npm-cli.js`), then
+  copies its `dist/` over `dist.next/`. The stage is `<config>/cache/up-stage/<folder>-<hash>/`:
+  a copy of the folder with no `.env*`, `coverage`, `.git`, `.agentage` or `dist*`, its
+  `node_modules` a link to the folder's own; `up` removes it when it stops. A `../` path in the
+  build script resolves from that cache folder, not from the working copy, and hoisted workspace
+  modules above the folder do not resolve; such a package needs a plain `tsc` build. A build
+  that fails prints its own output and `build     failed, no reload: ...`.
 - After a build with no error: `POST /host/extensions/<id>/reload` with the host token, and one
   line: `reload    <id> reloaded: true in <ms> ms` (from the change seen to the daemon's answer), or
-  `reload    <id> reloaded: false, refused: <why> (<ms> ms)`; the last good build runs.
+  `reload    <id> reloaded: false, refused: <why> (<ms> ms)`; the last good build runs. Reloads
+  run one at a time, and only after tsc says a build ended clean; a build that ends during a
+  reload gives one more reload after it. A step that throws prints `watch     <why>` and the
+  watch goes on.
 - A change under `src/ui` runs the rest of the build script after the `tsc` step (the widget
   bundle). It writes `dist/ui` in place, is copied to `dist.next/ui`, and sends no reload: the
   daemon serves no ui part in this release, and that build has no time limit (D17).
 
 Ctrl-C stops the watch (exit 130), SIGTERM too (exit 0); the daemon still runs the folder, and
-`up` prints that `agentage extension down` removes it. Its record (`.agentage/up.json`: pid, id,
-and whether `up` added the row) is in the folder's `.agentage/`, which `up` adds to the folder's
-`.gitignore` when it is missing, and says so on stderr. A second `up` of the same folder while the
-first runs exits 1 (`already_running`). `--local` is the old name of plain `up`, kept for one
+`up` prints that `agentage extension down` removes it. Its record (`.agentage/up.json`: the pid
+and start time of `up` and of its tsc, a nonce, the id, and whether `up` added the row) is in the
+folder's `.agentage/`, which `up` adds to the folder's `.gitignore` when it is missing, and says so
+on stderr. A process counts as that `up` or that tsc only when its pid lives and started at the
+recorded time (`/proc` on Linux, `ps` elsewhere; never on Windows, where nothing is signalled).
+A second `up` of the same folder while the first runs exits 1 (`already_running`); a tsc whose
+`up` was killed is stopped by the next `up` or `down`, one line each. `--local` is the old name of plain `up`, kept for one
 minor: it prints `--local is deprecated (removed in the next minor): extension up runs the working
 copy on the daemon` and runs it. Port 4244 and the in-process host of 0.52 are gone. With `--json`
 the lines go to stderr; stdout gets one JSON line when the row runs, `{ "ready": true, "id",
@@ -586,9 +604,10 @@ ports 4280 and 4281 free and refuses when another working copy holds them, and g
 commit (or `COMMIT_SHA` or `GITHUB_SHA`).
 
 `down` stops what `up` started for the folder in `--dir`, and nothing else. It removes the
-record, and the `up` of that folder sees it and stops its watch (no pid is signalled); `down`
-waits up to 10 s for it, else `stop_failed`. Then it removes the daemon row `up` added (no purge:
-`data/<id>` and its settings stay), only when that row still runs from this folder; a row `up`
+record, and the `up` of that folder sees it and stops its watch (no `up` is signalled); `down`
+waits up to 10 s for it, else `stop_failed`. Then, even after a `stop_failed` or an `up` that is
+gone, it removes the daemon row `up` added (no purge: `data/<id>` and its settings stay), only
+when that row still runs from this folder; a row `up`
 found there (`extension create`, `extension install <folder>`) is left as it was. A record of an
 `up` that ended is stale: it goes, and the row it added goes too. When the folder has the Docker stack of `up --docker`
 (`.agentage/compose.json`), `down` also removes its containers, network and store volume
@@ -703,19 +722,24 @@ await program.parseAsync(['world'], { from: 'user' }); // prints "world heard: h
 ```bash
 agentage daemon status    # running or not: pid, port, version, each extension and its state
 agentage daemon stop      # stop the daemon and every extension; returns once its pid is gone
-agentage daemon restart   # stop, then start
+agentage daemon restart   # stop, then start; returns once no extension is starting (60 s)
 ```
+
+`daemon restart` waits up to 60 s for every extension to leave `starting`. When the wait runs
+out it prints `warning: still starting after 60 s: <ids>` and exits 0; `--json` gives
+`{ port, settled }` (`settled: false` then).
 
 The daemon is one process on `127.0.0.1` (port 4243, `AGENTAGE_DAEMON_PORT` for another). It
 runs each installed extension as a child process and serves `/api/{id}/*`, `/health` and
 `/host/extensions`; a request with another `Host` (`[::1]` too) or `Origin` gets 403. `/api/*`,
 `/mcp/*` and `/health` need no token. `/host/*` needs the host token (D11): the daemon writes a
 new `hostToken` into `daemon.json` (0600) at each start, and the cli sends it as
-`Authorization: Bearer`. On 401 or 403 the cli reads `daemon.json` again and retries once; a
+`Authorization: Bearer`, and refuses a redirect. On 401 or 403 the cli reads `daemon.json` again
+and retries once, only when it still names this port and its pid answers `/health` there; a
 refusal that stays is the daemon's code with `the daemon refused the host token of <file> (...);
 run agentage daemon restart`. A daemon whose `daemon.json` has no `hostToken` (a daemon of cli
-0.52 or older left running) is stopped and started again, with one line on stderr
-(`daemon restarted: it ran <version> with no host token`); its extensions, data, settings and
+0.52 or older left running) is stopped and started again, with one line on stderr, printed
+before the start (`daemon restarted: it ran <version> with no host token`); its extensions, data, settings and
 secrets stay. `AGENTAGE_DAEMON_CLOCK_RATE` (tests only) starts the daemon with that test clock
 (`clockRate`): one cron minute lasts `60 / rate` s; no flag and no setting set it.
 `setup` starts it, and so does each command that needs it.
