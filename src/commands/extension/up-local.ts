@@ -1,34 +1,27 @@
-import { createServer, type RequestListener, type Server } from 'node:http';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { isPid } from '../../lib/daemon/daemon-file.js';
+import { isAlive, isPid } from '../../lib/daemon/daemon-file.js';
 import { isRecord, readJson, writeTextAtomic } from '../../lib/fs/json-file.js';
-import { CliError, messageOf } from '../../lib/json-output.js';
+import { CliError } from '../../lib/json-output.js';
 import { waitFor } from '../../lib/wait.js';
 
-// D7: a local up takes the first free port from here; the daemon keeps 4243.
-export const UP_FROM = 4244;
 // The kit's own folder in a working copy (`.agentage/`, ignored by the template).
 const LOCAL = '.agentage';
 
+// D12: the up of a folder; `added`: up added the daemon row, so down removes it (never another).
 export interface UpRecord {
   pid: number;
-  port: number;
   id: string;
-  instance: string;
+  added: boolean;
 }
 
 export const recordPath = (dir: string): string => join(resolve(dir), LOCAL, 'up.json');
-export const dataDirOf = (dir: string): string => join(resolve(dir), LOCAL, 'data');
 
 const isUpRecord = (value: unknown): value is UpRecord =>
   isRecord(value) &&
   isPid(value['pid']) &&
-  Number.isInteger(value['port']) &&
-  (value['port'] as number) >= 1024 &&
-  (value['port'] as number) <= 65535 &&
   typeof value['id'] === 'string' &&
-  typeof value['instance'] === 'string';
+  typeof value['added'] === 'boolean';
 
 export const readRecord = (dir: string): UpRecord | null => readJson(recordPath(dir), isUpRecord);
 
@@ -50,71 +43,44 @@ export const writeRecord = (dir: string, record: UpRecord): void => {
 
 export const removeRecord = (dir: string): void => rmSync(recordPath(dir), { force: true });
 
-const bind = (handler: RequestListener, port: number): Promise<Server | null> =>
-  new Promise((done, fail) => {
-    const server = createServer(handler);
-    server.once('error', (err: NodeJS.ErrnoException) =>
-      err.code === 'EADDRINUSE' ? done(null) : fail(err)
-    );
-    server.listen(port, '127.0.0.1', () => done(server));
-  });
-
-// D7: the first port from 4244 that binds; a port taken meanwhile is skipped, not fatal.
-export const listenFrom = async (handler: RequestListener, from = UP_FROM): Promise<Server> => {
-  for (let port = from; port < from + 100; port += 1) {
-    const server = await bind(handler, port);
-    if (server) return server;
-  }
-  throw new CliError('port_in_use', `no free port from ${from} to ${from + 99}`);
+// A live up of the folder is refused; a record of an up that ended keeps only its `added`.
+export const refuseRunning = (dir: string): UpRecord | null => {
+  const record = readRecord(dir);
+  if (!record || !isAlive(record.pid) || record.pid === process.pid) return record;
+  throw new CliError(
+    'already_running',
+    `extension up runs for ${dir} (pid ${record.pid}): agentage extension down`
+  );
 };
 
-export const portOf = (server: Server): number => (server.address() as { port: number }).port;
-
-export type Answer = 'ours' | 'other' | 'none';
-
-// The record's extension answers on its port when /health names the same id and instance.
-export const answerOf = async (record: UpRecord, timeoutMs = 2_000): Promise<Answer> => {
-  const res = await fetch(`http://127.0.0.1:${record.port}/health`, {
-    signal: AbortSignal.timeout(timeoutMs),
-  }).catch(() => null);
-  if (!res) return 'none';
-  const body = (await res.json().catch(() => null)) as {
-    data?: { extension?: string; instance?: string };
-  } | null;
-  const same = body?.data?.extension === record.id && body.data.instance === record.instance;
-  return same ? 'ours' : 'other';
-};
-
-// Resolves on the first SIGINT or SIGTERM, then releases both.
-export const untilSignal = (): Promise<string> =>
+// up ends on Ctrl-C or SIGTERM (the row stays), or when down removes its record (`down`).
+export const untilStopped = (dir: string, everyMs = 300): Promise<string> =>
   new Promise((done) => {
-    const on = (signal: string) => {
-      process.off('SIGINT', on);
-      process.off('SIGTERM', on);
-      done(signal);
+    const finish = (why: string): void => {
+      clearInterval(timer);
+      process.off('SIGINT', onInt);
+      process.off('SIGTERM', onTerm);
+      done(why);
     };
-    process.once('SIGINT', on);
-    process.once('SIGTERM', on);
+    const onInt = (): void => finish('SIGINT');
+    const onTerm = (): void => finish('SIGTERM');
+    const timer = setInterval(() => existsSync(recordPath(dir)) || finish('down'), everyMs);
+    process.once('SIGINT', onInt);
+    process.once('SIGTERM', onTerm);
   });
-
-const gone = (record: UpRecord, timeoutMs: number): Promise<boolean> =>
-  waitFor(async () => (await answerOf(record, 500)) === 'none', timeoutMs);
 
 export type LocalDown = 'stopped' | 'stale' | 'none';
 
-// Signals the recorded pid only when its port answers as that extension; else the record is stale.
-export const stopLocal = async (dir: string, timeoutMs = 10_000): Promise<LocalDown> => {
+// Removing the record is the stop: the up of that pid sees it and exits; no pid is signalled.
+export const stopLocal = async (
+  dir: string,
+  timeoutMs = 10_000
+): Promise<{ down: LocalDown; record: UpRecord | null }> => {
   const record = readRecord(dir);
-  if (!record) return 'none';
-  if ((await answerOf(record)) !== 'ours') return (removeRecord(dir), 'stale');
-  try {
-    process.kill(record.pid, 'SIGTERM');
-  } catch (err) {
-    const why = messageOf(err);
-    throw new CliError('stop_failed', `cannot stop extension up (pid ${record.pid}): ${why}`);
-  }
-  if (!(await gone(record, timeoutMs)))
-    throw new CliError('stop_failed', `extension up (pid ${record.pid}) did not stop`);
+  if (!record) return { down: 'none', record };
   removeRecord(dir);
-  return 'stopped';
+  if (!isAlive(record.pid)) return { down: 'stale', record };
+  if (!(await waitFor(() => !isAlive(record.pid), timeoutMs)))
+    throw new CliError('stop_failed', `extension up (pid ${record.pid}) did not stop`);
+  return { down: 'stopped', record };
 };

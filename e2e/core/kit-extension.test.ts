@@ -110,15 +110,22 @@ test.describe('a kit command whose name is taken keeps only agentage <id> <comma
 });
 
 test.describe('agentage extension up, down and token reach the kit @offline', () => {
-  test('agentage extension up --local and up --docker in a folder that is not an extension exit 1 naming it; down says nothing runs', async ({
+  test('agentage extension up, up --local and up --docker in a folder that is not an extension exit 1 naming it, no daemon; down says nothing runs', async ({
     cli,
   }) => {
     const message = `no package.json in ${resolve('e2e')}: run it in an extension package folder`;
-    for (const args of ['up --local', 'up --docker'])
+    const deprecated =
+      '--local is deprecated (removed in the next minor): extension up runs the working copy on the daemon';
+    const lines: [string, string[]][] = [
+      ['up', [message]],
+      ['up --local', [deprecated, message]],
+      ['up --docker', [message]],
+    ];
+    for (const [args, stderr] of lines)
       expect(said(await cli.run(`extension ${args} --dir ./e2e`))).toEqual({
         code: 1,
         stdout: '',
-        stderr: [message],
+        stderr,
       });
     expect(said(await cli.run('extension down --dir ./e2e'))).toEqual({
       code: 0,
