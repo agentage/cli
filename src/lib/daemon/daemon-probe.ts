@@ -63,13 +63,27 @@ export const unresponsive = (file: DaemonFile): CliError =>
       'try again, or stop that process yourself'
   );
 
+const killLine = (pid: number, platform = process.platform): string =>
+  platform === 'win32' ? `taskkill /PID ${pid} /F` : `kill ${pid}`;
+
+const stopAdvice = (pid: number, platform?: NodeJS.Platform): string =>
+  `stop it (agentage daemon stop with its AGENTAGE_CONFIG_DIR, or ${killLine(pid, platform)}), ` +
+  'or set AGENTAGE_DAEMON_PORT to another port';
+
 // The daemon of another config folder (AGENTAGE_CONFIG_DIR) holds the port: never used as ours.
-export const otherFolder = (port: number, pid: number): CliError =>
+export const otherFolder = (port: number, pid: number, platform?: NodeJS.Platform): CliError =>
   new CliError(
     'port_in_use',
     `port ${port} is in use by the agentage daemon (pid ${pid}) of another config folder; ` +
-      `stop it (agentage daemon stop with its AGENTAGE_CONFIG_DIR, or kill ${pid}), ` +
-      'or set AGENTAGE_DAEMON_PORT to another port'
+      stopAdvice(pid, platform)
+  );
+
+// This folder's daemon.json exists but cannot be read: the daemon on the port is not proven ours.
+export const unreadableFile = (port: number, pid: number): CliError =>
+  new CliError(
+    'port_in_use',
+    `port ${port} is in use by an agentage daemon (pid ${pid}), and daemon.json of this config ` +
+      `folder cannot be read; ${stopAdvice(pid)}`
   );
 
 export const portInUse = (port: number): CliError =>

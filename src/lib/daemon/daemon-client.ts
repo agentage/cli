@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { closeSync, mkdirSync, openSync, renameSync, statSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { childEnv } from '../child-env.js';
@@ -9,6 +9,7 @@ import { compareVersions } from '../update/update-check.js';
 import { VERSION } from '../../utils/version.js';
 import { waitFor } from '../wait.js';
 import {
+  daemonFilePath,
   daemonOff,
   daemonPort,
   EADDRINUSE_EXIT,
@@ -19,6 +20,7 @@ import {
 } from './daemon-file.js';
 import {
   otherFolder,
+  unreadableFile,
   portInUse,
   probe,
   probeRetry,
@@ -37,18 +39,22 @@ export interface EnsureDeps {
   spawn: (port: number) => Promise<SpawnOutcome>;
   stop: () => Promise<StopResult>;
   log: (line: string) => void;
+  // How long a busy port waits for this folder's daemon.json (default LATE_FILE_MS).
+  lateMs?: number;
 }
 
 const START_MS = 30_000;
-
-const isPid = (pid: number, found: Probe): boolean =>
-  found.kind === 'ours' && found.health.pid === pid;
 // Over this the log moves to daemon.log.1 at the next start; one old file is kept.
 export const LOG_CAP = 5 * 1024 * 1024;
+// A busy port: how long daemon.json of this folder may take to appear (written after listen).
+export const LATE_FILE_MS = 2_000;
+
+const answersAs = (pid: number, found: Probe): boolean =>
+  found.kind === 'ours' && found.health.pid === pid;
 
 // Healthy only as the spawned pid: a daemon of another config folder on the port is not ours.
 export const waitForHealth = (port: number, pid: number, timeoutMs = START_MS): Promise<boolean> =>
-  waitFor(async () => isPid(pid, await probe(port, 500)), timeoutMs, {
+  waitFor(async () => answersAs(pid, await probe(port, 500)), timeoutMs, {
     afterMs: PROGRESS_MS,
     line: `waiting for the daemon to start on 127.0.0.1:${port}...`,
   });
@@ -104,15 +110,22 @@ const notStarted = (): CliError =>
     `the daemon did not start: it did not answer; see agentage daemon status and ${daemonLogPath()}`
   );
 
-// Another cli may have started one for this folder at the same time: that one serves (daemon.json).
+// Another cli of this folder may have started one at the same time: its daemon.json can lag.
+const ownLate = async (deps: EnsureDeps, port: number, ms: number): Promise<boolean> =>
+  waitFor(async () => (await lateDaemon(deps)) === port, ms);
+
+// A busy port is ours only through this folder's daemon.json; else it is refused, never used.
+const busyPort = async (deps: EnsureDeps, port: number): Promise<number> => {
+  if (await ownLate(deps, port, deps.lateMs ?? LATE_FILE_MS)) return port;
+  const found = await deps.probe(port);
+  if (found.kind !== 'ours') throw portInUse(port);
+  if (existsSync(daemonFilePath())) throw unreadableFile(port, found.health.pid);
+  throw otherFolder(port, found.health.pid);
+};
+
 const start = async (deps: EnsureDeps, port: number): Promise<number> => {
   const outcome = await deps.spawn(port);
-  if (outcome === 'port-in-use') {
-    if ((await lateDaemon(deps)) === port) return port;
-    const found = await deps.probe(port);
-    if (found.kind === 'ours') throw otherFolder(port, found.health.pid);
-    throw portInUse(port);
-  }
+  if (outcome === 'port-in-use') return busyPort(deps, port);
   if (outcome !== 'ok') {
     const late = await lateDaemon(deps);
     if (late === null) throw notStarted();
@@ -134,7 +147,8 @@ const fromFile = async (file: DaemonFile, deps: EnsureDeps): Promise<number | nu
   // daemon.json is written after the daemon listens: a refused port means a reused pid.
   if (found.kind === 'none') return (removeDaemonFile(), null);
   const health = proven(file, found);
-  if (!health) throw portInUse(file.port);
+  if (!health)
+    throw found.kind === 'ours' ? otherFolder(file.port, found.health.pid) : portInUse(file.port);
   if (!outdated(health)) return file.port;
   await deps.stop();
   const port = await start({ ...deps, log: () => undefined }, daemonPort());
