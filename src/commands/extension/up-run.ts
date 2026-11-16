@@ -136,6 +136,7 @@ type Up = Omit<LocalUp, 'stoppedBy'>;
 const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpContext) => {
   const death = deathOf();
   run.fatal = death.onDied;
+  run.builtAt = Date.now();
   await firstBuild(run, mode, deps.build);
   if (death.died()) throw death.failure();
   const { row, already } = await installFolder(run.host, run.dir);

@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, test, vi } from 'vitest';
 import { output } from '../../test/config-dir.js';
 import { fakeHost, marketRow } from '../../test/host.js';
@@ -35,6 +38,24 @@ describe('reloads after tsc builds (item 7)', () => {
     });
     expect(fake.host.reload).toHaveBeenCalledTimes(2);
     expect(most).toBe(1);
+  });
+
+  test('a save while the first watch build runs reloads once that build is clean', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'up-first-'));
+    mkdirSync(join(dir, 'src', 'api'), { recursive: true });
+    const file = join(dir, 'src', 'api', 'index.ts');
+    writeFileSync(file, 'export {};');
+    utimesSync(file, new Date(1_000), new Date(1_000));
+    const fake = fakeHost([marketRow('demo', '0.1.0')]);
+    const run = { dir, id: 'demo', host: fake.host, npm: async () => undefined, builtAt: 5_000 };
+    await output(async () => {
+      tscReloads(run, lane()).onBuilt(clean(true));
+      await new Promise((done) => setTimeout(done, 20));
+      expect(fake.host.reload).not.toHaveBeenCalled();
+      writeFileSync(file, 'export const v = 2;');
+      tscReloads({ ...run, builtAt: Date.now() - 1_000 }, lane()).onBuilt(clean(true));
+      await vi.waitFor(() => expect(fake.host.reload).toHaveBeenCalledOnce(), { timeout: 5_000 });
+    });
   });
 
   test('no reload while tsc writes the next build; it goes once that build is clean', async () => {

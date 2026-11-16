@@ -1,4 +1,4 @@
-import { cpSync, existsSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { type HostClient } from '../../lib/daemon/host-client.js';
 import { messageOf, type Code } from '../../lib/json-output.js';
@@ -22,7 +22,18 @@ export interface Run {
   fatal?: (why: string, code?: Code) => void;
   // Reload calls that failed in a row.
   failed?: number;
+  // When the build the daemon runs began: a save after it is not in that build.
+  builtAt?: number;
 }
+
+// A save between the start of the running build and the end of the first watch build.
+export const editedSince = (dir: string, since?: number): boolean => {
+  const src = join(dir, 'src');
+  if (since === undefined || !existsSync(src)) return false;
+  return readdirSync(src, { recursive: true, withFileTypes: true }).some(
+    (f) => f.isFile() && statSync(join(f.parentPath, f.name)).mtimeMs >= since
+  );
+};
 
 // A daemon that refuses the call three times in a row will not take the next save either.
 export const RELOAD_STRIKES = 3;
@@ -97,7 +108,9 @@ export const tscReloads = (run: Run, inLane: (task: Task) => Promise<void>) => {
   const onBuilt = ({ errors, ms, first }: TscBuilt): void => {
     state.building = false;
     if (errors > 0) console.error(`build     ${errors} error(s), no reload`);
-    if (errors === 0 && !first) Object.assign(state, { pending: true, since: Date.now() - ms });
+    // The first watch build is the running one, unless a save came in while it built.
+    const changed = !first || editedSince(run.dir, run.builtAt);
+    if (errors === 0 && changed) Object.assign(state, { pending: true, since: Date.now() - ms });
     if (state.pending) void go();
   };
   return { onChange: () => void (state.building = true), onBuilt };
