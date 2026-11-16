@@ -7,6 +7,7 @@ import { folderRow } from './install-once.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { execIn, type Exec } from './release-guard.js';
 import { assertOwnStack } from './stack-owner.js';
+import { removeStage } from './up-build.js';
 import { readRecord, stopLocal, type LocalDown, type UpRecord } from './up-local.js';
 import { runLocalUp } from './up-run.js';
 
@@ -90,6 +91,8 @@ const stopAndRemove = async (dir: string, host: Host, stopMs: number) => {
   let down: LocalDown = 'none';
   try {
     down = (await stopLocal(dir, stopMs)).down;
+    // Only once no up runs: a killed up leaves its stage in the config cache.
+    removeStage(dir);
     if (down !== 'none') lines.push(LOCAL_LINES[down]);
   } finally {
     lines.push(...(await removeAdded(dir, record, host)));

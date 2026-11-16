@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
 import { takeExit } from '../../lib/exit-code.js';
@@ -17,7 +17,7 @@ import {
   writeRecord,
   type UpRecord,
 } from './up-local.js';
-import { stageOf } from './up-build.js';
+import { prepareStage, stageOf } from './up-build.js';
 import { runLocalUp, type LocalUpDeps } from './up-run.js';
 import { markOf, startedAt, type ProcessMark } from '../../lib/proc/start-time.js';
 import { runExtensionDown } from './up.js';
@@ -287,6 +287,16 @@ describe('how an up ends', () => {
     const run = await output(async () => void refuseRunning(dir.at('w')));
     expect(run.stderr).toContain(`stopped   the tsc watch (pid ${child.pid}) of an up that ended`);
     expect(await exited).toBe('SIGTERM');
+  });
+
+  test('down after a killed up removes its stage from the config cache', async ({ dir }) => {
+    const folder = workingCopy(dir);
+    dir.write('demo/node_modules/m/index.js', '');
+    prepareStage(folder);
+    writeRecord(folder, rec(ENDED, false));
+    await output(() => runExtensionDown({ dir: folder }, undefined, async () => fakeHost().host));
+    expect(existsSync(stageOf(folder))).toBe(false);
+    expect(existsSync(join(folder, 'node_modules/m/index.js'))).toBe(true);
   });
 
   test('down removes the row up added even when that up does not stop', async ({ dir }) => {
