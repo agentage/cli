@@ -785,7 +785,8 @@ every command that needs the daemon fail with `daemon_disabled`; nothing starts.
 The daemon writes its output, and each extension's, to `<config>/logs/daemon.log`; at each start
 a log over 5 MB moves to `daemon.log.1` (one old file is kept). A daemon that cannot bind its port
 exits 3. `status`, `stop` and `restart` exit 0 when no daemon runs; `status` says when a pid does
-not answer, and `stop` says when it removed a stale `daemon.json`. With `--json`, `data` is
+not answer (after 3 tries of 2 s, with one wait line on stderr past 3 s) or when another program
+answers on its port, and `stop` says when it removed a stale `daemon.json`. With `--json`, `data` is
 `{ running, pid, port, version, status, extensions }` (or `{ running: false, unresponsive, pid,
 port }`), `{ stopped }` and `{ port }`; `status` adds `move`, the report of the
 [move from the old lists](#the-move-from-the-old-lists), and prints its warning and skipped entries.
