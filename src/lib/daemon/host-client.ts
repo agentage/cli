@@ -78,6 +78,13 @@ const unreachable = (port: number, err: unknown, ms: number, method: string): Cl
   return new CliError('timeout', `${after}; ${look}`);
 };
 
+// A body that is no envelope is not the daemon's answer (a proxy, a crash page, another program).
+const foreign = (port: number, status: number): CliError =>
+  new CliError(
+    'daemon_unavailable',
+    `127.0.0.1:${port} answered HTTP ${status} with no agentage answer; agentage daemon status shows what runs there, agentage daemon restart starts it again`
+  );
+
 type Send = <T>(method: string, path: string, body?: object, kind?: string) => Promise<T>;
 type Token = () => string | undefined;
 
@@ -133,8 +140,9 @@ const sendOnce = async <T>(
     throw unreachable(to.port, err, ms, kind);
   });
   const parsed: unknown = await res.json().catch(() => null);
-  if (!res.ok || !isRecord(parsed) || parsed['success'] !== true)
-    throw daemonFailure(res.status, parsed);
+  if (!isRecord(parsed) || typeof parsed['success'] !== 'boolean')
+    throw foreign(to.port, res.status);
+  if (!res.ok || parsed['success'] !== true) throw daemonFailure(res.status, parsed);
   return parsed['data'] as T;
 };
 
