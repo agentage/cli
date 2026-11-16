@@ -82,19 +82,25 @@ describe('package guard (the core)', () => {
     expect(defineExtension(extension)).toBe(extension);
   });
 
-  // express and pglite: the kit's daemon (`@agentage/extension/host`) needs them at runtime.
-  it('runtime dependencies are the core set plus the two the kit daemon runs on', () => {
+  // express and pglite: the kit daemon; shell-dashboard: the page it serves; esbuild, postcss and
+  // tailwind: the kit's app build for `extension up` (S1.2.3), resolved beside the kit.
+  it('runtime dependencies are the core set plus what the kit daemon and app build run on', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
       dependencies: Record<string, string>;
       bin: Record<string, string>;
     };
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
       '@agentage/extension',
+      '@agentage/shell-dashboard',
       '@electric-sql/pglite',
+      '@tailwindcss/postcss',
       'chalk',
       'commander',
+      'esbuild',
       'express',
       'open',
+      'postcss',
+      'tailwindcss',
     ]);
     expect(pkg.bin['agentage']).toBe('./dist/cli.js');
   });

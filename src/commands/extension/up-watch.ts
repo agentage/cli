@@ -21,11 +21,19 @@ export const watchFolder = (
 ): Stoppable => {
   if (!existsSync(dir)) return { stop: () => undefined };
   let timer: NodeJS.Timeout | undefined;
-  const watcher = watch(dir, { recursive: true }, (_event, file) => {
-    if (file && skip(file)) return;
-    clearTimeout(timer);
-    timer = setTimeout(onChange, debounceMs);
-  });
+  // Linux recursive watches lose a file an editor saved by rename (seen as `change`): re-armed each time.
+  const fire = (): void => {
+    watcher.close();
+    watcher = arm();
+    onChange();
+  };
+  const arm = () =>
+    watch(dir, { recursive: true }, (_event, file) => {
+      if (file && skip(file)) return;
+      clearTimeout(timer);
+      timer = setTimeout(fire, debounceMs);
+    });
+  let watcher = arm();
   return { stop: () => (clearTimeout(timer), watcher.close()) };
 };
 
