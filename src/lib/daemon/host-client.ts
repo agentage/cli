@@ -51,7 +51,14 @@ export interface HostReload {
 }
 
 // An install runs npm (the daemon waits up to 660 s), then starts the child: past that it is stuck.
-const WAITS = { read: 10_000, change: 12 * 60_000 };
+// A reload stops one child and starts the next behind the 30 s request gate: past 60 s it is stuck.
+const WAITS: Waits = { read: 10_000, change: 12 * 60_000, reload: 60_000 };
+
+export interface Waits {
+  read: number;
+  change: number;
+  reload?: number;
+}
 
 // A change can finish after this wait (queue and installer 11 min each); /health lists it pending.
 const LOOK: Record<string, string> = {
@@ -59,6 +66,7 @@ const LOOK: Record<string, string> = {
   POST: 'the daemon may still finish the install: agentage daemon status shows it under pending, then agentage extension list shows if it was installed',
   PATCH:
     'the daemon may still finish the change: agentage daemon status shows it under pending, then agentage extension list shows the version',
+  RELOAD: 'agentage extension list shows its state; agentage daemon restart if it stays so',
 };
 
 // A timed-out change may still finish in the daemon: say how to look, never that it failed.
@@ -70,7 +78,7 @@ const unreachable = (port: number, err: unknown, ms: number, method: string): Cl
   return new CliError('timeout', `${after}; ${look}`);
 };
 
-type Send = <T>(method: string, path: string, body?: object) => Promise<T>;
+type Send = <T>(method: string, path: string, body?: object, kind?: string) => Promise<T>;
 type Token = () => string | undefined;
 
 const headersOf = (
@@ -96,7 +104,7 @@ type Same = (port: number) => Promise<boolean>;
 
 interface Target {
   port: number;
-  waits: typeof WAITS;
+  waits: Waits;
   token: Token;
   same: Same;
 }
@@ -104,8 +112,17 @@ interface Target {
 // A retry with a new token only when daemon.json still names this port and its pid answers there.
 export const sameDaemon: Same = async (port) => (await provenPort()) === port;
 
-const sendOnce = async <T>(to: Target, method: string, path: string, body?: object): Promise<T> => {
-  const ms = method === 'GET' ? to.waits.read : to.waits.change;
+const waitOf = ({ waits }: Target, kind: string): number =>
+  kind === 'GET' ? waits.read : kind === 'RELOAD' ? (waits.reload ?? waits.read) : waits.change;
+
+const sendOnce = async <T>(
+  to: Target,
+  method: string,
+  path: string,
+  body?: object,
+  kind = method
+): Promise<T> => {
+  const ms = waitOf(to, kind);
   const res = await fetch(`http://127.0.0.1:${to.port}${path}`, {
     method,
     headers: headersOf(body, to.token()),
@@ -113,7 +130,7 @@ const sendOnce = async <T>(to: Target, method: string, path: string, body?: obje
     signal: AbortSignal.timeout(ms),
     redirect: 'error',
   }).catch((err: unknown) => {
-    throw unreachable(to.port, err, ms, method);
+    throw unreachable(to.port, err, ms, kind);
   });
   const parsed: unknown = await res.json().catch(() => null);
   if (!res.ok || !isRecord(parsed) || parsed['success'] !== true)
@@ -127,11 +144,11 @@ const refused = (err: unknown): err is DaemonError =>
 // 401 or 403 is refused before any change: daemon.json is read again (a new daemon), once.
 const sender =
   (to: Target): Send =>
-  <T>(method: string, path: string, body?: object): Promise<T> =>
-    sendOnce<T>(to, method, path, body).catch(async (err: unknown) => {
+  <T>(method: string, path: string, body?: object, kind = method): Promise<T> =>
+    sendOnce<T>(to, method, path, body, kind).catch(async (err: unknown) => {
       if (!refused(err)) throw err;
       if (!(await to.same(to.port))) throw tokenRefused(err);
-      return sendOnce<T>(to, method, path, body).catch((again: unknown) => {
+      return sendOnce<T>(to, method, path, body, kind).catch((again: unknown) => {
         throw refused(again) ? tokenRefused(again) : again;
       });
     });
@@ -150,6 +167,6 @@ export const hostClient = (
     add: (body) => send('POST', '/host/extensions', body),
     change: (id, patch) => send('PATCH', at(id), patch),
     remove: (id, purge) => send('DELETE', `${at(id)}${purge ? '?purge=true' : ''}`),
-    reload: (id) => send('POST', `${at(id)}/reload`, {}),
+    reload: (id) => send('POST', `${at(id)}/reload`, {}, 'RELOAD'),
   };
 };

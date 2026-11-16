@@ -159,6 +159,11 @@ describe('the C5 client of the daemon', () => {
         /; the daemon may still finish the change: agentage daemon status shows it under pending, then agentage extension list shows the version$/
       ),
     });
+    const reload = hostClient(port, { read: 100, change: 60_000, reload: 150 }).reload('demo');
+    await expect(reload).rejects.toMatchObject({
+      code: 'timeout',
+      message: `the daemon on 127.0.0.1:${port} did not answer in 0.15 s; agentage extension list shows its state; agentage daemon restart if it stays so`,
+    });
     silent.closeAllConnections();
     await new Promise((done) => silent.close(done));
   });
