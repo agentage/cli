@@ -51,8 +51,8 @@ export interface HostReload {
 }
 
 // An install runs npm (the daemon waits up to 660 s), then starts the child: past that it is stuck.
-// A reload stops one child and starts the next behind the 30 s request gate: past 60 s it is stuck.
-const WAITS: Waits = { read: 10_000, change: 12 * 60_000, reload: 60_000 };
+// A reload: drain 10 s, start and health 60 s each, and the same again to restore: past 5 min stuck.
+const WAITS: Waits = { read: 10_000, change: 12 * 60_000, reload: 5 * 60_000 };
 
 export interface Waits {
   read: number;
