@@ -33,7 +33,7 @@ describe('the up record of a folder', () => {
   test('down removes the record and waits for that up to exit; one that does not is stop_failed', async ({
     dir,
   }) => {
-    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 400)']);
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 2000)']);
     writeRecord(dir.at('w'), rec(child.pid ?? 0, false));
     expect((await stopLocal(dir.at('w'))).down).toBe('stopped');
     expect(dir.exists('w/.agentage/up.json')).toBe(false);

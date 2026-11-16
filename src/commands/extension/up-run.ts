@@ -161,6 +161,14 @@ interface Watching {
   up: Up;
 }
 
+// No record is left for down to read, so a row this up added goes with the cancelled start.
+const cancelled = async (run: Run, up: Up, err: unknown): Promise<never> => {
+  if (up.added && err instanceof CliError && err.code === 'cancelled') {
+    if (await folderRow(run.host, up.id, run.dir)) await run.host.remove(up.id, false);
+  }
+  throw err;
+};
+
 // A record down removed meanwhile, or one that cannot be written, still stops the tsc it started.
 const watchUntilStopped = async (run: Run, mode: UpMode, w: Watching): Promise<string> => {
   const { watchers, tscPid } = startWatch(run, mode, w.death.onDied);
@@ -173,7 +181,7 @@ const watchUntilStopped = async (run: Run, mode: UpMode, w: Watching): Promise<s
       id: w.up.id,
       added: w.up.added,
       ...(tsc && { tsc }),
-    });
+    }).catch((err: unknown) => cancelled(run, w.up, err));
     ready(w.up, w.ctx.json);
     return await w.deps.stopped(run.dir, nonce, w.death.ended);
   } finally {

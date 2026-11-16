@@ -81,13 +81,13 @@ export const claimFolder = (dir: string, nonce: string, id: string): Promise<UpR
     return before;
   });
 
-// A record that is no longer this up's (down ran during the start) stops the start; locked as down is.
+// A record that is no longer this up's (down ran, or a second up took it) stops the start; locked as down is.
 export const rewriteRecord = (dir: string, record: UpRecord): Promise<void> =>
   withFileLock(recordPath(dir), () => {
     if (readRecord(dir)?.nonce !== record.nonce)
       throw new CliError(
         'cancelled',
-        `extension down ran for ${dir} while up started; run extension down again to remove its row`
+        `the record of this up for ${dir} changed while it started (extension down, or another up)`
       );
     writeRecord(dir, record);
   });

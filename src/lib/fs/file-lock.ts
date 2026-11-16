@@ -74,6 +74,10 @@ const createLockExclusive = (path: string, content: string): void => {
   writeFileSync(tmp, content);
   try {
     linkSync(tmp, path);
+  } catch (err) {
+    // No hard links on the volume (exFAT, some SMB or Docker mounts): an exclusive create instead.
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') throw err;
+    writeFileSync(path, content, { flag: 'wx' });
   } finally {
     unlinkQuiet(tmp);
   }

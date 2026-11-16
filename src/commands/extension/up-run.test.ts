@@ -322,7 +322,10 @@ setInterval(() => {}, 1000);`;
     made.deps.build = async (at) => (removeRecord(at), build(at));
     const run = await output(() => runLocalUp(folder, made.deps));
     expect(run).toMatchObject({ code: 'cancelled' });
-    expect(run.error).toMatch(/^extension down ran for .* while up started/);
+    expect(run.error).toMatch(/^the record of this up for .* changed while it started/);
+    // The record is gone, so no down can find the row up added: up removes it itself.
+    expect(made.fake.host.add).toHaveBeenCalled();
+    expect(made.fake.host.remove).toHaveBeenCalledWith('demo', false);
     // A tsc left running writes its pid within the wait; a stopped one is gone or never wrote it.
     await new Promise((done) => setTimeout(done, 1_500));
     const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null;
