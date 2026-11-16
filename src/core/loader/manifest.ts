@@ -121,8 +121,7 @@ const engineProblem = (engine: string, version: string, against: string): string
 // C10 (D8): the oldest kit minor this cli runs; it moves only with a breaking ctx change.
 export const KIT_FLOOR = '0.12';
 
-// Every minor from KIT_FLOOR up to the one below the bundled kit: their part modules and command
-// contract are those of the bundled kit (the update smoke proves it).
+// KIT_FLOOR up to the bundled minor: they share its parts and command contract (the update smoke).
 export const olderKitMinors = (kit: string = kitVersion()): string[] => {
   const [major, minor] = kit.split('.').map(Number);
   const [floorMajor, floor] = KIT_FLOOR.split('.').map(Number);

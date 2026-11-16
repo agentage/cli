@@ -53,8 +53,7 @@ export interface HostReload {
 // An install runs npm (the daemon waits up to 660 s), then starts the child: past that it is stuck.
 const WAITS = { read: 10_000, change: 12 * 60_000 };
 
-// The kit's queue and installer can each take 11 min, so a change can still finish after this
-// wait; /health lists it under pending until it ends.
+// A change can finish after this wait (queue and installer 11 min each); /health lists it pending.
 const LOOK: Record<string, string> = {
   GET: 'agentage daemon status',
   POST: 'the daemon may still finish the install: agentage daemon status shows it under pending, then agentage extension list shows if it was installed',

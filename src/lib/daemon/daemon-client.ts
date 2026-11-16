@@ -56,7 +56,7 @@ const answersAs = (pid: number, found: Probe): boolean =>
 
 const announced = (pid: number): boolean => readDaemonFile()?.pid === pid;
 
-// Healthy only as the spawned pid, and once its daemon.json (the host token) is written after listen.
+// Healthy only as the spawned pid, once its daemon.json (the host token) is written.
 export const waitForHealth = (port: number, pid: number, timeoutMs = START_MS): Promise<boolean> =>
   waitFor(async () => answersAs(pid, await probe(port, 500)) && announced(pid), timeoutMs, {
     afterMs: PROGRESS_MS,

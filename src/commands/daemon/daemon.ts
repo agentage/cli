@@ -33,8 +33,7 @@ const report = (file: DaemonFile, found: Health & HealthMarks): DaemonStatus => 
   return { running: true, port: file.port, ...live, ...(reasons.length > 0 && { reasons }) };
 };
 
-// Reads only: a stale daemon.json is left for the next start or stop to remove.
-// The D6 move's warning or skipped entries, until the user fixes them.
+// The D6 move's warning or skipped entries; reads only, a stale daemon.json stays.
 const moveLines = (): { move: MoveReport | null } => {
   const move = readMoveReport();
   if (move?.warning) console.log(`move: ${move.warning}`);
@@ -75,8 +74,7 @@ export const runDaemonStop = async (stop = () => stopDaemon()): Promise<{ stoppe
 
 const SETTLE_MS = 60_000;
 
-// Row 4 of S1.1.2: after a restart the extensions answer; a child still `starting` is waited for.
-// Gives the ids still starting when the wait ran out ([] once none is).
+// Row 4 of S1.1.2: the ids still `starting` when the wait ran out ([] once none is).
 export const settled = async (
   port: number,
   look = probeRetry,

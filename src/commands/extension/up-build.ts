@@ -14,8 +14,7 @@ import { basename, join, resolve } from 'node:path';
 import { getConfigDir } from '../../lib/fs/config.js';
 import { buildScriptOf, type Npm } from './package-build.js';
 
-// D13 revised: the folder's own tsc watches when the build script starts with plain tsc; else
-// the whole build script runs in a staging copy. `rest`: the script after the tsc step (the widget bundle).
+// D13: a build script that starts with plain tsc is watched (`rest` after it); else staged.
 export type UpMode =
   | { kind: 'tsc'; tsc: string; config: string; rest: string | null }
   | { kind: 'stage'; script: string | null };
@@ -67,8 +66,7 @@ export const removeStage = (dir: string): void => {
   rmSync(stageOf(dir), { recursive: true, force: true });
 };
 
-// A copy of the folder with its node_modules linked: the build there never touches the live dist.
-// No .env*, coverage, .git or dist*; a `../` path in the build script resolves from the cache.
+// A copy with node_modules linked, no .env*, coverage, .git or dist*: never the live dist.
 export const prepareStage = (dir: string): string => {
   const stage = stageOf(dir);
   removeStage(dir);

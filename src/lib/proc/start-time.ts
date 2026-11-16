@@ -16,8 +16,7 @@ const fromPs = (pid: number): string | null =>
 
 export type ReadStart = (pid: number) => string | null;
 
-// When a pid started: a pid plus this proves one process, a reused pid has another.
-// Windows has neither /proc nor ps: null there, so a process is never proven and never signalled.
+// Pid plus start time proves one process; null on Windows (no /proc, no ps): never signalled.
 export const startedAt: ReadStart = (pid) => {
   if (!isPid(pid) || process.platform === 'win32') return null;
   try {

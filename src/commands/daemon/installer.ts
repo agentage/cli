@@ -35,8 +35,7 @@ export const installError = (code: string, status: 400 | 404 | 502, message: str
 const marketDown = (id: string, why: CliError): Error =>
   installError(why.code.toUpperCase(), 502, `${id}: ${why.message}`);
 
-// With a market only the scoped name (anyone can publish the unscoped one); on a site with no
-// market the name id was installed under, else both names, as cli 0.51.1.
+// A market: the scoped name only (anyone can publish the other); no market: as cli 0.51.1.
 const npmName = (id: string, down: CliError | null): string =>
   noSiteMarket(down) ? (installedName(id) ?? id) : `@agentage/extension-${id}`;
 
@@ -81,7 +80,7 @@ const tagged = async (input: string, registry: Registry): Promise<Found | null> 
   return null;
 };
 
-// The one exact version npm has for the input: a range, a version, a dist-tag, or the newest that fits.
+// The one exact version npm has for a range, a version, a dist-tag, or the newest that fits.
 const exact = async (input: string, registry: Registry): Promise<Found> => {
   if (distTagOf(input)) {
     const found = await tagged(input, registry);
@@ -115,8 +114,7 @@ const fetched = async (id: string, found: Found, deps: InstallerDeps): Promise<s
   });
 };
 
-// The daemon's installer: a version on disk (its own tree or the 0.51 one) needs no network;
-// otherwise the market, then npm into one folder per version (idempotent).
+// A version on disk needs no network; else the market, then npm into one folder per version.
 export const cliInstaller =
   (deps: InstallerDeps): Installer =>
   async ({ id, version }) => {
@@ -135,8 +133,7 @@ export const cliInstaller =
     return { id, version: found.version, dir };
   };
 
-// The newest version npm has that this cli can run, of the name id was installed under (update
-// on a site with no market); never another npm name for an installed row.
+// No market: the newest runnable version of the npm name the row was installed under, no other.
 export const npmNewest =
   (manifest: () => Promise<NpmManifest>) =>
   async (id: string): Promise<string> =>

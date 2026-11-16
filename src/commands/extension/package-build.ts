@@ -39,7 +39,7 @@ const deadline = (child: ChildProcess, timeoutMs: number, graceMs: number) => {
   return { late: () => late, stop: () => (clearTimeout(timer), clearTimeout(kill)) };
 };
 
-// npm's output goes to stderr (a --json stdout stays one object); past its time SIGTERM, then SIGKILL.
+// npm's output to stderr (a --json stdout stays one object); past its time SIGTERM, then SIGKILL.
 export const npmIn = (
   dir: string,
   args: string[],

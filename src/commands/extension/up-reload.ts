@@ -63,8 +63,7 @@ const bundleUi = async (run: Run, rest: string): Promise<void> => {
   console.log(`ui        bundled into dist/ui in ${Date.now() - since} ms (no reload)`);
 };
 
-// A reload only after tsc finished a clean build, never while it writes the next one; a build
-// that ends during a reload gives one more reload after it.
+// A reload only after a clean tsc build, never during one; a build during a reload gives one more.
 export const tscReloads = (run: Run, inLane: (task: Task) => Promise<void>) => {
   const state = { building: false, pending: false, since: 0 };
   const go = coalesced(() =>

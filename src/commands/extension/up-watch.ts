@@ -22,8 +22,7 @@ export const watchFolder = (dir: string, onChange: () => void, debounceMs = 200)
   return { stop: () => (clearTimeout(timer), watcher.close()) };
 };
 
-// One run at a time; a change during a run gives one more run after it, not one per save.
-// A run that throws prints one line: the watch goes on.
+// One run at a time, one more after a change during it; a throw prints one line, the watch goes on.
 export const coalesced = (run: () => Promise<void>): (() => Promise<void>) => {
   let busy = false;
   let again = false;
