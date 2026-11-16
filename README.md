@@ -75,16 +75,14 @@ More: [docs/profiles.md](docs/profiles.md).
 
 ### Write and run your own extension
 
-`create` needs git and network. `build` and `up` also need
-Docker; `release` needs the `gh` CLI.
+`create` needs git and network. `build --container`, `up --docker` and `release` also need
+Docker and a committed tree; `release` needs the `gh` CLI.
 
 ```bash
 agentage extension create example api   # makes ./extension-example with the api part
 cd extension-example && npm ci          # installs the pinned cli
-git init -q && git add -A && git commit -qm init   # up needs one commit
-npx agentage extension up               # runs it with Docker
-npx agentage extension token --scope example:read   # prints a dev token with that scope
-npx agentage extension down             # removes what up started
+npx agentage extension up               # runs it on the daemon, reloads each saved change
+npx agentage extension down             # removes the row up added (its data stays)
 ```
 
 In the extension folder, use `npx agentage`: the project's pinned cli and the global one can differ.
@@ -147,11 +145,11 @@ commit that touches `package.json`. It skips a version already on npm.
 - The publish worked but the tag push failed: push the tag by hand on the release commit
   (`git tag v0.52.0 <release commit> && git push origin v0.52.0`); never publish again.
 - The agentage/e2e cli tier (`e2e.yml` on a PR) is not a required check; `release.yml` runs only
-  its `@smoke` tests before the publish. No workflow runs its lifecycle tests
-  (`AGENTAGE_CLI_LIFECYCLE=1`).
-- Before the release PR merges, check: the PR checks of the release commit are green, and the
-  lifecycle tests of agentage/e2e pass 17 of 17 against the packed tarball of that commit
-  (`AGENTAGE_CLI_TARBALL=<tgz> AGENTAGE_CLI_LIFECYCLE=1 npm run e2e -- cli p0 local`).
+  its `@smoke` tests before the publish. No workflow of this repo runs its lifecycle, execution
+  and reload tests on a candidate; agentage/e2e runs them on its own PRs against the published cli.
+- Before the release PR merges, check: the PR checks of the release commit are green, and the cli
+  project of agentage/e2e passes 48 of 48 against the packed tarball of that commit
+  (`AGENTAGE_CLI_TARBALL=<tgz> npm run test:cli -- --retries=0`).
 
 ## Documentation
 
