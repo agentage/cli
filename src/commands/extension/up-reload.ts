@@ -1,7 +1,7 @@
 import { cpSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { type HostClient } from '../../lib/daemon/host-client.js';
-import { messageOf } from '../../lib/json-output.js';
+import { messageOf, type Code } from '../../lib/json-output.js';
 import { type Npm } from './package-build.js';
 import { NEXT, stagedBuild, type UpMode } from './up-build.js';
 import {
@@ -19,7 +19,7 @@ export interface Run {
   host: HostClient;
   npm: Npm;
   // Stops up with a reason: the build tool is missing, or the reload keeps failing.
-  fatal?: (why: string) => void;
+  fatal?: (why: string, code?: Code) => void;
   // Reload calls that failed in a row.
   failed?: number;
 }
@@ -30,7 +30,8 @@ export const RELOAD_STRIKES = 3;
 const failedReload = (run: Run, why: string): void => {
   console.error(`reload    ${run.id} failed: ${why}`);
   run.failed = (run.failed ?? 0) + 1;
-  if (run.failed >= RELOAD_STRIKES) run.fatal?.(`the reload failed ${run.failed} times in a row`);
+  if (run.failed >= RELOAD_STRIKES)
+    run.fatal?.(`the reload failed ${run.failed} times in a row`, 'daemon_unavailable');
 };
 
 type Task = () => Promise<void>;

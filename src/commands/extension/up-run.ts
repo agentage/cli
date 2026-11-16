@@ -5,7 +5,7 @@ import { isRecord } from '../../lib/fs/json-file.js';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { setExit } from '../../lib/exit-code.js';
-import { CliError } from '../../lib/json-output.js';
+import { CliError, type Code } from '../../lib/json-output.js';
 import { folderRow, installFolder } from './install-once.js';
 import { loadKitTool } from './kit-tool.js';
 import { buildPackage, npmIn, packageOf, type Npm, type PackageBuild } from './package-build.js';
@@ -81,21 +81,22 @@ const firstBuild = async (run: Run, mode: UpMode, build: LocalUpDeps['build']): 
 const deathOf = () => {
   let died: (why: string) => void = () => undefined;
   let reason = '';
+  let code: Code = 'build_failed';
   const ended = new Promise<string>((done) => (died = done));
-  const onDied = (why: string): void => {
+  const onDied = (why: string, as: Code = 'build_failed'): void => {
     if (reason) return;
-    reason = why;
+    [reason, code] = [why, as];
     console.error(`watch     ${why}; extension up stops (run it again)`);
     died('watch died');
   };
-  return { ended, onDied };
+  return { ended, onDied, failure: () => new CliError(code, `extension up stopped: ${reason}`) };
 };
 
-// Ctrl-C is 130 and a closed terminal 129.
-const exitFor = (stoppedBy: string): void => {
+// Ctrl-C is 130 and a closed terminal 129; a watch that died fails, so --json gives the error.
+const exitFor = (stoppedBy: string, failure: () => CliError): void => {
   if (stoppedBy === 'SIGINT') setExit(130);
   if (stoppedBy === 'SIGHUP') setExit(129);
-  if (stoppedBy === 'watch died') setExit(1);
+  if (stoppedBy === 'watch died') throw failure();
 };
 
 // D12: build, the folder as a daemon row, a watch that builds to dist.next and reloads that child.
@@ -151,7 +152,7 @@ const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpCont
     for (const watcher of watchers) watcher.stop();
   }
   stopLine(row.id, stoppedBy, added);
-  exitFor(stoppedBy);
+  exitFor(stoppedBy, death.failure);
   return { ...up, stoppedBy };
 };
 

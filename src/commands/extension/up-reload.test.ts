@@ -74,7 +74,7 @@ describe('up stops instead of sitting silent (reliability)', () => {
       for (let i = 0; i < RELOAD_STRIKES; i += 1) await reload(run, Date.now());
     });
     expect(fatal).toHaveBeenCalledTimes(1);
-    expect(fatal).toHaveBeenCalledWith('the reload failed 3 times in a row');
+    expect(fatal).toHaveBeenCalledWith('the reload failed 3 times in a row', 'daemon_unavailable');
     expect(printed.stderr).toContain('reload    demo failed: the daemon on 127.0.0.1:1: refused');
     expect(
       printed.lines.filter((l) => l.includes('refused: the new child did not start'))

@@ -240,12 +240,33 @@ describe('how an up ends', () => {
     expect(readRecord(folder)?.tsc?.pid).toEqual(expect.any(Number));
   });
 
-  test('a tsc watch that dies stops up with one line and exit 1', async ({ dir }) => {
+  test('a tsc watch that dies stops up with one line and fails (build_failed, exit 1)', async ({
+    dir,
+  }) => {
     const folder = tscCopy(dir, 'process.exit(4);');
     const { deps } = depsOf([], (_dir, _nonce, ended) => ended, stageNpm().npm);
     const run = await output(() => runLocalUp(folder, deps));
     expect(run.stderr).toContain('watch     tsc exited 4; extension up stops (run it again)');
-    expect(takeExit()).toBe(1);
+    expect(run).toMatchObject({
+      code: 'build_failed',
+      error: 'extension up stopped: tsc exited 4',
+    });
+    expect(takeExit()).toBeNull();
+  });
+
+  test('reload calls that keep failing stop up as daemon_unavailable', async ({ dir }) => {
+    const folder = workingCopy(dir);
+    const { deps, fake } = depsOf([folderRow(folder)], (_d, _n, ended) => ended, stageNpm().npm);
+    vi.mocked(fake.host.reload).mockRejectedValue(new Error('the daemon on 127.0.0.1:1: reset'));
+    const up = output(() => runLocalUp(folder, deps));
+    for (let i = 0; i < 3; i += 1) {
+      await vi.waitFor(() => expect(fake.host.reload).toHaveBeenCalledTimes(i + 1));
+      writeFileSync(join(folder, 'src/api/index.js'), `change ${i}`);
+    }
+    expect(await up).toMatchObject({
+      code: 'daemon_unavailable',
+      error: 'extension up stopped: the reload failed 3 times in a row',
+    });
   });
 
   test('a closed terminal (SIGHUP) stops the watch, keeps the row, exits 129', async ({ dir }) => {
