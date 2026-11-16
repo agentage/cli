@@ -4,7 +4,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "agentage": ">=0.2.0 <0.16.0"
+    "agentage": ">=0.2.0 <0.17.0"
   },
   "agentage": {
     "id": "pong",
