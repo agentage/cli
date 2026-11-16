@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
 import { takeExit } from '../../lib/exit-code.js';
@@ -7,7 +7,15 @@ import { type HostReload, type HostRow } from '../../lib/daemon/host-client.js';
 import { output, test, type ConfigDir } from '../../test/config-dir.js';
 import { fakeHost } from '../../test/host.js';
 import { type Npm, type PackageBuild } from './package-build.js';
-import { readRecord, recordPath, refuseRunning, stopLocal, writeRecord } from './up-local.js';
+import {
+  readRecord,
+  recordPath,
+  refuseRunning,
+  removeRecord,
+  stopLocal,
+  untilStopped,
+  writeRecord,
+} from './up-local.js';
 import { runLocalUp, type LocalUpDeps } from './up-run.js';
 import { runExtensionDown } from './up.js';
 
@@ -23,6 +31,18 @@ const workingCopy = (dir: Dir): string => {
   dir.write('demo/dist/agentage-extension.json', { id: 'demo' });
   return realpathSync(dir.at('demo'));
 };
+
+// The folder's tsc in watch mode: a first clean build, a change with an error, a clean one.
+const FAKE_TSC = `#!/usr/bin/env node
+console.log('Found 0 errors. Watching for file changes.');
+setTimeout(() => {
+  console.log('File change detected. Starting incremental compilation...');
+  console.log('src/a.ts(1,1): error TS1005: x');
+  console.log('Found 1 error. Watching for file changes.');
+  console.log('Found 0 errors. Watching for file changes.');
+}, 300);
+setTimeout(() => {}, 10000);
+`;
 
 const REPORT = { conforms: true } as PackageBuild['report'];
 
@@ -203,5 +223,40 @@ describe('the up record of a folder', () => {
     expect(readRecord(dir.at('w'))).toBeNull();
     writeFileSync(recordPath(dir.at('w')), 'not json');
     expect(readRecord(dir.at('w'))).toBeNull();
+  });
+});
+
+describe('how an up ends', () => {
+  test('down removes the record: up ends with down; a SIGTERM ends it too', async ({ dir }) => {
+    writeRecord(dir.at('w'), { pid: process.pid, id: 'demo', added: true });
+    const ended = untilStopped(dir.at('w'), 50);
+    removeRecord(dir.at('w'));
+    expect(await ended).toBe('down');
+    writeRecord(dir.at('w'), { pid: process.pid, id: 'demo', added: true });
+    const signalled = untilStopped(dir.at('w'), 50);
+    process.emit('SIGTERM');
+    expect(await signalled).toBe('SIGTERM');
+  });
+
+  test('a tsc folder: the first build is not reloaded, a later clean one is, an error is not', async ({
+    dir,
+  }) => {
+    const folder = workingCopy(dir);
+    dir.write('demo/package.json', { ...PKG, scripts: { build: 'tsc -p tsconfig.build.json' } });
+    dir.write('demo/node_modules/.bin/tsc', FAKE_TSC);
+    chmodSync(join(folder, 'node_modules/.bin/tsc'), 0o755);
+    const made = depsOf(
+      [],
+      async () => {
+        await vi.waitFor(() => expect(made.fake.host.reload).toHaveBeenCalledOnce(), {
+          timeout: 5_000,
+        });
+        return 'SIGTERM';
+      },
+      stageNpm().npm
+    );
+    const run = await output(() => runLocalUp(folder, made.deps));
+    expect(run.stderr).toContain('build     1 error(s), no reload');
+    expect(run.lines).toContainEqual(expect.stringMatching(/^reload {4}demo reloaded: true in/));
   });
 });

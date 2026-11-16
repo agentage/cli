@@ -56,7 +56,8 @@ const pendingLine = ({ op, id, source, since, timedOut }: PendingChange): string
 // parts, seal and restarts when the daemon reports them (kit 0.15).
 const entryLine = ({ id, version, state, parts, seal, restarts }: HealthEntry): string => {
   const more = [
-    parts && `parts ${parts.length ? parts.join(', ') : 'none'}`,
+    // A starting market entry has no parts yet (kit: `parts: []` until its folder is known).
+    parts?.length && `parts ${parts.join(', ')}`,
     seal && `seal ${seal}`,
     restarts !== undefined && `restarts ${restarts}`,
   ].filter(Boolean);

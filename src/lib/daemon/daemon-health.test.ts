@@ -23,6 +23,10 @@ describe('daemon status of kit 0.15 (C1): parts, seal, restarts', () => {
     expect(healthLines(health({ extensions: [probeEntry] }), [])).toEqual([
       '  probe 0.7.0 running',
     ]);
+    const starting = { ...probeEntry, state: 'starting', parts: [], seal: 'on' as const };
+    expect(healthLines(health({ extensions: [starting] }), [])).toEqual([
+      '  probe 0.7.0 starting; seal on',
+    ]);
   });
 
   it('seal off is a degraded reason with the daemon words; each entry carries them in --json', () => {
