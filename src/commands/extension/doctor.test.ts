@@ -1,4 +1,4 @@
-import { describe, expect, vi } from 'vitest';
+import { describe, expect, onTestFinished, vi } from 'vitest';
 import { install } from '../../test/old-install.js';
 import { fixture, output, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { npmFromFixtures } from '../../test/npm-fixtures.js';
@@ -7,7 +7,8 @@ import { runExtensionDoctor } from './doctor.js';
 import { type KitTool } from './kit-tool.js';
 
 // The kit fixtures accept kit 0.2.0, so this mock holds whatever kit is installed here.
-vi.mock('../../core/kit-version.js', () => ({ kitVersion: () => '0.2.0' }));
+const kit = vi.hoisted(() => ({ version: '0.2.0' }));
+vi.mock('../../core/kit-version.js', () => ({ kitVersion: () => kit.version }));
 
 const check = (json = false) => output(() => runExtensionDoctor({ json }));
 
@@ -117,6 +118,9 @@ describe('agentage extension doctor', () => {
   test('a kit 0.12 extension is ok, with one warning to update it, not a problem', async ({
     dir,
   }) => {
+    // KIT_FLOOR: 0.12 is an older minor of a kit above it.
+    kit.version = '0.15.0';
+    onTestFinished(() => void (kit.version = '0.2.0'));
     const old = writeKitExtension(dir.at('dev/old'), 'old', '0.1.0', '^0.12');
     dir.machine({ '@agentage/extension-old': old });
     const { tool } = kitChecking();

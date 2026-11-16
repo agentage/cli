@@ -2,7 +2,12 @@ import { type Command } from 'commander';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { isAlive, readDaemonFile, type DaemonFile } from '../../lib/daemon/daemon-file.js';
 import { probeRetry, proven, type Health } from '../../lib/daemon/daemon-probe.js';
-import { degradedReasons, healthLines, type HealthMarks } from '../../lib/daemon/daemon-health.js';
+import {
+  degradedReasons,
+  healthLines,
+  withSealError,
+  type HealthMarks,
+} from '../../lib/daemon/daemon-health.js';
 import { stopDaemon, type StopResult } from '../../lib/daemon/daemon-stop.js';
 import { addJson } from '../../lib/json-output.js';
 import { readMoveReport, type MoveReport } from './move.js';
@@ -19,7 +24,8 @@ export type DaemonStatus = (
 ) & { move?: MoveReport | null };
 
 // Degraded always comes with its reasons, in the lines and in --json.
-const report = (file: DaemonFile, live: Health & HealthMarks): DaemonStatus => {
+const report = (file: DaemonFile, found: Health & HealthMarks): DaemonStatus => {
+  const live = withSealError(found);
   console.log(`daemon: ${live.status} on 127.0.0.1:${file.port}, pid ${live.pid}, ${live.version}`);
   const reasons = degradedReasons(live);
   for (const line of healthLines(live, reasons)) console.log(line);

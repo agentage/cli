@@ -1,6 +1,7 @@
 import { isRecord } from '../fs/json-file.js';
-import { CliError, messageOf } from '../json-output.js';
+import { CliError, DaemonError, messageOf } from '../json-output.js';
 import { daemonFailure } from './daemon-answer.js';
+import { daemonFilePath, readHostToken } from './daemon-file.js';
 
 // One row of GET /host/extensions (C5); the daemon may add fields, they pass through.
 export interface HostRow {
@@ -35,6 +36,17 @@ export interface HostClient {
   ) => Promise<HostSummary>;
   change: (id: string, patch: HostPatch) => Promise<HostSummary>;
   remove: (id: string, purge: boolean) => Promise<{ id: string }>;
+  // S1.1.3 L1: the daemon copies <folder>/dist.next to dist and restarts that one child.
+  reload: (id: string) => Promise<HostReload>;
+}
+
+export interface HostReload {
+  id: string;
+  version: string;
+  state: string;
+  pid?: number;
+  reloaded: boolean;
+  refused?: string;
 }
 
 // An install runs npm (the daemon waits up to 660 s), then starts the child: past that it is stuck.
@@ -59,33 +71,76 @@ const unreachable = (port: number, err: unknown, ms: number, method: string): Cl
 };
 
 type Send = <T>(method: string, path: string, body?: object) => Promise<T>;
+type Token = () => string | undefined;
 
+const headersOf = (
+  body: object | undefined,
+  token: string | undefined
+): Record<string, string> => ({
+  ...(body && { 'content-type': 'application/json' }),
+  ...(token && { authorization: `Bearer ${token}` }),
+});
+
+const REFUSED = [401, 403];
+
+// A token that stays refused: daemon.json names another daemon than the one on the port.
+const tokenRefused = (err: DaemonError): DaemonError =>
+  new DaemonError(
+    err.code,
+    `the daemon refused the host token of ${daemonFilePath()} (${err.message}); run agentage daemon restart`,
+    err.status,
+    err.details
+  );
+
+interface Target {
+  port: number;
+  waits: typeof WAITS;
+  token: Token;
+}
+
+const sendOnce = async <T>(to: Target, method: string, path: string, body?: object): Promise<T> => {
+  const ms = method === 'GET' ? to.waits.read : to.waits.change;
+  const res = await fetch(`http://127.0.0.1:${to.port}${path}`, {
+    method,
+    headers: headersOf(body, to.token()),
+    body: body && JSON.stringify(body),
+    signal: AbortSignal.timeout(ms),
+  }).catch((err: unknown) => {
+    throw unreachable(to.port, err, ms, method);
+  });
+  const parsed: unknown = await res.json().catch(() => null);
+  if (!res.ok || !isRecord(parsed) || parsed['success'] !== true)
+    throw daemonFailure(res.status, parsed);
+  return parsed['data'] as T;
+};
+
+const refused = (err: unknown): err is DaemonError =>
+  err instanceof DaemonError && REFUSED.includes(err.status);
+
+// 401 or 403 is refused before any change: daemon.json is read again (a new daemon), once.
 const sender =
-  (port: number, waits: typeof WAITS): Send =>
-  async <T>(method: string, path: string, body?: object): Promise<T> => {
-    const ms = method === 'GET' ? waits.read : waits.change;
-    const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-      method,
-      headers: body ? { 'content-type': 'application/json' } : {},
-      body: body && JSON.stringify(body),
-      signal: AbortSignal.timeout(ms),
-    }).catch((err: unknown) => {
-      throw unreachable(port, err, ms, method);
+  (to: Target): Send =>
+  <T>(method: string, path: string, body?: object): Promise<T> =>
+    sendOnce<T>(to, method, path, body).catch((err: unknown) => {
+      if (!refused(err)) throw err;
+      return sendOnce<T>(to, method, path, body).catch((again: unknown) => {
+        throw refused(again) ? tokenRefused(again) : again;
+      });
     });
-    const parsed: unknown = await res.json().catch(() => null);
-    if (!res.ok || !isRecord(parsed) || parsed['success'] !== true)
-      throw daemonFailure(res.status, parsed);
-    return parsed['data'] as T;
-  };
 
 const at = (id: string): string => `/host/extensions/${encodeURIComponent(id)}`;
 
-export const hostClient = (port: number, waits = WAITS): HostClient => {
-  const send = sender(port, waits);
+export const hostClient = (
+  port: number,
+  waits = WAITS,
+  token: Token = readHostToken
+): HostClient => {
+  const send = sender({ port, waits, token });
   return {
     list: () => send('GET', '/host/extensions'),
     add: (body) => send('POST', '/host/extensions', body),
     change: (id, patch) => send('PATCH', at(id), patch),
     remove: (id, purge) => send('DELETE', `${at(id)}${purge ? '?purge=true' : ''}`),
+    reload: (id) => send('POST', `${at(id)}/reload`, {}),
   };
 };

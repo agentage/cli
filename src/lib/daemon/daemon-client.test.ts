@@ -34,7 +34,7 @@ const deps = (over: Partial<EnsureDeps> = {}): EnsureDeps => ({
 
 describe('the daemon start', () => {
   test('the proven daemon of daemon.json is used; nothing spawns', async ({ dir }) => {
-    dir.write('daemon.json', { pid: process.pid, port: 4999 });
+    dir.write('daemon.json', { pid: process.pid, port: 4999, hostToken: 't' });
     const d = deps({ probe: vi.fn(async () => ours()) });
     expect(await ensureDaemon(d)).toBe(4999);
     expect(d.spawn).not.toHaveBeenCalled();
@@ -101,7 +101,7 @@ describe('the daemon start', () => {
   test('a same or newer daemon serves as it is; never a downgrade restart', async ({ dir }) => {
     const [major, minor] = VERSION.split('.').map(Number);
     for (const version of [VERSION, `${major}.${(minor ?? 0) + 1}.0`, `${(major ?? 0) + 1}.0.0`]) {
-      dir.write('daemon.json', { pid: process.pid, port: 4243 });
+      dir.write('daemon.json', { pid: process.pid, port: 4243, hostToken: 't' });
       const d = deps({ probe: vi.fn(async () => ours(process.pid, version)) });
       expect(await ensureDaemon(d)).toBe(4243);
       expect(d.stop).not.toHaveBeenCalled();
@@ -119,6 +119,19 @@ describe('the daemon start', () => {
       expect(d.log).toHaveBeenCalledOnce();
       expect(vi.mocked(d.log).mock.calls[0]?.[0]).toMatch(/^daemon restarted: it ran /);
     }
+  });
+
+  test('a daemon of cli 0.52 (no hostToken in daemon.json) is restarted, with one line that says so', async ({
+    dir,
+  }) => {
+    dir.write('daemon.json', { pid: process.pid, port: 4243 });
+    const d = deps({ probe: vi.fn(async () => ours()) });
+    expect(await ensureDaemon(d)).toBe(4243);
+    expect(d.stop).toHaveBeenCalledOnce();
+    expect(d.spawn).toHaveBeenCalledWith(4243);
+    expect(vi.mocked(d.log).mock.calls).toEqual([
+      [`daemon restarted: it ran ${VERSION} with no host token`],
+    ]);
   });
 
   test('a busy port: the daemon this folder started at the same time serves; another program is port_in_use naming the variable', async ({

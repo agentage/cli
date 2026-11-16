@@ -54,6 +54,14 @@ const tryOne = async (host: HostClient, entry: ProfileEntry): Promise<string | u
   return row.state === 'failed' ? `${id}: ${row.error ?? 'failed'}` : undefined;
 };
 
+const AGAIN = 'the next setup tries the profile again';
+
+const notInstalled = (problems: string[], account: boolean): CliError =>
+  new CliError(
+    'extension_failed',
+    ['not installed:', ...problems.map((p) => `  ${p}`), ...(account ? [AGAIN] : [])].join('\n')
+  );
+
 // The profile's extensions go through the daemon, which runs them; the cli loads nothing itself.
 // An entry already in the installation is left as it is.
 export const installThroughDaemon = async (
@@ -71,12 +79,8 @@ export const installThroughDaemon = async (
     const problem = await tryOne(host as HostClient, entry);
     if (problem) problems.push(problem);
   }
-  // An empty profile tried nothing: a later setup still installs one with entries.
+  // An empty profile tried nothing, a refused or failed entry is tried again: no marker for either.
+  if (problems.length > 0) throw notInstalled(problems, account);
   if (account && host)
     writeFileSync(profileMarkerPath(), `${new Date().toISOString()}\n`, { mode: 0o600 });
-  if (problems.length > 0)
-    throw new CliError(
-      'extension_failed',
-      ['not installed:', ...problems.map((p) => `  ${p}`)].join('\n')
-    );
 };

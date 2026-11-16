@@ -140,8 +140,14 @@ export const messageOf = (err: unknown): string => {
   return `${err.message}${why}`;
 };
 
-export const writeError = (io: JsonIo, err: unknown, code: string = codeOf(err)): void =>
-  io.writeOut(`${JSON.stringify({ success: false, error: { code, message: messageOf(err) } })}\n`);
+// The daemon's details (C6: { code: START_FAILED, reason }) pass through as it gives them.
+const detailsOf = (err: unknown) =>
+  err instanceof DaemonError && Object.keys(err.details).length > 0 ? { details: err.details } : {};
+
+export const writeError = (io: JsonIo, err: unknown, code: string = codeOf(err)): void => {
+  const error = { code, message: messageOf(err), ...detailsOf(err) };
+  io.writeOut(`${JSON.stringify({ success: false, error })}\n`);
+};
 
 // Progress goes to stderr; a pinned command keeps stdout and we note that it printed.
 const redirectLog = (legacy: boolean): { wrote: () => boolean; restore: () => void } => {

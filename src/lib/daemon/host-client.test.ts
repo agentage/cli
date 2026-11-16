@@ -163,3 +163,53 @@ describe('the C5 client of the daemon', () => {
     await new Promise((done) => silent.close(done));
   });
 });
+
+describe('the host token on /host/* (D11)', () => {
+  const WAITS = { read: 2_000, change: 2_000 };
+
+  it('sends the token of daemon.json as a bearer, and POSTs {} to reload', async () => {
+    const auth: (string | undefined)[] = [];
+    served = await serve((req) => {
+      auth.push(req.headers.authorization);
+      return [200, { success: true, data: { id: 'demo', reloaded: true } }];
+    });
+    const host = hostClient(served.port, WAITS, () => 'tok');
+    expect(await host.reload('demo')).toEqual({ id: 'demo', reloaded: true });
+    expect(served.seen[0]).toMatchObject({ method: 'POST', url: '/host/extensions/demo/reload' });
+    expect(served.seen[0]?.body).toEqual({});
+    expect(auth).toEqual(['Bearer tok']);
+  });
+
+  it('a 401 or 403 reads daemon.json again and retries once: a new daemon answers', async () => {
+    served = await serve((req) =>
+      req.headers.authorization === 'Bearer new'
+        ? [200, { success: true, data: [] }]
+        : [401, fail('UNAUTHORIZED', 'host token required')]
+    );
+    const tokens = ['old', 'new'];
+    const host = hostClient(served.port, WAITS, () => tokens.shift());
+    expect(await host.list()).toEqual([]);
+    expect(served.seen).toHaveLength(2);
+  });
+
+  it('a refusal that stays says what to do, keeps the code, asks no third time', async () => {
+    served = await serve(() => [403, fail('FORBIDDEN', 'The host token is not valid')]);
+    const host = hostClient(served.port, WAITS, () => 'stale');
+    await expect(host.list()).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: expect.stringMatching(
+        /^the daemon refused the host token of .*daemon\.json \(The host token is not valid\); run agentage daemon restart$/
+      ),
+    });
+    expect(served.seen).toHaveLength(2);
+  });
+
+  it('no token in daemon.json sends no authorization header', async () => {
+    const auth: (string | undefined)[] = [];
+    served = await serve(
+      (req) => (auth.push(req.headers.authorization), [200, { success: true, data: [] }])
+    );
+    await hostClient(served.port, WAITS, () => undefined).list();
+    expect(auth).toEqual([undefined]);
+  });
+});

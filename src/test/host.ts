@@ -49,6 +49,10 @@ export const fakeHost = (rows: HostRow[] = []) => {
       );
       return { id };
     }),
+    reload: vi.fn(async (id) => {
+      const r = row(id);
+      return { id, version: r.version, state: r.state, pid: 1000, reloaded: true };
+    }),
   };
   return { host, rows, deps: { host: async () => host } };
 };

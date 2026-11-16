@@ -166,7 +166,9 @@ describe('agentage setup, signed in, and the profile in the account', () => {
     vi.mocked(daemon.host.add).mockRejectedValueOnce(new DaemonError('NOT_FOUND', 'no hello'));
     const run = await setup(account);
     expect(run).toMatchObject({ code: 'extension_failed' });
-    expect(run.error).toBe('not installed:\n  hello: no hello');
+    expect(run.error).toBe(
+      'not installed:\n  hello: no hello\nthe next setup tries the profile again'
+    );
     expect(run.lines).toContain('@other/thing: not an extension, skipped');
   });
 

@@ -104,6 +104,8 @@ export interface InstallDeps extends LifecycleDeps {
   fromNpm?: (id: string, what: string) => Promise<string | null>;
   // True when the site has a market: an unscoped npm name is then refused.
   hasMarket?: (id: string) => Promise<boolean>;
+  // C2: the daemon's reason when it runs children with no seal (below the Node floor).
+  sealOff?: () => Promise<string | null>;
 }
 
 export const runInstall = async (opts: InstallOptions, deps: InstallDeps) => {
@@ -118,6 +120,8 @@ export const runInstall = async (opts: InstallOptions, deps: InstallDeps) => {
   const bare = spec && !spec.version && !already;
   const line = bare && (await deps.fromNpm?.(spec.id, `${spec.id} ${done.version} came`));
   if (line) console.error(line);
+  const seal = await deps.sealOff?.().catch(() => null);
+  if (seal) console.error(seal);
   if (!opts.off) return report(done, already ? ' (already installed)' : '');
   console.error('install --off is now: agentage extension disable <id>');
   return report(await host.change(done.id, { enabled: false }));

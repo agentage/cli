@@ -15,7 +15,17 @@ export interface Health {
   pid: number;
   version: string;
   protocol: number;
-  extensions: { id: string; version: string; state: string }[];
+  extensions: HealthEntry[];
+}
+
+// One entry of /health; kit 0.15 adds parts, seal and restarts (C1).
+export interface HealthEntry {
+  id: string;
+  version: string;
+  state: string;
+  parts?: string[];
+  seal?: 'on' | 'off';
+  restarts?: number;
 }
 
 // What answers on a port: our daemon, another program, nothing (refused), or nothing in time.

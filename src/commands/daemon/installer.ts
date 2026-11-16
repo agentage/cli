@@ -3,7 +3,13 @@ import type { Installer } from '@agentage/extension/host';
 import { installedDir, installedName } from '../../core/installer/old-tree.js';
 import { installPackage, packageDir } from '../../core/installer/package-dir.js';
 import { type Npm, type NpmManifest } from '../../core/installer/npm.js';
-import { registryLookup, resolveName, type Found } from '../../core/installer/resolve.js';
+import {
+  candidatesFor,
+  registryLookup,
+  resolveName,
+  type Found,
+} from '../../core/installer/resolve.js';
+import { isRange } from '../../core/semver-range.js';
 import { editableProfile } from '../../core/profile/profile.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type CliError, messageOf } from '../../lib/json-output.js';
@@ -56,8 +62,33 @@ const resolveError = (err: unknown): Error => {
   return installError('VALIDATION_ERROR', 400, message);
 };
 
-// The one exact version npm has for the input: a range, a version, or the newest that fits.
+// `fixture@broken`: a word that is not a range is a dist-tag, resolved by npm as npm does.
+const DIST_TAG = /^[A-Za-z][\w.-]*$/;
+
+export const distTagOf = (input: string): { name: string; tag: string } | null => {
+  const at = input.lastIndexOf('@');
+  const tag = at > 0 ? input.slice(at + 1) : '';
+  return DIST_TAG.test(tag) && !isRange(tag) ? { name: input.slice(0, at), tag } : null;
+};
+
+const tagged = async (input: string, registry: Registry): Promise<Found | null> => {
+  const { name, tag } = distTagOf(input) ?? { name: '', tag: '' };
+  for (const candidate of candidatesFor(name)) {
+    const found = await registry.find(`${candidate}@${tag}`).catch((err: unknown) => {
+      throw resolveError(err);
+    });
+    if (found) return found;
+  }
+  return null;
+};
+
+// The one exact version npm has for the input: a range, a version, a dist-tag, or the newest that fits.
 const exact = async (input: string, registry: Registry): Promise<Found> => {
+  if (distTagOf(input)) {
+    const found = await tagged(input, registry);
+    if (found) return found;
+    throw installError('NOT_FOUND', 404, `${input}: npm has no such dist-tag`);
+  }
   const target = await resolveName(input, registry).catch((err: unknown) => {
     throw resolveError(err);
   });

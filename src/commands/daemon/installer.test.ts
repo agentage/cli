@@ -11,7 +11,7 @@ import {
 import { type NpmManifest } from '../../core/installer/npm.js';
 import { CliError } from '../../lib/json-output.js';
 import { openMarket, type Market } from '../../lib/net/market.js';
-import { cliInstaller } from './installer.js';
+import { cliInstaller, distTagOf } from './installer.js';
 
 const PKG = '@agentage/fixture-probe';
 
@@ -25,6 +25,47 @@ const installer = async (m: Market) => {
   const deps = { npm: async () => npm, manifest: manifestFromFixtures(), market: () => m };
   return { install: cliInstaller(deps), npm };
 };
+
+// npm's answer to `npm pack <name>@broken --dry-run --json`: the tag names one version.
+const tagging = (tags: Record<string, string>) => async (): Promise<NpmManifest> => {
+  const fixtures = await manifestFromFixtures()();
+  return async (command, spec, registries) => {
+    const at = spec.lastIndexOf('@');
+    const version = tags[spec.slice(at + 1)];
+    if (command !== 'pack' || !version) return fixtures(command, spec, registries);
+    const stdout = JSON.stringify([{ name: spec.slice(0, at), version }]);
+    return { code: 0, stdout, stderr: '' };
+  };
+};
+
+describe('a dist-tag (fixture@broken), resolved as npm does', () => {
+  test('a word that is not a range is a tag; a version or a range is not', () => {
+    expect(distTagOf('@agentage/extension-fixture@broken')).toEqual({
+      name: '@agentage/extension-fixture',
+      tag: 'broken',
+    });
+    for (const spec of ['probe@0.7.0', 'probe@^0.7', 'probe@1.x', 'probe', '@agentage/x'])
+      expect(distTagOf(spec), spec).toBeNull();
+  });
+
+  test('with a market only the scoped name is asked; the tag gives its version; no such tag is 404', async ({
+    dir,
+  }) => {
+    const npm = vi.fn(await npmFromFixtures());
+    const manifest = vi.fn(tagging({ broken: '0.2.0' }));
+    const m = market({ version: '0.2.0', package: PKG });
+    const install = cliInstaller({ npm: async () => npm, manifest, market: () => m });
+    expect(await install({ id: 'probe', version: 'broken' })).toEqual({
+      id: 'probe',
+      version: '0.2.0',
+      dir: dir.at(`extensions/packages/trees/probe@0.2.0/node_modules/${PKG}`),
+    });
+    await expect(install({ id: 'probe', version: 'nope' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      status: 404,
+    });
+  });
+});
 
 describe('the daemon installer', () => {
   test('a bare id takes the market version into its own folder', async ({ dir }) => {

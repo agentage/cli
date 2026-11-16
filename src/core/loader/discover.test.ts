@@ -1,12 +1,13 @@
 import { chmodSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, vi } from 'vitest';
+import { describe, expect, onTestFinished, vi } from 'vitest';
 import { fixture, pkg, test, type ConfigDir } from '../../test/config-dir.js';
 import { extensionsDir } from '../paths.js';
 import { discover, type DiscoveredExtension } from './discover.js';
 
 // The kit fixtures range over kit ^0.2, whatever kit is installed here.
-vi.mock('../kit-version.js', () => ({ kitVersion: () => '0.2.0' }));
+const kit = vi.hoisted(() => ({ version: '0.2.0' }));
+vi.mock('../kit-version.js', () => ({ kitVersion: () => kit.version }));
 
 const [HELLO, WORLD, DUP, PROBE] = [pkg('hello'), pkg('world'), pkg('dup-id'), pkg('probe')];
 
@@ -187,6 +188,9 @@ describe('finding extensions on disk', () => {
   test('a package on kit 0.12 keeps the entry and duplicate checks; a clean one only warns', ({
     dir,
   }) => {
+    // KIT_FLOOR: 0.12 is an older minor of a kit above it.
+    kit.version = '0.15.0';
+    onTestFinished(() => void (kit.version = '0.2.0'));
     const kitPkg = (name: string, id: string, extra: Record<string, unknown> = {}) => ({
       name,
       engines: { agentage: '^0.12' },
