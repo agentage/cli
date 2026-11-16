@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validateManifest } from '@agentage/extension/tool';
@@ -85,9 +85,14 @@ const release = async (w: World = {}, env: Record<string, string> = ENV) => {
   });
   const tool: Partial<KitTool> = {
     readManifest: async () => pkg,
+    // Each compile cleans dist/ (a build script may), then the kit writes this build's record.
     build: async (opts) => (
+      rmSync(join(dir, 'dist'), { recursive: true, force: true }),
       mkdirSync(join(dir, 'dist'), { recursive: true }),
-      writeFileSync(join(dir, 'dist', 'agentage-extension.json'), '{}'),
+      writeFileSync(
+        join(dir, 'dist', opts?.container ? 'agentage-container.json' : 'agentage-extension.json'),
+        opts?.container ? '{"one":1}' : '{"parts":1}'
+      ),
       calls.push(`build push=${String(opts?.push)}${opts?.container ? ' container' : ''}`),
       { id: 'probe', version: '0.1.0', commit: SHA, buildTime: '', images: [] }
     ),
@@ -109,7 +114,7 @@ const release = async (w: World = {}, env: Record<string, string> = ENV) => {
   const printed = await output(async () => {
     result = await runExtensionRelease({ dir }, deps);
   });
-  return { ...printed, result, calls, seen, unbounded, bounds, env: deps.env };
+  return { ...printed, result, calls, seen, unbounded, bounds, env: deps.env, dir };
 };
 
 describe('extension release', () => {
@@ -146,6 +151,13 @@ describe('extension release', () => {
       'gh release create v0.1.0 dist/agentage-extension.json dist/agentage-container.json --title v0.1.0 --notes Images by digest: agentage-extension.json, agentage-container.json -R agentage/probe',
     ]);
     expect(run.calls).toContain('npm publish --access public --provenance --ignore-scripts');
+  });
+
+  test('both records are on disk at attach time, though the second compile cleaned dist/', async () => {
+    const { dir, error } = await release();
+    expect(error).toBeNull();
+    expect(readFileSync(join(dir, 'dist', 'agentage-extension.json'), 'utf8')).toBe('{"parts":1}');
+    expect(readFileSync(join(dir, 'dist', 'agentage-container.json'), 'utf8')).toBe('{"one":1}');
   });
 
   test('a tag that already has a release gets the records uploaded to it', async () => {

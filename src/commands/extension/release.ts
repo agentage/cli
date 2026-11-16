@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Command } from 'commander';
@@ -53,8 +53,11 @@ const attach = async (run: Exec, tag: string, repo: string, names: string[]): Pr
 const buildImages = async (dir: string, oneImage: boolean, tool: LoadKitTool) => {
   await runImageBuild({ push: true, dir }, tool);
   if (!oneImage) return [RECORD];
+  // The second compile may clean dist/: the part record is kept and written back.
+  const record = await readFile(join(dir, 'dist', RECORD));
   // The first build checked this HEAD; its own dist/ output must not read as a change.
   await runImageBuild({ push: true, container: true, dir }, tool, async () => undefined);
+  await writeFile(join(dir, 'dist', RECORD), record);
   return [RECORD, CONTAINER_RECORD];
 };
 
