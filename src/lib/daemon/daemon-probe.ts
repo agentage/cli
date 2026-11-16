@@ -1,6 +1,6 @@
 import { isRecord } from '../fs/json-file.js';
 import { CliError } from '../json-output.js';
-import { type DaemonFile } from './daemon-file.js';
+import { readDaemonFile, type DaemonFile } from './daemon-file.js';
 
 // C4/C5: the protocol this cli speaks; a daemon with another one is restarted.
 // A wait longer than this prints one line on stderr, so a slow start or stop does not look hung.
@@ -66,6 +66,12 @@ export const probeRetry = async (port: number, tries = 3, timeoutMs = 2000): Pro
 // The proof that daemon.json names a daemon of ours: its port answers with the same pid.
 export const proven = (file: DaemonFile, found: Probe): Health | null =>
   found.kind === 'ours' && found.health.pid === file.pid ? found.health : null;
+
+// The port of daemon.json when its daemon is proven there, else null.
+export const provenPort = async (look: (port: number) => Promise<Probe> = probe) => {
+  const file = readDaemonFile();
+  return file && proven(file, await look(file.port)) ? file.port : null;
+};
 
 export const unresponsive = (file: DaemonFile): CliError =>
   new CliError(

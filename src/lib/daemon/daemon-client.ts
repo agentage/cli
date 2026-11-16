@@ -27,6 +27,7 @@ import {
   PROGRESS_MS,
   PROTOCOL,
   proven,
+  provenPort,
   unresponsive,
   type Health,
   type Probe,
@@ -102,10 +103,7 @@ export const defaultEnsureDeps: EnsureDeps = {
 };
 
 // A start that timed out may still have come up late: a proven daemon in daemon.json serves.
-const lateDaemon = async (deps: EnsureDeps): Promise<number | null> => {
-  const file = readDaemonFile();
-  return file && proven(file, await deps.probe(file.port)) ? file.port : null;
-};
+const lateDaemon = (deps: EnsureDeps): Promise<number | null> => provenPort(deps.probe);
 
 const notStarted = (): CliError =>
   new CliError(

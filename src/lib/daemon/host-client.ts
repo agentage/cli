@@ -1,8 +1,8 @@
 import { isRecord } from '../fs/json-file.js';
 import { CliError, DaemonError, messageOf } from '../json-output.js';
 import { daemonFailure } from './daemon-answer.js';
-import { daemonFilePath, readDaemonFile, readHostToken } from './daemon-file.js';
-import { probe, proven } from './daemon-probe.js';
+import { daemonFilePath, readHostToken } from './daemon-file.js';
+import { provenPort } from './daemon-probe.js';
 
 // One row of GET /host/extensions (C5); the daemon may add fields, they pass through.
 export interface HostRow {
@@ -103,10 +103,7 @@ interface Target {
 }
 
 // A retry with a new token only when daemon.json still names this port and its pid answers there.
-export const sameDaemon: Same = async (port) => {
-  const file = readDaemonFile();
-  return file?.port === port && proven(file, await probe(port)) !== null;
-};
+export const sameDaemon: Same = async (port) => (await provenPort()) === port;
 
 const sendOnce = async <T>(to: Target, method: string, path: string, body?: object): Promise<T> => {
   const ms = method === 'GET' ? to.waits.read : to.waits.change;

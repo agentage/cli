@@ -44,14 +44,12 @@ export const isMark = (value: unknown): value is ProcessMark =>
   isRecord(value) && isPid(value['pid']) && typeof value['started'] === 'string';
 
 // The same process still runs: the pid lives and started at the recorded time.
-export const proven = (
-  mark: ProcessMark | undefined | null,
-  read: ReadStart = startedAt
-): boolean => (mark ? read(mark.pid) === mark.started : false);
+export const proven = (mark: ProcessMark | undefined | null): boolean =>
+  mark ? startedAt(mark.pid) === mark.started : false;
 
 // SIGTERM only to a proven process; anything else is left alone and reported.
-export const stopProven = (mark: ProcessMark, read: ReadStart = startedAt): boolean => {
-  if (!proven(mark, read)) return false;
+export const stopProven = (mark: ProcessMark): boolean => {
+  if (!proven(mark)) return false;
   try {
     process.kill(mark.pid, 'SIGTERM');
     return true;
