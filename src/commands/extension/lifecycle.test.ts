@@ -52,6 +52,17 @@ describe('extension install', () => {
       );
   });
 
+  test('a bad install string is refused before the daemon starts', async () => {
+    const host = vi.fn(async () => {
+      throw new Error('the daemon started');
+    });
+    for (const name of ['probe@../x', 'Probe', './nope'])
+      expect((await output(() => runInstall({ name }, { host }))).error, name).not.toMatch(
+        /the daemon started/
+      );
+    expect(host).not.toHaveBeenCalled();
+  });
+
   test('a new id is a POST; the extension runs', async () => {
     const { host, deps } = fakeHost();
     const run = await output(() => runInstall({ name: 'probe' }, deps));
