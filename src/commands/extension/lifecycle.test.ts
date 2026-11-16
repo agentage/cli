@@ -58,7 +58,7 @@ describe('extension install', () => {
     const market = { ...deps, hasMarket: vi.fn(async () => true) };
     expect(await output(() => runInstall({ name }, market))).toMatchObject({
       code: 'invalid_argument',
-      error: `${name}: an unscoped npm name installs only on a site with no market; nothing installed`,
+      error: `${name}: an unscoped npm name installs only on a site with no market; nothing installed; install its folder instead: agentage extension install ./<folder>`,
     });
     expect(host.add).not.toHaveBeenCalled();
     await output(() => runInstall({ name }, { ...deps, hasMarket: vi.fn(async () => false) }));

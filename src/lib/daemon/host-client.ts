@@ -37,7 +37,7 @@ export interface HostClient {
   remove: (id: string, purge: boolean) => Promise<{ id: string }>;
 }
 
-// An install runs npm (up to 10 min in the daemon), then starts the child: past that it is stuck.
+// An install runs npm (the daemon waits up to 660 s), then starts the child: past that it is stuck.
 const WAITS = { read: 10_000, change: 12 * 60_000 };
 
 // The kit's queue and installer can each take 11 min, so a change can still finish after this

@@ -1,4 +1,6 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, vi } from 'vitest';
@@ -13,7 +15,7 @@ import {
   spawnDaemon,
   type EnsureDeps,
 } from './daemon-client.js';
-import { type Probe } from './daemon-probe.js';
+import { otherFolder, type Probe } from './daemon-probe.js';
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -119,11 +121,16 @@ describe('the daemon start', () => {
     }
   });
 
-  test('a busy port: our daemon serves; another program is port_in_use naming the variable', async () => {
-    const spawnBusy = vi.fn(async () => 'port-in-use' as const);
-    expect(await ensureDaemon(deps({ spawn: spawnBusy, probe: vi.fn(async () => ours()) }))).toBe(
-      4243
-    );
+  test('a busy port: the daemon this folder started at the same time serves; another program is port_in_use naming the variable', async ({
+    dir,
+  }) => {
+    const spawnBusy = vi.fn(async () => {
+      dir.write('daemon.json', { pid: process.pid, port: 4243 });
+      return 'port-in-use' as const;
+    });
+    const d = deps({ spawn: spawnBusy, probe: vi.fn(async () => ours()) });
+    expect(await ensureDaemon(d)).toBe(4243);
+    expect(d.log).not.toHaveBeenCalled();
     const taken = deps({
       spawn: spawnBusy,
       probe: vi.fn(async (): Promise<Probe> => ({ kind: 'foreign' })),
@@ -136,6 +143,58 @@ describe('the daemon start', () => {
     await expect(ensureDaemon(silent)).rejects.toThrow(
       /it did not answer; see agentage daemon status and .*daemon\.log/
     );
+  });
+
+  test('a busy port held by the daemon of another config folder: refused, never used, never "started"', async ({
+    dir,
+  }) => {
+    const other = deps({
+      spawn: vi.fn(async () => 'port-in-use' as const),
+      probe: vi.fn(async () => ours(4321)),
+      lateMs: 50,
+    });
+    await expect(ensureDaemon(other)).rejects.toMatchObject({
+      code: 'port_in_use',
+      message: expect.stringMatching(
+        /port 4243 .*daemon \(pid 4321\) of another config folder.*kill 4321/
+      ),
+    });
+    expect(other.log).not.toHaveBeenCalled();
+    expect(dir.exists('daemon.json')).toBe(false);
+  });
+
+  test('a busy port: daemon.json of this folder written late (another cli started it) still serves', async ({
+    dir,
+  }) => {
+    const late = deps({
+      spawn: vi.fn(async () => {
+        setTimeout(() => dir.write('daemon.json', { pid: process.pid, port: 4243 }), 300);
+        return 'port-in-use' as const;
+      }),
+      probe: vi.fn(async () => ours()),
+    });
+    expect(await ensureDaemon(late)).toBe(4243);
+    expect(late.log).not.toHaveBeenCalled();
+  });
+
+  test('a busy port and an unreadable daemon.json of this folder: says so, not another folder', async ({
+    dir,
+  }) => {
+    dir.write('daemon.json', '{not json');
+    const d = deps({
+      spawn: vi.fn(async () => 'port-in-use' as const),
+      probe: vi.fn(async () => ours(4321)),
+      lateMs: 50,
+    });
+    const err = (await ensureDaemon(d).catch((e: unknown) => e)) as Error;
+    expect(err).toMatchObject({ code: 'port_in_use' });
+    expect(err.message).toMatch(/daemon\.json of this config folder cannot be read/);
+    expect(err.message).not.toMatch(/another config folder/);
+  });
+
+  test('the stop advice names taskkill on win32, kill elsewhere', () => {
+    expect(otherFolder(4243, 7, 'win32').message).toContain('taskkill /PID 7 /F');
+    expect(otherFolder(4243, 7, 'linux').message).toContain('kill 7)');
   });
 
   test('a start that timed out uses a proven daemon that came up late', async ({ dir }) => {
@@ -185,5 +244,28 @@ describe('the daemon start', () => {
     writeFileSync(entry, 'process.exit(1);\n');
     expect(await spawnDaemon(1, entry)).toBe('unreachable');
     expect(dir.exists('logs/daemon.log')).toBe(true);
+  });
+
+  // Shape of e2e run 43775263990: another folder's daemon answers on the port while ours exits busy.
+  test('spawn: the daemon of another config folder answering on the port is not a start', async () => {
+    const health = { status: 'ok', service: 'agentage-daemon', pid: 4321, version: VERSION };
+    const body = JSON.stringify({ ...health, protocol: 1, extensions: [] });
+    const folder = mkdtempSync(join(tmpdir(), 'agentage-entry-'));
+    const answered = join(folder, 'answered');
+    // The fake daemon exits busy only once the cli has read the other pid twice: no timer.
+    let asked = 0;
+    const server = createServer((_req, res) => {
+      if (++asked === 2) writeFileSync(answered, '');
+      res.end(body);
+    }).listen(0, '127.0.0.1');
+    await new Promise((resolve) => server.once('listening', resolve));
+    const entry = join(folder, 'busy.mjs');
+    const wait = `setInterval(() => existsSync(${JSON.stringify(answered)}) && process.exit(3), 20);`;
+    writeFileSync(entry, `import { existsSync } from 'node:fs';\n${wait}\n`);
+    try {
+      expect(await spawnDaemon((server.address() as AddressInfo).port, entry)).toBe('port-in-use');
+    } finally {
+      server.close();
+    }
   });
 });

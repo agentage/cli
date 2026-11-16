@@ -44,8 +44,8 @@ describe('the move never stops at one row (kit 0.14 refuses some ids)', () => {
     expect(dir.json(MOVE_REPORT)).toMatchObject({ moved: ['alpha', 'omega'] });
     expect(run.stderr.split('\n')).toEqual([
       'moved 2 extensions into installation.json',
-      `move skipped ${dir.at('dev/sync')}: the id sync is a name the platform owns or not lowercase: the daemon takes no such row`,
-      `move skipped ${dir.at(`dev/${LONG}`)}: the id ${LONG} is longer than 32 characters: the daemon takes no such row`,
+      `move skipped ${dir.at('dev/sync')}: the id sync is a name the platform owns or not lowercase: the daemon takes no such row; give the extension a valid id, then agentage extension install <its folder>`,
+      `move skipped ${dir.at(`dev/${LONG}`)}: the id ${LONG} is longer than 32 characters: the daemon takes no such row; give the extension a valid id, then agentage extension install <its folder>`,
     ]);
     expect(dir.exists(MOVED_MARKER)).toBe(true);
     const before = dir.file('installation.json');
