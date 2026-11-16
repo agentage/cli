@@ -32,6 +32,25 @@ describe('extension install', () => {
     );
   });
 
+  test('after @ only a version, a range or a dist-tag: a path, file:, git+, a URL, a space or a flag is refused', () => {
+    expect(specOf('probe@broken')).toEqual({ id: 'probe', version: 'broken' });
+    expect(specOf('probe@http')).toEqual({ id: 'probe', version: 'http' });
+    for (const bad of [
+      '../x',
+      'file:../x',
+      'git+ssh://h/r.git',
+      'http://h/x',
+      'a b',
+      '--registry=x',
+    ])
+      expect(() => specOf(`probe@${bad}`), bad).toThrow(
+        expect.objectContaining({
+          code: 'invalid_argument',
+          message: expect.stringMatching(/after @ only/),
+        })
+      );
+  });
+
   test('a new id is a POST; the extension runs', async () => {
     const { host, deps } = fakeHost();
     const run = await output(() => runInstall({ name: 'probe' }, deps));

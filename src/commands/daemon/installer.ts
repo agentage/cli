@@ -10,6 +10,7 @@ import {
   type Found,
 } from '../../core/installer/resolve.js';
 import { isRange } from '../../core/semver-range.js';
+import { DIST_TAG, isVersionSpec } from '../../core/installer/version-spec.js';
 import { editableProfile } from '../../core/profile/profile.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type CliError, messageOf } from '../../lib/json-output.js';
@@ -63,8 +64,6 @@ const resolveError = (err: unknown): Error => {
 };
 
 // `fixture@broken`: a word that is not a range is a dist-tag, resolved by npm as npm does.
-const DIST_TAG = /^[A-Za-z][\w.-]*$/;
-
 export const distTagOf = (input: string): { name: string; tag: string } | null => {
   const at = input.lastIndexOf('@');
   const tag = at > 0 ? input.slice(at + 1) : '';
@@ -121,6 +120,12 @@ const fetched = async (id: string, found: Found, deps: InstallerDeps): Promise<s
 export const cliInstaller =
   (deps: InstallerDeps): Installer =>
   async ({ id, version }) => {
+    if (version !== undefined && !isVersionSpec(version))
+      throw installError(
+        'VALIDATION_ERROR',
+        400,
+        `${id}@${version}: not a version, range or dist-tag`
+      );
     const have = version ? installedDir(id, version) : null;
     if (version && have) return { id, version, dir: have };
     const registry = registryLookup(deps.manifest, editableProfile().registries);
