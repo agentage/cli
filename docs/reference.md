@@ -344,7 +344,9 @@ in the config folder and runs each extension as its own process: its api at
   one stderr line says so (`<site> has no extension market; <id> <version> came from npm`). A
   market that answers but does not know the id falls to npm the same way, with the line
   `the market of <site> has no <id>; <id> <version> came from npm`. A market that cannot be
-  reached, answers 5xx or times out stays an error.
+  reached, answers 5xx or times out stays an error. An unscoped name (`agentage-extension-<id>`)
+  resolves only on a site with no market; on a site with a market it is refused and the folder
+  install (`./path`) is the way.
 
 - **list** prints the daemon's rows; a folder row shows `folder` and `--json` adds its `path`.
   `--available` reads the market (paged, 200 per page, at most 20 pages; past that it stops
@@ -699,14 +701,15 @@ after 30 s); `stop` says `stopped` only once the pid is gone, and a pid that out
 5 s is `stop_failed` naming the pid, with `daemon.json` kept. A pid in `daemon.json` must be an
 integer above 1. The command reads `daemon.json` and then:
 
-| Found                                                        | What happens                                                                                                                          |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| no file, or its pid is gone                                  | the stale file is removed and `agentage daemon run` starts detached, in its own process group; the command waits for `/health` (30 s) |
-| the pid lives, its port refuses the connection               | a reused pid (`daemon.json` is written after the daemon listens): the file goes, nothing is signalled, a daemon starts                |
-| the pid lives, the port answers but not as that daemon       | `port_in_use`, naming the port and `AGENTAGE_DAEMON_PORT`; nothing starts                                                             |
-| the pid lives, `/health` does not answer (3 tries, 2 s each) | the file stays; `daemon_unresponsive`, exit 1                                                                                         |
-| a proven daemon of another protocol, or an older version     | it is stopped and started again; one line on stderr (`daemon restarted: ...`); a newer daemon serves as it is, never downgraded       |
-| the port is held by another program at the start             | `port_in_use`, naming the port and `AGENTAGE_DAEMON_PORT`                                                                             |
+| Found                                                                | What happens                                                                                                                              |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| no file, or its pid is gone                                          | the stale file is removed and `agentage daemon run` starts detached, in its own process group; the command waits for `/health` (30 s)     |
+| the pid lives, its port refuses the connection                       | a reused pid (`daemon.json` is written after the daemon listens): the file goes, nothing is signalled, a daemon starts                    |
+| the pid lives, the port answers but not as that daemon               | `port_in_use`, naming the port and `AGENTAGE_DAEMON_PORT`; nothing starts                                                                 |
+| the pid lives, `/health` does not answer (3 tries, 2 s each)         | the file stays; `daemon_unresponsive`, exit 1                                                                                             |
+| a proven daemon of another protocol, or an older version             | it is stopped and started again; one line on stderr (`daemon restarted: ...`); a newer daemon serves as it is, never downgraded           |
+| the port is held by another program at the start                     | `port_in_use`, naming the port and `AGENTAGE_DAEMON_PORT`                                                                                 |
+| the port is held at the start by the daemon of another config folder | `port_in_use`, naming the port and its pid: it is never used as this folder's daemon; `/health` counts only with the pid of `daemon.json` |
 
 A start that waits over 3 s, and a stop that waits over 3 s, print one line on stderr (never on
 stdout, so `--json` stays one object). A start that times out checks `daemon.json` and `/health`

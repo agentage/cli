@@ -51,7 +51,8 @@ const reasonOf = (ext: DiscoveredExtension, id: string | undefined): string | nu
   if (!id) return 'no agentage.id';
   if (ext.problem) return ext.problem;
   const refused = kitIdProblem(id);
-  if (refused) return `${refused}: the daemon takes no such row`;
+  if (refused)
+    return `${refused}: the daemon takes no such row; give the extension a valid id, then agentage extension install <its folder>`;
   return ext.source === 'tree' && !ext.version ? 'no exact version' : null;
 };
 

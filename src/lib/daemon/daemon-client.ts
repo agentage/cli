@@ -18,6 +18,7 @@ import {
   type DaemonFile,
 } from './daemon-file.js';
 import {
+  otherFolder,
   portInUse,
   probe,
   probeRetry,
@@ -39,11 +40,15 @@ export interface EnsureDeps {
 }
 
 const START_MS = 30_000;
+
+const isPid = (pid: number, found: Probe): boolean =>
+  found.kind === 'ours' && found.health.pid === pid;
 // Over this the log moves to daemon.log.1 at the next start; one old file is kept.
 export const LOG_CAP = 5 * 1024 * 1024;
 
-export const waitForHealth = (port: number, timeoutMs = START_MS): Promise<boolean> =>
-  waitFor(async () => (await probe(port, 500)).kind === 'ours', timeoutMs, {
+// Healthy only as the spawned pid: a daemon of another config folder on the port is not ours.
+export const waitForHealth = (port: number, pid: number, timeoutMs = START_MS): Promise<boolean> =>
+  waitFor(async () => isPid(pid, await probe(port, 500)), timeoutMs, {
     afterMs: PROGRESS_MS,
     line: `waiting for the daemon to start on 127.0.0.1:${port}...`,
   });
@@ -74,7 +79,9 @@ export const spawnDaemon = async (port: number, entry = CLI_ENTRY): Promise<Spaw
     child.once('exit', (code) => resolve(code === EADDRINUSE_EXIT ? 'port-in-use' : 'unreachable'))
   );
   child.unref();
-  const healthy = waitForHealth(port).then((ok): SpawnOutcome => (ok ? 'ok' : 'unreachable'));
+  const healthy = waitForHealth(port, child.pid ?? 0).then((ok): SpawnOutcome =>
+    ok ? 'ok' : 'unreachable'
+  );
   return Promise.race([healthy, exited]);
 };
 
@@ -97,11 +104,13 @@ const notStarted = (): CliError =>
     `the daemon did not start: it did not answer; see agentage daemon status and ${daemonLogPath()}`
   );
 
-// Another cli may have started one on the same port at the same time: that one serves.
+// Another cli may have started one for this folder at the same time: that one serves (daemon.json).
 const start = async (deps: EnsureDeps, port: number): Promise<number> => {
   const outcome = await deps.spawn(port);
   if (outcome === 'port-in-use') {
-    if ((await deps.probe(port)).kind === 'ours') return port;
+    if ((await lateDaemon(deps)) === port) return port;
+    const found = await deps.probe(port);
+    if (found.kind === 'ours') throw otherFolder(port, found.health.pid);
     throw portInUse(port);
   }
   if (outcome !== 'ok') {

@@ -45,7 +45,7 @@ const UNSCOPED = 'agentage-extension-';
 const unscoped = (name: string): CliError =>
   new CliError(
     'invalid_argument',
-    `${name}: an unscoped npm name installs only on a site with no market; nothing installed`
+    `${name}: an unscoped npm name installs only on a site with no market; nothing installed; install its folder instead: agentage extension install ./<folder>`
   );
 
 // What 0.51 installed and the daemon does not: say what to type instead.

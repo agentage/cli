@@ -63,6 +63,15 @@ export const unresponsive = (file: DaemonFile): CliError =>
       'try again, or stop that process yourself'
   );
 
+// The daemon of another config folder (AGENTAGE_CONFIG_DIR) holds the port: never used as ours.
+export const otherFolder = (port: number, pid: number): CliError =>
+  new CliError(
+    'port_in_use',
+    `port ${port} is in use by the agentage daemon (pid ${pid}) of another config folder; ` +
+      `stop it (agentage daemon stop with its AGENTAGE_CONFIG_DIR, or kill ${pid}), ` +
+      'or set AGENTAGE_DAEMON_PORT to another port'
+  );
+
 export const portInUse = (port: number): CliError =>
   new CliError(
     'port_in_use',
