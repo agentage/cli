@@ -82,8 +82,8 @@ export const watchTsc = (
     }
   );
   let stopping = false;
-  child.once('error', (err) => stopping || events.onDied(`did not start: ${err.message}`));
-  child.once('exit', (code, signal) => stopping || events.onDied(how(code, signal)));
+  child.once('error', (err) => stopping || events.onDied(`tsc did not start: ${err.message}`));
+  child.once('exit', (code, signal) => stopping || events.onDied(`tsc ${how(code, signal)}`));
   readBuilds(child.stdout, events);
   return { pid: child.pid, stop: () => void ((stopping = true), child.kill()) };
 };

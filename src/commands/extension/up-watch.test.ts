@@ -154,11 +154,11 @@ describe('the watchers of extension up', () => {
     const died = await new Promise((done) =>
       watchTsc(dir.at('t'), mode, { onBuilt: () => undefined, onDied: done })
     );
-    expect(died).toBe('exited 4');
+    expect(died).toBe('tsc exited 4');
     const gone = await new Promise((done) =>
       watchTsc(dir.at('none'), mode, { onBuilt: () => undefined, onDied: done })
     );
-    expect(gone).toMatch(/^did not start: /);
+    expect(gone).toMatch(/^tsc did not start: /);
   });
 
   test('a run that throws prints one line and the next change still runs', async () => {

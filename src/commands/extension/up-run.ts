@@ -77,12 +77,15 @@ const firstBuild = async (run: Run, mode: UpMode, build: LocalUpDeps['build']): 
   if (mode.kind === 'tsc' || mode.script) await stageAndReload(run);
 };
 
-// A watch that ends by itself stops up: one line, and a non-zero exit.
+// A watch that ends by itself, a missing build tool or a reload that keeps failing stops up.
 const deathOf = () => {
   let died: (why: string) => void = () => undefined;
+  let reason = '';
   const ended = new Promise<string>((done) => (died = done));
   const onDied = (why: string): void => {
-    console.error(`watch     tsc ${why}; extension up stops (run it again)`);
+    if (reason) return;
+    reason = why;
+    console.error(`watch     ${why}; extension up stops (run it again)`);
     died('watch died');
   };
   return { ended, onDied };
@@ -128,22 +131,31 @@ const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpCont
   const added = !already || ctx.before?.added === true;
   const nonce = randomUUID();
   const death = deathOf();
+  run.fatal = death.onDied;
   const { watchers, tscPid } = startWatch(run, mode, death.onDied);
-  const url = `http://127.0.0.1:${ctx.port}/api/${row.id}/`;
+  const up = {
+    id: row.id,
+    version: row.version,
+    url: urlOf(ctx.port, row.id),
+    port: ctx.port,
+    added,
+  };
   let stoppedBy: string;
   // A record that cannot be written (read-only or full folder) still stops the tsc it started.
   try {
     const tsc = markOf(tscPid) ?? undefined;
     writeRecord(run.dir, { up: selfMark(), nonce, id: row.id, added, ...(tsc && { tsc }) });
-    ready({ id: row.id, version: row.version, url, port: ctx.port, added }, ctx.json);
+    ready(up, ctx.json);
     stoppedBy = await deps.stopped(run.dir, nonce, death.ended);
   } finally {
     for (const watcher of watchers) watcher.stop();
   }
   stopLine(row.id, stoppedBy, added);
   exitFor(stoppedBy);
-  return { id: row.id, version: row.version, url, port: ctx.port, added, stoppedBy };
+  return { ...up, stoppedBy };
 };
+
+const urlOf = (port: number, id: string): string => `http://127.0.0.1:${port}/api/${id}/`;
 
 // This up: pid and start time; where the start time cannot be read (Windows) it is never proven.
 const selfMark = (): ProcessMark => markOf(process.pid) ?? { pid: process.pid, started: 'unknown' };
