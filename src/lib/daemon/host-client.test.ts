@@ -11,7 +11,10 @@ afterEach(async () => {
   served = undefined;
 });
 
-const fail = (code: string, message: string) => ({ success: false, error: { code, message } });
+const fail = (code: string, message: string, details?: object) => ({
+  success: false,
+  error: { code, message, ...(details && { details }) },
+});
 
 describe('the C5 client of the daemon', () => {
   it('sends each route and gives the data of the envelope', async () => {
@@ -48,23 +51,19 @@ describe('the C5 client of the daemon', () => {
     await expect(host.list()).rejects.toMatchObject({ code: 'error', message: 'HTTP 500' });
   });
 
-  const env = (code: string, message: string, details?: object) => ({
-    success: false,
-    error: { code, message, ...(details && { details }) },
-  });
   const STATUS = 'agentage daemon status';
   const ANSWERS: [string, number, object, string, string][] = [
     [
       '409 installed: the details pass',
       409,
-      env('CONFLICT', 'probe is installed', { id: 'probe', version: '0.6.2' }),
+      fail('CONFLICT', 'probe is installed', { id: 'probe', version: '0.6.2' }),
       'CONFLICT',
       'probe is installed',
     ],
     [
       '409 the installer still runs',
       409,
-      env('CONFLICT', 'the installer of probe still runs', {
+      fail('CONFLICT', 'the installer of probe still runs', {
         op: 'install',
         id: 'probe',
         since: 't',
@@ -76,7 +75,7 @@ describe('the C5 client of the daemon', () => {
     [
       '409 installation.json unreadable',
       409,
-      env(
+      fail(
         'INSTALLATION_UNREADABLE',
         'installation.json cannot be read (EACCES): fix it; no change is written',
         { reason: 'EACCES' }
@@ -87,35 +86,35 @@ describe('the C5 client of the daemon', () => {
     [
       '409 another daemon',
       409,
-      env('DAEMON_RUNNING', 'a daemon (process 7) runs on /c: change it through it'),
+      fail('DAEMON_RUNNING', 'a daemon (process 7) runs on /c: change it through it'),
       'DAEMON_RUNNING',
       'a daemon (process 7) runs on /c: change it through it',
     ],
     [
       '503 a locked file',
       503,
-      env('UNAVAILABLE', 'settings.json is locked by process 7: waited 5000 ms'),
+      fail('UNAVAILABLE', 'settings.json is locked by process 7: waited 5000 ms'),
       'UNAVAILABLE',
       'settings.json is locked by process 7: waited 5000 ms; try again',
     ],
     [
       '503 the daemon stops',
       503,
-      env('UNAVAILABLE', 'the daemon stops'),
+      fail('UNAVAILABLE', 'the daemon stops'),
       'UNAVAILABLE',
       'the daemon stops; try again',
     ],
     [
       '503 a queue that waited: no second try again',
       503,
-      env('UNAVAILABLE', 'other changes ran for 5 ms: try again'),
+      fail('UNAVAILABLE', 'other changes ran for 5 ms: try again'),
       'UNAVAILABLE',
       'other changes ran for 5 ms: try again',
     ],
     [
       '504 the installer timed out',
       504,
-      env('TIMEOUT', 'the installer did not answer in 600000 ms'),
+      fail('TIMEOUT', 'the installer did not answer in 600000 ms'),
       'TIMEOUT',
       `the installer did not answer in 600000 ms; the daemon recorded nothing: when ${STATUS} no longer shows it under pending, run the command again (a download that finished is reused)`,
     ],
