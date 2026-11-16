@@ -53,7 +53,7 @@ export class CliError extends Error {
   }
 }
 
-// The daemon's own code (NOT_FOUND, INVALID_SETTING), passed through as it is, with its details.
+// The daemon's own code (NOT_FOUND, INVALID_SETTING) and details (START_FAILED), as it gives them.
 export class DaemonError extends Error {
   constructor(
     readonly code: string,
@@ -112,11 +112,7 @@ export class WithMeta {
 }
 
 const envelope = (data: unknown): string =>
-  JSON.stringify(
-    data instanceof WithMeta
-      ? { success: true, data: data.data, meta: data.meta }
-      : { success: true, data }
-  );
+  JSON.stringify({ success: true, ...(data instanceof WithMeta ? data : { data }) });
 
 let active = false;
 
@@ -140,12 +136,9 @@ export const messageOf = (err: unknown): string => {
   return `${err.message}${why}`;
 };
 
-// The daemon's details (C6: { code: START_FAILED, reason }) pass through as it gives them.
-const detailsOf = (err: unknown) =>
-  err instanceof DaemonError && Object.keys(err.details).length > 0 ? { details: err.details } : {};
-
 export const writeError = (io: JsonIo, err: unknown, code: string = codeOf(err)): void => {
-  const error = { code, message: messageOf(err), ...detailsOf(err) };
+  const details = err instanceof DaemonError && Object.keys(err.details).length && err.details;
+  const error = { code, message: messageOf(err), ...(details && { details }) };
   io.writeOut(`${JSON.stringify({ success: false, error })}\n`);
 };
 
