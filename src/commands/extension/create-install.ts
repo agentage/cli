@@ -7,7 +7,7 @@ import { CliError } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { confirmed, report, summaryOf, terminalIo, type ConfirmIo } from './lifecycle.js';
 import { ignoreLocal } from './up-local.js';
-import { buildPackage, npmIn, type Npm, type PackageBuild } from './package-build.js';
+import { buildPackage, newerKitLine, npmIn, type Npm, type PackageBuild } from './package-build.js';
 
 export interface CreateInstallDeps {
   npm: Npm;
@@ -62,7 +62,11 @@ const conforms = async (dir: string, deps: CreateInstallDeps): Promise<void> => 
   const { report: checked } = await deps.build(dir);
   if (checked.conforms) return;
   for (const text of (await deps.tool()).checkLines(checked)) console.error(`check     ${text}`);
-  throw new CliError('not_conforming', `${dir} does not conform: agentage extension check`);
+  const newer = newerKitLine(dir);
+  throw new CliError(
+    'not_conforming',
+    newer ?? `${dir} does not conform: agentage extension check`
+  );
 };
 
 // After the scaffold: npm ci, the package build, then the daemon runs the folder (POST {source});

@@ -48,7 +48,20 @@ describe('the C5 client of the daemon', () => {
       message: 'nope is not installed',
     });
     await expect(host.add({ id: 'probe' })).rejects.toMatchObject({ code: 'CONFLICT' });
-    await expect(host.list()).rejects.toMatchObject({ code: 'error', message: 'HTTP 500' });
+    await expect(host.list()).rejects.toMatchObject({
+      code: 'daemon_unavailable',
+      message: expect.stringMatching(
+        /answered HTTP 500 with no agentage answer; agentage daemon status/
+      ),
+    });
+  });
+
+  it('a 200 that is no envelope (another program) is daemon_unavailable, never success', async () => {
+    served = await serve(() => [200, { hello: 'world' }]);
+    await expect(hostClient(served.port).reload('demo')).rejects.toMatchObject({
+      code: 'daemon_unavailable',
+      message: `127.0.0.1:${served.port} answered HTTP 200 with no agentage answer; agentage daemon status shows what runs there, agentage daemon restart starts it again`,
+    });
   });
 
   const STATUS = 'agentage daemon status';
@@ -158,6 +171,11 @@ describe('the C5 client of the daemon', () => {
       message: expect.stringMatching(
         /; the daemon may still finish the change: agentage daemon status shows it under pending, then agentage extension list shows the version$/
       ),
+    });
+    const reload = hostClient(port, { read: 100, change: 60_000, reload: 150 }).reload('demo');
+    await expect(reload).rejects.toMatchObject({
+      code: 'timeout',
+      message: `the daemon on 127.0.0.1:${port} did not answer in 0.15 s; agentage extension list shows its state; agentage daemon restart if it stays so`,
     });
     silent.closeAllConnections();
     await new Promise((done) => silent.close(done));

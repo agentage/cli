@@ -4,7 +4,7 @@ import { delimiter, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { childEnv } from '../../lib/child-env.js';
 import { messageOf } from '../../lib/json-output.js';
-import { how } from './package-build.js';
+import { deadline, how, STEP_MS } from './package-build.js';
 import { NEXT, type UpMode } from './up-build.js';
 
 export interface Stoppable {
@@ -82,8 +82,8 @@ export const watchTsc = (
     }
   );
   let stopping = false;
-  child.once('error', (err) => stopping || events.onDied(`did not start: ${err.message}`));
-  child.once('exit', (code, signal) => stopping || events.onDied(how(code, signal)));
+  child.once('error', (err) => stopping || events.onDied(`tsc did not start: ${err.message}`));
+  child.once('exit', (code, signal) => stopping || events.onDied(`tsc ${how(code, signal)}`));
   readBuilds(child.stdout, events);
   return { pid: child.pid, stop: () => void ((stopping = true), child.kill()) };
 };
@@ -104,11 +104,12 @@ const readBuilds = (out: NodeJS.ReadableStream, events: TscEvents): void => {
 };
 
 // The rest of the build script (the widget bundle) runs in the folder; it writes dist/ui itself.
-export const runRest = (dir: string, rest: string): Promise<boolean> =>
+export const runRest = (dir: string, rest: string, timeoutMs = STEP_MS): Promise<boolean> =>
   new Promise((done) => {
     const bin = join(dir, 'node_modules', '.bin');
     const env = { ...childEnv(), PATH: `${bin}${delimiter}${process.env['PATH'] ?? ''}` };
     const child = spawn(rest, { cwd: dir, env, shell: true, stdio: ['ignore', 2, 2] });
-    child.once('error', () => done(false));
-    child.once('exit', (code) => done(code === 0));
+    const clock = deadline(child, timeoutMs, 1_000);
+    child.once('error', () => (clock.stop(), done(false)));
+    child.once('exit', (code) => (clock.stop(), done(code === 0)));
   });

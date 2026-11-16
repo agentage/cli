@@ -20,7 +20,7 @@ The release after 0.51 changes these. Each line links to its section.
 | `extension list --json`           | `data` is `{ machine, profile, plan, extensions }`                                                               | `data` is the daemon rows `[{ id, version, source, state, enabled, error?, path? }]` ([the envelope](#the---json-envelope))                                                                                                                                                                                                              |
 | Names `install` refuses           | took them                                                                                                        | a package of another scope (`@scope/name`) and an `https:` tarball URL: `invalid_argument`, with `./<folder>` to type instead ([lifecycle](#extension-lifecycle))                                                                                                                                                                        |
 | Error codes                       | snake_case (`not_installed`)                                                                                     | the daemon's codes arrive UPPER_SNAKE (`NOT_FOUND`), the cli's own stay snake_case ([the envelope](#the---json-envelope))                                                                                                                                                                                                                |
-| Exit codes                        | 0, 1, 2                                                                                                          | also 130 (`extension up` stopped by Ctrl-C) and 3 (`daemon run`, its port in use) ([exit codes](#exit-codes))                                                                                                                                                                                                                            |
+| Exit codes                        | 0, 1, 2                                                                                                          | also 130 and 129 (`extension up` stopped by Ctrl-C or a closed terminal) and 3 (`daemon run`, its port in use) ([exit codes](#exit-codes))                                                                                                                                                                                               |
 | A site with no market             | `install <id>` and `update` resolved on npm after any market failure, `market unavailable, versions not checked` | the npm rule only when the site has no discovery document or no market: `install <id>` tries `@agentage/extension-<id>`, then `agentage-extension-<id>`; `update` asks npm for the package name the row was installed under; one stderr line names the site; unreachable, 5xx and timeout are errors ([lifecycle](#extension-lifecycle)) |
 | npm names on a site with a market | a bare id tried `@agentage/extension-<id>`, then `agentage-extension-<id>`                                       | a market without the id: `install <id>` asks npm only for `@agentage/extension-<id>`, one stderr line says so; a typed `agentage-extension-<id>` is refused (`invalid_argument`), it installs only on a site with no market                                                                                                              |
 | `extension update`                | `setup --latest`: `npm update` of the tree, exit 1 when the new tree did not load clean                          | a row the market no longer lists keeps its version, one stderr line `not in the market any more`, exit 0; npm is never asked for it; on a site with no market, an id npm cannot resolve is named and exits 1 (`extension_failed`) after the others updated                                                                               |
@@ -564,7 +564,7 @@ and goes back to the last good build when the new one does not start.
   `typescript`: a warm `node <typescript>/bin/tsc --watch --noEmitOnError --outDir dist.next`
   (no `.bin` shim, so it runs on Windows too). A type or syntax error prints the compiler lines
   and `build     <n> error(s), no reload`. A tsc that exits or does not start stops `up` with
-  `watch     tsc <why>; extension up stops (run it again)` and exit 1.
+  `watch     tsc <why>; extension up stops (run it again)` and fails with `build_failed`.
 - Any other build script (it writes `dist/` in place): a save under `src/` (200 ms debounce)
   copies `src/` into a stage and runs `npm run build` there (npm as `node npm-cli.js`), then
   copies its `dist/` over `dist.next/`. The stage is `<config>/cache/up-stage/<folder>-<hash>/`:
@@ -572,22 +572,29 @@ and goes back to the last good build when the new one does not start.
   `node_modules` a link to the folder's own; `up` removes it when it stops. A `../` path in the
   build script resolves from that cache folder, not from the working copy, and hoisted workspace
   modules above the folder do not resolve; such a package needs a plain `tsc` build. A build
-  that fails prints its own output and `build     failed, no reload: ...`.
+  that fails prints its own output and `build     failed, no reload: ...`. When npm or the
+  script's own tool cannot run (it does not start, or exits 127), `up` stops with `build_failed`
+  (`the build tool is missing`), also at the first build of a folder the daemon already runs.
 - After a build with no error: `POST /host/extensions/<id>/reload` with the host token, and one
   line: `reload    <id> reloaded: true in <ms> ms` (from the change seen to the daemon's answer), or
   `reload    <id> reloaded: false, refused: <why> (<ms> ms)`; the last good build runs. Reloads
   run one at a time, and only after tsc says a build ended clean; a build that ends during a
   reload gives one more reload after it. A step that throws prints `watch     <why>` and the
-  watch goes on.
+  watch goes on. A reload call waits at most 5 min; a reload call that fails (no answer, a
+  timeout, no envelope) prints `reload    <id> failed: <why>`, and three in a row stop `up` with
+  `daemon_unavailable`. A refused reload (`reloaded: false`) does not count.
 - A change under `src/ui` runs the rest of the build script after the `tsc` step (the widget
   bundle). It writes `dist/ui` in place, is copied to `dist.next/ui`, and sends no reload: the
-  daemon serves no ui part in this release, and that build has no time limit (D17).
+  daemon serves no ui part in this release; that build stops after 10 min (no time target, D17).
 
-Ctrl-C stops the watch (exit 130), SIGTERM too (exit 0); the daemon still runs the folder, and
+Ctrl-C stops the watch (exit 130), SIGTERM too (exit 0), and a closed terminal (SIGHUP, exit 129);
+the daemon still runs the folder, and
 `up` prints that `agentage extension down` removes it. Its record (`.agentage/up.json`: the pid
 and start time of `up` and of its tsc, a nonce, the id, and whether `up` added the row) is in the
 folder's `.agentage/`, which `up` adds to the folder's `.gitignore` when it is missing, and says so
-on stderr. A process counts as that `up` or that tsc only when its pid lives and started at the
+on stderr. `up` writes it at the start, under the record's lock, so of two `up` at once the second
+exits 1 (`already_running`); an `up` whose record `down` removed during its start stops with
+`cancelled`. A process counts as that `up` or that tsc only when its pid lives and started at the
 recorded time (`/proc` on Linux, `ps` elsewhere; never on Windows, where nothing is signalled).
 A second `up` of the same folder while the first runs exits 1 (`already_running`); a tsc whose
 `up` was killed is stopped by the next `up` or `down`, one line each. `--local` is the old name of plain `up`, kept for one
@@ -595,7 +602,7 @@ minor: it prints `--local is deprecated (removed in the next minor): extension u
 copy on the daemon` and runs it. Port 4244 and the in-process host of 0.52 are gone. With `--json`
 the lines go to stderr; stdout gets one JSON line when the row runs, `{ "ready": true, "id",
 "version", "url", "port" }`, and the envelope `{ success, data: { id, version, url, port, added,
-stoppedBy } }` when it stops.
+stoppedBy } }` when it stops, or the error envelope when `up` stops by itself.
 
 `up --docker` runs the package the way a deployment does: the part images built with the release
 recipe, the store with its migrations and seeds, a dev token issuer and a local gateway, and
@@ -785,7 +792,8 @@ every command that needs the daemon fail with `daemon_disabled`; nothing starts.
 The daemon writes its output, and each extension's, to `<config>/logs/daemon.log`; at each start
 a log over 5 MB moves to `daemon.log.1` (one old file is kept). A daemon that cannot bind its port
 exits 3. `status`, `stop` and `restart` exit 0 when no daemon runs; `status` says when a pid does
-not answer, and `stop` says when it removed a stale `daemon.json`. With `--json`, `data` is
+not answer (after 3 tries of 2 s, with one wait line on stderr past 3 s) or when another program
+answers on its port, and `stop` says when it removed a stale `daemon.json`. With `--json`, `data` is
 `{ running, pid, port, version, status, extensions }` (or `{ running: false, unresponsive, pid,
 port }`), `{ stopped }` and `{ port }`; `status` adds `move`, the report of the
 [move from the old lists](#the-move-from-the-old-lists), and prints its warning and skipped entries.
@@ -818,8 +826,8 @@ and nothing else there (progress lines go to stderr), and never prompts:
 { "success": false, "error": { "code": "not_installed", "message": "probe is not installed" } }
 ```
 
-An error exits 1, success 0. The one other exit code is 130: `extension up` (also with `--json`)
-stopped by Ctrl-C, after its envelope. A `code` is stable, in one of two forms: the cli's own
+An error exits 1, success 0. The other exit codes are 130 and 129: `extension up` (also with
+`--json`) stopped by Ctrl-C or by a closed terminal, after its envelope. A `code` is stable, in one of two forms: the cli's own
 codes are lowercase snake_case, the daemon's codes are UPPER_SNAKE and pass through unchanged.
 An expected failure (no network, a full disk, a folder you may not write, a market that is not
 there) has its own code and a one-line message, never a stack trace.
@@ -851,7 +859,8 @@ The cli's own codes:
 | `disk_full`           | a write failed: no space left on the disk, or over the quota                                                                                                                                                           |
 | `already_installed`   | `install` of an id that the daemon runs from another folder                                                                                                                                                            |
 | `stop_failed`         | `daemon stop` or `extension down`: the process still runs after the signals                                                                                                                                            |
-| `build_failed`        | npm (the build script, `npm ci`) failed (`exited 3`, `exited by signal SIGINT`), did not finish in 10 min (SIGTERM, then SIGKILL after 5 s), or is not on the PATH                                                     |
+| `build_failed`        | npm (the build script, `npm ci`) failed (`exited 3`, `exited by signal SIGINT`), did not finish in 10 min (SIGTERM, then SIGKILL after 5 s), or is not on the PATH; also `extension up` when its watch stops           |
+| `daemon_unavailable`  | the daemon did not start, went away, answered a body that is no envelope (a 5xx page, another program), or `extension up` stopped after three failed reload calls                                                      |
 
 `no_discovery` and `no_market` name the site and say how to choose another one
 (`AGENTAGE_SITE_FQDN=<site>`). The other market

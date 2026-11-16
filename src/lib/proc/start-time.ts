@@ -11,8 +11,14 @@ const fromProc = (pid: number): string | null => {
   return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[STARTTIME] ?? null;
 };
 
+// A ps that hangs reads as "cannot tell", so nothing is signalled.
+const PS_MS = 5_000;
+
 const fromPs = (pid: number): string | null =>
-  execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).trim() || null;
+  execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+    encoding: 'utf8',
+    timeout: PS_MS,
+  }).trim() || null;
 
 export type ReadStart = (pid: number) => string | null;
 

@@ -6,7 +6,7 @@ import { type HostReload, type HostRow } from '../../lib/daemon/host-client.js';
 import { output, test, type ConfigDir } from '../../test/config-dir.js';
 import { fakeHost } from '../../test/host.js';
 import { type Npm, type PackageBuild } from './package-build.js';
-import { readRecord, writeRecord } from './up-local.js';
+import { readRecord, removeRecord, writeRecord } from './up-local.js';
 import { prepareStage, stageOf } from './up-build.js';
 import { runLocalUp, type LocalUpDeps } from './up-run.js';
 import { markOf } from '../../lib/proc/start-time.js';
@@ -240,11 +240,95 @@ describe('how an up ends', () => {
     expect(readRecord(folder)?.tsc?.pid).toEqual(expect.any(Number));
   });
 
-  test('a tsc watch that dies stops up with one line and exit 1', async ({ dir }) => {
+  test('a tsc watch that dies stops up with one line and fails (build_failed, exit 1)', async ({
+    dir,
+  }) => {
     const folder = tscCopy(dir, 'process.exit(4);');
     const { deps } = depsOf([], (_dir, _nonce, ended) => ended, stageNpm().npm);
     const run = await output(() => runLocalUp(folder, deps));
     expect(run.stderr).toContain('watch     tsc exited 4; extension up stops (run it again)');
-    expect(takeExit()).toBe(1);
+    expect(run).toMatchObject({
+      code: 'build_failed',
+      error: 'extension up stopped: tsc exited 4',
+    });
+    expect(takeExit()).toBeNull();
+  });
+
+  test('reload calls that keep failing stop up as daemon_unavailable', async ({ dir }) => {
+    const folder = workingCopy(dir);
+    const { deps, fake } = depsOf([folderRow(folder)], (_d, _n, ended) => ended, stageNpm().npm);
+    vi.mocked(fake.host.reload).mockRejectedValue(new Error('the daemon on 127.0.0.1:1: reset'));
+    const up = output(() => runLocalUp(folder, deps));
+    for (let i = 0; i < 3; i += 1) {
+      await vi.waitFor(() => expect(fake.host.reload).toHaveBeenCalledTimes(i + 1));
+      writeFileSync(join(folder, 'src/api/index.js'), `change ${i}`);
+    }
+    expect(await up).toMatchObject({
+      code: 'daemon_unavailable',
+      error: 'extension up stopped: the reload failed 3 times in a row',
+    });
+  });
+
+  test('a second up whose build tool is missing stops at the first build (build_failed)', async ({
+    dir,
+  }) => {
+    const folder = workingCopy(dir);
+    const missing: Npm = async (cwd) => {
+      throw new Error(`npm run build in ${cwd} exited 127`);
+    };
+    const { deps, fake } = depsOf([folderRow(folder)], async () => 'SIGINT', missing);
+    const run = await output(() => runLocalUp(folder, deps));
+    expect(run).toMatchObject({
+      code: 'build_failed',
+      error: 'extension up stopped: the build tool is missing (npm ci installs it)',
+    });
+    expect(fake.host.reload).not.toHaveBeenCalled();
+    expect(readRecord(folder)?.added).toBe(false);
+  });
+
+  test('a folder that is no extension package starts nothing (invalid_argument)', async ({
+    dir,
+  }) => {
+    const { deps, fake } = depsOf([], async () => 'SIGINT', stageNpm().npm);
+    dir.write('plain/package.json', { name: 'plain' });
+    const noId = await output(() => runLocalUp(dir.at('plain'), deps));
+    expect(noId).toMatchObject({
+      code: 'invalid_argument',
+      error: `${dir.at('plain')}: no agentage.id`,
+    });
+    const none = await output(() => runLocalUp(dir.at('none'), deps));
+    expect(none.error).toMatch(/^no package\.json in .*: run it in an extension package folder$/);
+    expect(fake.host.add).not.toHaveBeenCalled();
+  });
+
+  test('a closed terminal (SIGHUP) stops the watch, keeps the row, exits 129', async ({ dir }) => {
+    const folder = workingCopy(dir);
+    const { deps, fake } = depsOf([], async () => 'SIGHUP', stageNpm().npm);
+    const run = await output(() => runLocalUp(folder, deps));
+    expect(run.lines.at(-2)).toBe('stopped   watching demo (SIGHUP); the daemon still runs it');
+    expect(fake.host.remove).not.toHaveBeenCalled();
+    expect(takeExit()).toBe(129);
+  });
+
+  test('down during the start stops up (cancelled) and the tsc watch it started', async ({
+    dir,
+  }) => {
+    const pidFile = dir.at('tsc.pid');
+    const tsc = `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+setInterval(() => {}, 1000);`;
+    const folder = tscCopy(dir, tsc);
+    const made = depsOf([], async () => 'SIGINT', stageNpm().npm);
+    const build = made.deps.build;
+    made.deps.build = async (at) => (removeRecord(at), build(at));
+    const run = await output(() => runLocalUp(folder, made.deps));
+    expect(run).toMatchObject({ code: 'cancelled' });
+    expect(run.error).toMatch(/^the record of this up for .* changed while it started/);
+    // The record is gone, so no down can find the row up added: up removes it itself.
+    expect(made.fake.host.add).toHaveBeenCalled();
+    expect(made.fake.host.remove).toHaveBeenCalledWith('demo', false);
+    // A tsc left running writes its pid within the wait; a stopped one is gone or never wrote it.
+    await new Promise((done) => setTimeout(done, 1_500));
+    const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null;
+    expect(pid === null || markOf(pid) === null).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ import { type Command } from 'commander';
 import type { BuildOptions } from '@agentage/extension/tool';
 import { addJson, CliError, omitJson } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
-import { buildPackage, type PackageBuild } from './package-build.js';
+import { buildPackage, newerKitLine, type PackageBuild } from './package-build.js';
 
 export type ExtensionBuildOptions = Pick<
   BuildOptions,
@@ -34,7 +34,12 @@ export const runExtensionCheck = async (
   const lines = checkLines(report);
   const fail = report.conforms ? undefined : lines.pop();
   for (const line of json ? [JSON.stringify(report, null, 2)] : lines) console.log(line);
-  if (!report.conforms) throw new CliError('not_conforming', fail ?? 'does not conform');
+  if (report.conforms) return;
+  const newer = newerKitLine(dir);
+  throw new CliError(
+    'not_conforming',
+    [fail ?? 'does not conform', newer].filter(Boolean).join('; ')
+  );
 };
 
 export type Committed = (dir: string) => Promise<void>;

@@ -82,10 +82,36 @@ describe('agentage daemon status | stop | restart', () => {
     dir.write('daemon.json', { pid: process.pid, port: 4999 });
     const silent = async () => ({ kind: 'silent' as const });
     const run = await output(() => runDaemonStatus(silent));
-    expect(run.stdout).toBe(`daemon: pid ${process.pid} does not answer on 127.0.0.1:4999`);
+    expect(run.stdout).toBe(
+      `daemon: pid ${process.pid} does not answer on 127.0.0.1:4999 (3 tries, 2 s each); try again, or agentage daemon restart`
+    );
     const other = async () => ({ kind: 'foreign' as const });
-    expect((await output(() => runDaemonStatus(other))).stdout).toBe('daemon: not running');
+    expect((await output(() => runDaemonStatus(other))).stdout).toBe(
+      `daemon: not running (pid ${process.pid} of daemon.json lives, but 127.0.0.1:4999 answers as another program)`
+    );
     expect(dir.exists('daemon.json')).toBe(true);
+  });
+
+  test('status: a slow daemon prints one wait line on stderr past 3 s, stdout stays the answer', async ({
+    dir,
+  }) => {
+    vi.useFakeTimers();
+    try {
+      dir.write('daemon.json', { pid: process.pid, port: 4999 });
+      const slow = () =>
+        new Promise<{ kind: 'silent' }>((done) =>
+          setTimeout(() => done({ kind: 'silent' }), 6_000)
+        );
+      const run = output(() => runDaemonStatus(slow));
+      await vi.advanceTimersByTimeAsync(6_000);
+      const printed = await run;
+      expect(printed.stderr).toBe(
+        `waiting for the daemon (pid ${process.pid}) on 127.0.0.1:4999...`
+      );
+      expect(printed.lines).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('stop: the stopped pid, a stale file, or none', async () => {

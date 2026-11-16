@@ -3,12 +3,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { CheckReport } from '@agentage/extension/tool';
 import { childEnv } from '../../lib/child-env.js';
-import { isRecord } from '../../lib/fs/json-file.js';
+import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { CliError, messageOf } from '../../lib/json-output.js';
 import { resolveNpmCli } from '../../lib/npm/npm-cli.js';
+import { compareVersions } from '../../lib/update/update-check.js';
+import { kitVersion } from '../../core/kit-version.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 
-const STEP_MS = 600_000;
+export const STEP_MS = 600_000;
 const GRACE_MS = 5_000;
 
 export type Npm = (dir: string, args: string[]) => Promise<void>;
@@ -28,7 +30,8 @@ const spawnNpm = (dir: string, args: string[], npmCli: () => string): ChildProce
     windowsHide: true,
   });
 
-const deadline = (child: ChildProcess, timeoutMs: number, graceMs: number) => {
+// Past its time SIGTERM, then SIGKILL after the grace time.
+export const deadline = (child: ChildProcess, timeoutMs: number, graceMs: number) => {
   let late = false;
   let kill: NodeJS.Timeout | undefined;
   const timer = setTimeout(() => {
@@ -81,6 +84,15 @@ export const buildScriptOf = (dir: string): string | null => {
   const scripts = packageOf(dir)['scripts'];
   const script = isRecord(scripts) ? scripts['build'] : undefined;
   return typeof script === 'string' ? script : null;
+};
+
+// A package on a newer kit than this cli bundles fails the check for that cause only: say so.
+export const newerKitLine = (dir: string, kit = kitVersion()): string | null => {
+  const engines = readJson(join(dir, 'package.json'), isRecord)?.['engines'];
+  const range = isRecord(engines) ? engines['agentage'] : undefined;
+  const lowest = typeof range === 'string' ? /\d+\.\d+\.\d+/.exec(range)?.[0] : undefined;
+  if (!lowest || compareVersions(lowest, kit) <= 0) return null;
+  return `this cli bundles kit ${kit}, the package needs kit ${String(range)}: update the cli (agentage update), then run it again`;
 };
 
 export interface PackageBuild {

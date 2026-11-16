@@ -1,7 +1,13 @@
 import { type Command } from 'commander';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { isAlive, readDaemonFile, type DaemonFile } from '../../lib/daemon/daemon-file.js';
-import { PROGRESS_MS, probeRetry, proven, type Health } from '../../lib/daemon/daemon-probe.js';
+import {
+  PROGRESS_MS,
+  probeRetry,
+  proven,
+  type Health,
+  type Probe,
+} from '../../lib/daemon/daemon-probe.js';
 import { waitFor } from '../../lib/wait.js';
 import {
   degradedReasons,
@@ -47,15 +53,37 @@ export const runDaemonStatus = async (look = probeRetry): Promise<DaemonStatus> 
   return { ...status, ...moveLines() };
 };
 
+// The probe is bounded (3 tries, 2 s each); a wait past 3 s says so on stderr.
+const asked = async (file: DaemonFile, look: typeof probeRetry): Promise<Probe> => {
+  const slow = setTimeout(
+    () => console.error(`waiting for the daemon (pid ${file.pid}) on 127.0.0.1:${file.port}...`),
+    PROGRESS_MS
+  );
+  try {
+    return await look(file.port);
+  } finally {
+    clearTimeout(slow);
+  }
+};
+
+const silentLine = ({ pid, port }: DaemonFile): string =>
+  `daemon: pid ${pid} does not answer on 127.0.0.1:${port} (3 tries, 2 s each); ` +
+  'try again, or agentage daemon restart';
+
+const notRunning = (file: DaemonFile | null, found: Probe | null): string =>
+  file && found?.kind === 'foreign'
+    ? `daemon: not running (pid ${file.pid} of daemon.json lives, but 127.0.0.1:${file.port} answers as another program)`
+    : 'daemon: not running';
+
 const daemonStatus = async (look: typeof probeRetry): Promise<DaemonStatus> => {
   const file = readDaemonFile();
-  const found = file && isAlive(file.pid) ? await look(file.port) : null;
+  const found = file && isAlive(file.pid) ? await asked(file, look) : null;
   if (file && found?.kind === 'silent') {
-    console.log(`daemon: pid ${file.pid} does not answer on 127.0.0.1:${file.port}`);
+    console.log(silentLine(file));
     return { running: false, unresponsive: true, pid: file.pid, port: file.port };
   }
   const live = file && found ? proven(file, found) : null;
-  if (!file || !live) return (console.log('daemon: not running'), { running: false });
+  if (!file || !live) return (console.log(notRunning(file, found)), { running: false });
   return report(file, live);
 };
 

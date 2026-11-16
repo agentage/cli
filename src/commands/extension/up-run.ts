@@ -1,16 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { markOf, type ProcessMark } from '../../lib/proc/start-time.js';
+import { markOf } from '../../lib/proc/start-time.js';
 import { resolve } from 'node:path';
 import { isRecord } from '../../lib/fs/json-file.js';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { setExit } from '../../lib/exit-code.js';
-import { CliError } from '../../lib/json-output.js';
+import { CliError, type Code } from '../../lib/json-output.js';
 import { folderRow, installFolder } from './install-once.js';
 import { loadKitTool } from './kit-tool.js';
 import { buildPackage, npmIn, packageOf, type Npm, type PackageBuild } from './package-build.js';
 import { removeStage, seedNext, upModeOf, type UpMode } from './up-build.js';
-import { refuseRunning, untilStopped, writeRecord, type UpRecord } from './up-local.js';
+import { claimFolder, rewriteRecord, selfMark, untilStopped, type UpRecord } from './up-local.js';
 import { stageAndReload, startWatch, type Run } from './up-reload.js';
 
 export interface LocalUpDeps {
@@ -77,20 +77,27 @@ const firstBuild = async (run: Run, mode: UpMode, build: LocalUpDeps['build']): 
   if (mode.kind === 'tsc' || mode.script) await stageAndReload(run);
 };
 
-// A watch that ends by itself stops up: one line, and a non-zero exit.
+// A watch that ends by itself, a missing build tool or a reload that keeps failing stops up.
 const deathOf = () => {
   let died: (why: string) => void = () => undefined;
+  let reason = '';
+  let code: Code = 'build_failed';
   const ended = new Promise<string>((done) => (died = done));
-  const onDied = (why: string): void => {
-    console.error(`watch     tsc ${why}; extension up stops (run it again)`);
+  const onDied = (why: string, as: Code = 'build_failed'): void => {
+    if (reason) return;
+    [reason, code] = [why, as];
+    console.error(`watch     ${why}; extension up stops (run it again)`);
     died('watch died');
   };
-  return { ended, onDied };
+  const failure = () => new CliError(code, `extension up stopped: ${reason}`);
+  return { ended, onDied, failure, died: () => reason !== '' };
 };
 
-const exitFor = (stoppedBy: string): void => {
+// Ctrl-C is 130 and a closed terminal 129; a watch that died fails, so --json gives the error.
+const exitFor = (stoppedBy: string, failure: () => CliError): void => {
   if (stoppedBy === 'SIGINT') setExit(130);
-  if (stoppedBy === 'watch died') setExit(1);
+  if (stoppedBy === 'SIGHUP') setExit(129);
+  if (stoppedBy === 'watch died') throw failure();
 };
 
 // D12: build, the folder as a daemon row, a watch that builds to dist.next and reloads that child.
@@ -100,15 +107,16 @@ export const runLocalUp = async (
   json = false
 ): Promise<LocalUp> => {
   const dir = resolve(folder);
-  const before = refuseRunning(dir);
   const id = idOf(dir);
+  const nonce = randomUUID();
+  const before = await claimFolder(dir, nonce, id);
   const { port, host } = await deps.daemon();
   const run: Run = { dir, id, host, npm: deps.npm };
   const mode = upModeOf(dir);
   // A stage of an earlier up may hold an old package.json: the first staged build copies it again.
   removeStage(dir);
   try {
-    return await upAndWatch(run, mode, deps, { port, json, before });
+    return await upAndWatch(run, mode, deps, { port, json, before, nonce });
   } finally {
     removeStage(dir);
   }
@@ -118,25 +126,67 @@ interface UpContext {
   port: number;
   json: boolean;
   before: UpRecord | null;
+  nonce: string;
 }
 
+type Death = ReturnType<typeof deathOf>;
+type Up = Omit<LocalUp, 'stoppedBy'>;
+
+// The fatal channel is wired before the first build: a second up with no build tool stops too.
 const upAndWatch = async (run: Run, mode: UpMode, deps: LocalUpDeps, ctx: UpContext) => {
+  const death = deathOf();
+  run.fatal = death.onDied;
+  run.builtAt = Date.now();
   await firstBuild(run, mode, deps.build);
+  if (death.died()) throw death.failure();
   const { row, already } = await installFolder(run.host, run.dir);
   const added = !already || ctx.before?.added === true;
-  const nonce = randomUUID();
-  const death = deathOf();
-  const { watchers, tscPid } = startWatch(run, mode, death.onDied);
-  const tsc = markOf(tscPid) ?? undefined;
-  writeRecord(run.dir, { up: selfMark(), nonce, id: row.id, added, ...(tsc && { tsc }) });
-  const url = `http://127.0.0.1:${ctx.port}/api/${row.id}/`;
-  ready({ id: row.id, version: row.version, url, port: ctx.port, added }, ctx.json);
-  const stoppedBy = await deps.stopped(run.dir, nonce, death.ended);
-  for (const watcher of watchers) watcher.stop();
-  stopLine(row.id, stoppedBy, added);
-  exitFor(stoppedBy);
-  return { id: row.id, version: row.version, url, port: ctx.port, added, stoppedBy };
+  const up = {
+    id: row.id,
+    version: row.version,
+    url: urlOf(ctx.port, row.id),
+    port: ctx.port,
+    added,
+  };
+  const stoppedBy = await watchUntilStopped(run, mode, { deps, ctx, death, up });
+  stopLine(up.id, stoppedBy, added);
+  exitFor(stoppedBy, death.failure);
+  return { ...up, stoppedBy };
 };
 
-// This up: pid and start time; where the start time cannot be read (Windows) it is never proven.
-const selfMark = (): ProcessMark => markOf(process.pid) ?? { pid: process.pid, started: 'unknown' };
+interface Watching {
+  deps: LocalUpDeps;
+  ctx: UpContext;
+  death: Death;
+  up: Up;
+}
+
+// No record is left for down to read, so a row this up added goes with the cancelled start.
+const cancelled = async (run: Run, up: Up, err: unknown): Promise<never> => {
+  if (up.added && err instanceof CliError && err.code === 'cancelled') {
+    if (await folderRow(run.host, up.id, run.dir)) await run.host.remove(up.id, false);
+  }
+  throw err;
+};
+
+// A record down removed meanwhile, or one that cannot be written, still stops the tsc it started.
+const watchUntilStopped = async (run: Run, mode: UpMode, w: Watching): Promise<string> => {
+  const { watchers, tscPid } = startWatch(run, mode, w.death.onDied);
+  try {
+    const tsc = markOf(tscPid) ?? undefined;
+    const { nonce } = w.ctx;
+    await rewriteRecord(run.dir, {
+      up: selfMark(),
+      nonce,
+      id: w.up.id,
+      added: w.up.added,
+      ...(tsc && { tsc }),
+    }).catch((err: unknown) => cancelled(run, w.up, err));
+    ready(w.up, w.ctx.json);
+    return await w.deps.stopped(run.dir, nonce, w.death.ended);
+  } finally {
+    for (const watcher of watchers) watcher.stop();
+  }
+};
+
+const urlOf = (port: number, id: string): string => `http://127.0.0.1:${port}/api/${id}/`;

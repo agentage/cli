@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { isMark, proven, stopProven, type ProcessMark } from '../../lib/proc/start-time.js';
+import { isMark, markOf, proven, stopProven, type ProcessMark } from '../../lib/proc/start-time.js';
+import { withFileLock } from '../../lib/fs/file-lock.js';
 import { isRecord, readJson, writeTextAtomic } from '../../lib/fs/json-file.js';
 import { CliError } from '../../lib/json-output.js';
 import { waitFor } from '../../lib/wait.js';
@@ -65,6 +66,32 @@ export const refuseRunning = (dir: string): UpRecord | null => {
   );
 };
 
+// A closed terminal (SIGHUP) stops as Ctrl-C does: the watch goes, the row stays for the next up.
+const STOPS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+
+// This up: pid and start time; where the start time cannot be read (Windows) it is never proven.
+export const selfMark = (): ProcessMark =>
+  markOf(process.pid) ?? { pid: process.pid, started: 'unknown' };
+
+// Two ups of one folder at once: the check and the claim are one step under the record's lock.
+export const claimFolder = (dir: string, nonce: string, id: string): Promise<UpRecord | null> =>
+  withFileLock(recordPath(dir), () => {
+    const before = refuseRunning(dir);
+    writeRecord(dir, { up: selfMark(), nonce, id, added: before?.added === true });
+    return before;
+  });
+
+// A record that is no longer this up's (down ran, or a second up took it) stops the start; locked as down is.
+export const rewriteRecord = (dir: string, record: UpRecord): Promise<void> =>
+  withFileLock(recordPath(dir), () => {
+    if (readRecord(dir)?.nonce !== record.nonce)
+      throw new CliError(
+        'cancelled',
+        `the record of this up for ${dir} changed while it started (extension down, or another up)`
+      );
+    writeRecord(dir, record);
+  });
+
 // Ends on a signal (the row stays), a removed or rewritten record (`down`) or a dead watch.
 export const untilStopped = (
   dir: string,
@@ -73,17 +100,14 @@ export const untilStopped = (
   everyMs = 300
 ): Promise<string> =>
   new Promise((done) => {
+    const on = STOPS.map((name) => [name, () => finish(name)] as const);
     const finish = (why: string): void => {
       clearInterval(timer);
-      process.off('SIGINT', onInt);
-      process.off('SIGTERM', onTerm);
+      for (const [name, handler] of on) process.off(name, handler);
       done(why);
     };
-    const onInt = (): void => finish('SIGINT');
-    const onTerm = (): void => finish('SIGTERM');
     const timer = setInterval(() => readRecord(dir)?.nonce === nonce || finish('down'), everyMs);
-    process.once('SIGINT', onInt);
-    process.once('SIGTERM', onTerm);
+    for (const [name, handler] of on) process.once(name, handler);
     void ended.then(finish);
   });
 
@@ -94,9 +118,12 @@ export const stopLocal = async (
   dir: string,
   timeoutMs = 10_000
 ): Promise<{ down: LocalDown; record: UpRecord | null }> => {
-  const record = readRecord(dir);
+  const record = await withFileLock(recordPath(dir), () => {
+    const found = readRecord(dir);
+    if (found) removeRecord(dir);
+    return found;
+  });
   if (!record) return { down: 'none', record };
-  removeRecord(dir);
   if (!proven(record.up)) return (stopOrphan(record), { down: 'stale', record });
   if (!(await waitFor(() => !proven(record.up), timeoutMs)))
     throw new CliError('stop_failed', `extension up (pid ${record.up.pid}) did not stop`);

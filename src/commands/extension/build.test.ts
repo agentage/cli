@@ -135,6 +135,18 @@ describe('extension check', () => {
     expect(printed.code).toBe('not_conforming');
   });
 
+  test('a package on a newer kit than this cli bundles: the FAIL line names the cli update', async ({
+    dir,
+  }) => {
+    dir.write('probe/package.json', { name: 'p', engines: { agentage: '>=99.0.0' } });
+    const printed = await output(() =>
+      runExtensionCheck({ dir: dir.at('probe') }, checking(false).tool)
+    );
+    expect(printed.error).toMatch(
+      /^FAIL 1 problem in 1 rule; this cli bundles kit .*agentage update/
+    );
+  });
+
   test('a report that does not conform fails even when the kit gives no lines', async () => {
     const tool = async () => ({ ...(await checking(false).tool()), checkLines: () => [] });
     const printed = await output(() => runExtensionCheck({}, tool));

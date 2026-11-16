@@ -2,7 +2,7 @@ import { describe, expect, vi } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost } from '../../test/host.js';
 import { installCreated, trustFrom, type CreateInstallDeps } from './create-install.js';
-import { buildPackage } from './package-build.js';
+import { buildPackage, newerKitLine } from './package-build.js';
 import { childEnv } from '../../lib/child-env.js';
 import { type KitTool } from './kit-tool.js';
 
@@ -166,5 +166,23 @@ describe('extension create --from another repo or a branch', () => {
     const skipped = io(true, 'n');
     expect((await output(() => trustFrom('acme/ext', { yes: true }, skipped.io))).error).toBeNull();
     expect(skipped.asked).toEqual([]);
+  });
+});
+
+describe('a package on a newer kit than this cli bundles', () => {
+  test('create fails naming the cause and the command: update the cli', async ({ dir }) => {
+    dir.write('demo/package.json', { name: 'demo', engines: { agentage: '^99.1.0' } });
+    const { all } = deps(false);
+    const run = await output(() => installCreated(dir.at('demo'), true, all));
+    expect(run).toMatchObject({ code: 'not_conforming' });
+    expect(run.error).toMatch(
+      /this cli bundles kit \d+\.\d+\.\d+, the package needs kit \^99\.1\.0: update the cli \(agentage update\)/
+    );
+  });
+
+  test('a package on this kit or an older one keeps the check line', async ({ dir }) => {
+    dir.write('demo/package.json', { name: 'demo', engines: { agentage: '^0.12.0' } });
+    expect(newerKitLine(dir.at('demo'))).toBeNull();
+    expect(newerKitLine(dir.at('none'))).toBeNull();
   });
 });
