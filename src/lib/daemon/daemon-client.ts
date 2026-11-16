@@ -53,9 +53,11 @@ export const LATE_FILE_MS = 2_000;
 const answersAs = (pid: number, found: Probe): boolean =>
   found.kind === 'ours' && found.health.pid === pid;
 
-// Healthy only as the spawned pid: a daemon of another config folder on the port is not ours.
+const announced = (pid: number): boolean => readDaemonFile()?.pid === pid;
+
+// Healthy only as the spawned pid, and once its daemon.json (the host token) is written after listen.
 export const waitForHealth = (port: number, pid: number, timeoutMs = START_MS): Promise<boolean> =>
-  waitFor(async () => answersAs(pid, await probe(port, 500)), timeoutMs, {
+  waitFor(async () => answersAs(pid, await probe(port, 500)) && announced(pid), timeoutMs, {
     afterMs: PROGRESS_MS,
     line: `waiting for the daemon to start on 127.0.0.1:${port}...`,
   });

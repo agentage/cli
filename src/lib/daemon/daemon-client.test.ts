@@ -259,6 +259,31 @@ describe('the daemon start', () => {
     expect(dir.exists('logs/daemon.log')).toBe(true);
   });
 
+  // Shape of an e2e run on cli 0.53: /health answered before daemon.json had the host token.
+  test('spawn: ok only once daemon.json names the spawned pid, not at its first /health', async ({
+    dir,
+  }) => {
+    const entry = join(mkdtempSync(join(tmpdir(), 'agentage-entry-')), 'late.mjs');
+    const daemonJson = JSON.stringify(dir.at('daemon.json'));
+    writeFileSync(
+      entry,
+      `import { createServer } from 'node:http';
+import { writeFileSync } from 'node:fs';
+const port = Number(process.env.AGENTAGE_DAEMON_PORT);
+const health = { status: 'ok', service: 'agentage-daemon', pid: process.pid, version: '1', protocol: 1, extensions: [] };
+createServer((_q, r) => r.end(JSON.stringify(health))).listen(port, '127.0.0.1');
+setTimeout(() => writeFileSync(${daemonJson}, JSON.stringify({ pid: process.pid, port, hostToken: 't' })), 800);
+setTimeout(() => process.exit(0), 5000);
+`
+    );
+    const server = createServer().listen(0, '127.0.0.1');
+    await new Promise((done) => server.once('listening', done));
+    const { port } = server.address() as AddressInfo;
+    await new Promise((done) => server.close(done));
+    expect(await spawnDaemon(port, entry)).toBe('ok');
+    expect(dir.exists('daemon.json')).toBe(true);
+  });
+
   // Shape of e2e run 43775263990: another folder's daemon answers on the port while ours exits busy.
   test('spawn: the daemon of another config folder answering on the port is not a start', async () => {
     const health = { status: 'ok', service: 'agentage-daemon', pid: 4321, version: VERSION };
