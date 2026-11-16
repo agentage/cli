@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { kitVersion } from './core/kit-version.js';
 import { defineExtension, EXTENSION_API_VERSION } from './extension.js';
+import { compareVersions } from './lib/update/update-check.js';
 
 const SRC = join(import.meta.dirname, '.');
 const PKG = join(import.meta.dirname, '..', 'package.json');
@@ -104,6 +106,14 @@ describe('package guard (the core)', () => {
     for (const [name, spec] of Object.entries(pkg.dependencies)) {
       expect(spec, `${name} must pin a semver range, not "latest"`).not.toBe('latest');
     }
+  });
+
+  // 0.15.1: the hosted discovery record is whole and a child's output has its secrets masked.
+  it('the kit is 0.15.1 or newer, in the range and in the installed tree', () => {
+    const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as { dependencies: Record<string, string> };
+    const floor = (pkg.dependencies['@agentage/extension'] ?? '').replace(/^\^/, '');
+    expect(compareVersions(floor, '0.15.1')).toBeGreaterThanOrEqual(0);
+    expect(compareVersions(kitVersion(), '0.15.1')).toBeGreaterThanOrEqual(0);
   });
 
   it('homepage is set to the canonical site URL', () => {
