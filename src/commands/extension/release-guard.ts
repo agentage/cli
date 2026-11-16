@@ -78,6 +78,17 @@ const refsOf = (g: GuardInput): string[] => [
   ...(g.oneImage ? [`ghcr.io/agentage/${g.id}:${g.version}`] : []),
 ];
 
+// GHCR answers denied for a new name too: the GitHub API tells a new package from another repo's.
+const ownsName = async (g: GuardInput, exec: Exec): Promise<void> => {
+  const got = await exec('gh', ['api', `/orgs/agentage/packages/container/${g.id}`]);
+  if (!got.ok) return notFound(got, /404|Not Found/, `the package ghcr.io/agentage/${g.id}`);
+  const { repository } = JSON.parse(got.out) as { repository?: { full_name?: string } | null };
+  if (repository?.full_name !== g.repo)
+    throw new Error(
+      `ghcr.io/agentage/${g.id} is denied: the name ${g.id} belongs to another package`
+    );
+};
+
 const ensureNoImages = async (g: GuardInput, exec: Exec): Promise<void> => {
   for (const image of refsOf(g)) {
     const ran = await exec('docker', ['manifest', 'inspect', image]);
@@ -85,11 +96,13 @@ const ensureNoImages = async (g: GuardInput, exec: Exec): Promise<void> => {
       throw new Error(
         `${image} is already pushed but ${g.tag} has no record; release a new version`
       );
-    // A part may be new: GHCR can answer denied for it. The plain id is the one image: denied
-    // there means the name is another package's, and the push would fail after the part images.
+    // A part may be new: GHCR can answer denied for it. Denied for the plain id (the one image)
+    // may be another package's name, which would fail the push after the part images.
     const one = g.oneImage && image === `ghcr.io/agentage/${g.id}:${g.version}`;
-    if (one && /denied/.test(ran.err))
-      throw new Error(`${image} is denied: the name ${g.id} belongs to another package`);
+    if (one && /denied/.test(ran.err)) {
+      await ownsName(g, exec);
+      continue;
+    }
     notFound(ran, /manifest unknown|no such manifest|denied/, image);
   }
 };

@@ -536,7 +536,7 @@ and attaches `agentage-extension.json` and `agentage-container.json` to the tag'
 one image with no record, and a re-run that finds `agentage-extension.json` without
 `agentage-container.json` for a package with a server part. An id that ends in `-pages`, `-ui`,
 `-api`, `-mcp` or `-worker` is refused for such a package, and so is a one-image name the registry
-answers `denied` (another package owns it), before any image is pushed. If the one-image push fails
+answers `denied` when `gh api /orgs/agentage/packages/container/<id>` shows another repo owns it (404 = a new name, go on; needs `packages: read`), before any image is pushed. If the one-image push fails
 after the part images are pushed, the version is used up: the guard refuses a re-run, release a new
 version. Last, `npm publish --access public --provenance --ignore-scripts`, skipped when the version is on npm.
 Only an `E404` from `npm view` counts as not on npm; any other `npm view` error stops the release.

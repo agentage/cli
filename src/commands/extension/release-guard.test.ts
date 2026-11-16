@@ -25,6 +25,7 @@ interface Released {
   ghError?: string;
   dockerError?: string;
   deniedImages?: string[];
+  pkg?: 'none' | 'ours' | 'other' | 'error';
   ghHang?: boolean;
   dockerHang?: boolean;
 }
@@ -37,6 +38,17 @@ const hang = (dir: string) => execIn(dir, 1)('sleep', ['5']);
 const registry =
   (w: Released, dir: string): Exec =>
   async (cmd, args) => {
+    if (cmd === 'gh' && args[0] === 'api') {
+      if (w.pkg === 'error') return ran(false, 'HTTP 502');
+      if (w.pkg === 'ours' || w.pkg === 'other')
+        return ran(
+          true,
+          JSON.stringify({
+            repository: { full_name: w.pkg === 'ours' ? 'agentage/probe' : 'agentage/market' },
+          })
+        );
+      return ran(false, 'gh: Not Found (HTTP 404)');
+    }
     if (cmd === 'gh') {
       if (w.ghHang) return hang(dir);
       if (w.ghError) return ran(false, w.ghError);
@@ -102,10 +114,32 @@ describe('release guard', () => {
     expect(run.err).toContain('has agentage-extension.json but no agentage-container.json');
   });
 
-  it('refuses a one-image name the registry denies, before any push', async () => {
-    const run = await guard({ deniedImages: [`ghcr.io/agentage/${id}:0.1.0`], dockerError: '' });
+  const ONE = `ghcr.io/agentage/${id}:0.1.0`;
+
+  it('builds when the one image is denied and the GitHub API has no such package (new name)', async () => {
+    expect(await guard({ deniedImages: [ONE], pkg: 'none' })).toMatchObject({
+      code: 0,
+      out: 'build',
+    });
+  });
+
+  it("builds when the one image is denied and the package is this repo's own", async () => {
+    expect(await guard({ deniedImages: [ONE], pkg: 'ours' })).toMatchObject({
+      code: 0,
+      out: 'build',
+    });
+  });
+
+  it('refuses a one-image name denied and owned by another repo, before any push', async () => {
+    const run = await guard({ deniedImages: [ONE], pkg: 'other' });
     expect(run.code).toBe(1);
     expect(run.err).toContain('belongs to another package');
+  });
+
+  it('stops when the GitHub API cannot answer for a denied one-image name', async () => {
+    const run = await guard({ deniedImages: [ONE], pkg: 'error' });
+    expect(run.code).toBe(1);
+    expect(run.err).toContain('cannot tell whether the package ghcr.io/agentage/probe exists');
   });
 
   it('refuses a tag moved to another commit', async () => {
