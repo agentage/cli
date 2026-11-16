@@ -37,8 +37,7 @@ interface Problem extends FailedEntry {
   text: string;
 }
 
-// A package that is not an extension is said and skipped: the daemon cannot install it, ever.
-// A problem: the entry failed to install (no row) or to start (a failed row).
+// A problem: no row (install failed) or a failed row; a non-extension package is only said.
 const tryOne = async (host: HostClient, entry: ProfileEntry): Promise<Problem | undefined> => {
   if (entry.id === null) return void console.log(`${entry.name}: ${NOT_EXTENSION}`);
   const id = entry.id;
@@ -85,8 +84,7 @@ const tryAll = async (host: HostClient, entries: ProfileEntry[]): Promise<Proble
   return problems;
 };
 
-// The profile's extensions go through the daemon, which runs them; the cli loads nothing itself.
-// Plain setup tries each entry once per machine, then only the ids that failed (in the marker).
+// Plain setup tries each entry once per machine, then only the ids the marker names as failed.
 export const installThroughDaemon = async (
   profile: Profile,
   deps: ProfileInstallDeps

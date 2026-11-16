@@ -16,8 +16,7 @@ export interface Installed {
   already: boolean;
 }
 
-// The add itself is the check, so two cli runs cannot both add one id: the second gets CONFLICT,
-// whose details name the installed entry.
+// The add is the check: of two cli runs, the second gets CONFLICT naming the installed entry.
 const added = (host: HostClient, body: AddBody): Promise<HostSummary | Existing> =>
   host.add(body).catch((err: unknown) => {
     const existing = err instanceof DaemonError ? existingOf(err) : null;
@@ -49,7 +48,7 @@ export const installId = async (host: HostClient, spec: IdBody): Promise<Install
   return got;
 };
 
-const real = (path: string): string => {
+export const real = (path: string): string => {
   try {
     return realpathSync(path);
   } catch {
@@ -57,8 +56,11 @@ const real = (path: string): string => {
   }
 };
 
-// A folder: the same folder again (by real path) is installed already; its id from elsewhere is
-// refused.
+// The daemon's row of id when it runs this folder (by real path), else undefined.
+export const folderRow = async (host: HostClient, id: string, dir: string) =>
+  (await host.list()).find((row) => row.id === id && real(row.source) === real(dir));
+
+// The same folder again (by real path) is installed already; its id from elsewhere is refused.
 export const installFolder = async (host: HostClient, source: string): Promise<Installed> => {
   const got = await added(host, { source });
   if (!isExisting(got)) return { row: got, already: false };

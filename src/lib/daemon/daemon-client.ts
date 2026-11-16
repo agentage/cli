@@ -27,6 +27,7 @@ import {
   PROGRESS_MS,
   PROTOCOL,
   proven,
+  provenPort,
   unresponsive,
   type Health,
   type Probe,
@@ -55,7 +56,7 @@ const answersAs = (pid: number, found: Probe): boolean =>
 
 const announced = (pid: number): boolean => readDaemonFile()?.pid === pid;
 
-// Healthy only as the spawned pid, and once its daemon.json (the host token) is written after listen.
+// Healthy only as the spawned pid, once its daemon.json (the host token) is written.
 export const waitForHealth = (port: number, pid: number, timeoutMs = START_MS): Promise<boolean> =>
   waitFor(async () => answersAs(pid, await probe(port, 500)) && announced(pid), timeoutMs, {
     afterMs: PROGRESS_MS,
@@ -102,10 +103,7 @@ export const defaultEnsureDeps: EnsureDeps = {
 };
 
 // A start that timed out may still have come up late: a proven daemon in daemon.json serves.
-const lateDaemon = async (deps: EnsureDeps): Promise<number | null> => {
-  const file = readDaemonFile();
-  return file && proven(file, await deps.probe(file.port)) ? file.port : null;
-};
+const lateDaemon = (deps: EnsureDeps): Promise<number | null> => provenPort(deps.probe);
 
 const notStarted = (): CliError =>
   new CliError(

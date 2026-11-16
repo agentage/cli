@@ -1,10 +1,9 @@
 import { chmodSync } from 'node:fs';
-import { createServer } from 'node:http';
-import { type AddressInfo } from 'node:net';
 import { describe, expect, vi } from 'vitest';
 import { run, type ProgramDeps } from './program.js';
 import { defaultDeps } from './program-deps.js';
 import { test } from './test/config-dir.js';
+import { freePort } from './test/serve.js';
 
 // The real commands with injected failures: each is one envelope with its code, never a stack.
 const runReal = async (args: string[], over: Partial<ProgramDeps> = {}) => {
@@ -30,15 +29,6 @@ const thrower = (err: Error) => async (): Promise<never> => {
 };
 
 const asRoot = process.getuid?.() === 0;
-
-// A port nothing listens on, so no real daemon is reached.
-const freePort = async (): Promise<number> => {
-  const server = createServer();
-  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
-  const { port } = server.address() as AddressInfo;
-  await new Promise((done) => server.close(done));
-  return port;
-};
 
 const errno = (code: string, message: string) => Object.assign(new Error(message), { code });
 

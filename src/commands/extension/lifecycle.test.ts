@@ -14,7 +14,8 @@ import { DaemonError, writeError } from '../../lib/json-output.js';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost, marketRow } from '../../test/host.js';
 import { writeKitExtension } from '../../test/kit-fixture.js';
-import { runEnabled, runInstall, runRemove, specOf, type ConfirmIo } from './lifecycle.js';
+import { specOf } from './install-spec.js';
+import { runEnabled, runInstall, runRemove, type ConfirmIo } from './lifecycle.js';
 
 const noTerminal: ConfirmIo = { isTTY: false, prompt: vi.fn(async () => 'y') };
 
@@ -49,6 +50,17 @@ describe('extension install', () => {
           message: expect.stringMatching(/after @ only/),
         })
       );
+  });
+
+  test('a bad install string is refused before the daemon starts', async () => {
+    const host = vi.fn(async () => {
+      throw new Error('the daemon started');
+    });
+    for (const name of ['probe@../x', 'Probe', './nope'])
+      expect((await output(() => runInstall({ name }, { host }))).error, name).not.toMatch(
+        /the daemon started/
+      );
+    expect(host).not.toHaveBeenCalled();
   });
 
   test('a new id is a POST; the extension runs', async () => {

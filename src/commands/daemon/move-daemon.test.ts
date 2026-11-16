@@ -1,6 +1,5 @@
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
 import { installedExtensions } from '../../core/loader/installed.js';
@@ -10,28 +9,10 @@ import { output, test } from '../../test/config-dir.js';
 import { writeKitExtension } from '../../test/kit-fixture.js';
 import { runConfigure, stdinInput } from '../extension/configure.js';
 import { writeOldConfig } from '../../test/old-config.js';
-import { cliInstaller } from './installer.js';
 import { MOVE_REPORT, MOVED_MARKER, moveOldLists } from './move.js';
 import { runDaemon } from './run.js';
-import { CliError } from '../../lib/json-output.js';
-
-const OFFLINE = new CliError('market_unreachable', 'cannot reach the market: offline');
-
-const freePort = async (): Promise<number> => {
-  const server = createServer();
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address() as { port: number };
-  await new Promise((resolve) => server.close(resolve));
-  return port;
-};
-
-// No network: npm fails and the market is down, so every moved entry must come from disk.
-const offline = () =>
-  cliInstaller({
-    npm: async () => Promise.reject(new Error('offline')),
-    manifest: async () => Promise.reject(new Error('offline')),
-    market: () => ({ latest: async () => null, down: () => OFFLINE }),
-  });
+import { offlineInstaller as offline } from '../../test/host.js';
+import { freePort } from '../../test/serve.js';
 
 // /host/* needs the host token of daemon.json (D11).
 const get = async <T = { msg: string }>(port: number, path: string): Promise<T> => {

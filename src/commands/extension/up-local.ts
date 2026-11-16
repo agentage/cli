@@ -8,8 +8,7 @@ import { waitFor } from '../../lib/wait.js';
 // The kit's own folder in a working copy (`.agentage/`, ignored by the template).
 const LOCAL = '.agentage';
 
-// D12: the up of a folder. `up` and `tsc` are pid plus start time (a reused pid is not them);
-// `nonce` is this up's own; `added`: up added the daemon row, so down removes it (never another).
+// D12: marks prove the process (a reused pid is not it); `added`: down may remove the row.
 export interface UpRecord {
   up: ProcessMark;
   nonce: string;
@@ -66,8 +65,7 @@ export const refuseRunning = (dir: string): UpRecord | null => {
   );
 };
 
-// up ends on Ctrl-C or SIGTERM (the row stays), when down removes its record or another up
-// rewrote it (`down`), or when its watch dies (`ended`, with the reason).
+// Ends on a signal (the row stays), a removed or rewritten record (`down`) or a dead watch.
 export const untilStopped = (
   dir: string,
   nonce: string,

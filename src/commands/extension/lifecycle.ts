@@ -75,15 +75,16 @@ export interface InstallDeps extends LifecycleDeps {
   sealOff?: () => Promise<string | null>;
 }
 
+// The install string is checked before the daemon starts: a bad one starts nothing.
 export const runInstall = async (opts: InstallOptions, deps: InstallDeps) => {
-  const host = await deps.host();
-  const folder = LOCAL.test(opts.name) || isAbsolute(opts.name);
+  const folder = LOCAL.test(opts.name) || isAbsolute(opts.name) ? folderOf(opts.name) : null;
   const spec = folder ? null : specOf(opts.name);
   if (spec && opts.name.startsWith(UNSCOPED) && (await deps.hasMarket?.(spec.id)))
     throw unscoped(opts.name);
+  const host = await deps.host();
   const { row: done, already } = spec
     ? await installId(host, spec)
-    : await installFolder(host, folderOf(opts.name));
+    : await installFolder(host, folder ?? '');
   const bare = spec && !spec.version && !already;
   const line = bare && (await deps.fromNpm?.(spec.id, `${spec.id} ${done.version} came`));
   if (line) console.error(line);
@@ -161,5 +162,3 @@ export const runRemove = async (opts: RemoveOptions, deps: LifecycleDeps & { io:
   console.log(`removed ${id}${purge ? ', its data deleted' : ''}`);
   return { id, purged: purge };
 };
-
-export { specOf };

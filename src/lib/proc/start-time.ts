@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { isPid } from '../daemon/daemon-file.js';
+import { isRecord } from '../fs/json-file.js';
 
 // Field 22 of /proc/<pid>/stat, counted from the state field after the `(comm)` part.
 const STARTTIME = 19;
@@ -15,8 +16,7 @@ const fromPs = (pid: number): string | null =>
 
 export type ReadStart = (pid: number) => string | null;
 
-// When a pid started: a pid plus this proves one process, a reused pid has another.
-// Windows has neither /proc nor ps: null there, so a process is never proven and never signalled.
+// Pid plus start time proves one process; null on Windows (no /proc, no ps): never signalled.
 export const startedAt: ReadStart = (pid) => {
   if (!isPid(pid) || process.platform === 'win32') return null;
   try {
@@ -40,20 +40,15 @@ export const markOf = (
 };
 
 export const isMark = (value: unknown): value is ProcessMark =>
-  typeof value === 'object' &&
-  value !== null &&
-  isPid((value as ProcessMark).pid) &&
-  typeof (value as ProcessMark).started === 'string';
+  isRecord(value) && isPid(value['pid']) && typeof value['started'] === 'string';
 
 // The same process still runs: the pid lives and started at the recorded time.
-export const proven = (
-  mark: ProcessMark | undefined | null,
-  read: ReadStart = startedAt
-): boolean => (mark ? read(mark.pid) === mark.started : false);
+export const proven = (mark: ProcessMark | undefined | null): boolean =>
+  mark ? startedAt(mark.pid) === mark.started : false;
 
 // SIGTERM only to a proven process; anything else is left alone and reported.
-export const stopProven = (mark: ProcessMark, read: ReadStart = startedAt): boolean => {
-  if (!proven(mark, read)) return false;
+export const stopProven = (mark: ProcessMark): boolean => {
+  if (!proven(mark)) return false;
   try {
     process.kill(mark.pid, 'SIGTERM');
     return true;

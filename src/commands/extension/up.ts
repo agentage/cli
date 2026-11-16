@@ -1,11 +1,13 @@
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { CliError, omitJson } from '../../lib/json-output.js';
+import { folderRow } from './install-once.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { execIn, type Exec } from './release-guard.js';
 import { assertOwnStack } from './stack-owner.js';
+import { removeStage } from './up-build.js';
 import { readRecord, stopLocal, type LocalDown, type UpRecord } from './up-local.js';
 import { runLocalUp } from './up-run.js';
 
@@ -22,8 +24,6 @@ export interface ExtensionTokenOptions extends ExtensionUpOptions {
   scope: string;
   issuer?: string;
 }
-
-const real = (path: string): string => (existsSync(path) ? realpathSync(path) : path);
 
 // Prints each line as the kit reports it and keeps them for the --json answer.
 const printed = (): { lines: string[]; onLine: (line: string) => void } => {
@@ -76,8 +76,7 @@ const LOCAL_LINES: Record<LocalDown, string> = {
 const removeAdded = async (dir: string, record: UpRecord | null, host: Host): Promise<string[]> => {
   if (!record?.added) return [];
   const client = await host();
-  const row = (await client.list()).find((r) => r.id === record.id);
-  if (!row || real(row.source) !== real(dir)) return [];
+  if (!(await folderRow(client, record.id, dir))) return [];
   await client.remove(record.id, false);
   return [`removed   ${record.id} from the daemon (its data stays)`];
 };
@@ -92,6 +91,8 @@ const stopAndRemove = async (dir: string, host: Host, stopMs: number) => {
   let down: LocalDown = 'none';
   try {
     down = (await stopLocal(dir, stopMs)).down;
+    // Only once no up runs: a killed up leaves its stage in the config cache.
+    removeStage(dir);
     if (down !== 'none') lines.push(LOCAL_LINES[down]);
   } finally {
     lines.push(...(await removeAdded(dir, record, host)));

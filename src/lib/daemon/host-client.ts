@@ -1,8 +1,8 @@
 import { isRecord } from '../fs/json-file.js';
 import { CliError, DaemonError, messageOf } from '../json-output.js';
 import { daemonFailure } from './daemon-answer.js';
-import { daemonFilePath, readDaemonFile, readHostToken } from './daemon-file.js';
-import { probe, proven } from './daemon-probe.js';
+import { daemonFilePath, readHostToken } from './daemon-file.js';
+import { provenPort } from './daemon-probe.js';
 
 // One row of GET /host/extensions (C5); the daemon may add fields, they pass through.
 export interface HostRow {
@@ -53,8 +53,7 @@ export interface HostReload {
 // An install runs npm (the daemon waits up to 660 s), then starts the child: past that it is stuck.
 const WAITS = { read: 10_000, change: 12 * 60_000 };
 
-// The kit's queue and installer can each take 11 min, so a change can still finish after this
-// wait; /health lists it under pending until it ends.
+// A change can finish after this wait (queue and installer 11 min each); /health lists it pending.
 const LOOK: Record<string, string> = {
   GET: 'agentage daemon status',
   POST: 'the daemon may still finish the install: agentage daemon status shows it under pending, then agentage extension list shows if it was installed',
@@ -103,10 +102,7 @@ interface Target {
 }
 
 // A retry with a new token only when daemon.json still names this port and its pid answers there.
-export const sameDaemon: Same = async (port) => {
-  const file = readDaemonFile();
-  return file?.port === port && proven(file, await probe(port)) !== null;
-};
+export const sameDaemon: Same = async (port) => (await provenPort()) === port;
 
 const sendOnce = async <T>(to: Target, method: string, path: string, body?: object): Promise<T> => {
   const ms = method === 'GET' ? to.waits.read : to.waits.change;
