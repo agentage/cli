@@ -30,6 +30,8 @@ export const execIn =
 export const RECORD = 'agentage-extension.json';
 // The record of the one image (build --container --push), attached beside RECORD.
 export const CONTAINER_RECORD = 'agentage-container.json';
+// An id with a part suffix names the part image of another extension (market-api).
+export const PART_SUFFIX = /-(pages|ui|api|mcp|worker)$/;
 export const IMAGE_PARTS: readonly BuiltImage['part'][] = ['pages', 'ui', 'api', 'mcp', 'worker'];
 
 const declared = (pkg: ExtensionPackage, part: string) =>
@@ -51,12 +53,21 @@ const notFound = (ran: Ran, pattern: RegExp, what: string): void => {
   if (!pattern.test(ran.err)) throw new Error(`cannot tell whether ${what} exists: ${ran.err}`);
 };
 
-const reuse = async ({ dir, tag, sha }: GuardInput, json: string): Promise<'reuse'> => {
+const downloadOf = (g: GuardInput, name: string, exec: Exec) =>
+  exec('gh', ['release', 'download', g.tag, '-R', g.repo, '-p', name, '-O', '-']);
+
+const reuse = async (g: GuardInput, json: string, exec: Exec): Promise<'reuse'> => {
+  const { dir, tag, sha } = g;
   const { commit } = JSON.parse(json) as { commit?: unknown };
   if (commit !== sha) {
     const moved = `${tag} was released from ${String(commit)}, not ${sha}`;
     throw new Error(`${moved}; a version's images never change: release a new version`);
   }
+  // The container record is uploaded first: a part record without it is a half-done release.
+  if (g.oneImage && !(await downloadOf(g, CONTAINER_RECORD, exec)).ok)
+    throw new Error(
+      `${tag} has ${RECORD} but no ${CONTAINER_RECORD}; its one image has no record: release a new version`
+    );
   await mkdir(join(dir, 'dist'), { recursive: true });
   await writeFile(join(dir, 'dist', RECORD), `${json.trimEnd()}\n`);
   return 'reuse';
@@ -74,25 +85,19 @@ const ensureNoImages = async (g: GuardInput, exec: Exec): Promise<void> => {
       throw new Error(
         `${image} is already pushed but ${g.tag} has no record; release a new version`
       );
-    // denied too: GHCR may answer it for a package that does not exist yet (a new part or the one image).
+    // A part may be new: GHCR can answer denied for it. The plain id is the one image: denied
+    // there means the name is another package's, and the push would fail after the part images.
+    const one = g.oneImage && image === `ghcr.io/agentage/${g.id}:${g.version}`;
+    if (one && /denied/.test(ran.err))
+      throw new Error(`${image} is denied: the name ${g.id} belongs to another package`);
     notFound(ran, /manifest unknown|no such manifest|denied/, image);
   }
 };
 
 // A released version is never rebuilt: its images and record stay as first pushed.
 export const releaseGuard = async (g: GuardInput, exec: Exec): Promise<'build' | 'reuse'> => {
-  const record = await exec('gh', [
-    'release',
-    'download',
-    g.tag,
-    '-R',
-    g.repo,
-    '-p',
-    RECORD,
-    '-O',
-    '-',
-  ]);
-  if (record.ok) return reuse(g, record.out);
+  const record = await downloadOf(g, RECORD, exec);
+  if (record.ok) return reuse(g, record.out, exec);
   notFound(
     record,
     /release not found|no assets match|no assets to download/,

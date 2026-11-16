@@ -23,6 +23,7 @@ interface World {
   publishDenied?: boolean;
   stageFails?: boolean;
   uploadFails?: boolean;
+  failUploadOf?: string;
   viewFails?: string;
   publishTimesOut?: boolean;
   private?: boolean;
@@ -46,7 +47,7 @@ const world =
         : ran(false, 'release not found');
     if (call.startsWith('gh release view')) return ran(Boolean(w.release));
     if (call.startsWith('gh release upload') || call.startsWith('gh release create'))
-      return ran(!w.uploadFails, 'HTTP 403');
+      return ran(!w.uploadFails && !(w.failUploadOf && call.includes(w.failUploadOf)), 'HTTP 403');
     if (cmd === 'docker') return ran(false, 'manifest unknown');
     if (call === 'npm --version') return ran(true, `${w.npm ?? '11.7.0'}\n`);
     if (args[0] === 'view' && w.viewFails) return ran(false, w.viewFails);
@@ -129,7 +130,7 @@ describe('extension release', () => {
       'PASS guard: v0.1.0 has no record and no image: build',
       'api ghcr.io/agentage/probe-api:0.1.0 sha256:bbbbbbbb pushed',
       'api ghcr.io/agentage/probe-api:0.1.0 sha256:bbbbbbbb pushed',
-      'PASS record: agentage-extension.json, agentage-container.json attached to release v0.1.0',
+      'PASS record: agentage-container.json, agentage-extension.json attached to release v0.1.0',
       `PASS npm: ${NAME}@0.1.0 published`,
     ]);
     expect(run.calls.filter((c) => c.startsWith('docker'))).toEqual([
@@ -144,11 +145,12 @@ describe('extension release', () => {
       built: true,
       published: true,
     });
-    const builds = run.calls.filter((c) => c.startsWith('build') || c.startsWith('gh release c'));
+    const builds = run.calls.filter((c) => c.startsWith('build') || /^gh release (c|u)/.test(c));
     expect(builds).toEqual([
       'build push=true',
       'build push=true container',
-      'gh release create v0.1.0 dist/agentage-extension.json dist/agentage-container.json --title v0.1.0 --notes Images by digest: agentage-extension.json, agentage-container.json -R agentage/probe',
+      'gh release create v0.1.0 dist/agentage-container.json --title v0.1.0 --notes Images by digest: agentage-container.json, agentage-extension.json -R agentage/probe',
+      'gh release upload v0.1.0 dist/agentage-extension.json -R agentage/probe',
     ]);
     expect(run.calls).toContain('npm publish --access public --provenance --ignore-scripts');
   });
@@ -162,9 +164,27 @@ describe('extension release', () => {
 
   test('a tag that already has a release gets the records uploaded to it', async () => {
     const run = await release({ release: true });
-    expect(run.calls).toContain(
-      'gh release upload v0.1.0 dist/agentage-extension.json dist/agentage-container.json -R agentage/probe'
-    );
+    const uploads = run.calls.filter((c) => c.startsWith('gh release upload'));
+    expect(uploads).toEqual([
+      'gh release upload v0.1.0 dist/agentage-container.json -R agentage/probe',
+      'gh release upload v0.1.0 dist/agentage-extension.json -R agentage/probe',
+    ]);
+  });
+
+  test('the part record goes up last, so a failed container upload leaves no record', async () => {
+    const run = await release({ release: true, failUploadOf: 'agentage-container.json' });
+    expect(run.error).toContain('FAIL record:');
+    const sent = run.calls.filter((c) => c.startsWith('gh release upload'));
+    expect(sent).toEqual([
+      'gh release upload v0.1.0 dist/agentage-container.json -R agentage/probe',
+    ]);
+    expect(run.calls.some((c) => c.startsWith('npm publish'))).toBe(false);
+  });
+
+  test('an id ending in a part name is refused before any push', async () => {
+    const run = await release({ id: 'market-api' });
+    expect(run.error).toContain('FAIL id: market-api ends in a part name');
+    expect(run.calls.some((c) => c.startsWith('build') || c.startsWith('docker'))).toBe(false);
   });
 
   test('a package with no server part has no one image: part images and one record', async () => {

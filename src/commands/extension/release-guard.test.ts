@@ -20,9 +20,11 @@ const PAGES = `ghcr.io/agentage/${id}-pages:0.1.0`; // the first image part the 
 
 interface Released {
   record?: object;
+  noContainerRecord?: boolean;
   images?: string[];
   ghError?: string;
   dockerError?: string;
+  deniedImages?: string[];
   ghHang?: boolean;
   dockerHang?: boolean;
 }
@@ -38,12 +40,15 @@ const registry =
     if (cmd === 'gh') {
       if (w.ghHang) return hang(dir);
       if (w.ghError) return ran(false, w.ghError);
+      if (w.noContainerRecord && args.includes('agentage-container.json'))
+        return ran(false, 'no assets match the file pattern');
       return w.record
         ? ran(true, `${JSON.stringify(w.record, null, 2)}\n`)
         : ran(false, 'release not found');
     }
     if (w.dockerHang) return hang(dir);
     if (w.dockerError) return ran(false, w.dockerError);
+    if ((w.deniedImages ?? []).includes(args[2] ?? '')) return ran(false, 'unauthorized: denied');
     return (w.images ?? []).includes(args[2] ?? '')
       ? ran(true, '{}')
       : ran(false, 'manifest unknown');
@@ -81,8 +86,7 @@ describe('release guard', () => {
   });
 
   it('builds the first image of a part when the registry denies a package it has never seen', async () => {
-    const denied = 'Get "https://ghcr.io/v2/x/manifests/0.1.0": denied';
-    expect(await guard({ dockerError: denied })).toMatchObject({ code: 0, out: 'build' });
+    expect(await guard({ deniedImages: [PAGES, API] })).toMatchObject({ code: 0, out: 'build' });
   });
 
   it('reuses the released record on a re-run of the same commit', async () => {
@@ -90,6 +94,18 @@ describe('release guard', () => {
     expect(run).toMatchObject({ code: 0, out: 'reuse' });
     const kept = readFileSync(join(run.dir, 'dist', 'agentage-extension.json'), 'utf8');
     expect(kept).toBe(`${JSON.stringify(RECORD, null, 2)}\n`);
+  });
+
+  it('refuses a reuse when the release has the part record but no container record', async () => {
+    const run = await guard({ record: RECORD, noContainerRecord: true });
+    expect(run).toMatchObject({ code: 1, out: '' });
+    expect(run.err).toContain('has agentage-extension.json but no agentage-container.json');
+  });
+
+  it('refuses a one-image name the registry denies, before any push', async () => {
+    const run = await guard({ deniedImages: [`ghcr.io/agentage/${id}:0.1.0`], dockerError: '' });
+    expect(run.code).toBe(1);
+    expect(run.err).toContain('belongs to another package');
   });
 
   it('refuses a tag moved to another commit', async () => {

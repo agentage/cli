@@ -6,7 +6,14 @@ import type { ExtensionPackage } from '@agentage/extension/tool';
 import { addJson, CliError } from '../../lib/json-output.js';
 import { runImageBuild } from './build.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
-import { CONTAINER_RECORD, execIn, imagesOf, RECORD, releaseGuard } from './release-guard.js';
+import {
+  CONTAINER_RECORD,
+  execIn,
+  imagesOf,
+  PART_SUFFIX,
+  RECORD,
+  releaseGuard,
+} from './release-guard.js';
 import { type Exec } from './release-guard.js';
 
 export type ExtensionReleaseOptions = { dir?: string; timeout?: number; json?: boolean };
@@ -38,14 +45,17 @@ const scoped =
   (cmd, args) =>
     exec(cmd, args, secrets[cmd]);
 
-// Every image is pushed first, then both records go up in one call: a record never lacks an image.
+// Every image is pushed first. The records go up one call each, RECORD last: it is the "done" marker.
 const attach = async (run: Exec, tag: string, repo: string, names: string[]): Promise<void> => {
-  const files = names.map((name) => join('dist', name));
-  const exists = (await run('gh', ['release', 'view', tag, '-R', repo])).ok;
   const notes = ['--title', tag, '--notes', `Images by digest: ${names.join(', ')}`];
-  const args = exists ? ['upload', tag, ...files] : ['create', tag, ...files, ...notes];
-  const ran = await run('gh', ['release', ...args, '-R', repo]);
-  if (!ran.ok) fail(`record: ${ran.err}`);
+  let exists = (await run('gh', ['release', 'view', tag, '-R', repo])).ok;
+  for (const name of names) {
+    const file = join('dist', name);
+    const args = exists ? ['upload', tag, file] : ['create', tag, file, ...notes];
+    const ran = await run('gh', ['release', ...args, '-R', repo]);
+    if (!ran.ok) fail(`record: ${ran.err}`);
+    exists = true;
+  }
   step(`record: ${names.join(', ')} attached to release ${tag}`);
 };
 
@@ -58,7 +68,7 @@ const buildImages = async (dir: string, oneImage: boolean, tool: LoadKitTool) =>
   // The first build checked this HEAD; its own dist/ output must not read as a change.
   await runImageBuild({ push: true, container: true, dir }, tool, async () => undefined);
   await writeFile(join(dir, 'dist', RECORD), record);
-  return [RECORD, CONTAINER_RECORD];
+  return [CONTAINER_RECORD, RECORD];
 };
 
 // Single quotes on purpose: npm expands ${NPM_TOKEN} itself, the token never lands on disk.
@@ -130,6 +140,8 @@ const preflight = async (
   if (pkg.agentage.id === 'template')
     fail('id: this repo is the starting point for extensions: create one, release that');
   step(`id: ${pkg.agentage.id} is not the template`);
+  if (imagesOf(pkg).oneImage && PART_SUFFIX.test(pkg.agentage.id))
+    fail(`id: ${pkg.agentage.id} ends in a part name: it would name another extension's image`);
   const fetched = await run('git', ['fetch', '-q', 'origin', 'master']);
   if (!fetched.ok || !(await run('git', ['merge-base', '--is-ancestor', sha, 'origin/master'])).ok)
     fail(`master: ${sha} is not on master${fetched.err ? `: ${fetched.err}` : ''}`);

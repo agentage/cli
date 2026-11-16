@@ -531,8 +531,14 @@ call that fails or outlasts `--timeout` (default 60 s) stops the release. A new 
 `build --push` (the part images, for v13 rows), then, when the package has an api, mcp or worker
 part, `build --container --push` (the one image `ghcr.io/agentage/<id>:<version>`, for app hosts),
 and attaches `agentage-extension.json` and `agentage-container.json` to the tag's GitHub release
-(created when missing) in one call, after every image is pushed. The guard also refuses a pushed
-one image with no record. Last, `npm publish --access public --provenance --ignore-scripts`, skipped when the version is on npm.
+(created when missing), after every image is pushed: `agentage-container.json` first, then
+`agentage-extension.json` in a second call (the "done" marker). The guard also refuses a pushed
+one image with no record, and a re-run that finds `agentage-extension.json` without
+`agentage-container.json` for a package with a server part. An id that ends in `-pages`, `-ui`,
+`-api`, `-mcp` or `-worker` is refused for such a package, and so is a one-image name the registry
+answers `denied` (another package owns it), before any image is pushed. If the one-image push fails
+after the part images are pushed, the version is used up: the guard refuses a re-run, release a new
+version. Last, `npm publish --access public --provenance --ignore-scripts`, skipped when the version is on npm.
 Only an `E404` from `npm view` counts as not on npm; any other `npm view` error stops the release.
 When the direct publish is not authorized, or `NPM_TOKEN` is set and the name is new, it runs `npm
 stage publish` instead. `GH_TOKEN` (or `GITHUB_TOKEN`) goes only to `gh` and `NPM_TOKEN` only to
