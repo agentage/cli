@@ -166,7 +166,7 @@ const watchUntilStopped = async (run: Run, mode: UpMode, w: Watching): Promise<s
   try {
     const tsc = markOf(tscPid) ?? undefined;
     const { nonce } = w.ctx;
-    rewriteRecord(run.dir, {
+    await rewriteRecord(run.dir, {
       up: selfMark(),
       nonce,
       id: w.up.id,

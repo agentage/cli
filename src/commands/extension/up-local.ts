@@ -81,15 +81,16 @@ export const claimFolder = (dir: string, nonce: string, id: string): Promise<UpR
     return before;
   });
 
-// A record that is no longer this up's (down ran during the start) stops the start.
-export const rewriteRecord = (dir: string, record: UpRecord): void => {
-  if (readRecord(dir)?.nonce !== record.nonce)
-    throw new CliError(
-      'cancelled',
-      `extension down ran for ${dir} while up started; run extension down again to remove its row`
-    );
-  writeRecord(dir, record);
-};
+// A record that is no longer this up's (down ran during the start) stops the start; locked as down is.
+export const rewriteRecord = (dir: string, record: UpRecord): Promise<void> =>
+  withFileLock(recordPath(dir), () => {
+    if (readRecord(dir)?.nonce !== record.nonce)
+      throw new CliError(
+        'cancelled',
+        `extension down ran for ${dir} while up started; run extension down again to remove its row`
+      );
+    writeRecord(dir, record);
+  });
 
 // Ends on a signal (the row stays), a removed or rewritten record (`down`) or a dead watch.
 export const untilStopped = (
@@ -117,9 +118,12 @@ export const stopLocal = async (
   dir: string,
   timeoutMs = 10_000
 ): Promise<{ down: LocalDown; record: UpRecord | null }> => {
-  const record = readRecord(dir);
+  const record = await withFileLock(recordPath(dir), () => {
+    const found = readRecord(dir);
+    if (found) removeRecord(dir);
+    return found;
+  });
   if (!record) return { down: 'none', record };
-  removeRecord(dir);
   if (!proven(record.up)) return (stopOrphan(record), { down: 'stale', record });
   if (!(await waitFor(() => !proven(record.up), timeoutMs)))
     throw new CliError('stop_failed', `extension up (pid ${record.up.pid}) did not stop`);

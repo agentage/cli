@@ -11,6 +11,7 @@ import {
   recordPath,
   refuseRunning,
   removeRecord,
+  rewriteRecord,
   stopLocal,
   untilStopped,
   writeRecord,
@@ -87,6 +88,19 @@ describe('how an up ends', () => {
     removeRecord(dir.at('w'));
     expect(await claimFolder(dir.at('w'), 'n3', 'demo')).toBeNull();
     expect(readRecord(dir.at('w'))).toMatchObject({ nonce: 'n3', added: false });
+  });
+
+  test('a down that holds the lock while up rewrites its record wins: up is cancelled', async ({
+    dir,
+  }) => {
+    const mine = rec(process.pid, true);
+    writeRecord(dir.at('w'), mine);
+    expect(acquireFileLock(recordPath(dir.at('w')))).toBe(true);
+    const rewrite = rewriteRecord(dir.at('w'), mine).catch((err: unknown) => err);
+    removeRecord(dir.at('w'));
+    releaseFileLock(recordPath(dir.at('w')));
+    expect(await rewrite).toMatchObject({ code: 'cancelled' });
+    expect(readRecord(dir.at('w'))).toBeNull();
   });
 
   test('an orphan tsc of an up that ended is stopped when proven; a reused pid is not signalled', async ({
