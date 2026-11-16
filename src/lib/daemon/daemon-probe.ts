@@ -15,7 +15,17 @@ export interface Health {
   pid: number;
   version: string;
   protocol: number;
-  extensions: { id: string; version: string; state: string }[];
+  extensions: HealthEntry[];
+}
+
+// One entry of /health; kit 0.15 adds parts, seal and restarts (C1).
+export interface HealthEntry {
+  id: string;
+  version: string;
+  state: string;
+  parts?: string[];
+  seal?: 'on' | 'off';
+  restarts?: number;
 }
 
 // What answers on a port: our daemon, another program, nothing (refused), or nothing in time.
@@ -33,6 +43,7 @@ export const probe = async (port: number, timeoutMs = 2000): Promise<Probe> => {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/health`, {
       signal: AbortSignal.timeout(timeoutMs),
+      redirect: 'manual',
     });
     const body: unknown = await res.json().catch(() => null);
     return isHealth(body) ? { kind: 'ours', health: body } : { kind: 'foreign' };

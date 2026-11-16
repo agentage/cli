@@ -1,10 +1,12 @@
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
+import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { CliError, omitJson } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { execIn, type Exec } from './release-guard.js';
 import { assertOwnStack } from './stack-owner.js';
-import { stopLocal, type LocalDown } from './up-local.js';
+import { readRecord, stopLocal, type LocalDown, type UpRecord } from './up-local.js';
 import { runLocalUp } from './up-run.js';
 
 export interface ExtensionUpOptions {
@@ -21,6 +23,8 @@ export interface ExtensionTokenOptions extends ExtensionUpOptions {
   issuer?: string;
 }
 
+const real = (path: string): string => (existsSync(path) ? realpathSync(path) : path);
+
 // Prints each line as the kit reports it and keeps them for the --json answer.
 const printed = (): { lines: string[]; onLine: (line: string) => void } => {
   const lines: string[] = [];
@@ -32,33 +36,21 @@ export interface ExtensionUpFlags extends ExtensionUpOptions {
   local?: boolean;
 }
 
-export const UP_CHANGED =
-  'extension up now runs with no Docker; the Docker stack is `extension up --docker`';
-
-// CI=false, 0 or empty is not CI.
-const inCi = (env: NodeJS.ProcessEnv): boolean =>
-  !['', 'false', '0', undefined].includes(env['CI']);
-
-// 0.51's up was Docker: a CI script with neither flag asked for that, so it stops instead.
-const noticeChange = ({ local }: ExtensionUpFlags, env: NodeJS.ProcessEnv, tty: boolean) => {
-  if (local) return;
-  if (inCi(env) && !tty) throw new CliError('invalid_argument', `${UP_CHANGED}; or --local`);
-  console.error(UP_CHANGED);
-};
+// S1.1.1 D10: an old flag is kept for one minor with a line that names the new form.
+export const LOCAL_DEPRECATED =
+  '--local is deprecated (removed in the next minor): extension up runs the working copy on the daemon';
 
 type LocalRun = (dir: string | undefined, json: boolean) => Promise<unknown>;
 
-// No Docker: the working copy in this terminal (D7). --docker: the kit's path, a line per step.
+// No Docker: the working copy on the daemon, watched (D12); in CI too. --docker: the kit's path.
 export const runExtensionUp = async (
   { docker, local: asked, ...opts }: ExtensionUpFlags = {},
   tool: LoadKitTool = loadKitTool,
-  local: LocalRun = (dir, json) => runLocalUp(dir, undefined, json),
-  env: NodeJS.ProcessEnv = process.env,
-  tty = process.stdin.isTTY === true
+  local: LocalRun = (dir, json) => runLocalUp(dir, undefined, json)
 ): Promise<unknown> => {
   if (docker && asked) throw new CliError('invalid_argument', '--docker and --local: pick one');
   if (!docker) {
-    noticeChange({ local: asked }, env, tty);
+    if (asked) console.error(LOCAL_DEPRECATED);
     return local(opts.dir, opts.json === true);
   }
   const { up } = await tool();
@@ -76,26 +68,54 @@ const dockerDown = async (opts: ExtensionDownOptions, tool: LoadKitTool): Promis
 
 const LOCAL_LINES: Record<LocalDown, string> = {
   stopped: 'stopped   extension up in this folder',
-  stale: 'removed   a stale extension up record (its port no longer answers as it)',
+  stale: 'removed   the record of an extension up that ended',
   none: '',
 };
 
-// A local up of the folder stops; a Docker stack up --docker started there goes too.
+// The row up added goes (no purge: its data stays); a row up found there is left as it was.
+const removeAdded = async (dir: string, record: UpRecord | null, host: Host): Promise<string[]> => {
+  if (!record?.added) return [];
+  const client = await host();
+  const row = (await client.list()).find((r) => r.id === record.id);
+  if (!row || real(row.source) !== real(dir)) return [];
+  await client.remove(record.id, false);
+  return [`removed   ${record.id} from the daemon (its data stays)`];
+};
+
+type Host = () => Promise<HostClient>;
+const defaultHost: Host = async () => hostClient(await ensureDaemon());
+
+// The row up added goes even when that up does not stop or is gone (a stop_failed still throws).
+const stopAndRemove = async (dir: string, host: Host, stopMs: number) => {
+  const record = readRecord(dir);
+  const lines: string[] = [];
+  let down: LocalDown = 'none';
+  try {
+    down = (await stopLocal(dir, stopMs)).down;
+    if (down !== 'none') lines.push(LOCAL_LINES[down]);
+  } finally {
+    lines.push(...(await removeAdded(dir, record, host)));
+    for (const line of lines) console.log(line);
+  }
+  return { down, lines };
+};
+
+// The up of the folder stops and its row goes; a Docker stack up --docker started there goes too.
 export const runExtensionDown = async (
   opts: ExtensionDownOptions = {},
-  tool: LoadKitTool = loadKitTool
+  tool: LoadKitTool = loadKitTool,
+  host: Host = defaultHost,
+  stopMs = 10_000
 ): Promise<unknown> => {
-  const dir = opts.dir ?? '.';
-  const local = await stopLocal(dir);
-  const lines = local === 'none' ? [] : [LOCAL_LINES[local]];
-  for (const line of lines) console.log(line);
+  const dir = resolve(opts.dir ?? '.');
+  const { down, lines } = await stopAndRemove(dir, host, stopMs);
   if (existsSync(join(dir, '.agentage', 'compose.json')))
     lines.push(...(await dockerDown(opts, tool)));
   if (lines.length === 0) {
-    lines.push(`nothing runs for ${resolve(dir)}`);
+    lines.push(`nothing runs for ${dir}`);
     console.log(lines[0]);
   }
-  return { local, lines };
+  return { local: down, lines };
 };
 
 // The token alone on stdout, so a script can take it as it is.

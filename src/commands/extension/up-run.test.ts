@@ -1,321 +1,330 @@
 import { spawn } from 'node:child_process';
-import { request } from 'node:http';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { readFileSync } from 'node:fs';
-import { createServer } from 'node:net';
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
-import { output, test } from '../../test/config-dir.js';
 import { takeExit } from '../../lib/exit-code.js';
-import { type KitTool } from './kit-tool.js';
+import { type HostReload, type HostRow } from '../../lib/daemon/host-client.js';
+import { output, test, type ConfigDir } from '../../test/config-dir.js';
+import { fakeHost } from '../../test/host.js';
+import { type Npm, type PackageBuild } from './package-build.js';
+import {
+  readRecord,
+  recordPath,
+  refuseRunning,
+  removeRecord,
+  stopLocal,
+  untilStopped,
+  writeRecord,
+  type UpRecord,
+} from './up-local.js';
+import { stageOf } from './up-build.js';
+import { runLocalUp, type LocalUpDeps } from './up-run.js';
+import { markOf, startedAt, type ProcessMark } from '../../lib/proc/start-time.js';
 import { runExtensionDown } from './up.js';
-import { listenFrom, portOf, readRecord, recordPath, stopLocal, writeRecord } from './up-local.js';
-import type { HostedExtension } from '@agentage/extension/host';
-import { loadKitHost, localUpDeps, runLocalUp, type LocalUpDeps } from './up-run.js';
 
-const API = `export const create = () => (req, res) =>
-  res.status(200).json({ success: true, data: { path: req.url } });
+type Dir = ConfigDir;
+
+// An up record: `pid` proven with its real start time, or `started` given (a reused pid).
+const rec = (pid: number, added: boolean, started?: string, tsc?: ProcessMark): UpRecord => ({
+  up: { pid, started: started ?? startedAt(pid) ?? 'gone' },
+  nonce: 'n1',
+  id: 'demo',
+  added,
+  ...(tsc && { tsc }),
+});
+const ENDED = 999_999_999;
+
+const PKG = { name: '@agentage/extension-demo', version: '0.1.0', agentage: { id: 'demo' } };
+
+// A plain-JS working copy as the e2e lab writes it: src/, a build script that is not tsc, dist/.
+const workingCopy = (dir: Dir): string => {
+  dir.write('demo/package.json', { ...PKG, scripts: { build: 'node build.mjs' } });
+  dir.write('demo/src/api/index.js', 'one');
+  dir.write('demo/dist/api/index.js', 'one');
+  dir.write('demo/dist/agentage-extension.json', { id: 'demo' });
+  return realpathSync(dir.at('demo'));
+};
+
+// The folder's tsc in watch mode: a first clean build, a change with an error, a clean one.
+const FAKE_TSC = `#!/usr/bin/env node
+console.log('Found 0 errors. Watching for file changes.');
+setTimeout(() => {
+  console.log('File change detected. Starting incremental compilation...');
+  console.log('src/a.ts(1,1): error TS1005: x');
+  console.log('Found 1 error. Watching for file changes.');
+  console.log('Found 0 errors. Watching for file changes.');
+}, 300);
+setTimeout(() => {}, 10000);
 `;
 
-// A built package with an api part and no build script, as the e2e fixture is.
-const folder = (root: string): string => {
-  const dir = join(root, 'extension-demo');
-  mkdirSync(root, { recursive: true });
-  mkdirSync(join(dir, 'dist', 'api'), { recursive: true });
-  const parts = { api: true };
-  const pkg = {
-    name: '@agentage/extension-demo',
-    version: '0.1.0',
-    type: 'module',
-    engines: { node: '>=22', agentage: '>=0.12' },
-  };
-  writeFileSync(
-    join(dir, 'package.json'),
-    JSON.stringify({ ...pkg, agentage: { id: 'demo', parts } })
-  );
-  writeFileSync(
-    join(dir, 'dist', 'agentage-extension.json'),
-    JSON.stringify({ id: 'demo', parts: { api: {} } })
-  );
-  writeFileSync(join(dir, 'dist', 'api', 'index.js'), API);
-  return dir;
+// A working copy whose build is plain tsc, with typescript/bin/tsc a stand-in script.
+const tscCopy = (dir: Dir, tsc: string): string => {
+  const folder = workingCopy(dir);
+  dir.write('demo/package.json', { ...PKG, scripts: { build: 'tsc -p tsconfig.build.json' } });
+  dir.write('demo/node_modules/typescript/package.json', { name: 'typescript', version: '6.0.0' });
+  dir.write('demo/node_modules/typescript/bin/tsc', tsc);
+  return folder;
 };
 
-const notConforming = {
+const REPORT = { conforms: true } as PackageBuild['report'];
+
+// npm as a seam: `run build` in the stage copies its src/ to dist/, or fails as the build would.
+const stageNpm = (fail = false): { npm: Npm; runs: string[] } => {
+  const runs: string[] = [];
+  const npm: Npm = async (cwd) => {
+    runs.push(cwd);
+    if (fail) throw new Error('npm run build exited 1');
+    const text = readFileSync(join(cwd, 'src/api/index.js'), 'utf8');
+    mkdirSync(join(cwd, 'dist/api'), { recursive: true });
+    writeFileSync(join(cwd, 'dist/api/index.js'), text);
+  };
+  return { npm, runs };
+};
+
+const depsOf = (rows: HostRow[], stopped: LocalUpDeps['stopped'], npm: Npm) => {
+  const fake = fakeHost(rows);
+  const built: string[] = [];
+  const deps: LocalUpDeps = {
+    build: async (dir) => (built.push(dir), { dir, built: true, contracts: [], report: REPORT }),
+    daemon: async () => ({ port: 4999, host: fake.host }),
+    npm,
+    stopped,
+  };
+  return { deps, built, fake };
+};
+
+const folderRow = (source: string): HostRow => ({
   id: 'demo',
   version: '0.1.0',
-  conforms: false,
-  rules: ['surface'],
-  problems: [{ rule: 'surface', problem: 'openapi.json is missing' }],
-  skipped: {},
-};
+  source,
+  state: 'running',
+  enabled: true,
+});
 
-// The run stops when the test says so, as Ctrl-C would.
-const controlled = () => {
-  let stop: (signal: string) => void = () => undefined;
-  const stopped = new Promise<string>((done) => (stop = done));
-  const deps: LocalUpDeps = {
-    ...localUpDeps,
-    build: async (dir) => ({ dir, built: false, contracts: [], report: notConforming }),
-    stopped: () => stopped,
-  };
-  return { deps, stop, stopped };
-};
-
-const until = async <T>(read: () => T | null): Promise<T> => {
-  for (let i = 0; i < 200; i += 1) {
-    const value = read();
-    if (value) return value;
-    await new Promise((done) => setTimeout(done, 25));
-  }
-  throw new Error('timed out');
-};
-
-// The first port from `from` that binds, released again.
-const freeFrom = async (from = 4244): Promise<number> => {
-  const server = await listenFrom(() => undefined, from);
-  const port = portOf(server);
-  await new Promise((done) => server.close(done));
-  return port;
-};
-
-const started = async (demo: string, deps: LocalUpDeps) => {
-  const run = output(() => runLocalUp(demo, deps));
-  const record = await until(() => readRecord(demo));
-  return { run, record, at: `http://127.0.0.1:${record.port}` };
-};
-
-describe('extension up with no Docker: the kit host in this process', () => {
-  test('serves /health and the api on the next free port from 4244; Ctrl-C exits 130', async ({
+describe('extension up on the daemon (D12)', () => {
+  test('a new folder: built in place, dist.next seeded from dist, added as a row; Ctrl-C leaves the row, exits 130', async ({
     dir,
   }) => {
-    const demo = folder(dir.at(''));
-    const { deps, stop } = controlled();
-    const expected = await freeFrom();
-    const { run, record, at } = await started(demo, deps);
-    expect(record).toMatchObject({ pid: process.pid, port: expected, id: 'demo' });
-    expect((await fetch(`${at}/health`)).status).toBe(200);
-    expect(await (await fetch(`${at}/api/demo/echo`)).json()).toMatchObject({ success: true });
-    expect(readFileSync(join(demo, '.gitignore'), 'utf8')).toBe('.agentage/\n');
-    stop('SIGINT');
-    const done = await run;
-    expect(done.lines).toEqual([
-      `up        demo 0.1.0 on ${at}/api/demo/ (Ctrl-C stops it)`,
-      'stopped   demo (SIGINT)',
+    const folder = workingCopy(dir);
+    const { deps, built, fake } = depsOf([], async () => 'SIGINT', stageNpm().npm);
+    const run = await output(() => runLocalUp(folder, deps));
+    expect(built).toEqual([folder]);
+    expect(fake.host.add).toHaveBeenCalledWith({ source: folder });
+    expect(readFileSync(join(folder, 'dist.next/agentage-extension.json'), 'utf8')).toContain(
+      'demo'
+    );
+    expect(readRecord(folder)).toMatchObject({ up: markOf(process.pid), id: 'demo', added: true });
+    expect(run.lines[0]).toBe(
+      'up        demo 0.1.0 on http://127.0.0.1:4999/api/demo/ (watching src/; Ctrl-C stops)'
+    );
+    expect(run.lines.slice(-2)).toEqual([
+      'stopped   watching demo (SIGINT); the daemon still runs it',
+      '          agentage extension down removes it (its data stays)',
     ]);
-    expect(done.stderr).toContain('check     ');
-    expect(done.stderr).toContain(`gitignore added .agentage/ to ${join(demo, '.gitignore')}`);
     expect(takeExit()).toBe(130);
-    expect(readRecord(demo)).toBeNull();
-    await expect(fetch(`${at}/health`)).rejects.toThrow();
-    // D7: up changes no installation and starts no daemon.
-    expect(['installation.json', 'daemon.json'].filter((f) => dir.exists(f))).toEqual([]);
+    expect(fake.rows.map((r) => r.id)).toEqual(['demo']);
   });
 
-  test('a second up of the same folder while the first answers: already_running; SIGTERM exits 0', async ({
+  test('a saved change in src/ builds in the stage, never in dist, and prints the reload line', async ({
     dir,
   }) => {
-    const demo = folder(dir.at(''));
-    const { deps, stop } = controlled();
-    const { run, at } = await started(demo, deps);
-    const again = await output(() => runLocalUp(demo, deps));
-    expect(again).toMatchObject({ code: 'already_running' });
-    expect(again.error).toBe(`extension up runs for ${demo} on ${at}: extension down`);
-    stop('SIGTERM');
-    await run;
-    expect(takeExit()).toBeNull();
-  });
-
-  test('refuses another site (the kit guard): a foreign Host, [::1], a cross- or same-site fetch, a foreign Origin', async ({
-    dir,
-  }) => {
-    const demo = folder(dir.at(''));
-    const { deps, stop } = controlled();
-    const { run, record, at } = await started(demo, deps);
-    const local = { host: `localhost:${record.port}` };
-    for (const headers of [
-      { host: 'evil.example' },
-      { host: `[::1]:${record.port}` },
-      { host: `127.0.0.1:${record.port + 1}` },
-      { ...local, 'sec-fetch-site': 'cross-site' },
-      { ...local, 'sec-fetch-site': 'same-site' },
-      { ...local, origin: 'http://evil.example' },
-      { ...local, origin: '' },
-    ]) {
-      const res = await rawGet(record.port, headers);
-      expect(res, JSON.stringify(headers)).toBe(403);
-    }
-    expect(await rawGet(record.port, { ...local, origin: `http://${local.host}` })).toBe(200);
-    expect(await rawGet(record.port, { ...local, 'sec-fetch-site': 'same-origin' })).toBe(200);
-    expect((await fetch(`${at}/health`)).status).toBe(200);
-    stop('SIGTERM');
-    await run;
-  });
-
-  test('stops the host and leaves no record when the run fails after it started', async ({
-    dir,
-  }) => {
-    const demo = folder(dir.at(''));
-    const { deps } = controlled();
-    const real = await deps.kit();
-    const stops = vi.fn();
-    const host: typeof real.host = async (at, opts) => {
-      const hosted = await real.host(at, opts);
-      return { ...hosted, stop: () => (stops(), hosted.stop()) };
-    };
-    const failing = {
-      ...deps,
-      kit: async () => ({ ...real, host }),
-      stopped: async () => {
-        throw new Error('boom');
+    const folder = workingCopy(dir);
+    const { npm, runs } = stageNpm();
+    const made = depsOf(
+      [],
+      async () => {
+        writeFileSync(join(folder, 'src/api/index.js'), 'two');
+        await vi.waitFor(() => expect(made.fake.host.reload).toHaveBeenCalled(), {
+          timeout: 5_000,
+        });
+        return 'down';
       },
-    };
-    expect((await output(() => runLocalUp(demo, failing))).error).toBe('boom');
-    expect(stops).toHaveBeenCalledTimes(1);
-    expect(readRecord(demo)).toBeNull();
+      npm
+    );
+    const run = await output(() => runLocalUp(folder, made.deps));
+    expect(runs).toEqual([stageOf(folder)]);
+    expect(readFileSync(join(folder, 'dist.next/api/index.js'), 'utf8')).toBe('two');
+    expect(readFileSync(join(folder, 'dist/api/index.js'), 'utf8')).toBe('one');
+    expect(run.lines.find((l) => l.startsWith('reload'))).toMatch(
+      /^reload {4}demo reloaded: true in \d+ ms$/
+    );
+    expect(run.lines.at(-1)).toBe('stopped   watching demo (extension down)');
   });
 
-  test('--json: one JSON line with the URL on stdout when the host is ready', async ({ dir }) => {
-    const demo = folder(dir.at(''));
-    const { deps, stop } = controlled();
-    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    const run = output(() => runLocalUp(demo, deps, true));
-    const record = await until(() => readRecord(demo));
-    const url = `http://127.0.0.1:${record.port}/api/demo/`;
-    await until(() => write.mock.calls.length > 0 || null);
-    const line = { ready: true, id: 'demo', version: '0.1.0', url, port: record.port };
-    expect(write.mock.calls).toEqual([[`${JSON.stringify(line)}\n`]]);
-    write.mockRestore();
-    stop('SIGTERM');
-    await run;
+  test('a build that fails sends no reload; a refused reload names why, the last good build runs', async ({
+    dir,
+  }) => {
+    const folder = workingCopy(dir);
+    const failing = depsOf(
+      [],
+      async () => {
+        writeFileSync(join(folder, 'src/api/index.js'), 'bad');
+        await new Promise((done) => setTimeout(done, 600));
+        return 'SIGTERM';
+      },
+      stageNpm(true).npm
+    );
+    const bad = await output(() => runLocalUp(folder, failing.deps));
+    expect(failing.fake.host.reload).not.toHaveBeenCalled();
+    expect(bad.stderr).toContain('build     failed, no reload: npm run build exited 1');
+    const refused: HostReload = { id: 'demo', version: '0.1.0', state: 'running', reloaded: false };
+    const again = depsOf([folderRow(folder)], async () => 'SIGTERM', stageNpm().npm);
+    vi.mocked(again.fake.host.reload).mockResolvedValue({ ...refused, refused: 'fails at start' });
+    const run = await output(() => runLocalUp(folder, again.deps));
+    expect(run.lines).toContainEqual(
+      expect.stringMatching(/^reload {4}demo reloaded: false, refused: fails at start \(\d+ ms\)$/)
+    );
+    expect(run.lines).toContain('          demo the last good build runs');
   });
 
-  test('skips a port that is taken', async () => {
-    const first = await freeFrom();
-    const held = createServer().listen(first, '127.0.0.1');
-    await new Promise((done) => held.once('listening', done));
-    expect(await freeFrom()).toBeGreaterThan(first);
-    held.close();
+  test('a folder the daemon runs already: no build into its live dist, a staged build and a reload; down leaves that row', async ({
+    dir,
+  }) => {
+    const folder = workingCopy(dir);
+    const { deps, built, fake } = depsOf(
+      [folderRow(folder)],
+      async () => 'SIGTERM',
+      stageNpm().npm
+    );
+    await output(() => runLocalUp(folder, deps));
+    expect(built).toEqual([]);
+    expect(fake.host.reload).toHaveBeenCalledWith('demo');
+    expect(readRecord(folder)).toMatchObject({ added: false });
+    // That up has exited: its pid in the record is not alive any more.
+    writeRecord(folder, rec(ENDED, false));
+    const down = await output(() =>
+      runExtensionDown({ dir: folder }, undefined, async () => fake.host)
+    );
+    expect(down.lines).toEqual(['removed   the record of an extension up that ended']);
+    expect(fake.host.remove).not.toHaveBeenCalled();
+  });
+
+  test('down removes the row up added, with no purge; a row of that id from another folder stays', async ({
+    dir,
+  }) => {
+    const folder = workingCopy(dir);
+    const { fake } = depsOf([folderRow(folder)], async () => 'SIGTERM', stageNpm().npm);
+    writeRecord(folder, rec(ENDED, true));
+    const down = await output(() =>
+      runExtensionDown({ dir: folder }, undefined, async () => fake.host)
+    );
+    expect(fake.host.remove).toHaveBeenCalledWith('demo', false);
+    expect(down.lines.at(-1)).toBe('removed   demo from the daemon (its data stays)');
+    const other = fakeHost([folderRow(dir.at('elsewhere'))]);
+    writeRecord(folder, rec(ENDED, true));
+    await output(() => runExtensionDown({ dir: folder }, undefined, async () => other.host));
+    expect(other.host.remove).not.toHaveBeenCalled();
   });
 });
 
-// node:http, not fetch: fetch cannot set the Host header.
-const rawGet = (port: number, headers: Record<string, string>) =>
-  new Promise<number>((done, fail) => {
-    const options = { host: '127.0.0.1', port, path: '/health', headers, agent: false };
-    const req = request(options, (res) => (res.resume(), done(res.statusCode ?? 0)));
-    req.once('error', fail).end();
+describe('the up record of a folder', () => {
+  test('a live up of the folder is refused; one that ended keeps only its added', ({ dir }) => {
+    dir.write('w/package.json', PKG);
+    writeRecord(dir.at('w'), rec(process.ppid, true));
+    expect(() => refuseRunning(dir.at('w'))).toThrow(
+      /extension up runs for .* agentage extension down/
+    );
+    writeRecord(dir.at('w'), rec(ENDED, true));
+    expect(refuseRunning(dir.at('w'))).toMatchObject({ added: true });
+    // A reused pid: alive, but it started at another time; it is not that up.
+    writeRecord(dir.at('w'), rec(process.ppid, true, 'another start'));
+    expect(refuseRunning(dir.at('w'))).toMatchObject({ added: true });
   });
 
-const HEALTH = `require('node:http').createServer((q, s) => s.end(JSON.stringify({ data: { extension: 'demo', instance: 'abc' } }))).listen(+process.argv[1], '127.0.0.1', () => console.log('ready'));`;
-
-// A process that answers /health as the recorded run and exits on SIGTERM.
-const fakeRun = async (port: number) => {
-  const child = spawn(process.execPath, ['-e', HEALTH, String(port)], {
-    stdio: ['ignore', 'pipe', 'ignore'],
-  });
-  await new Promise((done) => child.stdout.once('data', done));
-  return { child, exited: new Promise((done) => child.once('exit', done)) };
-};
-
-describe('extension down: the local run of this folder', () => {
-  test('signals the recorded pid only when its port answers as that extension', async ({ dir }) => {
-    const demo = dir.at('ext');
-    mkdirSync(demo, { recursive: true });
-    const port = await freeFrom(4300);
-    const { child, exited } = await fakeRun(port);
-    writeRecord(demo, { pid: child.pid ?? 0, port, id: 'demo', instance: 'other' });
-    const kill = vi.spyOn(process, 'kill');
-    expect(await stopLocal(demo)).toBe('stale');
-    expect(kill).not.toHaveBeenCalled();
-    writeRecord(demo, { pid: child.pid ?? 0, port, id: 'demo', instance: 'abc' });
-    expect(await stopLocal(demo)).toBe('stopped');
-    expect(kill).toHaveBeenCalledWith(child.pid, 'SIGTERM');
-    await exited;
-    kill.mockRestore();
-  });
-
-  test('a local run and a Docker stack in one folder: both stop, the local one first', async ({
+  test('down removes the record and waits for that up to exit; one that does not is stop_failed', async ({
     dir,
   }) => {
-    const demo = dir.at('ext');
-    dir.write('ext/.agentage/compose.json', { name: 'agentage-ext' });
-    const port = await freeFrom(4320);
-    const { child, exited } = await fakeRun(port);
-    writeRecord(demo, { pid: child.pid ?? 0, port, id: 'demo', instance: 'abc' });
-    const asked: unknown[] = [];
-    const tool = async () =>
-      ({
-        down: async (opts: { onLine: (line: string) => void }) => {
-          asked.push(opts);
-          opts.onLine('removed  2 containers');
-        },
-      }) as unknown as KitTool;
-    const run = await output(() => runExtensionDown({ dir: demo }, tool));
-    expect(run.lines).toEqual(['stopped   extension up in this folder', 'removed  2 containers']);
-    expect(asked).toHaveLength(1);
-    await exited;
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 400)']);
+    writeRecord(dir.at('w'), rec(child.pid ?? 0, false));
+    expect((await stopLocal(dir.at('w'))).down).toBe('stopped');
+    expect(dir.exists('w/.agentage/up.json')).toBe(false);
+    expect((await stopLocal(dir.at('w'))).down).toBe('none');
+    writeRecord(dir.at('w'), rec(process.ppid, false));
+    await expect(stopLocal(dir.at('w'), 200)).rejects.toThrow(/did not stop/);
+    writeRecord(dir.at('w'), rec(process.ppid, false, 'another start'));
+    expect((await stopLocal(dir.at('w'))).down).toBe('stale');
   });
 
-  test('a signal that fails is stop_failed, with the reason', async ({ dir }) => {
-    const demo = dir.at('ext');
-    mkdirSync(demo, { recursive: true });
-    const port = await freeFrom(4340);
-    const { child, exited } = await fakeRun(port);
-    writeRecord(demo, { pid: child.pid ?? 0, port, id: 'demo', instance: 'abc' });
-    const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
-      throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' });
-    });
-    await expect(stopLocal(demo)).rejects.toMatchObject({
-      code: 'stop_failed',
-      message: `cannot stop extension up (pid ${child.pid}): kill EPERM`,
-    });
-    kill.mockRestore();
-    child.kill();
-    await exited;
-  });
-
-  test('a record whose port refuses is stale and goes; no record is none', async ({ dir }) => {
-    const demo = dir.at('ext');
-    writeRecord(demo, { pid: 2 ** 22 + 7, port: await freeFrom(4400), id: 'demo', instance: 'x' });
-    expect(await stopLocal(demo)).toBe('stale');
-    expect(dir.exists('ext/.agentage/up.json')).toBe(false);
-    expect(await stopLocal(demo)).toBe('none');
-    expect(recordPath(demo)).toBe(join(demo, '.agentage', 'up.json'));
-  });
-
-  test('an up.json of another shape, a pid under 1, a port outside 1024..65535, or not JSON, reads as no record', ({
-    dir,
-  }) => {
-    const demo = dir.at('ext');
-    const good = { pid: 7, port: 4400, id: 'demo', instance: 'x' };
-    for (const bad of [
-      { ...good, pid: '1' },
-      { ...good, pid: 0 },
-      { ...good, port: 1023 },
-      { ...good, port: 65536 },
-    ]) {
-      dir.write('ext/.agentage/up.json', bad);
-      expect(readRecord(demo), JSON.stringify(bad)).toBeNull();
-    }
-    dir.write('ext/.agentage/up.json', '{ nope');
-    expect(readRecord(demo)).toBeNull();
-  });
-
-  test('up.json is one JSON line', ({ dir }) => {
-    const demo = dir.at('ext');
-    const record = { pid: 7, port: 4400, id: 'demo', instance: 'x' };
-    writeRecord(demo, record);
-    expect(readFileSync(recordPath(demo), 'utf8')).toBe(`${JSON.stringify(record)}\n`);
-    expect(readRecord(demo)).toEqual(record);
+  test('an up.json of another shape or not JSON reads as no record', ({ dir }) => {
+    dir.write('w/.agentage/up.json', { pid: process.pid, id: 'demo', added: true });
+    expect(readRecord(dir.at('w'))).toBeNull();
+    writeFileSync(recordPath(dir.at('w')), 'not json');
+    expect(readRecord(dir.at('w'))).toBeNull();
   });
 });
 
-describe('the kit host and its guard', () => {
-  test('every local up asks the kit for its local-only guard', async () => {
-    const hostExtension = vi.fn(async () => ({}) as HostedExtension);
-    const kit = await loadKitHost(async () => ({ hostExtension }));
-    await kit.host('/x', { dataDir: '/d' });
-    expect(hostExtension).toHaveBeenCalledWith('/x', { dataDir: '/d', localOnly: true });
+describe('how an up ends', () => {
+  test('up ends when down removes its record, another up rewrites it, a SIGTERM, or its watch dies', async ({
+    dir,
+  }) => {
+    const never = new Promise<string>(() => undefined);
+    writeRecord(dir.at('w'), rec(process.pid, true));
+    const ended = untilStopped(dir.at('w'), 'n1', never, 50);
+    removeRecord(dir.at('w'));
+    expect(await ended).toBe('down');
+    writeRecord(dir.at('w'), rec(process.pid, true));
+    const rewritten = untilStopped(dir.at('w'), 'n1', never, 50);
+    writeRecord(dir.at('w'), { ...rec(process.pid, true), nonce: 'n2' });
+    expect(await rewritten).toBe('down');
+    const signalled = untilStopped(dir.at('w'), 'n2', never, 50);
+    process.emit('SIGTERM');
+    expect(await signalled).toBe('SIGTERM');
+    expect(await untilStopped(dir.at('w'), 'n2', Promise.resolve('watch died'), 50)).toBe(
+      'watch died'
+    );
+  });
+
+  test('an orphan tsc of an up that ended is stopped when proven; a reused pid is not signalled', async ({
+    dir,
+  }) => {
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10000)']);
+    const exited = new Promise((done) => child.once('exit', (_c, signal) => done(signal)));
+    const tsc = markOf(child.pid) ?? undefined;
+    writeRecord(dir.at('w'), rec(ENDED, false, undefined, { pid: child.pid ?? 0, started: 'x' }));
+    const reused = await output(() => stopLocal(dir.at('w')));
+    expect(reused.stderr).toBe('');
+    writeRecord(dir.at('w'), rec(ENDED, false, undefined, tsc));
+    const run = await output(async () => void refuseRunning(dir.at('w')));
+    expect(run.stderr).toContain(`stopped   the tsc watch (pid ${child.pid}) of an up that ended`);
+    expect(await exited).toBe('SIGTERM');
+  });
+
+  test('down removes the row up added even when that up does not stop', async ({ dir }) => {
+    const folder = workingCopy(dir);
+    const { fake } = depsOf([folderRow(folder)], async () => 'SIGTERM', stageNpm().npm);
+    writeRecord(folder, rec(process.ppid, true));
+    const down = await output(() =>
+      runExtensionDown({ dir: folder }, undefined, async () => fake.host, 200)
+    );
+    expect(down.error).toMatch(/did not stop/);
+    expect(fake.host.remove).toHaveBeenCalledWith('demo', false);
+  });
+
+  test('a tsc folder: the first build is not reloaded, a later clean one is, an error is not', async ({
+    dir,
+  }) => {
+    const folder = tscCopy(dir, FAKE_TSC);
+    const made = depsOf(
+      [],
+      async () => {
+        await vi.waitFor(() => expect(made.fake.host.reload).toHaveBeenCalledOnce(), {
+          timeout: 5_000,
+        });
+        return 'SIGTERM';
+      },
+      stageNpm().npm
+    );
+    const run = await output(() => runLocalUp(folder, made.deps));
+    expect(run.stderr).toContain('build     1 error(s), no reload');
+    expect(run.lines).toContainEqual(expect.stringMatching(/^reload {4}demo reloaded: true in/));
+    expect(readRecord(folder)?.tsc?.pid).toEqual(expect.any(Number));
+  });
+
+  test('a tsc watch that dies stops up with one line and exit 1', async ({ dir }) => {
+    const folder = tscCopy(dir, 'process.exit(4);');
+    const { deps } = depsOf([], (_dir, _nonce, ended) => ended, stageNpm().npm);
+    const run = await output(() => runLocalUp(folder, deps));
+    expect(run.stderr).toContain('watch     tsc exited 4; extension up stops (run it again)');
+    expect(takeExit()).toBe(1);
   });
 });

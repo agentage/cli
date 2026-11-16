@@ -10,6 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
+import { DaemonError, writeError } from '../../lib/json-output.js';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost, marketRow } from '../../test/host.js';
 import { writeKitExtension } from '../../test/kit-fixture.js';
@@ -31,6 +32,25 @@ describe('extension install', () => {
     );
   });
 
+  test('after @ only a version, a range or a dist-tag: a path, file:, git+, a URL, a space or a flag is refused', () => {
+    expect(specOf('probe@broken')).toEqual({ id: 'probe', version: 'broken' });
+    expect(specOf('probe@http')).toEqual({ id: 'probe', version: 'http' });
+    for (const bad of [
+      '../x',
+      'file:../x',
+      'git+ssh://h/r.git',
+      'http://h/x',
+      'a b',
+      '--registry=x',
+    ])
+      expect(() => specOf(`probe@${bad}`), bad).toThrow(
+        expect.objectContaining({
+          code: 'invalid_argument',
+          message: expect.stringMatching(/after @ only/),
+        })
+      );
+  });
+
   test('a new id is a POST; the extension runs', async () => {
     const { host, deps } = fakeHost();
     const run = await output(() => runInstall({ name: 'probe' }, deps));
@@ -50,6 +70,45 @@ describe('extension install', () => {
     const pinned = await output(() => runInstall({ name: 'probe@0.7.0' }, { ...deps, fromNpm }));
     expect(pinned.stderr).toBe('');
     expect(fromNpm).toHaveBeenCalledExactlyOnceWith('probe', 'probe 0.7.0 came');
+  });
+
+  test('below the Node floor: install prints the seal-off reason on one line, never refuses', async () => {
+    const { deps } = fakeHost();
+    const reason = 'seal off: Node 22.22.2 or 24.14.1 needed, this is Node 24.6.0';
+    const run = await output(() =>
+      runInstall({ name: 'probe' }, { ...deps, sealOff: async () => reason })
+    );
+    expect(run.lines).toEqual(['probe 0.7.0 running']);
+    expect(run.stderr).toBe(reason);
+    expect(run.error).toBeNull();
+  });
+
+  test('START_FAILED as the daemon gives it: the message, exit 1, the details in the --json envelope', async () => {
+    const { host, deps } = fakeHost();
+    const details = { code: 'START_FAILED', reason: 'broken on purpose' };
+    const refused = new DaemonError(
+      'VALIDATION_ERROR',
+      'fixture failed to start: broken on purpose',
+      400,
+      details
+    );
+    vi.mocked(host.add).mockRejectedValueOnce(refused);
+    const run = await output(() => runInstall({ name: 'fixture@broken' }, deps));
+    expect(host.add).toHaveBeenCalledWith({ id: 'fixture', version: 'broken' });
+    expect(run).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      error: 'fixture failed to start: broken on purpose',
+    });
+    const out: string[] = [];
+    writeError({ writeOut: (t) => void out.push(t) }, refused);
+    expect(JSON.parse(out.join(''))).toEqual({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'fixture failed to start: broken on purpose',
+        details,
+      },
+    });
   });
 
   test('an unscoped npm name: refused before npm when the site has a market', async () => {

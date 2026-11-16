@@ -14,6 +14,8 @@ export interface DaemonFile {
   version: string;
   protocol: number;
   startedBy: string;
+  // D11 (kit 0.15): sent as a bearer on /host/*; a daemon of cli 0.52 or older writes none.
+  hostToken?: string;
 }
 
 export const daemonPort = (env: NodeJS.ProcessEnv = process.env): number => {
@@ -34,6 +36,11 @@ const isDaemonFile = (value: unknown): value is DaemonFile =>
   isRecord(value) && isPid(value['pid']) && Number.isInteger(value['port']);
 
 export const readDaemonFile = (): DaemonFile | null => readJson(daemonFilePath(), isDaemonFile);
+
+export const readHostToken = (): string | undefined => {
+  const token = readDaemonFile()?.hostToken;
+  return typeof token === 'string' && token !== '' ? token : undefined;
+};
 
 export const removeDaemonFile = (): void => unlinkQuiet(daemonFilePath());
 

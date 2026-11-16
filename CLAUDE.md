@@ -63,7 +63,7 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   - Plain `setup` pulls it and never pushes. On `404 PROFILE_NOT_FOUND` it creates it. After any
     other failure or 404 it uses the local `profile.json`, or installs nothing and prints one dim
     line. Plain `setup` installs the account profile through the daemon once per machine (marker
-    `setup.profile-installed`); `setup --profile` is never gated; `off` entries install disabled
+    `setup.profile-installed`, with the failed ids, which a later setup tries again); `setup --profile` is never gated; `off` entries install disabled
     (`setup-install.ts`, the plan of `--check`/`--dry-run` in `profile-plan.ts`). No command pushes an install or remove to the account.
   - `setup`, `status` and `setup --disconnect` register the machine at `/v1/machines` (fire and
     forget).
@@ -113,9 +113,11 @@ Each row names the doc first, then the code that proves it. Read the doc before 
     publish or stage. It sits over `release-guard.ts`, the guard and the bounded `execIn`
     injected dependency.
   - `up.ts` is `extension up`, `down` and `token` (registered in `up-commands.ts`, as the
-    lifecycle commands are in `lifecycle-commands.ts`). Plain `up` is `up-run.ts`: the kit's
-    `hostExtension` in this process on the first free port from 4244, its record in the folder's
-    `.agentage/up.json` (`up-local.ts`, which `down` proves by `/health` before it signals);
+    lifecycle commands are in `lifecycle-commands.ts`). Plain `up` is `up-run.ts`: the folder
+    as a daemon row, a watch that builds into `dist.next/` (`up-build.ts` picks warm tsc or a
+    staged `npm run build`, `up-watch.ts` runs them, `up-reload.ts` serialises the reloads) and
+    `POST /host/extensions/{id}/reload`; its record is `.agentage/up.json` (`up-local.ts`, pids
+    proven by start time in `src/lib/proc/start-time.ts`; `down` removes it, which stops the watch);
     `--docker` and the Docker part of `down` go to the kit. `stack-owner.ts` lets `token`
     ask only this folder's stack. `kit-commands.ts` registers a
     kit-built extension's `agentage {id}` group and top-level verbs; its `stub` is the one every

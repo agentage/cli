@@ -10,7 +10,7 @@ import { hostClient } from '../../lib/daemon/host-client.js';
 import { test } from '../../test/config-dir.js';
 import { writeKitExtension } from '../../test/kit-fixture.js';
 import { VERSION } from '../../utils/version.js';
-import { runDaemon } from './run.js';
+import { clockRateOf, runDaemon } from './run.js';
 
 const listening = async (): Promise<Server> => {
   const server = createServer();
@@ -36,9 +36,18 @@ describe('daemon run: the daemon process', () => {
     const before = vi.fn(async () => undefined);
     const running = runDaemon({ installer: noInstaller, before });
     // daemon.json is written after the port opens: wait for the file, not the port.
-    await vi.waitFor(() => expect(readDaemonFile()).toEqual({ ...C4, pid: process.pid, port }), {
-      timeout: 10_000,
-    });
+    await vi.waitFor(
+      () =>
+        expect(readDaemonFile()).toEqual({
+          ...C4,
+          pid: process.pid,
+          port,
+          hostToken: expect.any(String),
+        }),
+      {
+        timeout: 10_000,
+      }
+    );
     expect((await probe(port)).kind).not.toBe('none');
     expect(before).toHaveBeenCalledOnce();
     process.emit('SIGTERM');
@@ -95,7 +104,10 @@ describe('daemon run: the daemon process', () => {
       const source = writeKitExtension(dir.at('demo'), 'demo', '0.1.0');
       const res = await fetch(`http://127.0.0.1:${port}/host/extensions`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${readDaemonFile()?.hostToken ?? ''}`,
+        },
         body: JSON.stringify({ source, enabled: false }),
       });
       expect(res.status).toBe(201);
@@ -135,5 +147,13 @@ describe('daemon run: the daemon process', () => {
       await new Promise((resolve) => health.close(resolve));
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe('the test clock (C5)', () => {
+  test('only AGENTAGE_DAEMON_CLOCK_RATE sets clockRate; unset or empty is the real clock', () => {
+    expect(clockRateOf({ AGENTAGE_DAEMON_CLOCK_RATE: '60' })).toEqual({ clockRate: 60 });
+    expect(clockRateOf({ AGENTAGE_DAEMON_CLOCK_RATE: '' })).toEqual({});
+    expect(clockRateOf({ AGENTAGE_CLOCK_RATE: '60' })).toEqual({});
   });
 });

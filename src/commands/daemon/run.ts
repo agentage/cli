@@ -12,6 +12,12 @@ export interface DaemonRunDeps {
   before?: () => Promise<void>;
 }
 
+// C5: the test clock comes only from this env (the e2e lab); unset or empty is the real clock.
+export const clockRateOf = (env: NodeJS.ProcessEnv = process.env): { clockRate?: number } => {
+  const raw = env['AGENTAGE_DAEMON_CLOCK_RATE'];
+  return raw ? { clockRate: Number(raw) } : {};
+};
+
 const signalled = (): Promise<void> =>
   new Promise((resolve) => {
     process.once('SIGTERM', resolve);
@@ -39,7 +45,12 @@ export const runDaemon = async (deps: DaemonRunDeps): Promise<void> => {
   const stopping = signalled();
   await deps.before?.().catch(running);
   const { createDaemon } = await import('@agentage/extension/host');
-  const opts = { configDir: getConfigDir(), port: daemonPort(), version: VERSION };
+  const opts = {
+    configDir: getConfigDir(),
+    port: daemonPort(),
+    version: VERSION,
+    ...clockRateOf(),
+  };
   const daemon = await createDaemon({ ...opts, install: deps.installer(), startedBy: 'cli' }).catch(
     busy
   );

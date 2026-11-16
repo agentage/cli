@@ -4,7 +4,8 @@ import {
   kitWarning,
   manifestInfo,
   manifestProblem,
-  OLDER_KIT_MINORS,
+  KIT_FLOOR,
+  olderKitMinors,
   olderKitWarning,
 } from './manifest.js';
 
@@ -175,14 +176,17 @@ describe('a kit-shaped package.json (agentage.parts)', () => {
   });
 });
 
-describe('OLDER_KIT_MINORS tracks the bundled kit', () => {
-  it('its newest minor is the one just below the bundled kit', () => {
+describe('KIT_FLOOR: every kit minor from the floor to the bundled one runs (C10)', () => {
+  it('the older minors run from the floor to the one just below the bundled kit', () => {
     const [major, minor] = kitVersion().split('.').map(Number);
-    const newest = OLDER_KIT_MINORS.at(-1);
-    const before = `${major}.${(minor ?? 0) - 1}`;
-    expect(
-      newest,
-      `OLDER_KIT_MINORS in manifest.ts must end at ${before} for kit ${kitVersion()}`
-    ).toBe(before);
+    const minors = olderKitMinors();
+    expect(minors[0]).toBe(KIT_FLOOR);
+    expect(minors.at(-1)).toBe(`${major}.${(minor ?? 0) - 1}`);
+  });
+
+  it('kit 0.15 runs 0.12, 0.13 and 0.14; a kit at the floor has none older; another major none', () => {
+    expect(olderKitMinors('0.15.0')).toEqual(['0.12', '0.13', '0.14']);
+    expect(olderKitMinors('0.12.3')).toEqual([]);
+    expect(olderKitMinors('1.0.0')).toEqual([]);
   });
 });

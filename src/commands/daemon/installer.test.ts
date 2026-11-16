@@ -11,7 +11,7 @@ import {
 import { type NpmManifest } from '../../core/installer/npm.js';
 import { CliError } from '../../lib/json-output.js';
 import { openMarket, type Market } from '../../lib/net/market.js';
-import { cliInstaller } from './installer.js';
+import { cliInstaller, distTagOf } from './installer.js';
 
 const PKG = '@agentage/fixture-probe';
 
@@ -25,6 +25,117 @@ const installer = async (m: Market) => {
   const deps = { npm: async () => npm, manifest: manifestFromFixtures(), market: () => m };
   return { install: cliInstaller(deps), npm };
 };
+
+// npm's answer to `npm pack <name>@broken --dry-run --json`: the tag names one version.
+const tagging = (tags: Record<string, string>) => async (): Promise<NpmManifest> => {
+  const fixtures = await manifestFromFixtures()();
+  return async (command, spec, registries) => {
+    const at = spec.lastIndexOf('@');
+    const version = tags[spec.slice(at + 1)];
+    if (command !== 'pack' || !version) return fixtures(command, spec, registries);
+    const stdout = JSON.stringify([{ name: spec.slice(0, at), version }]);
+    return { code: 0, stdout, stderr: '' };
+  };
+};
+
+describe('a dist-tag (fixture@broken), resolved as npm does', () => {
+  test('a word that is not a range is a tag; a version or a range is not', () => {
+    expect(distTagOf('@agentage/extension-fixture@broken')).toEqual({
+      name: '@agentage/extension-fixture',
+      tag: 'broken',
+    });
+    for (const spec of ['probe@0.7.0', 'probe@^0.7', 'probe@1.x', 'probe', '@agentage/x'])
+      expect(distTagOf(spec), spec).toBeNull();
+  });
+
+  test('with a market only the scoped name is asked; the tag gives its version; no such tag is 404', async ({
+    dir,
+  }) => {
+    const npm = vi.fn(await npmFromFixtures());
+    const manifest = vi.fn(tagging({ broken: '0.2.0' }));
+    const m = market({ version: '0.2.0', package: PKG });
+    const install = cliInstaller({ npm: async () => npm, manifest, market: () => m });
+    expect(await install({ id: 'probe', version: 'broken' })).toEqual({
+      id: 'probe',
+      version: '0.2.0',
+      dir: dir.at(`extensions/packages/trees/probe@0.2.0/node_modules/${PKG}`),
+    });
+    await expect(install({ id: 'probe', version: 'nope' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      status: 404,
+    });
+  });
+});
+
+// Every `npm pack <spec>` asked, each absent (E404): what was asked is the assertion.
+const asking = () => {
+  const asked: string[] = [];
+  const manifest = async (): Promise<NpmManifest> => async (command, spec) => {
+    asked.push(`${command} ${spec}`);
+    return { code: 1, stdout: '', stderr: 'npm error code E404' };
+  };
+  return { asked, manifest };
+};
+
+describe('a dist-tag: which names are asked, and what is refused before npm', () => {
+  test('on a site with no market both npm names are asked; with a market only the scoped one', async () => {
+    const none = asking();
+    const npm = vi.fn(await npmFromFixtures());
+    const noMarket = {
+      latest: vi.fn(async () => null),
+      down: () => new CliError('no_market', 'x'),
+    };
+    const bare = cliInstaller({
+      npm: async () => npm,
+      manifest: none.manifest,
+      market: () => noMarket,
+    });
+    await output(async () => {
+      await expect(bare({ id: 'probe', version: 'broken' })).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    });
+    expect(none.asked.map((a) => a.replace(/^\w+ /, ''))).toEqual([
+      '@agentage/extension-probe@broken',
+      'agentage-extension-probe@broken',
+    ]);
+    const some = asking();
+    const m = market({ version: '0.2.0', package: '@agentage/extension-probe' });
+    const scoped = cliInstaller({ npm: async () => npm, manifest: some.manifest, market: () => m });
+    await expect(scoped({ id: 'probe', version: 'broken' })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+    expect(some.asked.map((a) => a.replace(/^\w+ /, ''))).toEqual([
+      '@agentage/extension-probe@broken',
+    ]);
+  });
+
+  test('a path, file:, git+, a URL, a space or a flag after @ is refused; npm is never asked', async () => {
+    const none = asking();
+    const npm = vi.fn(await npmFromFixtures());
+    const m = market({ version: '0.2.0', package: PKG });
+    const install = cliInstaller({
+      npm: async () => npm,
+      manifest: none.manifest,
+      market: () => m,
+    });
+    for (const version of [
+      '../x',
+      'file:../x',
+      'git+ssh://h/r.git',
+      'http://h/x.tgz',
+      'a b',
+      '--registry=x',
+    ])
+      await expect(install({ id: 'probe', version }), version).rejects.toMatchObject({
+        code: 'VALIDATION_ERROR',
+        status: 400,
+      });
+    expect(none.asked).toEqual([]);
+    expect(npm).not.toHaveBeenCalled();
+    expect(m.latest).not.toHaveBeenCalled();
+  });
+});
 
 describe('the daemon installer', () => {
   test('a bare id takes the market version into its own folder', async ({ dir }) => {

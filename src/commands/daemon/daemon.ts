@@ -1,8 +1,14 @@
 import { type Command } from 'commander';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { isAlive, readDaemonFile, type DaemonFile } from '../../lib/daemon/daemon-file.js';
-import { probeRetry, proven, type Health } from '../../lib/daemon/daemon-probe.js';
-import { degradedReasons, healthLines, type HealthMarks } from '../../lib/daemon/daemon-health.js';
+import { PROGRESS_MS, probeRetry, proven, type Health } from '../../lib/daemon/daemon-probe.js';
+import { waitFor } from '../../lib/wait.js';
+import {
+  degradedReasons,
+  healthLines,
+  withSealError,
+  type HealthMarks,
+} from '../../lib/daemon/daemon-health.js';
 import { stopDaemon, type StopResult } from '../../lib/daemon/daemon-stop.js';
 import { addJson } from '../../lib/json-output.js';
 import { readMoveReport, type MoveReport } from './move.js';
@@ -19,7 +25,8 @@ export type DaemonStatus = (
 ) & { move?: MoveReport | null };
 
 // Degraded always comes with its reasons, in the lines and in --json.
-const report = (file: DaemonFile, live: Health & HealthMarks): DaemonStatus => {
+const report = (file: DaemonFile, found: Health & HealthMarks): DaemonStatus => {
+  const live = withSealError(found);
   console.log(`daemon: ${live.status} on 127.0.0.1:${file.port}, pid ${live.pid}, ${live.version}`);
   const reasons = degradedReasons(live);
   for (const line of healthLines(live, reasons)) console.log(line);
@@ -66,11 +73,37 @@ export const runDaemonStop = async (stop = () => stopDaemon()): Promise<{ stoppe
   return { stopped: result !== null && 'stopped' in result };
 };
 
+const SETTLE_MS = 60_000;
+
+// Row 4 of S1.1.2: after a restart the extensions answer; a child still `starting` is waited for.
+// Gives the ids still starting when the wait ran out ([] once none is).
+export const settled = async (
+  port: number,
+  look = probeRetry,
+  timeoutMs = SETTLE_MS
+): Promise<string[]> => {
+  let starting: string[] = [];
+  const none = async (): Promise<boolean> => {
+    const found = await look(port);
+    if (found.kind !== 'ours') return ((starting = []), true);
+    starting = found.health.extensions.filter((e) => e.state === 'starting').map((e) => e.id);
+    return starting.length === 0;
+  };
+  const line = 'waiting for the extensions to start...';
+  return (await waitFor(none, timeoutMs, { afterMs: PROGRESS_MS, line })) ? [] : starting;
+};
+
+// A wait that ran out is one warning, never a failure: the daemon runs and they may still start.
 export const runDaemonRestart = async (
-  ensure = () => ensureDaemon()
-): Promise<{ port: number }> => {
+  ensure = () => ensureDaemon(),
+  settle: (port: number) => Promise<string[]> = settled
+): Promise<{ port: number; settled: boolean }> => {
   await stopDaemon();
-  return { port: await ensure() };
+  const port = await ensure();
+  const starting = await settle(port);
+  if (starting.length > 0)
+    console.error(`warning: still starting after ${SETTLE_MS / 1000} s: ${starting.join(', ')}`);
+  return { port, settled: starting.length === 0 };
 };
 
 type Action = (opts: DaemonOptions) => Promise<void>;

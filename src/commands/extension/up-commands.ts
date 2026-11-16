@@ -20,10 +20,11 @@ export const issuerUrl = (value: string): string => {
 
 const UP_HELP = `
 With no Docker (the default): builds the package in --dir (default: the current folder) as
-extension build does, prints what check refuses without stopping, and runs it in this terminal
-with the kit host on the first free port from 4244 (127.0.0.1). It prints the URL and runs until
-Ctrl-C. It does not use the daemon and does not change installation.json; its store is in
-.agentage/data of the folder.
+extension build does, prints what check refuses without stopping, adds the folder to the daemon
+(as extension install <folder> does; the daemon starts when none runs) and prints its URL on
+127.0.0.1:4243. Then it watches src/: each change is built into dist.next/ (never the live dist/)
+and the daemon reloads that one extension; one line per reload says reloaded or why it was
+refused (the last good build runs). Ctrl-C stops the watch; extension down removes the row.
 
 --docker runs the package the way a deployment runs it: the part images built with the release
 recipe, the store with its migrations and seeds, a dev token issuer and a local gateway. Each
@@ -31,10 +32,10 @@ working copy is its own compose project; up refuses while another one holds loca
 4281 and names it. Prints one line per step as the kit reports it. Exits 1 when a step fails.`;
 
 const DOWN_HELP = `
-Stops what agentage extension up started for the package in --dir, and nothing else: the local
-run of this folder (only when its port still answers as it), and the Docker stack up --docker
-started there (its containers, network and the store's volume; --keep-data keeps the volume).
-It says so when nothing runs. Exits 1 when that fails.`;
+Stops what agentage extension up started for the package in --dir, and nothing else: the watch
+of this folder and the daemon row up added (its data stays; a row up found there stays), and the
+Docker stack up --docker started there (its containers, network and the store's volume;
+--keep-data keeps the volume). It says so when nothing runs. Exits 1 when that fails.`;
 
 const TOKEN_HELP = `
 Prints a token from the dev issuer agentage extension up started for the package in --dir,
@@ -55,10 +56,12 @@ const addUp = (group: Command, up: KitActions['up']): void => {
   addJson(
     group
       .command('up')
-      .description('Run the working copy in this terminal until Ctrl-C; --docker = on Docker')
+      .description(
+        'Run the working copy on the daemon and reload each change; --docker = on Docker'
+      )
       .option(DIR, DIR_TEXT)
       .option('--docker', 'the images, store, issuer and gateway on Docker')
-      .option('--local', 'the run with no Docker, asked for on purpose (no notice; for CI)')
+      .option('--local', 'deprecated: the old name of plain up (removed in the next minor)')
   )
     .addHelpText('after', UP_HELP)
     .action(up);

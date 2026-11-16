@@ -1,8 +1,9 @@
 import { createServer } from 'node:http';
 import { type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
+import { test } from '../../test/config-dir.js';
 import { serve, type Served } from '../../test/serve.js';
-import { hostClient } from './host-client.js';
+import { hostClient, sameDaemon } from './host-client.js';
 
 let served: Served | undefined;
 afterEach(async () => {
@@ -161,5 +162,92 @@ describe('the C5 client of the daemon', () => {
     });
     silent.closeAllConnections();
     await new Promise((done) => silent.close(done));
+  });
+});
+
+describe('the host token on /host/* (D11)', () => {
+  const WAITS = { read: 2_000, change: 2_000 };
+
+  it('sends the token of daemon.json as a bearer, and POSTs {} to reload', async () => {
+    const auth: (string | undefined)[] = [];
+    served = await serve((req) => {
+      auth.push(req.headers.authorization);
+      return [200, { success: true, data: { id: 'demo', reloaded: true } }];
+    });
+    const host = hostClient(served.port, WAITS, () => 'tok');
+    expect(await host.reload('demo')).toEqual({ id: 'demo', reloaded: true });
+    expect(served.seen[0]).toMatchObject({ method: 'POST', url: '/host/extensions/demo/reload' });
+    expect(served.seen[0]?.body).toEqual({});
+    expect(auth).toEqual(['Bearer tok']);
+  });
+
+  it('a 401 or 403 reads daemon.json again and retries once: a new daemon answers', async () => {
+    served = await serve((req) =>
+      req.headers.authorization === 'Bearer new'
+        ? [200, { success: true, data: [] }]
+        : [401, fail('UNAUTHORIZED', 'host token required')]
+    );
+    const tokens = ['old', 'new'];
+    const host = hostClient(
+      served.port,
+      WAITS,
+      () => tokens.shift(),
+      async () => true
+    );
+    expect(await host.list()).toEqual([]);
+    expect(served.seen).toHaveLength(2);
+  });
+
+  it('a refusal that stays says what to do, keeps the code, asks no third time', async () => {
+    served = await serve(() => [403, fail('FORBIDDEN', 'The host token is not valid')]);
+    const host = hostClient(
+      served.port,
+      WAITS,
+      () => 'stale',
+      async () => true
+    );
+    await expect(host.list()).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: expect.stringMatching(
+        /^the daemon refused the host token of .*daemon\.json \(The host token is not valid\); run agentage daemon restart$/
+      ),
+    });
+    expect(served.seen).toHaveLength(2);
+  });
+
+  it('no token in daemon.json sends no authorization header', async () => {
+    const auth: (string | undefined)[] = [];
+    served = await serve(
+      (req) => (auth.push(req.headers.authorization), [200, { success: true, data: [] }])
+    );
+    await hostClient(served.port, WAITS, () => undefined).list();
+    expect(auth).toEqual([undefined]);
+  });
+
+  test('no retry when daemon.json names another port or its pid does not answer there', async ({
+    dir,
+  }) => {
+    served = await serve(() => [401, fail('UNAUTHORIZED', 'host token required')]);
+    const host = hostClient(served.port, WAITS, () => 'old');
+    dir.write('daemon.json', { pid: process.pid, port: served.port + 1, hostToken: 'new' });
+    await expect(host.list()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(served.seen).toHaveLength(1);
+    dir.write('daemon.json', { pid: process.pid, port: served.port, hostToken: 'new' });
+    expect(await sameDaemon(served.port)).toBe(false);
+  });
+
+  it('a redirect from the port is refused, never followed with the token', async () => {
+    const asked: string[] = [];
+    const server = createServer((req, res) => {
+      asked.push(req.url ?? '');
+      res.writeHead(302, { location: '/elsewhere' }).end();
+    }).listen(0, '127.0.0.1');
+    await new Promise((done) => server.once('listening', done));
+    const { port } = server.address() as AddressInfo;
+    await expect(hostClient(port, WAITS, () => 'tok').list()).rejects.toMatchObject({
+      code: 'daemon_unavailable',
+    });
+    await new Promise((done) => server.close(done));
+    expect(asked).toEqual(['/host/extensions']);
   });
 });

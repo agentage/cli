@@ -4,6 +4,7 @@ import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
 import { installedExtensions } from '../../core/loader/installed.js';
+import { readHostToken } from '../../lib/daemon/daemon-file.js';
 import { hostClient } from '../../lib/daemon/host-client.js';
 import { output, test } from '../../test/config-dir.js';
 import { writeKitExtension } from '../../test/kit-fixture.js';
@@ -32,8 +33,12 @@ const offline = () =>
     market: () => ({ latest: async () => null, down: () => OFFLINE }),
   });
 
-const get = async <T = { msg: string }>(port: number, path: string): Promise<T> =>
-  ((await (await fetch(`http://127.0.0.1:${port}${path}`)).json()) as { data: T }).data;
+// /host/* needs the host token of daemon.json (D11).
+const get = async <T = { msg: string }>(port: number, path: string): Promise<T> => {
+  const headers = { authorization: `Bearer ${readHostToken() ?? ''}` };
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers });
+  return ((await res.json()) as { data: T }).data;
+};
 
 type Row = { id: string; state: string };
 

@@ -118,17 +118,25 @@ const engineProblem = (engine: string, version: string, against: string): string
   return `engines.agentage "${engine}" does not match ${against} ${version}`;
 };
 
-// The older kit minors this kit still hosts: 0.12 is what cli 0.51 installed, 0.13 the one before
-// this kit; their part modules and command contract are those of 0.14 (the update smoke proves it).
-export const OLDER_KIT_MINORS = ['0.12', '0.13'];
-const OLDER = OLDER_KIT_MINORS.map((minor) => ({
-  minor,
-  versions: Array.from({ length: 100 }, (_, patch) => `${minor}.${patch}`),
-}));
+// C10 (D8): the oldest kit minor this cli runs; it moves only with a breaking ctx change.
+export const KIT_FLOOR = '0.12';
+
+// Every minor from KIT_FLOOR up to the one below the bundled kit: their part modules and command
+// contract are those of the bundled kit (the update smoke proves it).
+export const olderKitMinors = (kit: string = kitVersion()): string[] => {
+  const [major, minor] = kit.split('.').map(Number);
+  const [floorMajor, floor] = KIT_FLOOR.split('.').map(Number);
+  if (major !== floorMajor || minor === undefined || floor === undefined) return [];
+  return Array.from({ length: Math.max(0, minor - floor) }, (_, i) => `${major}.${floor + i}`);
+};
+
+const versionsOf = (minor: string): string[] =>
+  Array.from({ length: 100 }, (_, patch) => `${minor}.${patch}`);
 
 const olderMinorOf = (engine: string, kit: string): string | null => {
   if (!isRange(engine) || satisfies(kit, engine)) return null;
-  return OLDER.find(({ versions }) => versions.some((v) => satisfies(v, engine)))?.minor ?? null;
+  const minors = olderKitMinors(kit);
+  return minors.find((minor) => versionsOf(minor).some((v) => satisfies(v, engine))) ?? null;
 };
 
 export const olderKitWarning = (minor: string): string =>

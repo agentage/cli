@@ -19,6 +19,7 @@ import { runUpdate } from './commands/update/update.js';
 import { npmMajor, prepareManifest, prepareNpm } from './core/installer/npm.js';
 import { ensureSignedIn, signOut } from './lib/auth/sign-in.js';
 import { ensureDaemon } from './lib/daemon/daemon-client.js';
+import { sealOffLine } from './lib/daemon/daemon-health.js';
 import { hostClient } from './lib/daemon/host-client.js';
 import { listMarket, openMarket } from './lib/net/market.js';
 import { noSiteMarket, npmFallbackLine } from './lib/net/market-error.js';
@@ -59,6 +60,8 @@ const fromNpm = async (id: string, what: string): Promise<string | null> => {
   return npmFallbackLine(siteFqdn(), id, what, market.down());
 };
 
+const sealOff = async (): Promise<string | null> => sealOffLine(await ensureDaemon());
+
 const hasMarket = async (id: string): Promise<boolean> => {
   const market = openMarket();
   await market.latest(id);
@@ -75,7 +78,7 @@ export const defaultDeps: ProgramDeps = {
     }),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
-  extensionInstall: (opts) => runInstall(opts, { ...lifecycle, fromNpm, hasMarket }),
+  extensionInstall: (opts) => runInstall(opts, { ...lifecycle, fromNpm, hasMarket, sealOff }),
   extensionRemove: (opts) => runRemove(opts, { ...lifecycle, io: terminalIo() }),
   extensionList: (opts) => runList(opts, listDeps),
   extensionUpdate: (opts) => runExtensionUpdate(opts, listDeps),

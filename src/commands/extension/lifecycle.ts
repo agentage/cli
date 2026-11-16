@@ -1,7 +1,6 @@
 import { realpathSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { isAbsolute, join, resolve } from 'node:path';
-import { kitIdProblem } from '../../core/kit-id.js';
 import { unsafeDevPath } from '../../core/loader/dev-path.js';
 import { prunePackages } from '../../core/installer/package-dir.js';
 import { installationRows, versionsInUse } from '../../core/loader/installed.js';
@@ -10,6 +9,7 @@ import { isRecord, readJson } from '../../lib/fs/json-file.js';
 import { type HostClient, type HostSummary } from '../../lib/daemon/host-client.js';
 import { installFolder, installId } from './install-once.js';
 import { CliError, isJsonRun } from '../../lib/json-output.js';
+import { specOf, unscoped, UNSCOPED } from './install-spec.js';
 
 // Every lifecycle command is a client of the daemon; `host` starts it when none runs.
 export interface LifecycleDeps {
@@ -36,40 +36,7 @@ export interface RemoveOptions {
   json?: boolean;
 }
 
-const ID = /^[a-z][a-z0-9-]*$/;
 const LOCAL = /^\.{1,2}(?:[/\\]|$)/;
-const PACKAGE_PREFIX = /^(@agentage\/extension-|agentage-extension-)/;
-const UNSCOPED = 'agentage-extension-';
-
-// The daemon takes an id, not a package name: with a market it resolves only the scoped name.
-const unscoped = (name: string): CliError =>
-  new CliError(
-    'invalid_argument',
-    `${name}: an unscoped npm name installs only on a site with no market; nothing installed; install its folder instead: agentage extension install ./<folder>`
-  );
-
-// What 0.51 installed and the daemon does not: say what to type instead.
-const refusedName = (name: string): string | null => {
-  if (/^https?:\/\//i.test(name))
-    return `${name}: a tarball URL no longer installs; unpack it, then agentage extension install ./<folder>`;
-  if (name.startsWith('@') && !PACKAGE_PREFIX.test(name))
-    return `${name}: only @agentage/extension-<id> packages install, by id; for another package, install its folder (./path)`;
-  return null;
-};
-
-// `probe`, `probe@0.6.2`, or a package name of the id.
-export const specOf = (name: string): { id: string; version?: string } => {
-  const refused = refusedName(name);
-  if (refused) throw new CliError('invalid_argument', refused);
-  const at = name.indexOf('@', 1);
-  const id = (at < 0 ? name : name.slice(0, at)).replace(PACKAGE_PREFIX, '');
-  const version = at < 0 ? undefined : name.slice(at + 1);
-  if (!ID.test(id) || version === '')
-    throw new CliError('invalid_argument', `${name}: not an id, id@version or a folder (./path)`);
-  const owned = kitIdProblem(id);
-  if (owned) throw new CliError('invalid_argument', `${name}: ${owned}`);
-  return { id, ...(version && { version }) };
-};
 
 // The real path; a folder another user can write runs code as you, so it is refused.
 const folderOf = (input: string): string => {
@@ -104,6 +71,8 @@ export interface InstallDeps extends LifecycleDeps {
   fromNpm?: (id: string, what: string) => Promise<string | null>;
   // True when the site has a market: an unscoped npm name is then refused.
   hasMarket?: (id: string) => Promise<boolean>;
+  // C2: the daemon's reason when it runs children with no seal (below the Node floor).
+  sealOff?: () => Promise<string | null>;
 }
 
 export const runInstall = async (opts: InstallOptions, deps: InstallDeps) => {
@@ -118,6 +87,8 @@ export const runInstall = async (opts: InstallOptions, deps: InstallDeps) => {
   const bare = spec && !spec.version && !already;
   const line = bare && (await deps.fromNpm?.(spec.id, `${spec.id} ${done.version} came`));
   if (line) console.error(line);
+  const seal = await deps.sealOff?.().catch(() => null);
+  if (seal) console.error(seal);
   if (!opts.off) return report(done, already ? ' (already installed)' : '');
   console.error('install --off is now: agentage extension disable <id>');
   return report(await host.change(done.id, { enabled: false }));
@@ -190,3 +161,5 @@ export const runRemove = async (opts: RemoveOptions, deps: LifecycleDeps & { io:
   console.log(`removed ${id}${purge ? ', its data deleted' : ''}`);
   return { id, purged: purge };
 };
+
+export { specOf };

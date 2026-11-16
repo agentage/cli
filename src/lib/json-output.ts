@@ -53,7 +53,7 @@ export class CliError extends Error {
   }
 }
 
-// The daemon's own code (NOT_FOUND, INVALID_SETTING), passed through as it is, with its details.
+// The daemon's own code (NOT_FOUND, INVALID_SETTING) and details (START_FAILED), as it gives them.
 export class DaemonError extends Error {
   constructor(
     readonly code: string,
@@ -112,11 +112,7 @@ export class WithMeta {
 }
 
 const envelope = (data: unknown): string =>
-  JSON.stringify(
-    data instanceof WithMeta
-      ? { success: true, data: data.data, meta: data.meta }
-      : { success: true, data }
-  );
+  JSON.stringify({ success: true, ...(data instanceof WithMeta ? data : { data }) });
 
 let active = false;
 
@@ -140,8 +136,11 @@ export const messageOf = (err: unknown): string => {
   return `${err.message}${why}`;
 };
 
-export const writeError = (io: JsonIo, err: unknown, code: string = codeOf(err)): void =>
-  io.writeOut(`${JSON.stringify({ success: false, error: { code, message: messageOf(err) } })}\n`);
+export const writeError = (io: JsonIo, err: unknown, code: string = codeOf(err)): void => {
+  const details = err instanceof DaemonError && Object.keys(err.details).length && err.details;
+  const error = { code, message: messageOf(err), ...(details && { details }) };
+  io.writeOut(`${JSON.stringify({ success: false, error })}\n`);
+};
 
 // Progress goes to stderr; a pinned command keeps stdout and we note that it printed.
 const redirectLog = (legacy: boolean): { wrote: () => boolean; restore: () => void } => {

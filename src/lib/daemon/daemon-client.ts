@@ -28,6 +28,7 @@ import {
   PROTOCOL,
   proven,
   unresponsive,
+  type Health,
   type Probe,
 } from './daemon-probe.js';
 import { stopDaemon, type StopResult } from './daemon-stop.js';
@@ -52,9 +53,11 @@ export const LATE_FILE_MS = 2_000;
 const answersAs = (pid: number, found: Probe): boolean =>
   found.kind === 'ours' && found.health.pid === pid;
 
-// Healthy only as the spawned pid: a daemon of another config folder on the port is not ours.
+const announced = (pid: number): boolean => readDaemonFile()?.pid === pid;
+
+// Healthy only as the spawned pid, and once its daemon.json (the host token) is written after listen.
 export const waitForHealth = (port: number, pid: number, timeoutMs = START_MS): Promise<boolean> =>
-  waitFor(async () => answersAs(pid, await probe(port, 500)), timeoutMs, {
+  waitFor(async () => answersAs(pid, await probe(port, 500)) && announced(pid), timeoutMs, {
     afterMs: PROGRESS_MS,
     line: `waiting for the daemon to start on 127.0.0.1:${port}...`,
   });
@@ -139,6 +142,12 @@ const start = async (deps: EnsureDeps, port: number): Promise<number> => {
 const outdated = (health: { version: string; protocol: number }): boolean =>
   health.protocol !== PROTOCOL || compareVersions(health.version, VERSION) < 0;
 
+// D11: a daemon that wrote no hostToken (cli 0.52 or older) refuses every /host/* call of this cli.
+const restartReason = (file: DaemonFile, health: Health): string | null => {
+  if (outdated(health)) return `it ran ${health.version}, this cli is ${VERSION}`;
+  return file.hostToken ? null : `it ran ${health.version} with no host token`;
+};
+
 // daemon.json's daemon when proven; a dead pid, or a live one whose port refuses, is a stale file.
 const fromFile = async (file: DaemonFile, deps: EnsureDeps): Promise<number | null> => {
   if (!isAlive(file.pid)) return (removeDaemonFile(), null);
@@ -149,11 +158,12 @@ const fromFile = async (file: DaemonFile, deps: EnsureDeps): Promise<number | nu
   const health = proven(file, found);
   if (!health)
     throw found.kind === 'ours' ? otherFolder(file.port, found.health.pid) : portInUse(file.port);
-  if (!outdated(health)) return file.port;
+  const why = restartReason(file, health);
+  if (!why) return file.port;
+  // Said before the start: a start that fails then shows why the old daemon went.
+  deps.log(`daemon restarted: ${why}`);
   await deps.stop();
-  const port = await start({ ...deps, log: () => undefined }, daemonPort());
-  deps.log(`daemon restarted: it ran ${health.version}, this cli is ${VERSION}`);
-  return port;
+  return start({ ...deps, log: () => undefined }, daemonPort());
 };
 
 export const ensureDaemon = async (deps: EnsureDeps = defaultEnsureDeps): Promise<number> => {

@@ -2,7 +2,8 @@ import { type stopDaemon as stopDaemonType } from '../../lib/daemon/daemon-stop.
 import { afterEach, describe, expect, vi } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { serve, type Served } from '../../test/serve.js';
-import { runDaemonRestart, runDaemonStatus, runDaemonStop } from './daemon.js';
+import { type Probe } from '../../lib/daemon/daemon-probe.js';
+import { runDaemonRestart, runDaemonStatus, runDaemonStop, settled } from './daemon.js';
 
 let served: Served | undefined;
 afterEach(async () => {
@@ -98,9 +99,36 @@ describe('agentage daemon status | stop | restart', () => {
     expect((await output(() => runDaemonStop(stop(null)))).stdout).toBe('daemon: not running');
   });
 
-  test('restart: stops what runs, then starts one', async () => {
+  test('restart: stops what runs, starts one, and returns once no extension is starting', async () => {
     const ensure = vi.fn(async () => 4243);
-    expect(await runDaemonRestart(ensure)).toEqual({ port: 4243 });
+    const settle = vi.fn(async () => []);
+    expect(await runDaemonRestart(ensure, settle)).toEqual({ port: 4243, settled: true });
     expect(ensure).toHaveBeenCalledOnce();
+    expect(settle).toHaveBeenCalledWith(4243);
+    const states = ['starting', 'running'];
+    const look = vi.fn(async (): Promise<Probe> => {
+      const state = states.shift() ?? 'running';
+      return {
+        kind: 'ours',
+        health: { ...HEALTH, extensions: [{ id: 'p', version: '1', state }] },
+      };
+    });
+    expect(await settled(4243, look, 5_000)).toEqual([]);
+    expect(look).toHaveBeenCalledTimes(2);
+  });
+
+  test('restart: a settle wait that runs out is one warning naming the ids, settled false, no failure', async () => {
+    const entry = (id: string, state: string) => ({ id, version: '1', state });
+    const extensions = [entry('a', 'starting'), entry('b', 'running'), entry('c', 'starting')];
+    const look = async (): Promise<Probe> => ({ kind: 'ours', health: { ...HEALTH, extensions } });
+    expect(await settled(4243, look, 300)).toEqual(['a', 'c']);
+    const run = await output(() =>
+      runDaemonRestart(
+        async () => 4243,
+        async () => ['a', 'c']
+      )
+    );
+    expect(run.stderr).toBe('warning: still starting after 60 s: a, c');
+    expect(run.error).toBeNull();
   });
 });

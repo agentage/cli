@@ -49,7 +49,7 @@ const profile = (extensions: Record<string, string>): Profile => ({
 
 // Spawns a child per extension; a sandbox that kills children fails this test, not skipped.
 describe('setup through the real daemon run', () => {
-  test('installs each entry, reports the one that fails, writes the marker; then installs nothing', async ({
+  test('installs each entry, reports the one that fails, the marker names it; the next setup tries only that id', async ({
     dir,
   }) => {
     placed(dir, 'alpha', '1.0.0');
@@ -68,12 +68,16 @@ describe('setup through the real daemon run', () => {
       const first = await output(() => installThroughDaemon(wanted, deps));
       expect(first.lines).toEqual(['alpha 1.0.0 running', 'beta 2.0.0 running']);
       expect(first.code).toBe('extension_failed');
-      expect(first.error).toMatch(/^not installed:\n {2}gone: /);
-      expect(dir.exists('setup.profile-installed')).toBe(true);
+      expect(first.error).toMatch(
+        /^not installed:\n {2}gone: .*\nthe next setup tries those entries again$/s
+      );
+      expect(dir.json('setup.profile-installed')['failed']).toEqual([{ id: 'gone', row: false }]);
+      placed(dir, 'gone', '1.0.0');
       const again = await output(() => installThroughDaemon(wanted, deps));
-      expect(again.lines).toEqual([
-        'extensions your account profile was installed here already; setup installs nothing (agentage extension install)',
-      ]);
+      expect(again.lines).toEqual(['gone 1.0.0 running']);
+      expect(dir.json('setup.profile-installed')['failed']).toEqual([]);
+      const third = await output(() => installThroughDaemon(wanted, deps));
+      expect(third.lines).toEqual([expect.stringMatching(/installed here already/)]);
     } finally {
       process.emit('SIGTERM');
       await running;
