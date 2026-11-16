@@ -1,8 +1,9 @@
 import { createServer } from 'node:http';
 import { type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
+import { test } from '../../test/config-dir.js';
 import { serve, type Served } from '../../test/serve.js';
-import { hostClient } from './host-client.js';
+import { hostClient, sameDaemon } from './host-client.js';
 
 let served: Served | undefined;
 afterEach(async () => {
@@ -187,14 +188,24 @@ describe('the host token on /host/* (D11)', () => {
         : [401, fail('UNAUTHORIZED', 'host token required')]
     );
     const tokens = ['old', 'new'];
-    const host = hostClient(served.port, WAITS, () => tokens.shift());
+    const host = hostClient(
+      served.port,
+      WAITS,
+      () => tokens.shift(),
+      async () => true
+    );
     expect(await host.list()).toEqual([]);
     expect(served.seen).toHaveLength(2);
   });
 
   it('a refusal that stays says what to do, keeps the code, asks no third time', async () => {
     served = await serve(() => [403, fail('FORBIDDEN', 'The host token is not valid')]);
-    const host = hostClient(served.port, WAITS, () => 'stale');
+    const host = hostClient(
+      served.port,
+      WAITS,
+      () => 'stale',
+      async () => true
+    );
     await expect(host.list()).rejects.toMatchObject({
       code: 'FORBIDDEN',
       message: expect.stringMatching(
@@ -211,5 +222,32 @@ describe('the host token on /host/* (D11)', () => {
     );
     await hostClient(served.port, WAITS, () => undefined).list();
     expect(auth).toEqual([undefined]);
+  });
+
+  test('no retry when daemon.json names another port or its pid does not answer there', async ({
+    dir,
+  }) => {
+    served = await serve(() => [401, fail('UNAUTHORIZED', 'host token required')]);
+    const host = hostClient(served.port, WAITS, () => 'old');
+    dir.write('daemon.json', { pid: process.pid, port: served.port + 1, hostToken: 'new' });
+    await expect(host.list()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    expect(served.seen).toHaveLength(1);
+    dir.write('daemon.json', { pid: process.pid, port: served.port, hostToken: 'new' });
+    expect(await sameDaemon(served.port)).toBe(false);
+  });
+
+  it('a redirect from the port is refused, never followed with the token', async () => {
+    const asked: string[] = [];
+    const server = createServer((req, res) => {
+      asked.push(req.url ?? '');
+      res.writeHead(302, { location: '/elsewhere' }).end();
+    }).listen(0, '127.0.0.1');
+    await new Promise((done) => server.once('listening', done));
+    const { port } = server.address() as AddressInfo;
+    await expect(hostClient(port, WAITS, () => 'tok').list()).rejects.toMatchObject({
+      code: 'daemon_unavailable',
+    });
+    await new Promise((done) => server.close(done));
+    expect(asked).toEqual(['/host/extensions']);
   });
 });

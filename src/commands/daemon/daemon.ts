@@ -76,24 +76,34 @@ export const runDaemonStop = async (stop = () => stopDaemon()): Promise<{ stoppe
 const SETTLE_MS = 60_000;
 
 // Row 4 of S1.1.2: after a restart the extensions answer; a child still `starting` is waited for.
-export const settled = (port: number, look = probeRetry, timeoutMs = SETTLE_MS): Promise<boolean> =>
-  waitFor(
-    async () => {
-      const found = await look(port);
-      return found.kind !== 'ours' || found.health.extensions.every((e) => e.state !== 'starting');
-    },
-    timeoutMs,
-    { afterMs: PROGRESS_MS, line: 'waiting for the extensions to start...' }
-  );
+// Gives the ids still starting when the wait ran out ([] once none is).
+export const settled = async (
+  port: number,
+  look = probeRetry,
+  timeoutMs = SETTLE_MS
+): Promise<string[]> => {
+  let starting: string[] = [];
+  const none = async (): Promise<boolean> => {
+    const found = await look(port);
+    if (found.kind !== 'ours') return ((starting = []), true);
+    starting = found.health.extensions.filter((e) => e.state === 'starting').map((e) => e.id);
+    return starting.length === 0;
+  };
+  const line = 'waiting for the extensions to start...';
+  return (await waitFor(none, timeoutMs, { afterMs: PROGRESS_MS, line })) ? [] : starting;
+};
 
+// A wait that ran out is one warning, never a failure: the daemon runs and they may still start.
 export const runDaemonRestart = async (
   ensure = () => ensureDaemon(),
-  settle: (port: number) => Promise<boolean> = settled
-): Promise<{ port: number }> => {
+  settle: (port: number) => Promise<string[]> = settled
+): Promise<{ port: number; settled: boolean }> => {
   await stopDaemon();
   const port = await ensure();
-  await settle(port);
-  return { port };
+  const starting = await settle(port);
+  if (starting.length > 0)
+    console.error(`warning: still starting after ${SETTLE_MS / 1000} s: ${starting.join(', ')}`);
+  return { port, settled: starting.length === 0 };
 };
 
 type Action = (opts: DaemonOptions) => Promise<void>;

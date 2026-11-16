@@ -1,7 +1,8 @@
 import { isRecord } from '../fs/json-file.js';
 import { CliError, DaemonError, messageOf } from '../json-output.js';
 import { daemonFailure } from './daemon-answer.js';
-import { daemonFilePath, readHostToken } from './daemon-file.js';
+import { daemonFilePath, readDaemonFile, readHostToken } from './daemon-file.js';
+import { probe, proven } from './daemon-probe.js';
 
 // One row of GET /host/extensions (C5); the daemon may add fields, they pass through.
 export interface HostRow {
@@ -92,11 +93,20 @@ const tokenRefused = (err: DaemonError): DaemonError =>
     err.details
   );
 
+type Same = (port: number) => Promise<boolean>;
+
 interface Target {
   port: number;
   waits: typeof WAITS;
   token: Token;
+  same: Same;
 }
+
+// A retry with a new token only when daemon.json still names this port and its pid answers there.
+export const sameDaemon: Same = async (port) => {
+  const file = readDaemonFile();
+  return file?.port === port && proven(file, await probe(port)) !== null;
+};
 
 const sendOnce = async <T>(to: Target, method: string, path: string, body?: object): Promise<T> => {
   const ms = method === 'GET' ? to.waits.read : to.waits.change;
@@ -105,6 +115,7 @@ const sendOnce = async <T>(to: Target, method: string, path: string, body?: obje
     headers: headersOf(body, to.token()),
     body: body && JSON.stringify(body),
     signal: AbortSignal.timeout(ms),
+    redirect: 'error',
   }).catch((err: unknown) => {
     throw unreachable(to.port, err, ms, method);
   });
@@ -121,8 +132,9 @@ const refused = (err: unknown): err is DaemonError =>
 const sender =
   (to: Target): Send =>
   <T>(method: string, path: string, body?: object): Promise<T> =>
-    sendOnce<T>(to, method, path, body).catch((err: unknown) => {
+    sendOnce<T>(to, method, path, body).catch(async (err: unknown) => {
       if (!refused(err)) throw err;
+      if (!(await to.same(to.port))) throw tokenRefused(err);
       return sendOnce<T>(to, method, path, body).catch((again: unknown) => {
         throw refused(again) ? tokenRefused(again) : again;
       });
@@ -133,9 +145,10 @@ const at = (id: string): string => `/host/extensions/${encodeURIComponent(id)}`;
 export const hostClient = (
   port: number,
   waits = WAITS,
-  token: Token = readHostToken
+  token: Token = readHostToken,
+  same: Same = sameDaemon
 ): HostClient => {
-  const send = sender({ port, waits, token });
+  const send = sender({ port, waits, token, same });
   return {
     list: () => send('GET', '/host/extensions'),
     add: (body) => send('POST', '/host/extensions', body),

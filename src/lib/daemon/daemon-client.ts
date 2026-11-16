@@ -160,10 +160,10 @@ const fromFile = async (file: DaemonFile, deps: EnsureDeps): Promise<number | nu
     throw found.kind === 'ours' ? otherFolder(file.port, found.health.pid) : portInUse(file.port);
   const why = restartReason(file, health);
   if (!why) return file.port;
-  await deps.stop();
-  const port = await start({ ...deps, log: () => undefined }, daemonPort());
+  // Said before the start: a start that fails then shows why the old daemon went.
   deps.log(`daemon restarted: ${why}`);
-  return port;
+  await deps.stop();
+  return start({ ...deps, log: () => undefined }, daemonPort());
 };
 
 export const ensureDaemon = async (deps: EnsureDeps = defaultEnsureDeps): Promise<number> => {

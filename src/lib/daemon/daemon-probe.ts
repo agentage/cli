@@ -43,6 +43,7 @@ export const probe = async (port: number, timeoutMs = 2000): Promise<Probe> => {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/health`, {
       signal: AbortSignal.timeout(timeoutMs),
+      redirect: 'manual',
     });
     const body: unknown = await res.json().catch(() => null);
     return isHealth(body) ? { kind: 'ours', health: body } : { kind: 'foreign' };

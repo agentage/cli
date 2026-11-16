@@ -134,6 +134,20 @@ describe('the daemon start', () => {
     ]);
   });
 
+  test('a restart whose start fails still printed why the old daemon went', async ({ dir }) => {
+    dir.write('daemon.json', { pid: process.pid, port: 4243 });
+    const d = deps({
+      probe: vi.fn(async (): Promise<Probe> =>
+        vi.mocked(d.stop).mock.calls.length ? { kind: 'none' } : ours()
+      ),
+      spawn: vi.fn(async () => 'unreachable' as const),
+    });
+    await expect(ensureDaemon(d)).rejects.toThrow(/the daemon did not start/);
+    expect(vi.mocked(d.log).mock.calls).toEqual([
+      [`daemon restarted: it ran ${VERSION} with no host token`],
+    ]);
+  });
+
   test('a busy port: the daemon this folder started at the same time serves; another program is port_in_use naming the variable', async ({
     dir,
   }) => {
