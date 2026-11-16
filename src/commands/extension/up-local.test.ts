@@ -30,6 +30,17 @@ describe('the up record of a folder', () => {
     expect(refuseRunning(dir.at('w'))).toMatchObject({ added: true });
   });
 
+  test('a corrupt up.json reads as no up: the claim writes a new record, down finds none', async ({
+    dir,
+  }) => {
+    writeRecord(dir.at('w'), rec(ENDED, true));
+    writeFileSync(recordPath(dir.at('w')), '{"up": ');
+    expect(readRecord(dir.at('w'))).toBeNull();
+    expect((await stopLocal(dir.at('w'))).down).toBe('none');
+    expect(await claimFolder(dir.at('w'), 'n9', 'demo')).toBeNull();
+    expect(readRecord(dir.at('w'))).toMatchObject({ nonce: 'n9', added: false });
+  });
+
   test('down removes the record and waits for that up to exit; one that does not is stop_failed', async ({
     dir,
   }) => {
