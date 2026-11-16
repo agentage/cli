@@ -1,7 +1,8 @@
 import { type Command } from 'commander';
 import { ensureDaemon } from '../../lib/daemon/daemon-client.js';
 import { isAlive, readDaemonFile, type DaemonFile } from '../../lib/daemon/daemon-file.js';
-import { probeRetry, proven, type Health } from '../../lib/daemon/daemon-probe.js';
+import { PROGRESS_MS, probeRetry, proven, type Health } from '../../lib/daemon/daemon-probe.js';
+import { waitFor } from '../../lib/wait.js';
 import {
   degradedReasons,
   healthLines,
@@ -72,11 +73,27 @@ export const runDaemonStop = async (stop = () => stopDaemon()): Promise<{ stoppe
   return { stopped: result !== null && 'stopped' in result };
 };
 
+const SETTLE_MS = 60_000;
+
+// Row 4 of S1.1.2: after a restart the extensions answer; a child still `starting` is waited for.
+export const settled = (port: number, look = probeRetry, timeoutMs = SETTLE_MS): Promise<boolean> =>
+  waitFor(
+    async () => {
+      const found = await look(port);
+      return found.kind !== 'ours' || found.health.extensions.every((e) => e.state !== 'starting');
+    },
+    timeoutMs,
+    { afterMs: PROGRESS_MS, line: 'waiting for the extensions to start...' }
+  );
+
 export const runDaemonRestart = async (
-  ensure = () => ensureDaemon()
+  ensure = () => ensureDaemon(),
+  settle: (port: number) => Promise<boolean> = settled
 ): Promise<{ port: number }> => {
   await stopDaemon();
-  return { port: await ensure() };
+  const port = await ensure();
+  await settle(port);
+  return { port };
 };
 
 type Action = (opts: DaemonOptions) => Promise<void>;

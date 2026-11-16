@@ -2,7 +2,8 @@ import { type stopDaemon as stopDaemonType } from '../../lib/daemon/daemon-stop.
 import { afterEach, describe, expect, vi } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
 import { serve, type Served } from '../../test/serve.js';
-import { runDaemonRestart, runDaemonStatus, runDaemonStop } from './daemon.js';
+import { type Probe } from '../../lib/daemon/daemon-probe.js';
+import { runDaemonRestart, runDaemonStatus, runDaemonStop, settled } from './daemon.js';
 
 let served: Served | undefined;
 afterEach(async () => {
@@ -98,9 +99,21 @@ describe('agentage daemon status | stop | restart', () => {
     expect((await output(() => runDaemonStop(stop(null)))).stdout).toBe('daemon: not running');
   });
 
-  test('restart: stops what runs, then starts one', async () => {
+  test('restart: stops what runs, starts one, and returns once no extension is starting', async () => {
     const ensure = vi.fn(async () => 4243);
-    expect(await runDaemonRestart(ensure)).toEqual({ port: 4243 });
+    const settle = vi.fn(async () => true);
+    expect(await runDaemonRestart(ensure, settle)).toEqual({ port: 4243 });
     expect(ensure).toHaveBeenCalledOnce();
+    expect(settle).toHaveBeenCalledWith(4243);
+    const states = ['starting', 'running'];
+    const look = vi.fn(async (): Promise<Probe> => {
+      const state = states.shift() ?? 'running';
+      return {
+        kind: 'ours',
+        health: { ...HEALTH, extensions: [{ id: 'p', version: '1', state }] },
+      };
+    });
+    expect(await settled(4243, look, 5_000)).toBe(true);
+    expect(look).toHaveBeenCalledTimes(2);
   });
 });
