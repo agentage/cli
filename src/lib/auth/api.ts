@@ -103,4 +103,4 @@ export const authedJson = async <T>(
 };
 
 // Re-export the introspection surface so existing callers keep importing from './api.js'.
-export { introspectToken, type TokenSession } from './introspect.js';
+export { introspectToken } from './introspect.js';

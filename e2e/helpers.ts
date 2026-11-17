@@ -18,7 +18,6 @@ export const TARGET_FQDN = process.env['AGENTAGE_SITE_FQDN'] ?? 'agentage.io';
 export const authUrlFor = (fqdn: string): string =>
   /^127\.0\.0\.1:\d+$/.test(fqdn) ? `http://${fqdn}` : `https://auth.${fqdn}`;
 
-export const AUTH_URL = authUrlFor(TARGET_FQDN);
 export const CLI_BIN = process.env['CLI_BIN'] ?? join(process.cwd(), 'dist', 'cli.js');
 
 // GNU timeout's convention, so a hung child never reads as an ordinary exit 1.

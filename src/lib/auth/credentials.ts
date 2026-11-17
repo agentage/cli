@@ -63,8 +63,6 @@ export const jwtPatExpiry = (token: string): string | null => {
   }
 };
 
-export const isPatAuth = (auth: AuthState | null): boolean => auth?.kind === 'pat';
-
 // Resolve the active credential with precedence flag > env PAT > stored OAuth. When a PAT is
 // present the OAuth/DCR flow is skipped entirely and the PAT is the bearer; otherwise fall back to
 // the stored OAuth session on disk (null when signed out).
