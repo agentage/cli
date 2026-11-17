@@ -100,7 +100,7 @@ Static states are known without running code. They show in `extension doctor` an
 | State       | What makes it                                                                   |
 | ----------- | ------------------------------------------------------------------------------- |
 | `installed` | Valid manifest, present, not off on this machine, all required peers installed. |
-| `off`       | In this machine's `off` list of the profile.                                    |
+| `off`       | In this machine's `off` list (only before `installation.json` exists).          |
 | `blocked`   | A required peer is off, invalid, missing or blocked, or not in the profile.     |
 | `invalid`   | Bad manifest, entry not found, wrong config type, duplicate id, peer cycle.     |
 | `missing`   | Named in the profile but not in the installed tree.                             |
@@ -245,7 +245,7 @@ Install a folder as a development extension:
 agentage extension install ./my-extension   # needs package.json with name and agentage.id
 agentage extension list                     # check the state and reason
 agentage extension doctor                   # load it, see ok or failed
-agentage extension remove my-extension      # stop using it (by its id)
+agentage extension remove <id>              # stop using it
 ```
 
 The daemon runs the folder in place by its real path, with no copy, and `ctx.mode` is `'dev'`.

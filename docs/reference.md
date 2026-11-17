@@ -233,7 +233,8 @@ failed install loads nothing: the rows show what is still current.
 
 Extension authors: see [`extensions.md`](extensions.md).
 
-Extensions run in the CLI process with your privileges: installing one is an act of trust.
+Extensions run with your privileges, in the daemon and in the CLI process: installing one is an act
+of trust.
 What they keep, and what the CLI keeps about them, lives in the config directory:
 
 | Path              | What                                                                               |
@@ -245,29 +246,23 @@ What they keep, and what the CLI keeps about them, lives in the config directory
 | `data/<id>/`      | the extension's durable data (`ctx.data`); only `remove --purge` deletes it        |
 | `cache/<id>/`     | the extension's disposable cache (`ctx.cache`), created by the extension           |
 
-The installer runs npm 10 or newer as `node npm-cli.js` (no shell, `--ignore-scripts`,
-`npm_config_*` and `NODE_OPTIONS` removed from its environment, at most 10 minutes per run) into
-a staged tree under the extensions directory (`AGENTAGE_EXTENSIONS_DIR`, default
-`extensions` in the config directory):
+The daemon's installer runs npm 10 or newer as `node npm-cli.js` (no shell, `--ignore-scripts`,
+`npm_config_*` and `NODE_OPTIONS` removed from its environment, at most 10 minutes per run). It
+installs one tree per extension version under the extensions directory (`AGENTAGE_EXTENSIONS_DIR`,
+default `extensions` in the config directory):
 
-| Path                                | What                                                               |
-| ----------------------------------- | ------------------------------------------------------------------ |
-| `extensions/package.json`           | the install set, sorted, `private: true`, no scripts               |
-| `extensions/package-lock.json`      | npm's lock for the current tree                                    |
-| `extensions/trees/<hash>/`          | an immutable tree named by the lock's `name@version+integrity` set |
-| `extensions/trees/<hash>/.npmrc`    | the profile's `registries`, one `@scope:registry=<url>` per line   |
-| `extensions/trees/<hash>/.complete` | written once npm succeeded; a tree without it is ignored           |
-| `extensions/current`                | one line naming the tree in use, rewritten atomically              |
-| `extensions/install.lock`           | held for the whole install; a second run waits for it              |
+| Path                                              | What                                                             |
+| ------------------------------------------------- | ---------------------------------------------------------------- |
+| `extensions/packages/trees/<id>@<version>/`       | one npm tree for that version; a running extension keeps its own |
+| `extensions/packages/trees/<id>@<version>/.npmrc` | the profile's `registries`, one `@scope:registry=<url>` per line |
+| `extensions/packages/install.lock`                | held for the whole install; a second run waits for it            |
 
-`npm ci` runs when the lock matches `package.json`, `npm install` otherwise; a complete
-tree for the same lock is reused without npm, and an empty install set skips npm and
-points `current` at an empty tree. Two machines with the same profile get the same tree
-name, because the name is a hash of the normalized lock. If npm fails, `current` is left as
-it was, the staged tree is removed and npm's last 20 lines are printed; `setup` still prints
-the extension rows, then exits 1. Once an install or `setup --latest` succeeded, every tree but
-the one `current` names is deleted: `extensions/package-lock.json` can rebuild any of them. A
-staged tree (`.staging-*`) is only ever removed by the next run that holds `install.lock`.
+A finished tree is reused with no network call. If npm fails, the staged tree is removed and
+npm's last lines are printed. The trees that no `installation.json` entry uses any more are
+deleted after `remove` and `update` (see [the lifecycle](#extension-lifecycle)).
+
+The tree that cli 0.51 installed (`extensions/trees/<hash>/`, named by `extensions/current`) is
+read-only now: a version in it runs from there, and nothing deletes it.
 
 ## status
 
@@ -984,7 +979,7 @@ Otherwise it is `extensions` inside the config directory. The config directory i
 | `AGENTAGE_CONFIG_DIR`        | Config and credentials directory (`auth.json`)                                                          | `$HOME/.agentage`     |
 | `AGENTAGE_TOKEN`             | Personal access token for CI and headless machines                                                      | unset                 |
 | `NO_COLOR`                   | Disable colored output (any non-empty value)                                                            | unset                 |
-| `AGENTAGE_EXTENSIONS_DIR`    | Extensions directory (trees, lock, `current`)                                                           | `<config>/extensions` |
+| `AGENTAGE_EXTENSIONS_DIR`    | Extensions directory (the trees and their lock)                                                         | `<config>/extensions` |
 | `AGENTAGE_DEBUG`             | `1` prints one stderr line for each call that registers this machine, and the stack of a failed command | unset                 |
 | `AGENTAGE_DAEMON_PORT`       | The daemon's port on 127.0.0.1                                                                          | `4243`                |
 | `AGENTAGE_NO_DAEMON`         | `1`: no daemon is started or used (`daemon_disabled`)                                                   | unset                 |
