@@ -54,7 +54,7 @@
     "prepublishOnly": "npm run verify"
   },
   "dependencies": {
-    "@agentage/extension": "0.18.4",
+    "@agentage/extension": "0.18.5",
     "@electric-sql/pglite": "^0.5.16",
     "@tailwindcss/postcss": "^4.3.5",
     "chalk": "^6.0.0",
