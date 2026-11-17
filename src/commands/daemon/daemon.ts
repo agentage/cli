@@ -135,6 +135,7 @@ export const runDaemonRestart = async (
 type Action = (opts: DaemonOptions) => Promise<void>;
 
 export interface DaemonActions {
+  start: Action;
   status: Action;
   stop: Action;
   restart: Action;
@@ -144,15 +145,19 @@ export interface DaemonActions {
 const HELP = `
 The daemon runs the installed extensions on 127.0.0.1 (port 4243, AGENTAGE_DAEMON_PORT for
 another), one child process each, and serves /api/{id}/* and /host/extensions. setup starts it,
-and so does each command that needs it. daemon.json in the config folder names its pid and port.`;
+and so does each command that needs it; daemon start prints its pid, url, protocol and startedBy
+(AGENTAGE_STARTED_BY=desktop when the desktop starts it). daemon.json in the config folder names its pid and port.`;
 
 export const registerDaemon = (program: Command, actions: DaemonActions): void => {
   const group = program
     .command('daemon')
-    .description('Show, stop or restart the local daemon that runs extensions')
+    .description('Start, show, stop or restart the local daemon that runs extensions')
     .allowExcessArguments()
     .addHelpText('after', HELP)
     .action(helpOrUnknown);
+  addJson(group.command('start').description('Connect to the daemon, or start it')).action(
+    actions.start
+  );
   addJson(group.command('status').description('Show the daemon and its extensions')).action(
     actions.status
   );

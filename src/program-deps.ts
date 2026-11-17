@@ -1,5 +1,6 @@
 import { type SetupDeps } from './commands/auth/setup.js';
 import { runDaemonRestart, runDaemonStatus, runDaemonStop } from './commands/daemon/daemon.js';
+import { runDaemonStart } from './commands/daemon/start.js';
 import { cliInstaller, npmNewest } from './commands/daemon/installer.js';
 import { moveBeforeStart } from './commands/daemon/move.js';
 import { runDaemon } from './commands/daemon/run.js';
@@ -93,6 +94,7 @@ export const defaultDeps: ProgramDeps = {
   extensionDown: (opts) => runExtensionDown(opts),
   extensionToken: (opts) => runExtensionToken(opts),
   daemon: {
+    start: () => runDaemonStart(),
     status: () => runDaemonStatus(),
     stop: () => runDaemonStop(),
     restart: () => runDaemonRestart(),

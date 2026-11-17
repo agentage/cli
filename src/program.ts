@@ -59,7 +59,7 @@ export interface ProgramDeps {
   extensionUp: Run<ExtensionUpFlags>;
   extensionDown: Run<ExtensionDownOptions>;
   extensionToken: Run<ExtensionTokenOptions>;
-  daemon: Record<'status' | 'stop' | 'restart' | 'run', Run<DaemonOptions>>;
+  daemon: Record<'start' | 'status' | 'stop' | 'restart' | 'run', Run<DaemonOptions>>;
   // The kit's tool library, which runs the commands of kit-built extensions.
   kitTool: LoadKitTool;
   updateHint: () => string | null;
@@ -124,6 +124,7 @@ export const createProgram = (
   registerUpdate(program, withAction(deps, deps.update));
   const daemon = (fn: Run<DaemonOptions>) => withAction(deps, fn);
   registerDaemon(program, {
+    start: daemon(deps.daemon.start),
     status: daemon(deps.daemon.status),
     stop: daemon(deps.daemon.stop),
     restart: daemon(deps.daemon.restart),
