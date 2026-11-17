@@ -314,7 +314,7 @@ version, so check that version first.
 ## Run it locally
 
 `extension create <id> [part...]` makes `./extension-<id>` from the template. A part is one piece
-of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli` or `store`. With fewer than seven
+of an extension: `pages`, `ui`, `api`, `mcp`, `worker`, `cli`, `app` or `store`. With fewer than eight
 parts, `create` sets `MIN_EXECUTED` to 1. `MIN_EXECUTED` is the least number of e2e tests that CI
 must run. After the first green run, set it to the real count. When `create` cannot find that
 line, it says so and you set it by hand.

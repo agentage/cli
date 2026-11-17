@@ -20,8 +20,10 @@ const MANIFEST = {
       mcp: true,
       worker: true,
       cli: true,
+      app: true,
       store: 'postgres',
     },
+    app: { title: 'template', icon: 'box', order: 50 },
     commands: [{ name: 'ping', summary: 'answer pong' }],
     settings: { 'mcp.listing': { type: 'string', default: 'open' } },
   },
@@ -47,6 +49,8 @@ const templateRepo = (root: string): string => {
     put(`src/${part}/index.ts`, `export const create = () => '${part}';\n`);
     put(`src/${part}/index.test.ts`, `// ${part} test\n`);
   }
+  put('src/app/index.tsx', 'export default () => null;\n');
+  put('src/app-part.test.tsx', '// app test\n');
   put('migrations/001-ping.sql', 'select 1;\n');
   put('seeds/001-hello.sql', 'select 1;\n');
   put('template.mcpc.json', '{ "name": "agentage-template", "tool": "template__echo" }\n');
@@ -131,6 +135,18 @@ describe('extension create', () => {
       expect(existsSync(join(root, 'extension-market', dir))).toBe(false);
   });
 
+  test('the app part is a part name: dropped with its folder, test and nav row, or kept', async () => {
+    expect((await create('market', ['api'])).error).toBeNull();
+    expect(manifest().agentage).not.toHaveProperty('app');
+    for (const gone of ['src/app', 'src/app-part.test.tsx'])
+      expect(existsSync(join(root, 'extension-market', gone))).toBe(false);
+    rmSync(join(root, 'extension-market'), { recursive: true, force: true });
+    expect((await create('market', ['api', 'app'])).error).toBeNull();
+    expect(manifest().agentage.parts).toEqual({ api: true, app: true });
+    expect(manifest().agentage.app).toEqual({ ...MANIFEST.agentage.app, title: 'market' });
+    expect(existsSync(join(root, 'extension-market/src/app/index.tsx'))).toBe(true);
+  });
+
   test('a subset whose ci.yml has no quoted MIN_EXECUTED line says to set it by hand', async () => {
     const src = url.slice('file://'.length);
     const unquoted = '        env:\n          MIN_EXECUTED: 25\n';
@@ -154,7 +170,7 @@ describe('extension create', () => {
     expect(read('.github/workflows/ci.yml')).toBe(unquoted);
   });
 
-  test('no parts keeps all seven, the store with its migrations and seeds', async () => {
+  test('no parts keeps all eight, the store with its migrations and seeds', async () => {
     const printed = await create('market');
     expect(printed.lines[1]).toBe(` kept      ${PARTS.join(', ')}`);
     expect(printed.lines).toHaveLength(4);
@@ -259,7 +275,11 @@ describe('extension create', () => {
   });
 
   test.each([
-    ['market', ['mcp', 'db'], 'unknown part db: one of pages, ui, api, mcp, worker, store, cli'],
+    [
+      'market',
+      ['mcp', 'db'],
+      'unknown part db: one of pages, ui, api, mcp, worker, store, cli, app',
+    ],
     ['api', ['api'], 'id api is a part name: pick another id'],
     ['../x', [], 'id ../x: lowercase letters, digits and -, starting with a letter'],
     ['m$&', [], 'id m$&: lowercase letters, digits and -, starting with a letter'],

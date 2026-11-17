@@ -9,7 +9,7 @@ import { terminalIo, type ConfirmIo } from './lifecycle.js';
 
 const run = promisify(execFile);
 export const TEMPLATE = 'agentage/extension-template';
-export const PARTS = ['pages', 'ui', 'api', 'mcp', 'worker', 'store', 'cli'];
+export const PARTS = ['pages', 'ui', 'api', 'mcp', 'worker', 'store', 'cli', 'app'];
 const ROUTED = ['pages', 'ui', 'api', 'mcp'];
 // `_` is a separator here, so `template__echo` is the id too.
 const WORD = /(?<![A-Za-z0-9])template(?![A-Za-z0-9])/g;
@@ -22,6 +22,7 @@ const PRUNE: Record<string, { keys?: string[][]; paths?: string[] }> = {
   mcp: { keys: [['agentage', 'settings', 'mcp.listing']], paths: ['template.mcpc.json'] },
   api: { paths: ['openapi.json'] },
   store: { paths: ['migrations', 'seeds'] },
+  app: { keys: [['agentage', 'app']], paths: ['src/app-part.test.tsx'] },
 };
 
 export interface ExtensionCreateOptions {
@@ -124,7 +125,7 @@ const LOWERED =
   " ci        MIN_EXECUTED is 1: after the first green run, set it to the gate's count";
 const BY_HAND = ` ci        no MIN_EXECUTED line found in ${CI}: set it by hand to the gate's count`;
 
-// The template's floor counts the gate's tests for all seven parts; a subset's count is unknown.
+// The template's floor counts the gate's tests for all eight parts; a subset's count is unknown.
 const lowerFloor = (dir: string, kept: string[]): string | undefined => {
   if (kept.length === PARTS.length) return undefined;
   const file = join(dir, CI);
@@ -186,7 +187,7 @@ export const addCreate = (group: Command, create: (o: ExtensionCreateOptions) =>
       .command('create')
       .description('Create ./extension-<id> from the extension template with the parts named')
       .argument('<id>', 'the extension id, also its host and contract name')
-      .argument('[parts...]', `parts to keep (default: all seven): ${PARTS.join(', ')}`)
+      .argument('[parts...]', `parts to keep (default: all eight): ${PARTS.join(', ')}`)
       .option('--from <owner/repo[#branch]>', `the template repo (default: ${TEMPLATE})`)
       .option('--no-install', 'build the folder, but do not give it to the daemon')
       .option('--yes', 'run code from another --from repo or branch without asking')
