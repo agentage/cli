@@ -752,10 +752,16 @@ await program.parseAsync(['world'], { from: 'user' }); // prints "world heard: h
 ## daemon
 
 ```bash
+agentage daemon start     # connect to the daemon, or start it; --json: { pid, url, protocol, startedBy }
 agentage daemon status    # running or not: pid, port, version, each extension and its state
 agentage daemon stop      # stop the daemon and every extension; returns once its pid is gone
 agentage daemon restart   # stop, then start; returns once no extension is starting (60 s)
 ```
+
+`daemon start` is for a client such as the desktop: it uses the daemon that `daemon.json`
+names when it answers, else it starts one, and it never prints the host token. A daemon started
+with `AGENTAGE_STARTED_BY=desktop` writes `startedBy: "desktop"` into `daemon.json`; unset or
+any other value writes `"cli"`.
 
 `daemon restart` waits up to 60 s for every extension to leave `starting`. When the wait runs
 out it prints `warning: still starting after 60 s: <ids>` and exits 0; `--json` gives
@@ -981,4 +987,5 @@ Otherwise it is `extensions` inside the config directory. The config directory i
 | `AGENTAGE_DEBUG`             | `1` prints one stderr line for each call that registers this machine, and the stack of a failed command | unset                 |
 | `AGENTAGE_DAEMON_PORT`       | The daemon's port on 127.0.0.1                                                                          | `4243`                |
 | `AGENTAGE_NO_DAEMON`         | `1`: no daemon is started or used (`daemon_disabled`)                                                   | unset                 |
+| `AGENTAGE_STARTED_BY`        | `desktop` when the desktop starts the daemon (`startedBy` in `daemon.json`)                             | `cli`                 |
 | `AGENTAGE_DAEMON_CLOCK_RATE` | Tests only: the test clock of the daemon it starts (`createDaemon({ clockRate })`)                      | unset                 |

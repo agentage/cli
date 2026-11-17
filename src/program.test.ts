@@ -28,6 +28,7 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     extensionEnabled: vi.fn(async () => undefined),
     extensionConfigure: vi.fn(async () => undefined),
     daemon: {
+      start: vi.fn(async () => undefined),
       status: vi.fn(async () => undefined),
       stop: vi.fn(async () => undefined),
       restart: vi.fn(async () => undefined),
@@ -180,9 +181,9 @@ describe('createProgram', () => {
     }
   });
 
-  test('daemon status, stop and restart take --json; run is hidden; alone it prints help', async () => {
+  test('daemon start, status, stop and restart take --json; run is hidden; alone it prints help', async () => {
     const h = makeDeps();
-    for (const name of ['status', 'stop', 'restart'] as const) {
+    for (const name of ['start', 'status', 'stop', 'restart'] as const) {
       expect(await h.exec('daemon', name, '--json')).toBe(0);
       expect(h.deps.daemon[name]).toHaveBeenCalledWith({ json: true });
     }

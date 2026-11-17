@@ -18,6 +18,14 @@ export const clockRateOf = (env: NodeJS.ProcessEnv = process.env): { clockRate?:
   return raw ? { clockRate: Number(raw) } : {};
 };
 
+const STARTERS = ['cli', 'desktop'];
+
+// C5: the desktop sets AGENTAGE_STARTED_BY=desktop; unset or another value is the cli.
+export const startedByOf = (env: NodeJS.ProcessEnv = process.env): string => {
+  const raw = env['AGENTAGE_STARTED_BY'] ?? '';
+  return STARTERS.includes(raw) ? raw : 'cli';
+};
+
 const signalled = (): Promise<void> =>
   new Promise((resolve) => {
     process.once('SIGTERM', resolve);
@@ -51,9 +59,11 @@ export const runDaemon = async (deps: DaemonRunDeps): Promise<void> => {
     version: VERSION,
     ...clockRateOf(),
   };
-  const daemon = await createDaemon({ ...opts, install: deps.installer(), startedBy: 'cli' }).catch(
-    busy
-  );
+  const daemon = await createDaemon({
+    ...opts,
+    install: deps.installer(),
+    startedBy: startedByOf(),
+  }).catch(busy);
   await stopping;
   await daemon.stop();
 };

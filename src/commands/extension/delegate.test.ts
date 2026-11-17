@@ -28,7 +28,7 @@ const agentage = async (...args: string[]) => {
     extensionUpdate: notHere,
     extensionEnabled: notHere,
     extensionConfigure: notHere,
-    daemon: { status: notHere, stop: notHere, restart: notHere, run: notHere },
+    daemon: { start: notHere, status: notHere, stop: notHere, restart: notHere, run: notHere },
     kitTool: notHere as unknown as ProgramDeps['kitTool'],
     updateHint: () => null,
     refreshUpdateCache: async () => undefined,
