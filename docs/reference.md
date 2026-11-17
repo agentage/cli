@@ -289,6 +289,14 @@ ones:
 | `extensions` | `extensions` | the extensions in `installation.json` (before the move: the profile, dev paths and tree) |
 |              | `plan`       | the plan summary: `{ add, update, remove, off, unchanged }`                              |
 
+The `daemon` line (JSON key `daemon`: `{ pid, port, version }`, or `null`) names the one daemon
+of this config folder; `status` starts it when none runs, so two terminals name the same pid.
+`status`, `extension up` and every other command that needs the daemon share it: one daemon per
+config folder (`AGENTAGE_CONFIG_DIR`, default `~/.agentage`), started once and left running;
+`agentage daemon stop` stops it.
+With `AGENTAGE_NO_DAEMON=1` it starts none and the key is `null`; a start that fails prints one
+`daemon: <why>` line on stderr and the key is `null`.
+
 For a copy of the profile in your account the line also shows its ETag, and the account's
 version and ETag when another machine pushed since:
 `profile    version 1 (source: cloud, etag "Wm9y3hQe1kP2c8sA"); account: version 1, etag "Qb7Lr0Zt4nVx2Hc9" - run agentage setup`
@@ -595,6 +603,14 @@ and goes back to the last good build when the new one does not start.
 - A change under `src/ui` runs the rest of the build script after the `tsc` step (the widget
   bundle). It writes `dist/ui` in place, is copied to `dist.next/ui`, and sends no reload: the
   daemon serves no ui part in this release; that build stops after 10 min (no time target, D17).
+- A package with `parts.app` (S1.2.3): `up` builds `src/app` with the kit's warm esbuild
+  context into `dist/app` before the first build, and copies it to `dist.next/app`, because a
+  full reload replaces `dist` whole. A save under `src/app` builds only the app, copies it to
+  `dist.next/app` and sends `POST /host/extensions/{id}/reload` with `{ "part": "app" }`: the
+  child keeps running and the open shell re-imports the app (`app       <id> reloaded in <ms> ms`).
+  A failed app build prints `app       build failed, no reload: <why>`. A save elsewhere in
+  `src/` is the full build and reload. In tsc mode the tsconfig must leave `src/app` out. The
+  build tools (`esbuild`, `postcss`, `tailwindcss`, `@tailwindcss/postcss`) come with the cli.
 
 Ctrl-C stops the watch (exit 130), SIGTERM too (exit 0), and a closed terminal (SIGHUP, exit 129);
 the daemon still runs the folder, and

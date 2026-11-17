@@ -332,3 +332,30 @@ setInterval(() => {}, 1000);`;
     expect(pid === null || markOf(pid) === null).toBe(true);
   });
 });
+
+describe('extension up and the warm app build (S1.2.3)', () => {
+  const builder = () => ({
+    rebuild: vi.fn(async () => ({ entry: 'app-1.js', css: 'app-1.css' })),
+    dispose: vi.fn(async () => undefined),
+  });
+
+  test('Ctrl-C disposes the warm app build', async ({ dir }) => {
+    const folder = workingCopy(dir);
+    const app = builder();
+    const { deps } = depsOf([], async () => 'SIGINT', stageNpm().npm);
+    await output(() => runLocalUp(folder, { ...deps, app: async () => app }));
+    expect(takeExit()).toBe(130);
+    expect(app.rebuild).toHaveBeenCalledOnce();
+    expect(app.dispose).toHaveBeenCalledOnce();
+  });
+
+  test('a first build that throws disposes the warm app build too', async ({ dir }) => {
+    const folder = workingCopy(dir);
+    const app = builder();
+    const { deps } = depsOf([], async () => 'SIGINT', stageNpm().npm);
+    const build = async () => Promise.reject(new Error('npm run build exited 1'));
+    const run = await output(() => runLocalUp(folder, { ...deps, build, app: async () => app }));
+    expect(run.error).toBe('npm run build exited 1');
+    expect(app.dispose).toHaveBeenCalledOnce();
+  });
+});

@@ -38,7 +38,8 @@ export interface HostClient {
   change: (id: string, patch: HostPatch) => Promise<HostSummary>;
   remove: (id: string, purge: boolean) => Promise<{ id: string }>;
   // S1.1.3 L1: the daemon copies <folder>/dist.next to dist and restarts that one child.
-  reload: (id: string) => Promise<HostReload>;
+  // S1.2.3: part 'app' keeps the child; the daemon tells the open shell to re-import dist/app.
+  reload: (id: string, part?: 'app') => Promise<HostReload>;
 }
 
 export interface HostReload {
@@ -48,6 +49,7 @@ export interface HostReload {
   pid?: number;
   reloaded: boolean;
   refused?: string;
+  part?: string;
 }
 
 // An install runs npm (the daemon waits up to 660 s), then starts the child: past that it is stuck.
@@ -175,6 +177,6 @@ export const hostClient = (
     add: (body) => send('POST', '/host/extensions', body),
     change: (id, patch) => send('PATCH', at(id), patch),
     remove: (id, purge) => send('DELETE', `${at(id)}${purge ? '?purge=true' : ''}`),
-    reload: (id) => send('POST', `${at(id)}/reload`, {}, 'RELOAD'),
+    reload: (id, part) => send('POST', `${at(id)}/reload`, part ? { part } : {}, 'RELOAD'),
   };
 };

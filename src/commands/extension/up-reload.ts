@@ -1,8 +1,10 @@
 import { cpSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
+import type { AppBuilder } from '@agentage/extension/tool';
 import { type HostClient } from '../../lib/daemon/host-client.js';
 import { messageOf, type Code } from '../../lib/json-output.js';
 import { type Npm } from './package-build.js';
+import { appAndReload } from './up-app.js';
 import { NEXT, stagedBuild, type UpMode } from './up-build.js';
 import {
   coalesced,
@@ -24,11 +26,13 @@ export interface Run {
   failed?: number;
   // When the build the daemon runs began: a save after it is not in that build.
   builtAt?: number;
+  // S1.2.3: the warm app build; a save in src/app reloads the app part only.
+  app?: AppBuilder | null;
 }
 
 // A save between the start of the running build and the end of the first watch build.
-export const editedSince = (dir: string, since?: number): boolean => {
-  const src = join(dir, 'src');
+export const editedSince = (dir: string, since?: number, sub = 'src'): boolean => {
+  const src = join(dir, sub);
   if (since === undefined || !existsSync(src)) return false;
   return readdirSync(src, { recursive: true, withFileTypes: true }).some(
     (f) => f.isFile() && statSync(join(f.parentPath, f.name)).mtimeMs >= since
@@ -121,6 +125,19 @@ export interface Watch {
   tscPid?: number;
 }
 
+const inApp = (file: string): boolean => file === 'app' || file.startsWith(`app${sep}`);
+
+// src/app: its own watch, in the lane of every dist.next write, never a child restart.
+const appWatch = (run: Run, inLane: (task: Task) => Promise<void>): Stoppable[] => {
+  const app = run.app;
+  if (!app) return [];
+  const go = coalesced(() => inLane(() => appAndReload(run, app)));
+  const watcher = watchFolder(join(run.dir, 'src', 'app'), go);
+  // A save between the start of up and this watch (the page may be open already) is built now.
+  if (editedSince(run.dir, run.builtAt, join('src', 'app'))) void go();
+  return [watcher];
+};
+
 const watchWithTsc = (
   run: Run,
   mode: Extract<UpMode, { kind: 'tsc' }>,
@@ -128,11 +145,21 @@ const watchWithTsc = (
 ): Watch => {
   const inLane = lane();
   const tsc = watchTsc(run.dir, mode, { ...tscReloads(run, inLane), onDied });
-  if (!mode.rest) return { watchers: [tsc], tscPid: tsc.pid };
+  const app = appWatch(run, inLane);
+  if (!mode.rest) return { watchers: [tsc, ...app], tscPid: tsc.pid };
   const rest = mode.rest;
   const bundle = coalesced(() => inLane(() => bundleUi(run, rest)));
   const ui = watchFolder(join(run.dir, 'src', 'ui'), bundle);
-  return { watchers: [tsc, ui], tscPid: tsc.pid };
+  return { watchers: [tsc, ui, ...app], tscPid: tsc.pid };
+};
+
+const watchStaged = (run: Run, script: string | null): Watch => {
+  const inLane = lane();
+  const app = appWatch(run, inLane);
+  if (!script) return { watchers: app };
+  const skip = run.app ? inApp : undefined;
+  const go = coalesced(() => inLane(() => stageAndReload(run)));
+  return { watchers: [watchFolder(join(run.dir, 'src'), go, undefined, skip), ...app] };
 };
 
 export const startWatch = (run: Run, mode: UpMode, onDied: (why: string) => void): Watch => {
@@ -140,13 +167,5 @@ export const startWatch = (run: Run, mode: UpMode, onDied: (why: string) => void
   if (!mode.script) console.error('watch     no build script: a change in src/ is not built');
   if (!existsSync(join(run.dir, 'src')))
     console.error('watch     no src/ folder: nothing to watch');
-  if (!mode.script) return { watchers: [] };
-  return {
-    watchers: [
-      watchFolder(
-        join(run.dir, 'src'),
-        coalesced(() => stageAndReload(run))
-      ),
-    ],
-  };
+  return watchStaged(run, mode.script);
 };

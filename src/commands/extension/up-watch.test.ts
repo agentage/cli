@@ -1,4 +1,11 @@
-import { chmodSync, existsSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  readlinkSync,
+  realpathSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, vi } from 'vitest';
 import { output, test } from '../../test/config-dir.js';
@@ -114,6 +121,26 @@ describe('the watchers of extension up', () => {
     await vi.waitFor(() => expect(seen).toHaveBeenCalledOnce(), { timeout: 3_000 });
     watcher.stop();
     expect(() => watchFolder(dir.at('none'), seen).stop()).not.toThrow();
+  });
+
+  test('saves by rename (as editors and git do) keep the watch: each is one change', async ({
+    dir,
+  }) => {
+    dir.write('w/src/app/index.tsx', '0');
+    const seen = vi.fn();
+    const watcher = watchFolder(dir.at('w/src'), seen, 50);
+    const file = dir.at('w/src/app/index.tsx');
+    try {
+      for (const [n, text] of ['1', '2'].entries()) {
+        writeFileSync(`${file}.tmp`, text);
+        renameSync(`${file}.tmp`, file);
+        await vi.waitFor(() => expect(seen).toHaveBeenCalledTimes(n + 1), { timeout: 3_000 });
+      }
+      writeFileSync(file, '3');
+      await vi.waitFor(() => expect(seen).toHaveBeenCalledTimes(3), { timeout: 3_000 });
+    } finally {
+      watcher.stop();
+    }
   });
 
   test('one run at a time: calls during a run give one more run, not one each', async () => {
