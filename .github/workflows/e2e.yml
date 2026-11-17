@@ -42,6 +42,10 @@ jobs:
       - name: 🏗️ Build
         run: npm run build
 
+      # The daemon-shell case renders the bundled shell.
+      - name: 🌐 Install Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: 🧪 Run offline e2e
         run: npm run test:e2e -- --grep @offline
 
