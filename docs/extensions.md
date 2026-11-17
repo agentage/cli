@@ -93,7 +93,9 @@ agentage extension doctor                 # load everything once, refresh the ru
 `extension install` takes a package name with an optional range (`@acme/example@~1.2`), an
 `https:` tarball URL, or a bare id such as `example`. A bare id asks the market first: the
 version is the market's `latest`, and a private entry has no npm package, so install refuses it.
-A market answer with a bad version or another package's name fails the install. An id the market does not know, or with no market answering, is looked up on npm as
+A market answer with a bad version or another package's name fails the install. The cli
+asks the market at `/api/market/extensions` and, on a 404 there, at the v13 `/api/v1/extensions`;
+the base that answers is kept for the run. An id the market does not know, or with no market answering, is looked up on npm as
 `@agentage/extension-example`, else `agentage-extension-example`. Other names without a range
 pin `^` the newest published version whose `engines.agentage` the extension API satisfies, and
 print a `skipped` line for each newer version that needs another API. It writes the profile, then

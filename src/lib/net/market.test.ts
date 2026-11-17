@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listMarket, MAX_PAGES, openMarket } from './market.js';
+import { forgetRouteBases } from './route-base.js';
 
 const DISCOVERY = 'https://next.agentage.io/.well-known/agentage.json';
-const LATEST = 'https://market.test/api/v1/extensions/probe/latest';
+const LATEST = 'https://market.test/api/market/extensions/probe/latest';
 
 const serving = (routes: Record<string, Response | Error>) => async (url: string) => {
   const found = routes[url] ?? new Response('{}', { status: 404 });
@@ -14,7 +15,10 @@ const doc = (body: unknown, status = 200) => new Response(JSON.stringify(body), 
 const named = { markets: ['https://market.test/'] };
 const entry = { data: { id: 'probe', version: '0.3.0', package: '@agentage/extension-probe' } };
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  forgetRouteBases();
+});
 
 describe('openMarket', () => {
   it('takes the market address from the discovery document and reads /latest', async () => {
@@ -111,7 +115,7 @@ describe('openMarket', () => {
 });
 
 describe('listMarket: extension list --available', () => {
-  const LIST = 'https://market.test/api/v1/extensions?limit=200';
+  const LIST = 'https://market.test/api/market/extensions?limit=200';
   const row = (id: string, version?: string) => ({
     id,
     package: null,
@@ -153,7 +157,7 @@ describe('listMarket: extension list --available', () => {
         [DISCOVERY]: doc(named),
         [LIST]: doc({ success: true, data: [row('notes', '1.2.0'), row('probe'), row('evil')] }),
         [LATEST]: doc({}, 503),
-        'https://market.test/api/v1/extensions/evil/latest': doc(bad),
+        'https://market.test/api/market/extensions/evil/latest': doc(bad),
       })
     );
     expect(await listMarket('next.agentage.io', get)).toEqual({

@@ -98,7 +98,7 @@ describe('a site and its market, over a real socket: one code per way it fails',
     const fqdn = await withMarket((_req, res) => res.writeHead(503).end());
     await expect(listMarket(fqdn)).rejects.toMatchObject({
       code: 'market_failed',
-      message: expect.stringMatching(/\/api\/v1\/extensions\?limit=200 answered 503$/),
+      message: expect.stringMatching(/\/api\/market\/extensions\?limit=200 answered 503$/),
     });
   });
 

@@ -66,4 +66,25 @@ describe('machinesCall', () => {
     );
     expect(urls).toEqual(['https://api.test/v1/machines/m_1']);
   });
+
+  it.each([401, 403, 429])(
+    'a %i on the app host pins nothing: the next call can fall back',
+    async (status) => {
+      const answers = [envelope(status, 'FORBIDDEN'), envelope(404, 'NOT_FOUND'), envelope(204)];
+      const urls: string[] = [];
+      const call = async (url: string) => (urls.push(url), answers.shift() ?? envelope(204));
+      expect((await machinesCall(PLATFORM, '/m_1', call)).status).toBe(status);
+      expect((await machinesCall(PLATFORM, '/m_1', call)).status).toBe(204);
+      expect(urls).toEqual([`${NEW}/m_1`, `${NEW}/m_1`, `${OLD}/m_1`]);
+    }
+  );
+
+  it('a 400 with an unknown body pins nothing: the next call can fall back', async () => {
+    const answers = [envelope(400), envelope(404, 'NOT_FOUND'), envelope(204)];
+    const urls: string[] = [];
+    const call = async (url: string) => (urls.push(url), answers.shift() ?? envelope(204));
+    await machinesCall(PLATFORM, '/m_1', call);
+    await machinesCall(PLATFORM, '/m_1', call);
+    expect(urls).toEqual([`${NEW}/m_1`, `${NEW}/m_1`, `${OLD}/m_1`]);
+  });
 });
