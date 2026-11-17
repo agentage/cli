@@ -291,6 +291,9 @@ ones:
 
 The `daemon` line (JSON key `daemon`: `{ pid, port, version }`, or `null`) names the one daemon
 of this config folder; `status` starts it when none runs, so two terminals name the same pid.
+`status`, `extension up` and every other command that needs the daemon share it: one daemon per
+config folder (`AGENTAGE_CONFIG_DIR`, default `~/.agentage`), started once and left running;
+`agentage daemon stop` stops it.
 With `AGENTAGE_NO_DAEMON=1` it starts none and the key is `null`; a start that fails prints one
 `daemon: <why>` line on stderr and the key is `null`.
 

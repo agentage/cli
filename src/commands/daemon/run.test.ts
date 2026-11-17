@@ -11,7 +11,7 @@ import { test } from '../../test/config-dir.js';
 import { freePort } from '../../test/serve.js';
 import { writeKitExtension } from '../../test/kit-fixture.js';
 import { VERSION } from '../../utils/version.js';
-import { clockRateOf, runDaemon, shellDirOf } from './run.js';
+import { clockRateOf, runDaemon } from './run.js';
 
 const listening = async (): Promise<Server> => {
   const server = createServer();
@@ -147,16 +147,5 @@ describe('the test clock (C5)', () => {
     expect(clockRateOf({ AGENTAGE_DAEMON_CLOCK_RATE: '60' })).toEqual({ clockRate: 60 });
     expect(clockRateOf({ AGENTAGE_DAEMON_CLOCK_RATE: '' })).toEqual({});
     expect(clockRateOf({ AGENTAGE_CLOCK_RATE: '60' })).toEqual({});
-  });
-});
-
-describe('the shell folder (S1.2.1, K3)', () => {
-  test('is the folder of the pinned @agentage/shell-dashboard; none when it does not resolve', () => {
-    const at = '/x/node_modules/@agentage/shell-dashboard/package.json';
-    expect(shellDirOf(() => at)).toEqual({ shellDir: '/x/node_modules/@agentage/shell-dashboard' });
-    const missing = () => {
-      throw new Error('Cannot find module');
-    };
-    expect(shellDirOf(missing)).toEqual({});
   });
 });

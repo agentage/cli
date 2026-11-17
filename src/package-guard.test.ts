@@ -82,8 +82,8 @@ describe('package guard (the core)', () => {
     expect(defineExtension(extension)).toBe(extension);
   });
 
-  // express and pglite: the kit daemon; shell-dashboard: the page it serves; esbuild, postcss and
-  // tailwind: the kit's app build for `extension up` (S1.2.3), resolved beside the kit.
+  // express and pglite: the kit daemon; esbuild, postcss and tailwind: the kit's app build for
+  // `extension up` (S1.2.3), optional kit peers resolved beside the kit.
   it('runtime dependencies are the core set plus what the kit daemon and app build run on', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
       dependencies: Record<string, string>;
@@ -91,7 +91,6 @@ describe('package guard (the core)', () => {
     };
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
       '@agentage/extension',
-      '@agentage/shell-dashboard',
       '@electric-sql/pglite',
       '@tailwindcss/postcss',
       'chalk',

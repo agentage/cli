@@ -1,5 +1,3 @@
-import { createRequire } from 'node:module';
-import { dirname } from 'node:path';
 import { CommanderError } from 'commander';
 import type { Installer } from '@agentage/extension/host';
 import { daemonPort, EADDRINUSE_EXIT } from '../../lib/daemon/daemon-file.js';
@@ -18,17 +16,6 @@ export interface DaemonRunDeps {
 export const clockRateOf = (env: NodeJS.ProcessEnv = process.env): { clockRate?: number } => {
   const raw = env['AGENTAGE_DAEMON_CLOCK_RATE'];
   return raw ? { clockRate: Number(raw) } : {};
-};
-
-// S1.2.1: the shell the daemon serves at / is the pinned @agentage/shell-dashboard (K3).
-export const shellDirOf = (
-  resolve: (name: string) => string = createRequire(import.meta.url).resolve
-): { shellDir?: string } => {
-  try {
-    return { shellDir: dirname(resolve('@agentage/shell-dashboard/package.json')) };
-  } catch {
-    return {};
-  }
 };
 
 const signalled = (): Promise<void> =>
@@ -63,7 +50,6 @@ export const runDaemon = async (deps: DaemonRunDeps): Promise<void> => {
     port: daemonPort(),
     version: VERSION,
     ...clockRateOf(),
-    ...shellDirOf(),
   };
   const daemon = await createDaemon({ ...opts, install: deps.installer(), startedBy: 'cli' }).catch(
     busy
