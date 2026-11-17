@@ -839,6 +839,19 @@ agentage update --check   # report whether an update is available, don't install
 `update` needs npm 10 or newer and prints npm's last output lines if the install fails. After
 an install it restarts a running daemon, so the daemon runs the new version.
 
+## auth token
+
+```bash
+agentage auth token          # the session's access token alone on stdout
+agentage auth token --json   # { accessToken, expiresAt }
+```
+
+For a local client such as the desktop, which sends the token on its own calls; not listed in
+`--help`. It reads only the stored sign-in (`auth.json`): a token that ends within 60 s, or has
+no known end, is refreshed first and the new one is stored. It never prints a personal access
+token: signed out, or with only `AGENTAGE_TOKEN`, it exits 1 with `auth_required`. A refresh the
+issuer refuses is `auth_required` too; a refresh that cannot reach it is `auth_unavailable`.
+
 ## Token auth (CI and headless)
 
 Machines without a browser authenticate with a personal access token. Mint one in the

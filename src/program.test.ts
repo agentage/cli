@@ -13,6 +13,7 @@ const makeDeps = (over: Partial<ProgramDeps> = {}) => {
     setup: vi.fn(async () => undefined),
     status: vi.fn(async () => undefined),
     update: vi.fn(async () => undefined),
+    authToken: vi.fn(async () => undefined),
     extensionInstall: vi.fn(async () => undefined),
     extensionRemove: vi.fn(async () => undefined),
     extensionList: vi.fn(async () => undefined),
@@ -177,7 +178,14 @@ describe('createProgram', () => {
       if (value === undefined) delete process.env['AGENTAGE_EXTENSIONS'];
       else process.env['AGENTAGE_EXTENSIONS'] = value;
       const names = createProgram(makeDeps().deps).commands.map((c) => c.name());
-      expect(names, String(value)).toEqual(['setup', 'status', 'update', 'daemon', 'extension']);
+      expect(names, String(value)).toEqual([
+        'setup',
+        'status',
+        'update',
+        'auth',
+        'daemon',
+        'extension',
+      ]);
     }
   });
 

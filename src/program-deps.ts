@@ -1,3 +1,4 @@
+import { runAuthToken } from './commands/auth/token.js';
 import { type SetupDeps } from './commands/auth/setup.js';
 import { runDaemonRestart, runDaemonStatus, runDaemonStop } from './commands/daemon/daemon.js';
 import { runDaemonStart } from './commands/daemon/start.js';
@@ -79,6 +80,7 @@ export const defaultDeps: ProgramDeps = {
     }),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
+  authToken: () => runAuthToken(),
   extensionInstall: (opts) => runInstall(opts, { ...lifecycle, fromNpm, hasMarket, sealOff }),
   extensionRemove: (opts) => runRemove(opts, { ...lifecycle, io: terminalIo() }),
   extensionList: (opts) => runList(opts, listDeps),

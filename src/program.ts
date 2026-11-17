@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
 import { registerSetup, type SetupOptions } from './commands/auth/setup.js';
+import { registerAuth, type AuthTokenOptions } from './commands/auth/token.js';
 import { registerDaemon, type DaemonOptions } from './commands/daemon/daemon.js';
 import {
   type ExtensionBuildOptions,
@@ -45,6 +46,7 @@ export interface ProgramDeps {
   setup: Run<SetupOptions>;
   status: Run<StatusOptions>;
   update: Run<UpdateOptions>;
+  authToken: Run<AuthTokenOptions>;
   extensionInstall: Run<InstallOptions>;
   extensionRemove: Run<RemoveOptions>;
   extensionList: Run<ListOptions>;
@@ -122,6 +124,7 @@ export const createProgram = (
   );
   registerStatus(program, withAction(deps, deps.status, '', pinned));
   registerUpdate(program, withAction(deps, deps.update));
+  registerAuth(program, withAction(deps, deps.authToken));
   const daemon = (fn: Run<DaemonOptions>) => withAction(deps, fn);
   registerDaemon(program, {
     start: daemon(deps.daemon.start),
