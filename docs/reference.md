@@ -842,8 +842,8 @@ an install it restarts a running daemon, so the daemon runs the new version.
 ## Token auth (CI and headless)
 
 Machines without a browser authenticate with a personal access token. Mint one in the
-dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or pass
-`--token aga_...` per command. A token takes precedence over a stored sign-in. With
+dashboard (**Settings**, then **API tokens**), then set `AGENTAGE_TOKEN=aga_...`, or check one
+with `agentage status --token aga_...`. A token takes precedence over a stored sign-in. With
 `AGENTAGE_TOKEN` set, plain `setup` opens no browser sign-in: its account step and its status step
 use the token, then it starts the daemon.
 
@@ -952,12 +952,13 @@ exit 1. A command an extension adds takes its own `--json`, which the extension 
 
 ## Exit codes
 
-| Code | Meaning                                                                                             |
-| ---- | --------------------------------------------------------------------------------------------------- |
-| `0`  | Success, including `--help`, `--version`, and `status` while signed out                             |
-| `3`  | Only `daemon run` (the daemon process): its port is in use                                          |
-| `1`  | A step failed: sign-in, install or update failed, a refused or invalid profile, or an invalid token |
-| `2`  | Usage error: an unknown command or flag, a missing flag value, or no command                        |
+| Code         | Meaning                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| `0`          | Success, including `--help`, `--version`, and `status` while signed out                             |
+| `1`          | A step failed: sign-in, install or update failed, a refused or invalid profile, or an invalid token |
+| `2`          | Usage error: an unknown command or flag, a missing flag value, or no command                        |
+| `3`          | Only `daemon run` (the daemon process): its port is in use                                          |
+| `129`, `130` | Only `extension up`: stopped by a closed terminal or by Ctrl-C                                      |
 
 `setup` and `extension doctor` also exit 1 when an
 extension failed to load, `extension install` and `configure` exit 1 when it failed to start or on integrity drift, `extension build` exits 1 when a build or push

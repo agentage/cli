@@ -26,7 +26,7 @@ the extensions of your account's profile once; after that each machine keeps its
 
 `agentage setup --no-browser` prints the sign-in URL. Open it in a browser on this same machine,
 because sign-in returns to `localhost`. On a server, use a personal access token from the
-dashboard (**Settings -> API tokens**):
+dashboard (**Settings**, then **API tokens**):
 
 ```bash
 AGENTAGE_TOKEN=aga_... agentage status
@@ -48,7 +48,8 @@ More: [docs/reference.md](docs/reference.md#token-auth-ci-and-headless).
 | `agentage extension ...`      | Manage extensions, see [Extensions](#extensions)                                   |
 | any command with `--json`     | One JSON object on stdout: `{ success, data }` or `{ success, error }`             |
 
-More: [author commands](docs/extensions.md#author-commands) and [the lifecycle](docs/extensions.md#lifecycle).
+More: [author commands](docs/extensions.md#author-commands) and
+[the lifecycle](docs/reference.md#extension-lifecycle).
 
 ## Extensions
 
@@ -68,8 +69,9 @@ agentage probe ping                                 # run a command by its exten
 agentage extension remove probe                     # take it out again; --purge also deletes its data
 ```
 
-Extensions run in the CLI process with your privileges, so install only ones you trust. npm runs with
-`--ignore-scripts`. The account token leaves the environment before extension code loads.
+Extensions run with your privileges, in the daemon and in the CLI process, so install only ones
+you trust. npm runs with `--ignore-scripts`. The account token leaves the environment before
+extension code loads.
 
 More: [docs/profiles.md](docs/profiles.md).
 
@@ -93,16 +95,19 @@ More: [docs/extensions.md](docs/extensions.md#run-it-locally).
 
 Everything lives in the config directory, `~/.agentage` by default:
 
-| Path                        | What                                                |
-| --------------------------- | --------------------------------------------------- |
-| `~/.agentage/auth.json`     | your sign-in, owner-only                            |
-| `~/.agentage/profile.json`  | the profile: what this account wants                |
-| `~/.agentage/machine.json`  | this machine's id, name, dev extensions and account |
-| `~/.agentage/extensions/`   | installed extensions; `current` names the live tree |
-| `~/.agentage/state/`        | the last run of each extension                      |
-| `~/.agentage/commands.json` | cli 0.51's command holders; read, never written     |
-| `~/.agentage/secrets.json`  | extension secrets, owner-only                       |
-| `~/.agentage/data/<id>/`    | what each extension keeps                           |
+| Path                            | What                                                  |
+| ------------------------------- | ----------------------------------------------------- |
+| `~/.agentage/auth.json`         | your sign-in, owner-only                              |
+| `~/.agentage/profile.json`      | the profile: what this account wants                  |
+| `~/.agentage/machine.json`      | this machine's id, name, dev extensions and account   |
+| `~/.agentage/installation.json` | this machine's extension list, written by the daemon  |
+| `~/.agentage/daemon.json`       | the running daemon: pid, port, host token; owner-only |
+| `~/.agentage/extensions/`       | installed extensions, one tree per id and version     |
+| `~/.agentage/state/`            | the last run of each extension                        |
+| `~/.agentage/commands.json`     | cli 0.51's command holders; read, never written       |
+| `~/.agentage/secrets.json`      | extension secrets, owner-only                         |
+| `~/.agentage/data/<id>/`        | what each extension keeps                             |
+| `~/.agentage/logs/`             | `daemon.log` and each extension's log                 |
 
 `status` writes `machine.json` even before you sign in.
 
@@ -114,7 +119,8 @@ delete `~/.agentage`.
 - `setup` registers a one-off OAuth client and waits for the browser on a localhost callback.
 - Tokens land in `~/.agentage/auth.json` (owner-only) and refresh automatically.
 - `status` checks the session against the account's introspection endpoint.
-- Nothing runs in the background.
+- The daemon is the only background process. It starts when a command needs it and runs until
+  `agentage daemon stop`. Nothing installs on a timer.
 
 ## Configuration
 
@@ -124,6 +130,7 @@ delete `~/.agentage`.
 | `AGENTAGE_CONFIG_DIR`     | `~/.agentage`         | Config and credentials directory                   |
 | `AGENTAGE_TOKEN`          | -                     | Personal access token for CI and headless machines |
 | `AGENTAGE_EXTENSIONS_DIR` | `<config>/extensions` | Where extensions are installed                     |
+| `AGENTAGE_DAEMON_PORT`    | `4243`                | The daemon's port on 127.0.0.1                     |
 | `NO_COLOR`                | -                     | Disable colored output                             |
 
 ## Develop
@@ -139,17 +146,14 @@ npm registry that serves `fixtures/`.
 
 ## Release
 
-GitHub Actions publishes to npm when a release PR merges to `master` as a `chore(release): X.Y.Z`
-commit that touches `package.json`. It skips a version already on npm.
+Dispatch `prepare-release.yml` (the Friday train dispatches it too). It opens a
+`chore(release): X.Y.Z` PR and arms auto-merge. On the merge, `release.yml` runs verify and the
+agentage/e2e cli tier on the packed cli, then publishes to npm with OIDC trusted publishing and
+provenance, and pushes the tag `vX.Y.Z`. It skips a version already on npm.
 
 - The publish worked but the tag push failed: push the tag by hand on the release commit
-  (`git tag v0.52.0 <release commit> && git push origin v0.52.0`); never publish again.
-- The agentage/e2e cli tier (`e2e.yml` on a PR) is not a required check; `release.yml` runs only
-  its `@smoke` tests before the publish. No workflow of this repo runs its lifecycle, execution
-  and reload tests on a candidate; agentage/e2e runs them on its own PRs against the published cli.
-- Before the release PR merges, check: the PR checks of the release commit are green, and the cli
-  project of agentage/e2e passes 48 of 48 against the packed tarball of that commit
-  (`AGENTAGE_CLI_TARBALL=<tgz> npm run test:cli -- --retries=0`).
+  (`git tag vX.Y.Z <release commit> && git push origin vX.Y.Z`); never publish again.
+- The cli tier failed: fix the cli or the e2e test, then dispatch `release.yml` again.
 
 ## Documentation
 
