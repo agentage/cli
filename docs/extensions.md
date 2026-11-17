@@ -11,7 +11,7 @@ nothing to turn on. Flags and exit codes are in [`reference.md`](reference.md).
   `agentage extension create <id> [part...]`. The CLI never loads it with `register`; see "Built on the extension kit".
 
 `extension create`, `check`, `build`, `up`, `down`, `token` and `release` serve kit-shaped packages. `extension
-install`, `list` and `remove` act on the profile, for both shapes.
+install`, `list` and `remove` act on the daemon's list of this machine, for both shapes.
 
 ## What an extension is
 
@@ -79,37 +79,28 @@ runtime, and `defineExtension` is an identity helper.
 
 ## Lifecycle
 
-An extension is installed from a profile:
+The daemon installs and runs extensions. A profile installs a set of them through the daemon:
 
 ```bash
 agentage setup --profile ./profile.json   # install a whole profile, then load each once
-agentage setup --latest                   # move each extension to the newest version it allows
-agentage extension install <name> [--off] # add one extension, install, load
-agentage extension remove <name>          # drop one, then install and load the rest
-agentage extension list                   # states, no extension code runs
+agentage extension install <id>           # the market's newest version, then it runs
+agentage extension update                 # move each market extension to its newest version
+agentage extension remove <id>            # stop it; its data stays unless --purge
+agentage extension list                   # the daemon's rows: id, version, source, state
 agentage extension doctor                 # load everything once, refresh the run state
 ```
 
-`extension install` takes a package name with an optional range (`@acme/example@~1.2`), an
-`https:` tarball URL, or a bare id such as `example`. A bare id asks the market first: the
-version is the market's `latest`, and a private entry has no npm package, so install refuses it.
-A market answer with a bad version or another package's name fails the install. The cli
-asks the market at `/api/market/extensions` and, on a 404 there, at the v13 `/api/v1/extensions`;
-the base that answers is kept for the run. An id the market does not know, or with no market answering, is looked up on npm as
-`@agentage/extension-example`, else `agentage-extension-example`. Other names without a range
-pin `^` the newest published version whose `engines.agentage` the extension API satisfies, and
-print a `skipped` line for each newer version that needs another API. It writes the profile, then
-installs and loads like `setup`. `--off` installs the package but leaves it `off` on this
-machine. A `./path` is a dev extension, see Developing locally.
+The install rules (market, npm names, versions, local folders) and every flag are in
+[`reference.md`](reference.md#extension-lifecycle).
 
 A profile maps package names to version ranges: `{ "version": 1, "extensions": { "<pkg>": "^1" } }`.
 
-Static states are known without running code. They show in `extension list` and `setup`.
+Static states are known without running code. They show in `extension doctor` and `setup`.
 
 | State       | What makes it                                                                   |
 | ----------- | ------------------------------------------------------------------------------- |
 | `installed` | Valid manifest, present, not off on this machine, all required peers installed. |
-| `off`       | Set by `extension install --off`: in this machine's `off` list.                 |
+| `off`       | In this machine's `off` list (only before `installation.json` exists).          |
 | `blocked`   | A required peer is off, invalid, missing or blocked, or not in the profile.     |
 | `invalid`   | Bad manifest, entry not found, wrong config type, duplicate id, peer cycle.     |
 | `missing`   | Named in the profile but not in the installed tree.                             |
@@ -154,7 +145,7 @@ After a failed or timed-out load, every `ctx` method throws.
 
 `ctx.previousVersion` is the `version` of the last load that ended `ok` on this machine (`lastOk`
 in `state/<id>.json`), `null` the first time. Compare it with `ctx.version` to migrate your data
-once after an update, for example after `agentage setup --latest`. A failed load does not change
+once after an update, for example after `agentage extension update`. A failed load does not change
 it.
 
 ### Configuration
@@ -234,16 +225,17 @@ is ignored.
 
 Under `~/.agentage/`, or `AGENTAGE_CONFIG_DIR` when set:
 
-| Path              | What                                                        |
-| ----------------- | ----------------------------------------------------------- |
-| `profile.json`    | The profile: extensions, registries, config.                |
-| `machine.json`    | This machine's id, name and development paths.              |
-| `extensions/`     | Installed trees; `extensions/current` names the one in use. |
-| `state/<id>.json` | The last load, written by the CLI.                          |
-| `secrets.json`    | Secrets per extension id.                                   |
-| `data/<id>/`      | `ctx.data`.                                                 |
-| `cache/<id>/`     | `ctx.cache`.                                                |
-| `logs/<id>.log`   | `ctx.log`.                                                  |
+| Path                | What                                                  |
+| ------------------- | ----------------------------------------------------- |
+| `installation.json` | This machine's extension list, written by the daemon. |
+| `profile.json`      | The profile: extensions, registries, config.          |
+| `machine.json`      | This machine's id, name and development paths.        |
+| `extensions/`       | Installed trees, one per id and version.              |
+| `state/<id>.json`   | The last load, written by the CLI.                    |
+| `secrets.json`      | Secrets per extension id.                             |
+| `data/<id>/`        | `ctx.data`.                                           |
+| `cache/<id>/`       | `ctx.cache`.                                          |
+| `logs/<id>.log`     | `ctx.log`.                                            |
 
 ## Developing locally
 
@@ -253,18 +245,16 @@ Install a folder as a development extension:
 agentage extension install ./my-extension   # needs package.json with name and agentage.id
 agentage extension list                     # check the state and reason
 agentage extension doctor                   # load it, see ok or failed
-agentage extension remove my-extension      # stop using it (name, short name or id)
+agentage extension remove <id>              # stop using it
 ```
 
-The path is stored by its real path in the `dev` map of `machine.json`. The profile is not
-changed. The folder replaces the installed copy of the same package on this machine, and
-`ctx.mode` is `'dev'`. A dev extension always loads, so `--off` is refused for it. A dev folder
-whose `package.json` is gone is `missing`.
+The daemon runs the folder in place by its real path, with no copy, and `ctx.mode` is `'dev'`.
+A folder that another user can write to is refused. The profile is not changed.
 
-`extension remove <name> [--purge] [--yes]` takes the package out of the profile, this machine's
-`off` list and `dev` map, and deletes `state/<id>.json`. It refuses while another extension
-peer-depends on it, and names the dependents. The logs, secrets and config stay. `--purge` also
-deletes `data/<id>/`. It asks first on a terminal; without one it needs `--yes`.
+`extension remove <id> [--purge] [--yes]` stops the extension and forgets its settings and
+secrets. It refuses while another installed extension peer-depends on it, and names the
+dependents (`--force` removes it anyway). `--purge` also deletes `data/<id>/`. It asks first on a
+terminal; without one it needs `--yes`.
 
 To publish, use any npm-compatible registry. The profile's `registries` maps an npm scope to a
 registry URL; other packages come from the public npm registry.
@@ -275,8 +265,8 @@ registry URL; other packages come from the public npm registry.
 2. `name` in `package.json` is the name users put in their profile.
 3. The entry (`exports` or `main`) exists in the published package and exports `register`.
 4. `engines.agentage` matches the extension API (`^1`). Raise it only with a new major of your
-   package: `extension install` and `setup --latest` skip a version whose range the user's CLI
-   does not satisfy, and keep the version they have.
+   package: `setup --profile` and an install resolved on npm skip a version whose range the
+   user's CLI does not satisfy.
 5. Every command is in `contributes.commands` and named `<id>` or `<id>:<name>`.
 6. Every setting has a `type`; secrets are marked `secret: true` and read from `ctx.secrets`.
 7. Other extensions you call are in `peerDependencies` (optional ones marked).
@@ -307,9 +297,6 @@ copy, `agentage extension up` runs it on the daemon and reloads each saved chang
 | `agentage extension release`                                | Release from a tag in CI: guard, part images, one image, records, npm package                      |
 | `agentage extension up [--docker]` / `down`                 | Run the working copy on the daemon, reload each change (`--docker`: on Docker); `down` removes it  |
 | `agentage extension token --scope <scope> [--dir <path>]`   | Print a token from the dev issuer `extension up` started for that folder                           |
-
-`token --dir` is on master and needs a cli newer than 0.51.0. A new project pins the template's cli
-version, so check that version first.
 
 ## Run it locally
 

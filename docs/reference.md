@@ -4,31 +4,6 @@ Every `agentage` command, its exit codes and environment variables. Run
 `agentage <command> --help` for the authoritative flags. Global flags: `-V, --version`
 prints the version, `-h, --help` prints help.
 
-## Changed for users of 0.51
-
-The release after 0.51 changes these. Each line links to its section.
-
-| Area                              | 0.51                                                                                                             | Now                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The daemon                        | none                                                                                                             | one process on `127.0.0.1:4243` runs each extension; `setup` and each command that needs it start it, `setup --no-daemon` does not ([daemon](#daemon))                                                                                                                                                                                   |
-| The list of a machine             | `profile.json`, `machine.json` and the npm tree                                                                  | `installation.json`, written by the daemon; its first start moves the 0.51 entries once and changes no 0.51 file ([the move](#the-move-from-the-old-lists), [downgrade](#downgrade-to-051))                                                                                                                                              |
-| Account profile                   | `extension install` and `remove` pushed it                                                                       | not pushed; plain `setup` installs the account profile once per machine ([setup](#setup))                                                                                                                                                                                                                                                |
-| `extension up`                    | the Docker stack                                                                                                 | the working copy on the daemon: built, added as a folder row, watched; each saved change is built into `dist.next/` and reloaded; `--local` is an old name with a deprecation line; `down` removes the row `up` added ([up](#extension-up-down-and-token))                                                                               |
-| `extension build`                 | the part images, a clean tree                                                                                    | the package, no Docker, a dirty tree is fine; the images are `build --docker` ([build](#extension-build))                                                                                                                                                                                                                                |
-| `extension create`                | a folder                                                                                                         | also `npm ci`, the build and the install (`--no-install` skips them); a `--from` other than the template needs `--yes` with no terminal                                                                                                                                                                                                  |
-| Old names, kept one minor         | `install --off`, `setup --latest`                                                                                | each prints its new form (`install`, then `disable`; `extension update`) and runs it                                                                                                                                                                                                                                                     |
-| `extension list --json`           | `data` is `{ machine, profile, plan, extensions }`                                                               | `data` is the daemon rows `[{ id, version, source, state, enabled, error?, path? }]` ([the envelope](#the---json-envelope))                                                                                                                                                                                                              |
-| Names `install` refuses           | took them                                                                                                        | a package of another scope (`@scope/name`) and an `https:` tarball URL: `invalid_argument`, with `./<folder>` to type instead ([lifecycle](#extension-lifecycle))                                                                                                                                                                        |
-| Error codes                       | snake_case (`not_installed`)                                                                                     | the daemon's codes arrive UPPER_SNAKE (`NOT_FOUND`), the cli's own stay snake_case ([the envelope](#the---json-envelope))                                                                                                                                                                                                                |
-| Exit codes                        | 0, 1, 2                                                                                                          | also 130 and 129 (`extension up` stopped by Ctrl-C or a closed terminal) and 3 (`daemon run`, its port in use) ([exit codes](#exit-codes))                                                                                                                                                                                               |
-| A site with no market             | `install <id>` and `update` resolved on npm after any market failure, `market unavailable, versions not checked` | the npm rule only when the site has no discovery document or no market: `install <id>` tries `@agentage/extension-<id>`, then `agentage-extension-<id>`; `update` asks npm for the package name the row was installed under; one stderr line names the site; unreachable, 5xx and timeout are errors ([lifecycle](#extension-lifecycle)) |
-| npm names on a site with a market | a bare id tried `@agentage/extension-<id>`, then `agentage-extension-<id>`                                       | a market without the id: `install <id>` asks npm only for `@agentage/extension-<id>`, one stderr line says so; a typed `agentage-extension-<id>` is refused (`invalid_argument`), it installs only on a site with no market                                                                                                              |
-| `extension update`                | `setup --latest`: `npm update` of the tree, exit 1 when the new tree did not load clean                          | a row the market no longer lists keeps its version, one stderr line `not in the market any more`, exit 0; npm is never asked for it; on a site with no market, an id npm cannot resolve is named and exits 1 (`extension_failed`) after the others updated                                                                               |
-| Ids                               | any lowercase id                                                                                                 | the kit's rule: at most 32 characters and not a name the platform owns (`auth`, `www`, `api`, `sync`, `mail`, `mcp`, `ui`, `git` and the core commands); `install` refuses such an id before npm runs (`invalid_argument`), the move lists its entry as skipped                                                                          |
-| Extensions built on an older kit  | built on kit 0.12 ran                                                                                            | every kit minor from `KIT_FLOOR` (0.12) up to the bundled kit runs with a warning; older ones are refused, and the move lists such an entry as skipped and keeps the 0.51 files ([the move](#the-move-from-the-old-lists))                                                                                                               |
-| Install size                      | 4 runtime dependencies                                                                                           | 6: `express` and `@electric-sql/pglite` (about 26 MB on disk), which the daemon runs on                                                                                                                                                                                                                                                  |
-| `setup --check`, `--dry-run`      | the plan of the npm tree                                                                                         | what setup sends to the daemon: `add`, `off`, `unchanged`; `update` and `remove` are always 0 ([setup](#setup))                                                                                                                                                                                                                          |
-
 ## setup
 
 ```bash
@@ -233,7 +208,8 @@ failed install loads nothing: the rows show what is still current.
 
 Extension authors: see [`extensions.md`](extensions.md).
 
-Extensions run in the CLI process with your privileges: installing one is an act of trust.
+Extensions run with your privileges, in the daemon and in the CLI process: installing one is an act
+of trust.
 What they keep, and what the CLI keeps about them, lives in the config directory:
 
 | Path              | What                                                                               |
@@ -245,29 +221,23 @@ What they keep, and what the CLI keeps about them, lives in the config directory
 | `data/<id>/`      | the extension's durable data (`ctx.data`); only `remove --purge` deletes it        |
 | `cache/<id>/`     | the extension's disposable cache (`ctx.cache`), created by the extension           |
 
-The installer runs npm 10 or newer as `node npm-cli.js` (no shell, `--ignore-scripts`,
-`npm_config_*` and `NODE_OPTIONS` removed from its environment, at most 10 minutes per run) into
-a staged tree under the extensions directory (`AGENTAGE_EXTENSIONS_DIR`, default
-`extensions` in the config directory):
+The daemon's installer runs npm 10 or newer as `node npm-cli.js` (no shell, `--ignore-scripts`,
+`npm_config_*` and `NODE_OPTIONS` removed from its environment, at most 10 minutes per run). It
+installs one tree per extension version under the extensions directory (`AGENTAGE_EXTENSIONS_DIR`,
+default `extensions` in the config directory):
 
-| Path                                | What                                                               |
-| ----------------------------------- | ------------------------------------------------------------------ |
-| `extensions/package.json`           | the install set, sorted, `private: true`, no scripts               |
-| `extensions/package-lock.json`      | npm's lock for the current tree                                    |
-| `extensions/trees/<hash>/`          | an immutable tree named by the lock's `name@version+integrity` set |
-| `extensions/trees/<hash>/.npmrc`    | the profile's `registries`, one `@scope:registry=<url>` per line   |
-| `extensions/trees/<hash>/.complete` | written once npm succeeded; a tree without it is ignored           |
-| `extensions/current`                | one line naming the tree in use, rewritten atomically              |
-| `extensions/install.lock`           | held for the whole install; a second run waits for it              |
+| Path                                              | What                                                             |
+| ------------------------------------------------- | ---------------------------------------------------------------- |
+| `extensions/packages/trees/<id>@<version>/`       | one npm tree for that version; a running extension keeps its own |
+| `extensions/packages/trees/<id>@<version>/.npmrc` | the profile's `registries`, one `@scope:registry=<url>` per line |
+| `extensions/packages/install.lock`                | held for the whole install; a second run waits for it            |
 
-`npm ci` runs when the lock matches `package.json`, `npm install` otherwise; a complete
-tree for the same lock is reused without npm, and an empty install set skips npm and
-points `current` at an empty tree. Two machines with the same profile get the same tree
-name, because the name is a hash of the normalized lock. If npm fails, `current` is left as
-it was, the staged tree is removed and npm's last 20 lines are printed; `setup` still prints
-the extension rows, then exits 1. Once an install or `setup --latest` succeeded, every tree but
-the one `current` names is deleted: `extensions/package-lock.json` can rebuild any of them. A
-staged tree (`.staging-*`) is only ever removed by the next run that holds `install.lock`.
+A finished tree is reused with no network call. If npm fails, the staged tree is removed and
+npm's last lines are printed. The trees that no `installation.json` entry uses any more are
+deleted after `remove` and `update` (see [the lifecycle](#extension-lifecycle)).
+
+The tree that cli 0.51 installed (`extensions/trees/<hash>/`, named by `extensions/current`) is
+read-only now: a version in it runs from there, and nothing deletes it.
 
 ## status
 
@@ -348,7 +318,7 @@ in the config folder and runs each extension as its own process: its api at
   market `@agentage/extension-<id>`, then `agentage-extension-<id>`. After `@` only a version, a
   range with no space or a word is taken: a path, `file:`, `git+`, a URL or a flag is
   `invalid_argument` and npm is never asked (`probe@http` is the tag `http`). A new id
-  whose first start fails is refused and rolled back by the daemon (C6): exit 1 with its code and
+  whose first start fails is refused and rolled back by the daemon: exit 1 with its code and
   message (`VALIDATION_ERROR`, `<id> failed to start: <reason>`), and `--json` keeps its
   `details` (`{ "code": "START_FAILED", "reason" }`). A declared secret with no value keeps the
   row as `failed` (`needs secret <name>`, exit 1): `extension configure <id> --secret <name>=...`
@@ -564,7 +534,7 @@ agentage extension down --keep-data           # keep the Docker store's volume f
 agentage extension token --scope probe:write  # a dev token from this folder's Docker stack
 ```
 
-`up` with no flag runs the working copy on the daemon (S1.1.3 D12), in a terminal or not, `CI`
+`up` with no flag runs the working copy on the daemon, in a terminal or not, `CI`
 set or not. It checks the folder first (no `package.json` exits 1 and starts no daemon), then
 starts the daemon when none runs. When the daemon does not run this folder yet, it builds the
 package as `extension build` does and prints what the check refuses on stderr without stopping;
@@ -602,8 +572,8 @@ and goes back to the last good build when the new one does not start.
   `daemon_unavailable`. A refused reload (`reloaded: false`) does not count.
 - A change under `src/ui` runs the rest of the build script after the `tsc` step (the widget
   bundle). It writes `dist/ui` in place, is copied to `dist.next/ui`, and sends no reload: the
-  daemon serves no ui part in this release; that build stops after 10 min (no time target, D17).
-- A package with `parts.app` (S1.2.3): `up` builds `src/app` with the kit's warm esbuild
+  daemon serves no ui part in this release; that build stops after 10 min.
+- A package with `parts.app`: `up` builds `src/app` with the kit's warm esbuild
   context into `dist/app` before the first build, and copies it to `dist.next/app`, because a
   full reload replaces `dist` whole. A save under `src/app` builds only the app, copies it to
   `dist.next/app` and sends `POST /host/extensions/{id}/reload` with `{ "part": "app" }`: the
@@ -770,7 +740,7 @@ out it prints `warning: still starting after 60 s: <ids>` and exits 0; `--json` 
 The daemon is one process on `127.0.0.1` (port 4243, `AGENTAGE_DAEMON_PORT` for another). It
 runs each installed extension as a child process and serves `/api/{id}/*`, `/health` and
 `/host/extensions`; a request with another `Host` (`[::1]` too) or `Origin` gets 403. `/api/*`,
-`/mcp/*` and `/health` need no token. `/host/*` needs the host token (D11): the daemon writes a
+`/mcp/*` and `/health` need no token. `/host/*` needs the host token: the daemon writes a
 new `hostToken` into `daemon.json` (0600) at each start, and the cli sends it as
 `Authorization: Bearer`, and refuses a redirect. On 401 or 403 the cli reads `daemon.json` again
 and retries once, only when it still names this port and its pid answers `/health` there; a
@@ -788,7 +758,7 @@ when the daemon reports them), one `pending <op> <id> since <time>` line per cha
 has not answered (`, the daemon stopped waiting; it still runs` after an install timed out), and,
 when degraded, one `degraded: <reason>` line per cause: an extension `starting` or `failed`, a
 change whose undo failed (`unsynced`), an `installation.json` that cannot be read or had rows the
-daemon refused, and the seal off (below the Node floor, C2: Node 22.22.2 or 24.14.1 needed; the
+daemon refused, and the seal off (below the Node floor: Node 22.22.2 or 24.14.1 needed; the
 extensions still run): `degraded: seal off: ...`. `extension install` prints that same reason on
 stderr and never refuses. `--json` gives the `/health` fields (`pending`, `unsynced`,
 `installation`, `installationError`, `seal`, `sealError`, `clockRate`; each extension with
@@ -855,8 +825,8 @@ issuer refuses is `auth_required` too; a refresh that cannot reach it is `auth_u
 ## Token auth (CI and headless)
 
 Machines without a browser authenticate with a personal access token. Mint one in the
-dashboard under **Settings -> API tokens**, then set `AGENTAGE_TOKEN=aga_...` or pass
-`--token aga_...` per command. A token takes precedence over a stored sign-in. With
+dashboard (**Settings**, then **API tokens**), then set `AGENTAGE_TOKEN=aga_...`, or check one
+with `agentage status --token aga_...`. A token takes precedence over a stored sign-in. With
 `AGENTAGE_TOKEN` set, plain `setup` opens no browser sign-in: its account step and its status step
 use the token, then it starts the daemon.
 
@@ -965,12 +935,13 @@ exit 1. A command an extension adds takes its own `--json`, which the extension 
 
 ## Exit codes
 
-| Code | Meaning                                                                                             |
-| ---- | --------------------------------------------------------------------------------------------------- |
-| `0`  | Success, including `--help`, `--version`, and `status` while signed out                             |
-| `3`  | Only `daemon run` (the daemon process): its port is in use                                          |
-| `1`  | A step failed: sign-in, install or update failed, a refused or invalid profile, or an invalid token |
-| `2`  | Usage error: an unknown command or flag, a missing flag value, or no command                        |
+| Code         | Meaning                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| `0`          | Success, including `--help`, `--version`, and `status` while signed out                             |
+| `1`          | A step failed: sign-in, install or update failed, a refused or invalid profile, or an invalid token |
+| `2`          | Usage error: an unknown command or flag, a missing flag value, or no command                        |
+| `3`          | Only `daemon run` (the daemon process): its port is in use                                          |
+| `129`, `130` | Only `extension up`: stopped by a closed terminal or by Ctrl-C                                      |
 
 `setup` and `extension doctor` also exit 1 when an
 extension failed to load, `extension install` and `configure` exit 1 when it failed to start or on integrity drift, `extension build` exits 1 when a build or push
@@ -996,7 +967,7 @@ Otherwise it is `extensions` inside the config directory. The config directory i
 | `AGENTAGE_CONFIG_DIR`        | Config and credentials directory (`auth.json`)                                                          | `$HOME/.agentage`     |
 | `AGENTAGE_TOKEN`             | Personal access token for CI and headless machines                                                      | unset                 |
 | `NO_COLOR`                   | Disable colored output (any non-empty value)                                                            | unset                 |
-| `AGENTAGE_EXTENSIONS_DIR`    | Extensions directory (trees, lock, `current`)                                                           | `<config>/extensions` |
+| `AGENTAGE_EXTENSIONS_DIR`    | Extensions directory (the trees and their lock)                                                         | `<config>/extensions` |
 | `AGENTAGE_DEBUG`             | `1` prints one stderr line for each call that registers this machine, and the stack of a failed command | unset                 |
 | `AGENTAGE_DAEMON_PORT`       | The daemon's port on 127.0.0.1                                                                          | `4243`                |
 | `AGENTAGE_NO_DAEMON`         | `1`: no daemon is started or used (`daemon_disabled`)                                                   | unset                 |

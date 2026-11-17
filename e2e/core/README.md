@@ -37,8 +37,7 @@ the one file that proves it.
 'missing')` makes a route answer 503, never, or 404 `NOT_FOUND` as an API without that route,
   and `cli.site.machines()` lists the registered machines. `site.ts` builds it over the
   stub's state (`e2e/stub/account.ts`, `profile.ts`, `machines.ts`).
-- `setup.test.ts` (the profile file; the install is the daemon's, off here), `extension-doctor.test.ts` (and its
-  old name `check`), `delegate.test.ts` (`agentage <extension command>`), `kit-extension.test.ts`
+- `setup.test.ts` (the profile file; the install is the daemon's, off here), `extension-doctor.test.ts`, `delegate.test.ts` (`agentage <extension command>`), `kit-extension.test.ts`
   (an extension built on the kit, linked in `machine.json`: `agentage ping`, `agentage probe
 ping`, the name clash, `extension up`, `down` and `token` reaching the kit), `status.test.ts` (with a machine upgraded
   from 0.39: `setup` and `status` as before, plus the extension lines) - one `test.describe` per
