@@ -11,6 +11,7 @@ const harness = (over: Partial<ProgramDeps> = {}) => {
     setup: ok,
     status: ok,
     update: ok,
+    authToken: ok,
     extensionInstall: ok,
     extensionRemove: ok,
     extensionList: ok,

@@ -57,7 +57,9 @@ export const registerDelegates = (
   wrap: Wrap,
   tool: LoadKitTool = loadKitTool
 ): void => {
-  const core = program.commands.map((command) => command.name());
+  // Hidden commands (auth, for local clients) stay out of the usage line.
+  const shown = program.createHelp().visibleCommands(program);
+  const core = shown.map((command) => command.name()).filter((name) => name !== 'help');
   // The daemon's installation once it exists; before the one-time move, the old lists.
   const extensions = installedExtensions() ?? loadSet(scan(readMachine() ?? NO_MACHINE));
   const verbs = claimVerbs(extensions, readHeld());
