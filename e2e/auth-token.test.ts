@@ -47,6 +47,7 @@ test('auth token prints a token that lives over 60 s as is, on stdout alone @off
   const result = await machine.exec(['auth', 'token']);
   expect(result.code, result.stderr).toBe(0);
   expect(result.stdout).toBe(`${token}\n`);
+  expect(result.stderr).not.toContain(token);
 });
 
 test('auth token --json refreshes a token that ends within 60 s first @offline', async () => {
@@ -58,6 +59,8 @@ test('auth token --json refreshes a token that ends within 60 s first @offline',
   };
   expect(data.accessToken).not.toBe(old);
   expect(data.accessToken).toBe(stored());
+  expect(result.stderr).not.toContain(data.accessToken);
+  expect(result.stderr).not.toContain(old);
   expect(Date.parse(data.expiresAt)).toBeGreaterThan(Date.now() + 60_000);
 });
 

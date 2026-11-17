@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AuthRequiredError } from '../../lib/auth/auth-errors.js';
 import { type AuthState } from '../../lib/fs/config.js';
 import { runAuthToken } from './token.js';
 
@@ -25,7 +26,7 @@ describe('agentage auth token', () => {
   it('prints a token that lives over 60 s as is, with no refresh', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const d = deps(session(NOW + 61_000));
-    expect(await runAuthToken(d)).toEqual({
+    expect(await runAuthToken({}, d)).toEqual({
       accessToken: 'at_old',
       expiresAt: new Date(NOW + 61_000).toISOString(),
     });
@@ -40,7 +41,7 @@ describe('agentage auth token', () => {
   ])('refreshes first a token that %s', async (_n, expiresAt) => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const d = deps(session(expiresAt));
-    expect((await runAuthToken(d)).accessToken).toBe('at_new');
+    expect((await runAuthToken({}, d)).accessToken).toBe('at_new');
     expect(d.refresh).toHaveBeenCalledOnce();
   });
 
@@ -49,7 +50,45 @@ describe('agentage auth token', () => {
     ['a PAT only', session(NOW + 3_600_000, 'pat')],
   ])('%s: auth_required, nothing printed', async (_n, auth) => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    await expect(runAuthToken(deps(auth))).rejects.toThrow('not signed in - run: agentage setup');
+    await expect(runAuthToken({}, deps(auth))).rejects.toThrow(
+      'not signed in - run: agentage setup'
+    );
     expect(log).not.toHaveBeenCalled();
+  });
+
+  it('with --json prints nothing itself: the token goes only into the envelope, never to stderr', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect((await runAuthToken({ json: true }, deps(session(NOW + 61_000)))).accessToken).toBe(
+      'at_old'
+    );
+    expect([...log.mock.calls, ...err.mock.calls]).toEqual([]);
+  });
+
+  it('a refresh lost to another process uses the fresh token that process stored', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const theirs = {
+      ...session(NOW + 3_600_000),
+      tokens: { accessToken: 'at_theirs', expiresAt: NOW + 3_600_000 },
+    };
+    const reads = [session(NOW + 1_000), theirs];
+    const d = {
+      ...deps(null),
+      read: () => reads.shift() ?? null,
+      refresh: vi.fn(async () => {
+        throw new AuthRequiredError('session expired');
+      }),
+    };
+    expect((await runAuthToken({}, d)).accessToken).toBe('at_theirs');
+  });
+
+  it('a refused refresh with nothing fresher stored stays auth_required', async () => {
+    const d = {
+      ...deps(session(NOW + 1_000)),
+      refresh: vi.fn(async () => {
+        throw new AuthRequiredError('session expired');
+      }),
+    };
+    await expect(runAuthToken({}, d)).rejects.toThrow('session expired');
   });
 });

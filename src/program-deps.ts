@@ -80,7 +80,7 @@ export const defaultDeps: ProgramDeps = {
     }),
   status: (opts) => runStatus(opts),
   update: (opts) => runUpdate(opts),
-  authToken: () => runAuthToken(),
+  authToken: (opts) => runAuthToken(opts),
   extensionInstall: (opts) => runInstall(opts, { ...lifecycle, fromNpm, hasMarket, sealOff }),
   extensionRemove: (opts) => runRemove(opts, { ...lifecycle, io: terminalIo() }),
   extensionList: (opts) => runList(opts, listDeps),

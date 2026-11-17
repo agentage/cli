@@ -28,17 +28,38 @@ const defaultDeps: AuthTokenDeps = { read: readAuth, refresh: refreshOrThrow, no
 // A token that lives under this long is refreshed first, so the caller can still use it.
 export const MIN_LIFE_MS = 60_000;
 
+const fresh = (auth: AuthState | null, now: number): auth is AuthState =>
+  !!auth && auth.kind !== 'pat' && (auth.tokens.expiresAt ?? 0) - now >= MIN_LIFE_MS;
+
+// Another process may have rotated the refresh token first: its stored, fresh token serves.
+const refreshed = async (auth: AuthState, deps: AuthTokenDeps): Promise<AuthState> => {
+  try {
+    await deps.refresh(auth, credentialLinks(auth));
+    return auth;
+  } catch (err) {
+    const stored = deps.read();
+    if (!(err instanceof AuthRequiredError) || !fresh(stored, deps.now())) throw err;
+    if (stored.tokens.accessToken === auth.tokens.accessToken) throw err;
+    return stored;
+  }
+};
+
 // Only the stored session: AGENTAGE_TOKEN (a PAT) is never read here, so it is never printed.
-export const runAuthToken = async (deps: AuthTokenDeps = defaultDeps): Promise<SessionToken> => {
+export const runAuthToken = async (
+  opts: AuthTokenOptions = {},
+  deps: AuthTokenDeps = defaultDeps
+): Promise<SessionToken> => {
   const auth = deps.read();
   if (!auth || auth.kind === 'pat')
     throw new AuthRequiredError('not signed in - run: agentage setup');
-  const { expiresAt } = auth.tokens;
-  if (expiresAt === undefined || expiresAt - deps.now() < MIN_LIFE_MS)
-    await deps.refresh(auth, credentialLinks(auth));
-  const { accessToken, expiresAt: until } = auth.tokens;
-  console.log(accessToken);
-  return { accessToken, expiresAt: until === undefined ? null : new Date(until).toISOString() };
+  const live = fresh(auth, deps.now()) ? auth : await refreshed(auth, deps);
+  const { accessToken, expiresAt } = live.tokens;
+  // With --json the token goes only into the envelope on stdout, never to stderr.
+  if (!opts.json) console.log(accessToken);
+  return {
+    accessToken,
+    expiresAt: expiresAt === undefined ? null : new Date(expiresAt).toISOString(),
+  };
 };
 
 const HELP = `
