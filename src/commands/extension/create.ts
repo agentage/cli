@@ -22,7 +22,7 @@ const PRUNE: Record<string, { keys?: string[][]; paths?: string[] }> = {
   mcp: { keys: [['agentage', 'settings', 'mcp.listing']], paths: ['template.mcpc.json'] },
   api: { paths: ['openapi.json'] },
   store: { paths: ['migrations', 'seeds'] },
-  app: { keys: [['agentage', 'app']], paths: ['src/app-part.test.tsx'] },
+  app: { keys: [['agentage', 'app']], paths: ['src/app-part.test.tsx', 'src/app-lint.test.ts'] },
 };
 
 export interface ExtensionCreateOptions {

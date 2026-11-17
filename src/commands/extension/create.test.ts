@@ -51,6 +51,7 @@ const templateRepo = (root: string): string => {
   }
   put('src/app/index.tsx', 'export default () => null;\n');
   put('src/app-part.test.tsx', '// app test\n');
+  put('src/app-lint.test.ts', '// app lint test\n');
   put('migrations/001-ping.sql', 'select 1;\n');
   put('seeds/001-hello.sql', 'select 1;\n');
   put('template.mcpc.json', '{ "name": "agentage-template", "tool": "template__echo" }\n');
@@ -138,7 +139,7 @@ describe('extension create', () => {
   test('the app part is a part name: dropped with its folder, test and nav row, or kept', async () => {
     expect((await create('market', ['api'])).error).toBeNull();
     expect(manifest().agentage).not.toHaveProperty('app');
-    for (const gone of ['src/app', 'src/app-part.test.tsx'])
+    for (const gone of ['src/app', 'src/app-part.test.tsx', 'src/app-lint.test.ts'])
       expect(existsSync(join(root, 'extension-market', gone))).toBe(false);
     rmSync(join(root, 'extension-market'), { recursive: true, force: true });
     expect((await create('market', ['api', 'app'])).error).toBeNull();
