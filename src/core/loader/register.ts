@@ -10,7 +10,7 @@ import {
 import { isRecord } from '../../lib/fs/json-file.js';
 import { createContext } from './ctx.js';
 import { type DiscoveredExtension } from './discover.js';
-import { disposeAll } from './dispose.js';
+import { disposeAll, messageOf } from './dispose.js';
 import { withTimeout } from './timeout.js';
 import { facadeOf } from './use.js';
 
@@ -31,8 +31,6 @@ export const registerTimeoutMs = (): number => {
   const raw = process.env['AGENTAGE_REGISTER_TIMEOUT_MS'] ?? '';
   return /^[1-9]\d{0,8}$/.test(raw) ? Number(raw) : DEFAULT_REGISTER_TIMEOUT_MS;
 };
-
-const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 const isRegister = (value: unknown): value is Register => typeof value === 'function';
 

@@ -4,7 +4,8 @@ import { withTimeout } from './timeout.js';
 
 export const DISPOSE_TIMEOUT_MS = 5_000;
 
-const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+export const messageOf = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
 
 // Each subscription gets its 5 s at once; one that hangs is abandoned, and every result is logged.
 export const disposeAll = async (id: string, subscriptions: Disposable[]): Promise<void> => {

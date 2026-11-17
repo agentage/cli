@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { forgetMachinesBases, machinesCall } from './machines-base.js';
+import { machinesCall } from './machines-base.js';
+import { forgetRouteBases } from '../net/route-base.js';
 
 const NEW = 'https://p.test/api/platform/machines';
 const OLD = 'https://p.test/api/v1/machines';
@@ -19,7 +20,7 @@ const host = (serves: string, answer = () => envelope(204)) => {
 };
 
 describe('machinesCall', () => {
-  afterEach(forgetMachinesBases);
+  afterEach(forgetRouteBases);
 
   it('calls /api/platform/machines first on the app host, once per call', async () => {
     const { call, urls } = host(NEW);

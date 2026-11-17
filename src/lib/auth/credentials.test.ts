@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type AuthState } from '../fs/config.js';
 import {
   assertPatShape,
-  isPatAuth,
   isPatShape,
   patAuthState,
   rawPatToken,
@@ -73,8 +72,7 @@ describe('patAuthState', () => {
     expect(auth.tokens.accessToken).toBe('aga_tok');
     expect(auth.tokens.refreshToken).toBeUndefined();
     expect(auth.siteFqdn).toBe('dev.agentage.io');
-    expect(isPatAuth(auth)).toBe(true);
-    expect(isPatAuth(stored)).toBe(false);
+    expect(auth.kind).toBe('pat');
   });
 });
 

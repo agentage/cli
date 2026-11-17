@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { type DiscoveredExtension } from './discover.js';
-import { disposeAll, holdSignals } from './dispose.js';
+import { disposeAll, holdSignals, messageOf } from './dispose.js';
 import { loadOrder } from './order.js';
 import { registerExtension, registerTimeoutMs, type LoadedExtension } from './register.js';
 import { writeRunState } from './state.js';
@@ -31,8 +31,6 @@ const blockedBy = (ext: DiscoveredExtension, outcomes: Map<string, LoadOutcome>)
   const peer = required.find((name) => outcomes.get(name)?.state !== 'ok');
   return peer === undefined ? null : `peer ${peer} is ${outcomes.get(peer)?.state ?? 'not loaded'}`;
 };
-
-const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 // The kit imports the entry, so its top-level code counts toward the same timeout as register.
 const checkKit = async (ext: DiscoveredExtension, check: KitCheck): Promise<LoadOutcome> => {
