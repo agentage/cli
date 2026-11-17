@@ -157,6 +157,9 @@ provenance, and pushes the tag `vX.Y.Z`. It skips a version already on npm.
 - `release.yml` runs only the `@smoke` tests of the agentage/e2e cli tier on the candidate. The
   lifecycle, execution and reload tests of agentage/e2e run on its own PRs against the published
   cli.
+- Before the release PR merges, check: the PR checks of the release commit are green, and the cli
+  project of agentage/e2e passes in full against the packed tarball of that commit
+  (`AGENTAGE_CLI_TARBALL=<tgz> npm run test:cli -- --retries=0`).
 
 ## Documentation
 
