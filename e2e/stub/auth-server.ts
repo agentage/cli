@@ -67,7 +67,7 @@ const ROUTES: Record<string, Route> = {
 
 const ACCOUNT = /^\/v1\/(profile$|machines(\/|$))/;
 
-const PLATFORM = /^\/api\/v1\/machines(\/|$)/;
+const PLATFORM = /^\/api\/(platform|v1)\/machines(\/|$)/;
 const PAT = /^\/account\/pat(\/|$)/;
 
 const routeOf = (entry: StubRequest): Route | undefined => {

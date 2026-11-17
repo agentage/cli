@@ -26,7 +26,7 @@ export interface Site {
   fail: (route: 'profile' | 'machines', how?: '503' | 'hang' | 'missing') => void;
   machines: () => StubMachine[];
   // From now on the site's discovery names a platform taking only JWT PATs (stub/platform.ts).
-  platform: (expiresInS?: number) => StubState['platform'];
+  platform: (expiresInS?: number, base?: StubState['platform']['base']) => StubState['platform'];
 }
 
 const adding =
@@ -40,5 +40,6 @@ export const siteOf = ({ state }: StubSite): Site => ({
   conflict: (...pushes) => void state.account.conflicts.push(...pushes.map(adding)),
   fail: (route, how = '503') => void (state.account.modes[route] = how),
   machines: () => [...state.account.machines.values()],
-  platform: (expiresInS = 30 * 86_400) => Object.assign(state.platform, { on: true, expiresInS }),
+  platform: (expiresInS = 30 * 86_400, base: StubState['platform']['base'] = 'platform') =>
+    Object.assign(state.platform, { on: true, expiresInS, base }),
 });

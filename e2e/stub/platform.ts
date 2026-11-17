@@ -1,7 +1,7 @@
 /**
  * A discovered platform (off until `state.platform.on`): /.well-known/agentage.json names this
  * origin as issuer and platform, /account/pat mints JWT PATs for a live OAuth bearer, and
- * /api/v1/machines takes only a live one of those, as the platform on next does.
+ * /api/platform/machines (or /api/v1/machines, the v13 row) takes only a live one of those.
  */
 import { type IncomingMessage } from 'node:http';
 import { json, parseJson, readBody, type Reply } from './http.js';
@@ -43,6 +43,8 @@ export const platformRoute = async (state: StubState, req: IncomingMessage, entr
   if (body !== undefined) entry.body = body;
   const live = (p: { token: string; revoked: boolean; expiresAt: string }) =>
     p.token === bearerOf(req) && !p.revoked && Date.parse(p.expiresAt) > Date.now();
+  const [, , base, ...rest] = entry.path.split('/');
+  if (base !== state.platform.base) return failure(404, 'NOT_FOUND', 'Not found');
   if (!state.platform.pats.some(live)) return failure(401, 'UNAUTHORIZED', 'a platform token');
-  return machinesRoute(state.account, entry.method, entry.path.slice(4), body);
+  return machinesRoute(state.account, entry.method, `/v1/${rest.join('/')}`, body);
 };
