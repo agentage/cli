@@ -101,8 +101,10 @@ test.describe('a machine upgraded from 0.39 @p0 @offline', () => {
     const json = JSON.parse((await cli.run('status --json', UNSET)).stdout);
     expect(Object.keys(json)).toEqual([
       ...['version', 'fqdn', 'env', 'target', 'auth', 'endpoint', 'update'],
-      ...['machine', 'profile', 'extensions', 'plan'],
+      ...['machine', 'profile', 'extensions', 'plan', 'daemon'],
     ]);
+    // AGENTAGE_NO_DAEMON=1 in this lab: status starts no daemon and names none.
+    expect(json.daemon).toBeNull();
   });
 
   test('without AGENTAGE_EXTENSIONS, or with it set to 0, agentage hello works', async ({

@@ -105,13 +105,20 @@ const jsonOf = (report: StatusReport, gathered: ExtensionsGather | null): object
   return { ...report, machine, profile, extensions: extensions.length, plan };
 };
 
-type Reported = StatusReport & { daemon?: StatusDaemon | null };
+type Daemon = StatusDaemon | null | undefined;
 
-const emit = (report: Reported, gathered: ExtensionsGather | null, json?: boolean): void => {
-  if (json) return console.log(JSON.stringify(jsonOf(report, gathered), null, 2));
+// The daemon comes last, in the lines and in --json: the keys and lines before it keep their place.
+const emit = (
+  report: StatusReport,
+  gathered: ExtensionsGather | null,
+  daemon: Daemon,
+  json?: boolean
+) => {
+  const last = daemon === undefined ? {} : { daemon };
+  if (json) return console.log(JSON.stringify({ ...jsonOf(report, gathered), ...last }, null, 2));
   printStatus(report);
-  if (report.daemon !== undefined) row('daemon', daemonLine(report.daemon));
   for (const text of gathered ? summaryLines(gathered.status) : []) console.log(text);
+  if (daemon !== undefined) row('daemon', daemonLine(daemon));
 };
 
 // The report always prints; an extension-side failure then fails the step (exit 1) on stderr.
@@ -119,10 +126,10 @@ export const runStatus = async (
   opts: StatusOptions = {},
   deps: StatusDeps = statusDeps()
 ): Promise<void> => {
-  const report: Reported = await deps.gather(opts);
-  if (deps.daemon) report.daemon = await deps.daemon();
+  const report = await deps.gather(opts);
+  const daemon = deps.daemon ? await deps.daemon() : undefined;
   const { gathered, error } = await settle(deps, opts);
-  emit(report, gathered, opts.json);
+  emit(report, gathered, daemon, opts.json);
   printWarnings(gathered?.warnings ?? []);
   if (error) throw error;
   const failure = gathered && invalidProfileError(gathered.status.profile);
