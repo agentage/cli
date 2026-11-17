@@ -15,7 +15,8 @@ vi.mock('../../lib/net/discovery.js', () => ({
     links: { site: 'https://next.test', api: '', auth: 'https://auth.test' },
     platform: {
       url: 'https://platform.next.test',
-      machines: 'https://platform.next.test/api/v1/machines',
+      machines: 'https://platform.next.test/api/platform/machines',
+      fallback: 'https://platform.next.test/api/v1/machines',
     },
   }),
 }));
@@ -23,13 +24,13 @@ vi.mock('../../lib/net/discovery.js', () => ({
 describe('signedInAccount', () => {
   afterEach(() => authed.mockClear());
 
-  it('sends machines calls to <platform>/api/v1/machines and profile calls to the api origin', async () => {
+  it('sends machines calls to <platform>/api/platform/machines and profile calls to the api origin', async () => {
     const account = await signedInAccount();
     await account?.machines('/m_0000beef/seen', { method: 'POST' });
     await account?.fetch('/v1/profile');
     const urls = authed.mock.calls.map((c) => (c as unknown as unknown[])[2]);
     expect(urls).toEqual([
-      'https://platform.next.test/api/v1/machines/m_0000beef/seen',
+      'https://platform.next.test/api/platform/machines/m_0000beef/seen',
       'https://api.agentage.io/v1/profile',
     ]);
   });

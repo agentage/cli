@@ -84,8 +84,9 @@ export interface StubPat {
 }
 
 export interface StubState extends Required<StubOptions> {
-  // The discovered platform (platform.ts): off by default; its minted tokens and their lifetime.
-  platform: { on: boolean; expiresInS: number; pats: StubPat[] };
+  // The discovered platform (platform.ts): off by default; its minted tokens and their lifetime;
+  // `base` is where it serves the machines routes: the app host (`platform`) or the v13 row (`v1`).
+  platform: { on: boolean; expiresInS: number; pats: StubPat[]; base: 'platform' | 'v1' };
   // client_id -> registered redirect_uris
   clients: Map<string, string[]>;
   codes: StubCode[];
@@ -101,7 +102,7 @@ export const createState = (opts: StubOptions = {}): StubState => ({
   expiresIn: opts.expiresIn ?? 3600,
   transientGetSession: opts.transientGetSession ?? 0,
   denyAuthorize: opts.denyAuthorize ?? false,
-  platform: { on: false, expiresInS: 30 * 86_400, pats: [] },
+  platform: { on: false, expiresInS: 30 * 86_400, pats: [], base: 'platform' },
   clients: new Map(),
   codes: [],
   tokens: [],

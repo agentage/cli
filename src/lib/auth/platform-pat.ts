@@ -5,6 +5,7 @@ import { cliFetch, type CliFetchOptions, type CliRequestInit } from '../net/fetc
 import { type Links } from '../net/origins.js';
 import { VERSION } from '../../utils/version.js';
 import { authedFetch, updateSession } from './api.js';
+import { machinesCall } from './machines-base.js';
 
 const DAY_MS = 86_400_000;
 const SCOPES = ['platform:read', 'platform:write'];
@@ -81,15 +82,14 @@ const tokenFor = async (auth: AuthState, links: Links, renew: boolean, opts: Cli
 };
 
 // A discovered platform takes only a JWT PAT the session mints; an env PAT goes as is.
-export const platformFetch = async (
+const fetchAt = async (
   auth: AuthState,
   links: Links,
   found: Target,
-  path: string,
+  url: string,
   init: CliRequestInit,
   opts: CliFetchOptions
 ): Promise<Response> => {
-  const url = `${found.platform.machines}${path}`;
   if (!found.discovered) return authedFetch(auth, links, url, init, opts);
   if (found.links.auth !== links.auth)
     throw refuse(links.auth, `platform token: the site's issuer is ${found.links.auth}`);
@@ -109,3 +109,14 @@ export const platformFetch = async (
   await res.body?.cancel();
   throw refuse(links.auth, 'platform token refused (401) by the platform');
 };
+
+// The machines routes at `<platform>/api/platform/machines`, else the v13 `/api/v1/machines`.
+export const platformFetch = (
+  auth: AuthState,
+  links: Links,
+  found: Target,
+  path: string,
+  init: CliRequestInit,
+  opts: CliFetchOptions
+): Promise<Response> =>
+  machinesCall(found.platform, path, (url) => fetchAt(auth, links, found, url, init, opts));
