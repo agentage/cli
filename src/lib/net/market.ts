@@ -11,6 +11,7 @@ import {
   unreached,
 } from './market-error.js';
 import { links, siteFqdn } from './origins.js';
+import { routeCall } from './route-base.js';
 
 type Get = (url: string) => Promise<Response>;
 
@@ -43,8 +44,19 @@ const bodyOf = (res: Response, url: string): Promise<unknown> =>
     throw isTimeout(err) ? unreached(url, err, TIMEOUT_MS) : answered(url, res.status, 'no JSON');
   });
 
-const json = async (get: Get, url: string): Promise<Record<string, unknown> | null> => {
-  const res = await fetched(get, url);
+// Every market answers 404 NOT_FOUND for an unknown id and for a route it lacks alike.
+const anyNotFound = (res: Response): Promise<boolean> => Promise.resolve(res.status === 404);
+
+// `/api/market/extensions` (one-image host) first, else the v13 `/api/v1/extensions`.
+const json = async (get: Get, origin: string, path: string) => {
+  const bases = {
+    primary: `${origin}/api/market/extensions`,
+    fallback: `${origin}/api/v1/extensions`,
+  };
+  const at = { url: '' };
+  const call = (url: string) => fetched(get, (at.url = url));
+  const res = await routeCall(bases, path, call, anyNotFound);
+  const url = at.url;
   if (res.status === 404) return null;
   if (!res.ok) throw answered(url, res.status);
   const body = await bodyOf(res, url);
@@ -97,8 +109,8 @@ export const openMarket = (fqdn: string = siteFqdn(), get: Get = timed, known?: 
     let data: unknown;
     try {
       base ??= marketUrl(fqdn, get);
-      const path = `/api/v1/extensions/${encodeURIComponent(id)}/latest`;
-      data = (await json(get, `${await base}${path}`))?.['data'];
+      const path = `/${encodeURIComponent(id)}/latest`;
+      data = (await json(get, await base, path))?.['data'];
     } catch (err) {
       failure ??= err instanceof CliError ? err : marketError('market_failed', messageOf(err));
       return null;
@@ -121,18 +133,18 @@ const AT_ONCE = 8;
 export const MAX_PAGES = 20;
 
 // Every row of the market list, page after page while `meta.nextCursor` names one.
-const pages = async (get: Get, url: string, cursor?: string, page = 1): Promise<unknown[]> => {
+const pages = async (get: Get, base: string, cursor?: string, page = 1): Promise<unknown[]> => {
   if (page > MAX_PAGES)
     throw marketError(
       'market_failed',
       `the market list has more than ${MAX_PAGES} pages of ${PAGE}; stopped there`
     );
   const query = `?limit=${PAGE}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
-  const body = await json(get, `${url}${query}`);
+  const body = await json(get, base, query);
   const data = Array.isArray(body?.['data']) ? body['data'] : [];
   const meta = body?.['meta'];
   const next = isRecord(meta) && typeof meta['nextCursor'] === 'string' ? meta['nextCursor'] : '';
-  return next && data.length > 0 ? [...data, ...(await pages(get, url, next, page + 1))] : data;
+  return next && data.length > 0 ? [...data, ...(await pages(get, base, next, page + 1))] : data;
 };
 
 export interface Skipped {
@@ -165,7 +177,7 @@ const offered = async (row: unknown, market: Market): Promise<Offered | Skipped 
 // fails it; a row that cannot be read is skipped with its reason.
 export const listMarket = async (fqdn: string = siteFqdn(), get: Get = timed): Promise<Listing> => {
   const base = await marketUrl(fqdn, get);
-  const rows = await pages(get, `${base}/api/v1/extensions`);
+  const rows = await pages(get, base);
   const found: (Offered | Skipped | null)[] = [];
   for (let i = 0; i < rows.length; i += AT_ONCE) {
     const batch = rows.slice(i, i + AT_ONCE);
