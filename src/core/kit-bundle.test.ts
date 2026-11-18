@@ -9,9 +9,9 @@ const kitDir = dirname(createRequire(import.meta.url).resolve('@agentage/extensi
 
 // The desktop and the deployed app host show one shell: the daemon serves the bundled kit's.
 describe('the bundled kit', () => {
-  it('is 0.18.7, and a kit-shaped ^0.18.7 range fits the cli', () => {
-    expect(kitVersion()).toBe('0.18.7');
-    expect(fits({ engine: '^0.18.7', kit: true }, cliGate())).toBe(true);
+  it('is 0.18.8, and a kit-shaped ^0.18.8 range fits the cli', () => {
+    expect(kitVersion()).toBe('0.18.8');
+    expect(fits({ engine: '^0.18.8', kit: true }, cliGate())).toBe(true);
   });
 
   it('ships the shell whose nav foot holds the Inbox bell', () => {
