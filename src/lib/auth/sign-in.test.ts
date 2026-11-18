@@ -126,6 +126,23 @@ describe('sign-in flow', () => {
     expect(logs.slice(1)).toEqual(['Waiting for sign-in to complete...', '\nSigned in.\n']);
   });
 
+  it('a sign-in the desktop started gives the callback page only the fixed deep link', async () => {
+    const { deps } = makeDeps();
+    process.env['AGENTAGE_SIGN_IN_RETURN'] = 'desktop';
+    try {
+      await ensureSignedIn({}, deps);
+    } finally {
+      delete process.env['AGENTAGE_SIGN_IN_RETURN'];
+    }
+    expect(deps.startServer).toHaveBeenCalledWith(expect.any(String), 'agentage://signed-in');
+  });
+
+  it('a terminal sign-in gives the callback page no deep link', async () => {
+    const { deps } = makeDeps();
+    await ensureSignedIn({}, deps);
+    expect(deps.startServer).toHaveBeenCalledWith(expect.any(String), undefined);
+  });
+
   it('passes the authorize url with the registered client to the browser', async () => {
     const { deps } = makeDeps();
     await ensureSignedIn({}, deps);

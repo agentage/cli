@@ -4,6 +4,7 @@ import { resolveAuth } from '../../lib/auth/credentials.js';
 import { daemonOfStatus, type StatusDaemon } from './status-daemon.js';
 import { DEFAULT_FQDN, siteFqdn } from '../../lib/net/origins.js';
 import { gatherStatus, type StatusReport } from '../../lib/status/status-info.js';
+import { markUpdateReported } from '../../lib/update/update-cache.js';
 import { INSTALL_HINT, type UpdateInfo } from '../../lib/update/update-check.js';
 import { signedInAccount } from '../extension/account.js';
 import { printWarnings, summaryLines } from '../extension/row-lines.js';
@@ -46,6 +47,7 @@ const updateLine = (update: UpdateInfo): string => {
 export const printStatus = (report: StatusReport): void => {
   row('version', report.version);
   row('update', updateLine(report.update));
+  markUpdateReported();
   const t = report.target;
   const targetSuffix = t.reachable ? '' : ' - unreachable';
   // "production" is the default site only: any other production-shaped fqdn came from the override.

@@ -7,12 +7,18 @@ export interface CallbackServer {
   close: () => void;
 }
 
+const TERMINAL = 'You can return to the terminal.';
+
 interface Settle {
   resolve: (code: string) => void;
   reject: (err: Error) => void;
 }
 
-export const startCallbackServer = (expectedState: string): Promise<CallbackServer> =>
+// returnLink: the fixed deep link of a sign-in the desktop started (return-link.ts), else none.
+export const startCallbackServer = (
+  expectedState: string,
+  returnLink?: string
+): Promise<CallbackServer> =>
   new Promise((resolveServer) => {
     let settle: Settle | null = null;
     let result: { code?: string; error?: Error } | null = null;
@@ -45,7 +51,7 @@ export const startCallbackServer = (expectedState: string): Promise<CallbackServ
       }
       res
         .writeHead(200, { 'content-type': 'text/html' })
-        .end(page(true, 'You can return to the terminal.'));
+        .end(page(true, returnLink ? 'You can return to the agentage app.' : TERMINAL, returnLink));
       finish(code);
     });
 

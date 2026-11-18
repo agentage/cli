@@ -20,7 +20,9 @@ instead of starting a new sign-in; an expired session falls through to a fresh s
 
 After sign-in, the browser returns to `http://localhost:<port>/callback` on this machine. So
 open the sign-in URL in a browser on this same machine. On a server, use a personal access token
-instead (see [Token auth](#token-auth-ci-and-headless)).
+instead (see [Token auth](#token-auth-ci-and-headless)). When the desktop app starts the sign-in
+(`AGENTAGE_SIGN_IN_RETURN=desktop`), the page then opens `agentage://signed-in`, which brings the
+app to the front; the link is fixed and carries no token. Any other value keeps the plain page.
 
 Plain `setup` ends by starting the [daemon](#daemon) when none runs and prints
 `daemon running on 127.0.0.1:<port>`. The daemon needs no account. `--no-daemon` or
@@ -972,4 +974,5 @@ Otherwise it is `extensions` inside the config directory. The config directory i
 | `AGENTAGE_DAEMON_PORT`       | The daemon's port on 127.0.0.1                                                                          | `4243`                |
 | `AGENTAGE_NO_DAEMON`         | `1`: no daemon is started or used (`daemon_disabled`)                                                   | unset                 |
 | `AGENTAGE_STARTED_BY`        | `desktop` when the desktop starts the daemon (`startedBy` in `daemon.json`)                             | `cli`                 |
+| `AGENTAGE_SIGN_IN_RETURN`    | `desktop`: the sign-in page ends with the deep link `agentage://signed-in`                              | unset                 |
 | `AGENTAGE_DAEMON_CLOCK_RATE` | Tests only: the test clock of the daemon it starts (`createDaemon({ clockRate })`)                      | unset                 |

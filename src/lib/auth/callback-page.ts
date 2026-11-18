@@ -21,6 +21,8 @@ box-shadow:0 10px 15px -3px oklch(0 0 0/.1),0 4px 6px -4px oklch(0 0 0/.1)}
 h1{font-size:1.25rem;font-weight:600;letter-spacing:-.02em;margin-bottom:8px}
 p{color:oklch(0.59 0.014 256);font-size:.875rem;line-height:1.5}
 .hint{margin-top:24px;font-size:.75rem;color:oklch(0.59 0.014 256)}
+.open{display:inline-block;margin-top:20px;padding:8px 16px;border-radius:.5rem;font-size:.875rem;
+font-weight:600;background:#f3a52b;color:#000;text-decoration:none}
 `;
 
 const ICON = {
@@ -33,16 +35,27 @@ const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;'
 // The error text comes from the authorization server's redirect: never trust it as markup.
 export const escapeHtml = (text: string): string => text.replace(/[&<>"]/g, (c) => ESCAPES[c] ?? c);
 
-export const callbackPage = (ok: boolean, detail: string): string => {
+// A success with a return link (the desktop deep link) hands over to the app; the text stays.
+const handOver = (link: string | undefined): { head: string; body: string } => {
+  if (!link) return { head: '', body: '' };
+  const href = escapeHtml(link);
+  return {
+    head: `<meta http-equiv="refresh" content="0;url=${href}">`,
+    body: `<a class="open" href="${href}">Open the agentage app</a>`,
+  };
+};
+
+export const callbackPage = (ok: boolean, detail: string, returnLink?: string): string => {
   const kind = ok ? 'ok' : 'err';
   const title = ok ? 'Signed in' : 'Sign-in failed';
   const hint = ok ? 'You can close this tab.' : 'Run agentage setup again to retry.';
+  const back = handOver(ok ? returnLink : undefined);
   return (
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${back.head}` +
     `<title>${title} - agentage</title><style>${STYLE}</style></head><body><main class="card ${kind}">` +
     `<div class="brand"><svg viewBox="0 0 416 416" aria-hidden="true"><rect width="416" height="416" rx="83" fill="#f3a52b"/>` +
     `<g transform="translate(25.7 25.7) scale(1.3812)"><path d="${LOGO}" fill="#000"/></g></svg>agentage</div>` +
-    `<div class="icon">${ICON[kind]}</div><h1>${title}</h1><p>${escapeHtml(detail)}</p>` +
+    `<div class="icon">${ICON[kind]}</div><h1>${title}</h1><p>${escapeHtml(detail)}</p>${back.body}` +
     `<p class="hint">${hint}</p></main></body></html>`
   );
 };

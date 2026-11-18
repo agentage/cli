@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { type HostRow } from '../../lib/daemon/host-client.js';
 import { CliError, messageOf, WithMeta } from '../../lib/json-output.js';
 import { type Listing, type Market } from '../../lib/net/market.js';
@@ -53,10 +54,20 @@ const available = async (deps: ListDeps): Promise<WithMeta> => {
   return new WithMeta(offered, { skipped });
 };
 
+// A failed folder row whose folder is gone (a deleted worktree) can only be removed.
+const goneHints = (rows: HostRow[]): void => {
+  for (const r of rows)
+    if (r.state === 'failed' && typeof r['path'] === 'string' && !existsSync(r['path']))
+      console.error(
+        `${r.id}: its folder is gone; remove the row: agentage extension remove ${r.id}`
+      );
+};
+
 export const runList = async (opts: ListOptions, deps: ListDeps) => {
   if (opts.available) return available(deps);
   const rows = (await (await deps.host()).list()).map(shown);
   printRows(rows);
+  goneHints(rows);
   return rows;
 };
 

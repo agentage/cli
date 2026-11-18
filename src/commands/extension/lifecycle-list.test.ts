@@ -42,6 +42,17 @@ describe('extension list', () => {
     expect(rows).toContainEqual(marketRow('probe', '0.7.0'));
   });
 
+  test('a failed folder row whose folder is gone says how to remove it', async () => {
+    const gone = { ...marketRow('memory', ''), source: '/gone/extension-memory', state: 'failed' };
+    const here = { ...marketRow('probe', ''), source: process.cwd(), state: 'failed' };
+    const { deps } = listDeps([gone, here]);
+    const run = await output(() => runList({}, deps));
+    expect(run.stderr).toContain(
+      'memory: its folder is gone; remove the row: agentage extension remove memory'
+    );
+    expect(run.stderr).not.toContain('probe:');
+  });
+
   test('no extensions says so', async () => {
     const { deps } = listDeps([]);
     expect((await output(() => runList({}, deps))).lines).toEqual(['no extensions']);
