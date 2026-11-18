@@ -34,6 +34,19 @@ describe('one update line per run', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('an offline status keeps the cached hint', () => {
+    const offline: StatusReport = {
+      ...report,
+      update: { status: { kind: 'unknown' }, message: null },
+    };
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      printStatus(offline);
+    } finally {
+      log.mockRestore();
+    }
+    expect(updateHint()).toContain('99.0.0');
+  });
   it('the cached hint is silent once the status printed its live update row', () => {
     expect(updateHint()).toContain('99.0.0');
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);

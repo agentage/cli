@@ -47,7 +47,7 @@ const updateLine = (update: UpdateInfo): string => {
 export const printStatus = (report: StatusReport): void => {
   row('version', report.version);
   row('update', updateLine(report.update));
-  markUpdateReported();
+  if (report.update.status.kind !== 'unknown') markUpdateReported();
   const t = report.target;
   const targetSuffix = t.reachable ? '' : ' - unreachable';
   // "production" is the default site only: any other production-shaped fqdn came from the override.

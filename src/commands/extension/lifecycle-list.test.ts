@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { describe, expect, vi } from 'vitest';
 import { CliError, WithMeta } from '../../lib/json-output.js';
 import { type Listing, type Market } from '../../lib/net/market.js';
@@ -44,7 +45,7 @@ describe('extension list', () => {
 
   test('a failed folder row whose folder is gone says how to remove it', async () => {
     const gone = { ...marketRow('memory', ''), source: '/gone/extension-memory', state: 'failed' };
-    const here = { ...marketRow('probe', ''), source: process.cwd(), state: 'failed' };
+    const here = { ...marketRow('probe', ''), source: tmpdir(), state: 'failed' };
     const { deps } = listDeps([gone, here]);
     const run = await output(() => runList({}, deps));
     expect(run.stderr).toContain(
