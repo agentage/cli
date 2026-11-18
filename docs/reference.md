@@ -16,7 +16,9 @@ agentage setup --no-daemon    # do not start the daemon
 
 No passwords touch the terminal; tokens are stored in `~/.agentage/auth.json`
 (mode 0600). Running `setup` while signed in validates the session and prints status
-instead of starting a new sign-in; an expired session falls through to a fresh sign-in.
+instead of starting a new sign-in; an expired session falls through to a fresh sign-in. `setup`
+also stores your account id and email (`user`), which the local dashboard shows, the same as a
+cloud host shows it.
 
 After sign-in, the browser returns to `http://localhost:<port>/callback` on this machine. So
 open the sign-in URL in a browser on this same machine. On a server, use a personal access token
