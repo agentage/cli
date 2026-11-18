@@ -3,6 +3,8 @@ import { deleteAuth, ensureConfigDir, mutateAuth, readAuth, type AuthState } fro
 import { discoverTarget } from '../net/discovery.js';
 import { siteFqdn, type Links } from '../net/origins.js';
 import { CliError, isJsonRun } from '../json-output.js';
+import { fetchAccountUser } from './account-user.js';
+import { updateSession } from './api.js';
 import { AuthRequiredError } from './auth-errors.js';
 import { startCallbackServer, type CallbackServer } from './callback-server.js';
 import { credentialLinks, detectEnvMismatch, type AuthEnvMismatch } from './env-match.js';
@@ -33,6 +35,7 @@ export interface SignInDeps {
   startServer: typeof startCallbackServer;
   openBrowser: (url: string) => Promise<void>;
   introspect: typeof introspectToken;
+  accountUser: typeof fetchAccountUser;
   // The target's links, its auth being the issuer the site's discovery names.
   discover: (fqdn: string) => Promise<Links>;
   log: (msg: string) => void;
@@ -48,6 +51,7 @@ const defaultDeps: SignInDeps = {
     await open(url);
   },
   introspect: introspectToken,
+  accountUser: fetchAccountUser,
   discover: async (fqdn) => (await discoverTarget(fqdn)).links,
   log: (msg) => console.log(msg),
 };
@@ -101,8 +105,15 @@ export const signIn = async (
     const redirectUri = server.redirectUri;
     const res = await deps.exchange(authUrl, { clientId, code, redirectUri, verifier });
     const tokens = tokensFrom(res);
+    const user = await deps.accountUser(authUrl, tokens.accessToken);
     const old = readAuth();
-    await mutateAuth(() => ({ siteFqdn: fqdn, issuer: authUrl, clientId, tokens }));
+    await mutateAuth(() => ({
+      siteFqdn: fqdn,
+      issuer: authUrl,
+      clientId,
+      tokens,
+      ...(user && { user }),
+    }));
     if (old) await revokePlatformPats({ ...old, clientId, tokens }, to);
     deps.log(chalk.green('\nSigned in.\n'));
   } finally {
@@ -126,10 +137,18 @@ const mismatchNote = (m: AuthEnvMismatch): string =>
   `Signed in to ${m.credentialFqdn} (${m.credentialEnv}), but this run targets ` +
   `${m.targetFqdn} (${m.targetEnv}) - signing you into ${m.targetEnv}.\n`;
 
+// A session stored before cli 0.66 has no user, so the local shell would show the bare id.
+const rememberUser = async (auth: AuthState, deps: SignInDeps): Promise<void> => {
+  if (auth.user || !auth.issuer) return;
+  const user = await deps.accountUser(auth.issuer, auth.tokens.accessToken);
+  if (user) await updateSession(auth.clientId, (current) => void (current.user = user));
+};
+
 // Only a dead session re-signs: a transient verify failure keeps the credentials.
 const verifyStored = async (auth: AuthState, deps: SignInDeps): Promise<boolean> => {
   try {
     await deps.introspect(auth, credentialLinks(auth));
+    await rememberUser(auth, deps);
     deps.log(
       `Already signed in. Run ${chalk.white('agentage setup --reauth')} to sign in again.\n`
     );

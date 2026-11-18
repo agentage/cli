@@ -35,6 +35,7 @@ const makeDeps = () => {
     startServer: vi.fn().mockResolvedValue(server),
     openBrowser: vi.fn().mockResolvedValue(undefined),
     introspect: vi.fn().mockResolvedValue({ userId: 'u1' }),
+    accountUser: vi.fn().mockResolvedValue({ id: 'u1', email: 'u1@agentage.test' }),
     discover: vi.fn(async (fqdn: string) => links(fqdn)),
     log: (msg) => logs.push(msg),
   };
@@ -124,6 +125,30 @@ describe('sign-in flow', () => {
     expect(close).toHaveBeenCalled();
     expect(logs.at(0)).toMatch(/^\nSign in to agentage \(dev\.agentage\.io\):\n\n {2}https:\/\//);
     expect(logs.slice(1)).toEqual(['Waiting for sign-in to complete...', '\nSigned in.\n']);
+  });
+
+  it('stores the account user that a cloud host shows (id, email); none when auth gives none', async () => {
+    const { deps } = makeDeps();
+    await ensureSignedIn({}, deps);
+    expect(deps.accountUser).toHaveBeenCalledWith('https://auth.dev.agentage.io', 'at-1');
+    expect(readAuth()?.user).toEqual({ id: 'u1', email: 'u1@agentage.test' });
+    vi.mocked(deps.accountUser).mockResolvedValue(undefined);
+    await ensureSignedIn({ reauth: true }, deps);
+    expect(readAuth()).not.toHaveProperty('user');
+  });
+
+  it('an older session with no user gets it at the next setup; a stored user is kept', async () => {
+    const issuer = 'https://auth.dev.agentage.io';
+    saveAuth({ ...existingAuth, issuer });
+    const { deps } = makeDeps();
+    expect(await ensureSignedIn({}, deps)).toBe('already');
+    expect(deps.accountUser).toHaveBeenCalledWith(issuer, 'old-at');
+    expect(readAuth()).toMatchObject({
+      clientId: 'old-client',
+      user: { email: 'u1@agentage.test' },
+    });
+    expect(await ensureSignedIn({}, deps)).toBe('already');
+    expect(deps.accountUser).toHaveBeenCalledOnce();
   });
 
   it('a sign-in the desktop started gives the callback page only the fixed deep link', async () => {

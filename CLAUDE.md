@@ -112,7 +112,9 @@ A fresh DCR public client per `setup` run (the redirect URI binds the ephemeral 
 them at the introspection endpoint (`/api/auth/mcp/get-session`). `status` shows no email or
 plan: the account REST API takes session cookies only, not OAuth bearers. Every network call in
 `lib/auth` goes through `cliFetch`; no bare `fetch`. `authedFetch` does one shared refresh per
-process.
+process. `setup` stores `user: { id, email }` in `auth.json` from auth's extension exchange (the
+answer a cloud app host's shell gets), so the daemon's shell shows the same label; the short token
+in that answer is dropped. A session without `user` gets it at the next `setup`.
 
 ## E2E (`./e2e`, Playwright)
 
