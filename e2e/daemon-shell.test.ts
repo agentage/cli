@@ -1,5 +1,5 @@
 /**
- * @offline - the shell the daemon serves is the bundled kit's (0.18.8): rendered in Chromium,
+ * @offline - the shell the daemon serves is the bundled kit's (0.18.9): rendered in Chromium,
  * the nav foot holds the Inbox bell, as on the deployed app host.
  */
 import { createServer } from 'node:net';
@@ -31,7 +31,7 @@ test.afterAll(async () => {
   machine.cleanup();
 });
 
-test('the daemon serves the kit 0.18.8 shell: the Inbox bell sits in the nav foot @offline', async ({
+test('the daemon serves the kit 0.18.9 shell: the Inbox bell sits in the nav foot @offline', async ({
   page,
 }) => {
   await page.goto(`${url}/`);
