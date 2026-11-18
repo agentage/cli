@@ -8,6 +8,7 @@ import { startCallbackServer, type CallbackServer } from './callback-server.js';
 import { credentialLinks, detectEnvMismatch, type AuthEnvMismatch } from './env-match.js';
 import { introspectToken } from './introspect.js';
 import { revokePlatformPats } from './platform-pat.js';
+import { returnLinkOf } from './return-link.js';
 import {
   buildAuthorizeUrl,
   exchangeCode,
@@ -94,7 +95,7 @@ export const signIn = async (
   const authUrl = to.auth;
   ensureConfigDir();
   const state = randomState();
-  const server = await deps.startServer(state);
+  const server = await deps.startServer(state, returnLinkOf());
   try {
     const { clientId, code, verifier } = await authorize(server, state, opts, deps, authUrl);
     const redirectUri = server.redirectUri;

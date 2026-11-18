@@ -29,9 +29,14 @@ const writeUpdateCache = (latest: string | null, now: number): void => {
   writeJsonAtomic(cachePath(), { checkedAt: now, latest });
 };
 
+// Set once a run printed the live update row (status, and setup through it): one line, one version.
+let reported = false;
+export const markUpdateReported = (): void => void (reported = true);
+
 // The one dim hint line printed after a command, read purely from the cache (never the network),
 // only when the cached latest is newer than us. null = print nothing.
 export const updateHint = (): string | null => {
+  if (reported) return null;
   const c = readUpdateCache();
   if (!c?.latest) return null;
   return compareVersions(VERSION, c.latest) < 0

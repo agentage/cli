@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { describe, expect, vi } from 'vitest';
 import { CliError, WithMeta } from '../../lib/json-output.js';
 import { type Listing, type Market } from '../../lib/net/market.js';
@@ -40,6 +41,17 @@ describe('extension list', () => {
     ]);
     expect(rows).toContainEqual({ ...demo, source: 'folder', path: '/work/extension-demo' });
     expect(rows).toContainEqual(marketRow('probe', '0.7.0'));
+  });
+
+  test('a failed folder row whose folder is gone says how to remove it', async () => {
+    const gone = { ...marketRow('memory', ''), source: '/gone/extension-memory', state: 'failed' };
+    const here = { ...marketRow('probe', ''), source: tmpdir(), state: 'failed' };
+    const { deps } = listDeps([gone, here]);
+    const run = await output(() => runList({}, deps));
+    expect(run.stderr).toContain(
+      'memory: its folder is gone; remove the row: agentage extension remove memory'
+    );
+    expect(run.stderr).not.toContain('probe:');
   });
 
   test('no extensions says so', async () => {

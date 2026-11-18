@@ -83,4 +83,41 @@ describe('startCallbackServer', () => {
       server.close();
     }
   });
+
+  it('a desktop sign-in page names the fixed deep link, never one from the query', async () => {
+    const server = await startCallbackServer('state-1', 'agentage://signed-in');
+    try {
+      const query =
+        '?code=c&state=state-1&return=agentage%3A%2F%2Fevil&redirect=https%3A%2F%2Fx.test';
+      const html = await (await get(server, query)).text();
+      expect(html).toContain('content="0;url=agentage://signed-in"');
+      expect(html).toContain('You can return to the agentage app.');
+      expect(html).not.toContain('evil');
+      expect(html).not.toContain('x.test');
+    } finally {
+      server.close();
+    }
+  });
+
+  it('a terminal sign-in page has no deep link', async () => {
+    const server = await startCallbackServer('state-1');
+    try {
+      const html = await (await get(server, '?code=c&state=state-1')).text();
+      expect(html).toContain('You can return to the terminal.');
+      expect(html).not.toContain('agentage://');
+    } finally {
+      server.close();
+    }
+  });
+
+  it('a failed desktop sign-in shows the error page without the deep link', async () => {
+    const server = await startCallbackServer('state-1', 'agentage://signed-in');
+    try {
+      const html = await (await get(server, '?error=access_denied&state=state-1')).text();
+      expect(html).not.toContain('agentage://');
+      await expect(server.waitForCode(1000)).rejects.toThrow('access_denied');
+    } finally {
+      server.close();
+    }
+  });
 });
