@@ -1,8 +1,7 @@
 import { createServer, type RequestListener, type Server } from 'node:http';
 import { type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cliFetch } from './fetch.js';
-import { listMarket, openMarket } from './market.js';
+import { listMarket, openMarket, type MarketDeps } from './market.js';
 
 const servers: Server[] = [];
 
@@ -34,7 +33,9 @@ const withMarket = async (market: RequestListener | number): Promise<string> => 
   return `127.0.0.1:${await site({ markets: [`http://127.0.0.1:${at}`] })}`;
 };
 
-const short = (url: string) => cliFetch(url, {}, { timeoutMs: 300 });
+// A list never throws: the reason it is empty.
+const downOf = async (fqdn: string, deps?: Partial<MarketDeps>) =>
+  (await listMarket(fqdn, deps)).down;
 
 afterEach(async () => {
   for (const server of servers.splice(0)) {
@@ -46,7 +47,7 @@ afterEach(async () => {
 describe('a site and its market, over a real socket: one code per way it fails', () => {
   it('no discovery document (404): names the site, its URL and AGENTAGE_SITE_FQDN', async () => {
     const fqdn = `127.0.0.1:${await site(404)}`;
-    const err = await listMarket(fqdn).catch((e: unknown) => e);
+    const err = await downOf(fqdn);
     expect(err).toMatchObject({ code: 'no_discovery' });
     expect((err as Error).message).toBe(
       `${fqdn} has no extension market: http://${fqdn}/.well-known/agentage.json answered 404; ` +
@@ -66,7 +67,7 @@ describe('a site and its market, over a real socket: one code per way it fails',
       [redirect, `answered 302 to http://127.0.0.1:${portal}/login`],
     ] as const) {
       const url = `http://127.0.0.1:${port}/.well-known/agentage.json`;
-      await expect(listMarket(`127.0.0.1:${port}`)).rejects.toMatchObject({
+      expect(await downOf(`127.0.0.1:${port}`)).toMatchObject({
         code: 'market_unreachable',
         message: `${url} ${why}: not the discovery document; check the network`,
       });
@@ -75,7 +76,7 @@ describe('a site and its market, over a real socket: one code per way it fails',
 
   it('a discovery document that names no market', async () => {
     const fqdn = `127.0.0.1:${await site({ platform: 'http://p.test' })}`;
-    const err = await listMarket(fqdn).catch((e: unknown) => e);
+    const err = await downOf(fqdn);
     expect(err).toMatchObject({ code: 'no_market' });
     expect((err as Error).message).toMatch(
       /^127\.0\.0\.1:\d+ has no extension market: .* names none;/
@@ -85,7 +86,7 @@ describe('a site and its market, over a real socket: one code per way it fails',
 
   it('a site nobody answers on, and a market nobody answers on, are market_unreachable', async () => {
     const down = `127.0.0.1:${await closedPort()}`;
-    await expect(listMarket(down)).rejects.toMatchObject({
+    expect(await downOf(down)).toMatchObject({
       code: 'market_unreachable',
       message: expect.stringMatching(/^cannot reach http:\/\/127.*: connect ECONNREFUSED/),
     });
@@ -94,19 +95,23 @@ describe('a site and its market, over a real socket: one code per way it fails',
     expect(market.down()).toMatchObject({ code: 'market_unreachable' });
   });
 
-  it('a market that answers 503 is market_failed', async () => {
+  it('a market that answers 503 is market_failed: market not reachable', async () => {
     const fqdn = await withMarket((_req, res) => res.writeHead(503).end());
-    await expect(listMarket(fqdn)).rejects.toMatchObject({
+    expect(await downOf(fqdn)).toMatchObject({
       code: 'market_failed',
-      message: expect.stringMatching(/\/api\/market\/extensions\?limit=200 answered 503$/),
+      message: expect.stringMatching(
+        /^market not reachable: .*\/api\/market\/extensions\?limit=200 answered 503$/
+      ),
     });
   });
 
-  it('a market that never answers is market_timeout', async () => {
+  it('a market that never answers is market_timeout, within its bound', async () => {
     const fqdn = await withMarket(() => undefined);
-    await expect(listMarket(fqdn, short)).rejects.toMatchObject({
+    const started = Date.now();
+    expect(await downOf(fqdn, { timeoutMs: 300 })).toMatchObject({
       code: 'market_timeout',
-      message: expect.stringMatching(/did not answer in 5 s$/),
+      message: 'market not reachable: the core market (300 ms) did not answer in time',
     });
+    expect(Date.now() - started).toBeLessThan(2_000);
   });
 });

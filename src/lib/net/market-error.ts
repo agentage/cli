@@ -39,7 +39,7 @@ export const noMarket = (fqdn: string, url: string): CliError =>
 export const notTheDocument = (url: string, why: string): CliError =>
   marketError('market_unreachable', `${url} ${why}: not the discovery document; check the network`);
 
-export const isTimeout = (err: unknown): boolean =>
+const isTimeout = (err: unknown): boolean =>
   err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
 
 // A fetch that threw: no answer in time, or no connection (the cause names why).

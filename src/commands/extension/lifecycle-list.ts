@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { type HostRow } from '../../lib/daemon/host-client.js';
 import { CliError, messageOf, WithMeta } from '../../lib/json-output.js';
-import { type Listing, type Market } from '../../lib/net/market.js';
+import { type Market, type MarketListing } from '../../lib/net/market.js';
 import { fromNpmLine, noSiteMarket } from '../../lib/net/market-error.js';
 import { siteFqdn } from '../../lib/net/origins.js';
 import { pruneUnused, type LifecycleDeps } from './lifecycle.js';
@@ -18,7 +18,7 @@ export interface ExtensionUpdateOptions {
 }
 
 export interface ListDeps extends LifecycleDeps {
-  available: () => Promise<Listing>;
+  available: () => Promise<MarketListing>;
   market: () => Market;
   // A site with no market: the newest version on npm, by the 0.51 names.
   npmNewest: (id: string) => Promise<string>;
@@ -44,9 +44,13 @@ const printRows = (rows: HostRow[]): void => {
   for (const line of rows.length > 0 ? lines : ['no extensions']) console.log(line);
 };
 
-// A row the market cannot answer for is left out and named on stderr; the others are listed.
+// A silent market is one stderr line and an empty list (exit 0), never a failed command.
 const available = async (deps: ListDeps): Promise<WithMeta> => {
-  const { offered, skipped } = await deps.available();
+  const { offered, skipped, down } = await deps.available();
+  if (down) {
+    console.error(down.message);
+    return new WithMeta([], { skipped, down: { code: down.code, message: down.message } });
+  }
   const lines = table([['ID', 'VERSION'], ...offered.map((o) => [o.id, o.version])]);
   for (const line of offered.length > 0 ? lines : ['the market lists nothing']) console.log(line);
   if (skipped.length > 0)

@@ -348,8 +348,10 @@ in the config folder and runs each extension as its own process: its api at
   `--available` reads the market (paged, 200 per page, at most 20 pages; past that it stops
   with `market_failed` naming the cap), not the daemon. A row without a version asks the
   market's `/latest` (8 at a time); a row whose `/latest` fails or is refused is left out, one
-  stderr line names each (`skipped <id> (<reason>)`), and the command exits 0. Only a failed
-  discovery or list call fails it.
+  stderr line names each (`skipped <id> (<reason>)`), and the command exits 0. A market that
+  is silent (no connection, no answer in 10 s, a 5xx, a body that is not JSON) or a site with no
+  market prints no rows and one stderr line (`market not reachable: <why>`, or the
+  `no_discovery` / `no_market` message), and exits 0; `--json` gives `data: []` and `meta.down`.
 - **update** compares each market row with the market's newest version and changes the ones that
   differ; folders are left alone. On a site with no market, or for an id its market does not
   know, the newest version comes from npm, by the rule of install above, with one stderr line.
@@ -869,8 +871,8 @@ The cli's own codes:
 | `no_discovery`        | the site answers 404 for `/.well-known/agentage.json`                                                                                                                                                                  |
 | `no_market`           | the site's discovery document names no market                                                                                                                                                                          |
 | `market_unreachable`  | the site or its market cannot be reached (refused, no DNS name, offline), or the site answers a redirect or a page that is no JSON object (a network's sign-in page): not the discovery document                       |
-| `market_failed`       | the site or its market answered another 4xx or 5xx, or a market answer that is not JSON                                                                                                                                |
-| `market_timeout`      | the market did not answer in 5 s                                                                                                                                                                                       |
+| `market_failed`       | the site or its market answered another 4xx or 5xx, a 404 that is not the market's own, or a body that is not JSON                                                                                                     |
+| `market_timeout`      | the market did not answer in 10 s                                                                                                                                                                                      |
 | `network_unavailable` | another outbound call could not connect; the message names the host and why                                                                                                                                            |
 | `timeout`             | another outbound call did not answer in its time. After an install, the daemon may still run it and shows no row until it ends: the message says so and names `agentage daemon status`, which lists it under `pending` |
 | `permission_denied`   | a file or folder (the config folder, a log) may not be read or written                                                                                                                                                 |
@@ -886,7 +888,7 @@ codes name the URL and why. With `AGENTAGE_DEBUG=1` a failed command also prints
 error and its cause, with their stacks, on stderr (never on stdout).
 Until the cutover the default site `agentage.io` has no market, so `extension install <id>` and
 `extension update` resolve on npm there (see [lifecycle](#extension-lifecycle)), and
-`extension list --available` fails with `no_discovery`; the extensions are on
+`extension list --available` prints the `no_discovery` line and exits 0; the extensions are on
 `next.agentage.io`.
 
 The daemon's codes (the kit's envelope, and the cli's installer, which runs in the daemon):
@@ -918,7 +920,7 @@ exits 1 with the error object, code `usage`, and the usage line on stderr.
 | `setup`                                               | `{ extensions: [...] }`, the rows as `extension doctor` has them                                    |
 | `extension install`, `disable`, `enable`, `configure` | the daemon's row `{ id, version, source, state, enabled, error? }`                                  |
 | `extension list`                                      | the daemon's rows; a folder row has `source: "folder"` and `path`                                   |
-| `extension list --available`                          | `[{ id, version }]` from the market; `meta.skipped` is `[{ id, reason }]` for the rows left out     |
+| `extension list --available`                          | `[{ id, version }]` from the market; `meta.skipped` is `[{ id, reason }]`; `meta.down` when silent  |
 | `extension update`                                    | `[{ id, from, to, updated }]`                                                                       |
 | `extension remove`                                    | `{ id, purged }`                                                                                    |
 | `update`                                              | `{ installed, status, latest, updated }`                                                            |
@@ -968,6 +970,7 @@ Otherwise it is `extensions` inside the config directory. The config directory i
 | Variable                     | Purpose                                                                                                 | Default               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------- |
 | `AGENTAGE_SITE_FQDN`         | Target host                                                                                             | `agentage.io`         |
+| `AGENTAGE_CORE_URL`          | The origin of the market, used in place of the one the site's discovery document names                  | unset                 |
 | `AGENTAGE_CONFIG_DIR`        | Config and credentials directory (`auth.json`)                                                          | `$HOME/.agentage`     |
 | `AGENTAGE_TOKEN`             | Personal access token for CI and headless machines                                                      | unset                 |
 | `NO_COLOR`                   | Disable colored output (any non-empty value)                                                            | unset                 |
