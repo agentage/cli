@@ -19,7 +19,6 @@ describe('discoverPlatform', () => {
     expect(await discoverPlatform('next.agentage.io', get)).toEqual({
       url: 'https://platform.next.agentage.io',
       machines: 'https://platform.next.agentage.io/api/platform/machines',
-      fallback: 'https://platform.next.agentage.io/api/v1/machines',
     });
     expect(urls).toEqual(['https://next.agentage.io/.well-known/agentage.json']);
   });

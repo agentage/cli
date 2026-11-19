@@ -38,19 +38,18 @@ test.describe('the platform token @p0 @offline', () => {
     expect(cli.site.requests('/v1/machines')).toEqual([]);
   });
 
-  test('on a platform that still serves the v13 /api/v1/machines, agentage setup registers there after one 404, and status stays registered', async ({
+  test('on a platform that serves only the v13 /api/v1/machines, agentage setup never calls it: the machine is not registered there (J.4.3)', async ({
     cli,
   }) => {
     cli.site.platform(undefined, 'v1');
-    expect((await cli.signIn()).code).toBe(0);
+    const setup = await cli.signIn();
     const status = await cli.run('status --json');
-    expect(JSON.parse(status.stdout).machine).toMatchObject({ registered: true });
+    // null: the route is missing, so the cli cannot say; it never reads the v13 route.
+    expect(JSON.parse(status.stdout).machine).toMatchObject({ registered: null });
     const tried = cli.site.requests('/api/platform/machines').map((r) => `${r.method} ${r.status}`);
-    const old = cli.site.requests('/api/v1/machines').map((r) => `${r.method} ${r.status}`);
-    expect({ tried, old }).toEqual({
-      tried: ['PUT 404', 'POST 404'],
-      old: ['PUT 201', 'POST 204', 'POST 204'],
-    });
+    expect(tried[0]).toBe('PUT 404');
+    expect(cli.site.requests('/api/v1/machines')).toEqual([]);
+    expect(setup.code).toBe(0);
   });
 
   test('a platform token within a day of expiry, or refused (401), is replaced and the old one revoked; setup --disconnect revokes the last', async ({

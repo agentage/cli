@@ -1,6 +1,6 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type * as KitHost from '@agentage/extension/host';
+import type * as AppHost from '@agentage/apphost';
 import { settingsPath } from '../../core/loader/installed.js';
 import { ensureConfigDir, getConfigDir } from '../../lib/fs/config.js';
 import { isRecord, readJson, writeJsonAtomic } from '../../lib/fs/json-file.js';
@@ -18,16 +18,16 @@ export interface MoveReport {
   warning: string | null;
 }
 
-// The kit's own writer and lock, the daemon's path: a daemon already serving may write at the same time.
-export type KitMove = Pick<typeof KitHost, 'updateInstallation' | 'withFileLock'>;
-const kitMove = (): Promise<KitMove> => import('@agentage/extension/host');
+// The app host's own writer and lock, the daemon's path: a daemon already serving may write at the same time.
+export type KitMove = Pick<typeof AppHost, 'updateInstallation' | 'withFileLock'>;
+const kitMove = (): Promise<KitMove> => import('@agentage/apphost');
 
 // An id in installation.json keeps its row: a rerun after a stop adds only what is missing.
 const addRow = (kit: KitMove, row: Row): Promise<unknown> =>
   kit.updateInstallation(getConfigDir(), (doc) =>
     doc.extensions.some((r) => r.id === row.id)
       ? doc
-      : { ...doc, extensions: [...doc.extensions, row as KitHost.InstallEntry] }
+      : { ...doc, extensions: [...doc.extensions, row as AppHost.InstallEntry] }
   );
 
 // The daemon's own values win over the profile's: they were set after the move.

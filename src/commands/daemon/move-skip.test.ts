@@ -1,4 +1,4 @@
-import * as kit from '@agentage/extension/host';
+import * as kit from '@agentage/apphost';
 import { describe, expect } from 'vitest';
 import { kitIdProblem } from '../../core/kit-id.js';
 import { ensureConfigDir } from '../../lib/fs/config.js';

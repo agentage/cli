@@ -18,6 +18,7 @@ import { freePort } from '../../test/serve.js';
 const get = async <T = { msg: string }>(port: number, path: string): Promise<T> => {
   const headers = { authorization: `Bearer ${readHostToken() ?? ''}` };
   const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers });
+  if (!res.ok) throw new Error(`${path} answered ${res.status}`);
   return ((await res.json()) as { data: T }).data;
 };
 

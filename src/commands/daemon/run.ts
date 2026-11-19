@@ -1,5 +1,5 @@
 import { CommanderError } from 'commander';
-import type { Installer } from '@agentage/extension/host';
+import type { Installer } from '@agentage/apphost';
 import { daemonPort, EADDRINUSE_EXIT } from '../../lib/daemon/daemon-file.js';
 import { getConfigDir } from '../../lib/fs/config.js';
 import { CliError } from '../../lib/json-output.js';
@@ -52,7 +52,7 @@ export const runDaemon = async (deps: DaemonRunDeps): Promise<void> => {
   // Attached first: a stop during the move or the boot is kept and served once the boot ends.
   const stopping = signalled();
   await deps.before?.().catch(running);
-  const { createDaemon } = await import('@agentage/extension/host');
+  const { createDaemon } = await import('@agentage/apphost');
   const opts = {
     configDir: getConfigDir(),
     port: daemonPort(),

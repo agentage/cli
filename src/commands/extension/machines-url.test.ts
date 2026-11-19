@@ -16,7 +16,6 @@ vi.mock('../../lib/net/discovery.js', () => ({
     platform: {
       url: 'https://platform.next.test',
       machines: 'https://platform.next.test/api/platform/machines',
-      fallback: 'https://platform.next.test/api/v1/machines',
     },
   }),
 }));

@@ -32,8 +32,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
   `docs/reference.md`; `src/commands/extension/` (`check` is in `build.ts`, `down` and `token`
   in `up.ts`), `src/lib/net/market.ts`.
 - The daemon (`daemon start | status | stop | restart`, the port, `setup --no-daemon`):
-  `docs/reference.md` "daemon"; `src/commands/daemon/`, `src/lib/daemon/`, the host in the kit
-  (`@agentage/extension/host`).
+  `docs/reference.md` "daemon"; `src/commands/daemon/`, `src/lib/daemon/`, the app host
+  (`@agentage/apphost`).
 - Extension commands and context, exit codes, environment, error codes: `docs/reference.md`;
   `src/commands/extension/delegate.ts`, `src/program.ts`, `src/lib/json-output.ts`.
 - Profiles, states, the plan, short names, the profile file: `docs/profiles.md`;
@@ -46,8 +46,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
 
 ## How the core works
 
-- **The daemon** is the kit's (`@agentage/extension/host`); the cli starts it and talks HTTP to
-  it. Only `src/commands/daemon/run.ts` and `move.ts` import the kit host, by dynamic import.
+- **The daemon** is the app host program (`@agentage/apphost`); the cli starts it and talks HTTP to
+  it. Only `src/commands/daemon/run.ts` and `move.ts` import the app host, by dynamic import.
   `daemon.json` in the config dir names its pid, port and host token.
 - **Lists:** `installation.json` (written by the daemon) is the one list of a machine. The
   lifecycle commands are clients of the daemon's `/host/extensions`; its installer

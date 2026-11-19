@@ -36,7 +36,7 @@ describe('the move writes under the daemon lock', () => {
   });
 
   test('a live holder past the wait is a refusal naming it; the lock stays', async ({ dir }) => {
-    const { withFileLock } = await import('@agentage/extension/host');
+    const { withFileLock } = await import('@agentage/apphost');
     dir.write('installation.json.lock', String(sleeper.pid));
     const err = await withFileLock(dir.at('installation.json'), () => 1, 50).catch(
       (e: unknown) => e

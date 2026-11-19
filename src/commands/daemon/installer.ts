@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import type { Installer } from '@agentage/extension/host';
+import type { Installer } from '@agentage/apphost';
 import { installedDir, installedName } from '../../core/installer/old-tree.js';
 import { installPackage, packageDir } from '../../core/installer/package-dir.js';
 import { type Npm, type NpmManifest } from '../../core/installer/npm.js';

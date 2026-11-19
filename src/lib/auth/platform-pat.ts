@@ -110,7 +110,7 @@ const fetchAt = async (
   throw refuse(links.auth, 'platform token refused (401) by the platform');
 };
 
-// The machines routes at `<platform>/api/platform/machines`, else the v13 `/api/v1/machines`.
+// The machines routes at `<platform>/api/platform/machines`.
 export const platformFetch = (
   auth: AuthState,
   links: Links,

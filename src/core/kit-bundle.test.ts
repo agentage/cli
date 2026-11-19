@@ -1,17 +1,25 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cliGate, fits } from './installer/compat.js';
 import { kitVersion } from './kit-version.js';
 
-const kitDir = dirname(createRequire(import.meta.url).resolve('@agentage/extension/package.json'));
+const KIT = '@agentage/extension/package.json';
+const kitDir = dirname(createRequire(import.meta.url).resolve(KIT));
+const apphostJson = createRequire(import.meta.url).resolve('@agentage/apphost/package.json');
 
 // The desktop and the deployed app host show one shell: the daemon serves the bundled kit's.
 describe('the bundled kit', () => {
-  it('is 0.20.1, and a kit-shaped ^0.20.0 range fits the cli', () => {
-    expect(kitVersion()).toBe('0.20.1');
+  it('is 0.20.2, and a kit-shaped ^0.20.0 range fits the cli', () => {
+    expect(kitVersion()).toBe('0.20.2');
     expect(fits({ engine: '^0.20.0', kit: true }, cliGate())).toBe(true);
+  });
+
+  // One kit in the tree: the daemon (apphost) runs the children on the kit the cli bundles.
+  it('is the kit that @agentage/apphost resolves', () => {
+    const fromApphost = dirname(createRequire(apphostJson).resolve(KIT));
+    expect(realpathSync(fromApphost)).toBe(realpathSync(kitDir));
   });
 
   it('ships the shell whose nav foot holds the Inbox bell', () => {

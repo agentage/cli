@@ -9,8 +9,6 @@ export interface Platform {
   url: string;
   // The machines routes' base.
   machines: string;
-  // The v13 base, tried when `machines` has no such route (one release, until the P.7 swap is everywhere).
-  fallback?: string;
 }
 
 const debug = (text: string): void => {
@@ -69,11 +67,7 @@ const platformOf = (doc: unknown, site: string, url: string): Platform => {
   if (typeof platform !== 'string' || !sameSite(platform, site))
     throw new Error(`FAIL discovery: ${url} has no "platform"`);
   const origin = new URL(platform).origin;
-  return {
-    url: origin,
-    machines: `${origin}/api/platform/machines`,
-    fallback: `${origin}/api/v1/machines`,
-  };
+  return { url: origin, machines: `${origin}/api/platform/machines` };
 };
 
 const issuerOf = (doc: unknown, base: Links, url: string): string => {
