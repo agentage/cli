@@ -170,6 +170,19 @@ describe('the daemon installer', () => {
     });
   });
 
+  test('a refused market answer is MARKET_FAILED 502, also with a version; npm is never asked', async () => {
+    const refused = new CliError('market_failed', 'market answer refused for probe: version "*"');
+    const m: Market = { latest: vi.fn(async () => Promise.reject(refused)), down: () => null };
+    const { install, npm } = await installer(m);
+    for (const version of [undefined, '0.2.0'])
+      await expect(install({ id: 'probe', version })).rejects.toMatchObject({
+        code: 'MARKET_FAILED',
+        status: 502,
+        message: `probe: ${refused.message}`,
+      });
+    expect(npm).not.toHaveBeenCalled();
+  });
+
   test('a version npm does not have, or an id nobody has, is NOT_FOUND 404', async () => {
     const { install } = await installer(market({ version: '9.9.9', package: PKG }));
     await expect(install({ id: 'probe' })).rejects.toMatchObject({

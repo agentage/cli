@@ -92,14 +92,14 @@ const once = <T>(make: () => Promise<T>): (() => Promise<T>) => {
 
 const CODES = { unreachable: 'market_unreachable', timeout: 'market_timeout' } as const;
 
+const textOf = (down: CoreReason): string =>
+  down.detail.startsWith(down.message) ? down.detail : `${down.message}: ${down.detail}`;
+
 // The client's reason as the cli's error; a discovery error (no_discovery, no_market) stays itself.
 export const marketDownError = (down: CoreReason): CliError => {
   if (down.cause instanceof CliError) return down.cause;
   const code = down.code === 'unreachable' || down.code === 'timeout' ? CODES[down.code] : null;
-  const text = down.detail.startsWith(down.message)
-    ? down.detail
-    : `${down.message}: ${down.detail}`;
-  return marketError(code ?? 'market_failed', text);
+  return marketError(code ?? 'market_failed', textOf(down));
 };
 
 // Loaded on the first market call: a cold start never loads the kit's logs client.
@@ -117,7 +117,7 @@ export const openMarket = (fqdn: string = siteFqdn(), deps: Partial<MarketDeps> 
   let failure: CliError | null = null;
   const latest = async (id: string): Promise<Latest | null> => {
     const { data, down } = await (await client()).market.latest(id);
-    if (down?.code === 'refused') throw marketError('market_failed', down.detail);
+    if (down?.code === 'refused') throw marketError('market_failed', textOf(down));
     if (down) failure ??= marketDownError(down);
     return data && { version: data.version, package: data.package };
   };

@@ -13,7 +13,7 @@ import { isRange } from '../../core/semver-range.js';
 import { DIST_TAG, isVersionSpec } from '../../core/installer/version-spec.js';
 import { editableProfile } from '../../core/profile/profile.js';
 import { isRecord, readJson } from '../../lib/fs/json-file.js';
-import { type CliError, messageOf } from '../../lib/json-output.js';
+import { CliError, messageOf } from '../../lib/json-output.js';
 import { type Market } from '../../lib/net/market.js';
 import { npmFallbackLine, noSiteMarket } from '../../lib/net/market-error.js';
 import { siteFqdn } from '../../lib/net/origins.js';
@@ -41,7 +41,9 @@ const npmName = (id: string, down: CliError | null): string =>
 
 // The market names the package and its newest version; without it npm alone decides.
 const inputOf = async (id: string, version: string | undefined, market: Market) => {
-  const latest = await market.latest(id);
+  const latest = await market.latest(id).catch((err: unknown) => {
+    throw err instanceof CliError ? marketDown(id, err) : err;
+  });
   if (latest?.package === null)
     throw installError('PRIVATE_ENTRY', 400, `${id}: private entry, no npm package to install`);
   if (latest) return `${latest.package}@${version ?? latest.version}`;

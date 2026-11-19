@@ -24,7 +24,8 @@ test.beforeAll(async () => {
   stub = await startStubSite();
   machine = createCliMachine({
     ...stubEnv(stub),
-    AGENTAGE_CORE_URL: `http://127.0.0.1:${await freePort()}`,
+    // Port 9 as the gate has it: no process of this test can bind it.
+    AGENTAGE_CORE_URL: 'http://127.0.0.1:9',
     AGENTAGE_NO_DAEMON: undefined,
     AGENTAGE_DAEMON_PORT: String(await freePort()),
   });

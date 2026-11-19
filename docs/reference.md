@@ -345,8 +345,8 @@ in the config folder and runs each extension as its own process: its api at
   install (`./path`) is the way.
 
 - **list** prints the daemon's rows; a folder row shows `folder` and `--json` adds its `path`.
-  `--available` reads the market (paged, 200 per page, at most 20 pages; past that it stops
-  with `market_failed` naming the cap), not the daemon. A row without a version asks the
+  `--available` reads the market (paged, 200 per page, at most 20 pages; past that it lists
+  nothing and the stderr line names the cap), not the daemon. A row without a version asks the
   market's `/latest` (8 at a time); a row whose `/latest` fails or is refused is left out, one
   stderr line names each (`skipped <id> (<reason>)`), and the command exits 0. A market that
   is silent (no connection, no answer in 10 s, a 5xx, a body that is not JSON) or a site with no
