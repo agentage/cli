@@ -11,8 +11,8 @@ const apphostJson = createRequire(import.meta.url).resolve('@agentage/apphost/pa
 
 // The desktop and the deployed app host show one shell: the shell package that apphost serves.
 describe('the bundled kit', () => {
-  it('is 0.20.2, and a kit-shaped ^0.20.0 range fits the cli', () => {
-    expect(kitVersion()).toBe('0.20.2');
+  it('is 0.20.3, and a kit-shaped ^0.20.0 range fits the cli', () => {
+    expect(kitVersion()).toBe('0.20.3');
     expect(fits({ engine: '^0.20.0', kit: true }, cliGate())).toBe(true);
   });
 
