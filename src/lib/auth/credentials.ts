@@ -45,21 +45,41 @@ export const rawPatToken = (opts: PatOptions = {}): string | undefined => {
 // OAuth access token would. `kind: 'pat'` marks it so refresh / OAuth-session-only paths can fail
 // with a clear message instead of attempting an impossible refresh. siteFqdn is pinned to the
 // current target so the env-mismatch guard never fires (a PAT is not tied to a stored environment).
-export const patAuthState = (token: string, fqdn: string = siteFqdn()): AuthState => ({
-  siteFqdn: fqdn,
-  clientId: 'pat',
-  kind: 'pat',
-  tokens: { accessToken: assertPatShape(token) },
-});
+export const patAuthState = (token: string, fqdn: string = siteFqdn()): AuthState => {
+  const accessToken = assertPatShape(token);
+  const issuer = jwtPatIssuer(accessToken);
+  return {
+    siteFqdn: fqdn,
+    clientId: 'pat',
+    kind: 'pat',
+    tokens: { accessToken },
+    ...(issuer && { issuer }),
+  };
+};
 
-// A JWT PAT (aga_<jwt>) is not introspectable: its exp is read here, the platform verifies it.
-export const jwtPatExpiry = (token: string): string | null => {
+// A JWT PAT (aga_<jwt>) is not introspectable: its claims are read here, the platform verifies it.
+const jwtPatClaims = (token: string): Record<string, unknown> => {
   const payload = token.slice(PAT_PREFIX.length).split('.')[1] ?? '';
   try {
-    const { exp } = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { exp?: unknown };
-    return typeof exp === 'number' ? new Date(exp * 1000).toISOString() : null;
+    const claims: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    return typeof claims === 'object' && claims !== null ? (claims as Record<string, unknown>) : {};
   } catch {
-    return null;
+    return {};
+  }
+};
+
+export const jwtPatExpiry = (token: string): string | null => {
+  const { exp } = jwtPatClaims(token);
+  return typeof exp === 'number' ? new Date(exp * 1000).toISOString() : null;
+};
+
+// The issuer origin of a JWT PAT; an opaque PAT has none and reads as auth.<its site>.
+export const jwtPatIssuer = (token: string): string | undefined => {
+  const { iss } = jwtPatClaims(token);
+  try {
+    return typeof iss === 'string' ? new URL(iss).origin : undefined;
+  } catch {
+    return undefined;
   }
 };
 

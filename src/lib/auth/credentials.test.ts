@@ -3,6 +3,7 @@ import { type AuthState } from '../fs/config.js';
 import {
   assertPatShape,
   isPatShape,
+  jwtPatIssuer,
   patAuthState,
   rawPatToken,
   resolveAuth,
@@ -73,6 +74,22 @@ describe('patAuthState', () => {
     expect(auth.tokens.refreshToken).toBeUndefined();
     expect(auth.siteFqdn).toBe('dev.agentage.io');
     expect(auth.kind).toBe('pat');
+    expect(auth.issuer).toBeUndefined();
+  });
+
+  const jwt = (claims: unknown) =>
+    `aga_h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
+
+  it("takes a JWT PAT's issuer from its iss claim, not from the site's name", () => {
+    const auth = patAuthState(jwt({ iss: 'https://auth.agentage.io/' }), 'next.agentage.io');
+    expect(auth.issuer).toBe('https://auth.agentage.io');
+  });
+
+  it('reads no issuer from an opaque PAT, a bad payload or a bad iss', () => {
+    expect(jwtPatIssuer('aga_opaque')).toBeUndefined();
+    expect(jwtPatIssuer('aga_h.%%%.s')).toBeUndefined();
+    expect(jwtPatIssuer(jwt({ iss: 'not a url' }))).toBeUndefined();
+    expect(jwtPatIssuer(jwt({ iss: 7 }))).toBeUndefined();
   });
 });
 
