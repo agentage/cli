@@ -91,6 +91,14 @@ describe('patAuthState', () => {
     expect(jwtPatIssuer(jwt({ iss: 'not a url' }))).toBeUndefined();
     expect(jwtPatIssuer(jwt({ iss: 7 }))).toBeUndefined();
   });
+
+  it('takes https, and http only on a loopback host', () => {
+    expect(jwtPatIssuer(jwt({ iss: 'javascript:alert(1)' }))).toBeUndefined();
+    expect(jwtPatIssuer(jwt({ iss: 'file:///etc/passwd' }))).toBeUndefined();
+    expect(jwtPatIssuer(jwt({ iss: 'http://auth.agentage.io' }))).toBeUndefined();
+    expect(jwtPatIssuer(jwt({ iss: 'http://localhost:3010/' }))).toBe('http://localhost:3010');
+    expect(jwtPatIssuer(jwt({ iss: 'http://127.0.0.1:4000' }))).toBe('http://127.0.0.1:4000');
+  });
 });
 
 describe('resolveAuth (precedence flag > env > stored OAuth)', () => {

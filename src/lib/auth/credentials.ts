@@ -74,13 +74,15 @@ export const jwtPatExpiry = (token: string): string | null => {
 };
 
 // The issuer origin of a JWT PAT; an opaque PAT has none and reads as auth.<its site>.
+const LOOPBACK = new Set(['localhost', '127.0.0.1']);
+
+// https only; http only on a loopback host, as the cli's own local origins.
 export const jwtPatIssuer = (token: string): string | undefined => {
   const { iss } = jwtPatClaims(token);
-  try {
-    return typeof iss === 'string' ? new URL(iss).origin : undefined;
-  } catch {
-    return undefined;
-  }
+  if (typeof iss !== 'string' || !URL.canParse(iss)) return undefined;
+  const url = new URL(iss);
+  const ok = url.protocol === 'https:' || (url.protocol === 'http:' && LOOPBACK.has(url.hostname));
+  return ok ? url.origin : undefined;
 };
 
 // Resolve the active credential with precedence flag > env PAT > stored OAuth. When a PAT is

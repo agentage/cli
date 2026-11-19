@@ -23,7 +23,8 @@ export const detectEnvMismatch = (
 ): AuthEnvMismatch | null => {
   const credentialFqdn = normalizeFqdn(auth.siteFqdn);
   const target = normalizeFqdn(targetFqdn);
-  if (auth.kind === 'pat' || credentialLinks(auth).auth === targetIssuer) return null;
+  if ((auth.kind === 'pat' && !auth.issuer) || credentialLinks(auth).auth === targetIssuer)
+    return null;
   return {
     credentialFqdn,
     credentialEnv: environment(credentialFqdn),
