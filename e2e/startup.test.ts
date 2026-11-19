@@ -1,6 +1,7 @@
 /**
  * @offline - the module graph of a cold start: `--version` and `--help` never load the kit host,
- * express or PGlite; only `daemon run` does. A resolve hook records every module Node loads.
+ * the core client, express or PGlite; only `daemon run` does. A resolve hook records every module
+ * Node loads.
  */
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
@@ -12,6 +13,7 @@ import { assertCliBuilt, CLI_BIN } from './helpers.js';
 
 const HEAVY = [
   /@agentage\/extension\/dist\/host\//,
+  /@agentage\/extension\/dist\/core-client\//,
   /\/node_modules\/express\//,
   /@electric-sql\/pglite/,
 ];

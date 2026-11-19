@@ -27,5 +27,12 @@ export const cliFetch = (
     signal: AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
   });
 
+// The core client sets its own signal and redirect; this adds only the cli headers.
+export const headedFetch: typeof fetch = (input, init) => {
+  const headers = new Headers(init?.headers);
+  for (const [name, value] of Object.entries(requestHeaders())) headers.set(name, value);
+  return baseFetch(input, { ...init, headers });
+};
+
 export const isRedirect = (res: Response): boolean =>
   res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400);

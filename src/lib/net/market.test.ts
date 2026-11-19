@@ -1,190 +1,126 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { listMarket, MAX_PAGES, openMarket } from './market.js';
-import { forgetRouteBases } from './route-base.js';
+import { doc, named, serving, unknownId } from '../../test/market-stub.js';
+import { openMarket } from './market.js';
 
 const DISCOVERY = 'https://next.agentage.io/.well-known/agentage.json';
-const LATEST = 'https://market.test/api/market/extensions/probe/latest';
+const BASE = 'https://market.test/api/market/extensions';
+const LATEST = `${BASE}/probe/latest`;
 
-const serving = (routes: Record<string, Response | Error>) => async (url: string) => {
-  const found = routes[url] ?? new Response('{}', { status: 404 });
-  if (found instanceof Error) throw found;
-  return found.clone();
-};
-
-const doc = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-const named = { markets: ['https://market.test/'] };
 const entry = { data: { id: 'probe', version: '0.3.0', package: '@agentage/extension-probe' } };
+
+const on = (routes: Record<string, Response | Error>) => {
+  const get = vi.fn(serving(routes));
+  return { get, market: openMarket('next.agentage.io', { get, fetch: get }) };
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
-  forgetRouteBases();
+  vi.unstubAllEnvs();
 });
 
 describe('openMarket', () => {
   it('takes the market address from the discovery document and reads /latest', async () => {
-    const get = serving({ [DISCOVERY]: doc(named), [LATEST]: doc(entry) });
-    const market = openMarket('next.agentage.io', get);
+    const { market } = on({ [DISCOVERY]: doc(named), [LATEST]: doc(entry) });
     expect(await market.latest('probe')).toEqual({
       version: '0.3.0',
       package: '@agentage/extension-probe',
     });
   });
 
-  it('answers null for an id the market does not know, with no message', async () => {
+  it('reads the discovery document once for every call of one market', async () => {
+    const { get, market } = on({ [DISCOVERY]: doc(named), [LATEST]: doc(entry) });
+    await market.latest('probe');
+    await market.latest('probe');
+    expect(get.mock.calls.filter(([url]) => url === DISCOVERY)).toHaveLength(1);
+  });
+
+  it('the core address of the env wins over the discovery document', async () => {
+    vi.stubEnv('AGENTAGE_CORE_URL', 'https://core.test');
+    const at = 'https://core.test/api/market/extensions/probe/latest';
+    const { get, market } = on({ [at]: doc(entry) });
+    expect((await market.latest('probe'))?.version).toBe('0.3.0');
+    expect(get.mock.calls.map(([url]) => url)).toEqual([at]);
+  });
+
+  it("answers null for an id the market's own 404 does not know, with no message", async () => {
     const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const market = openMarket('next.agentage.io', serving({ [DISCOVERY]: doc(named) }));
+    const { market } = on({ [DISCOVERY]: doc(named), [LATEST]: unknownId('probe') });
     expect(await market.latest('probe')).toBeNull();
+    expect(market.down()).toBeNull();
     expect(warn).not.toHaveBeenCalled();
   });
 
   it('keeps a private entry as package null', async () => {
     const data = { data: { version: '0.2.1', package: null } };
-    const get = serving({ [DISCOVERY]: doc(named), [LATEST]: doc(data) });
-    expect(await openMarket('next.agentage.io', get).latest('probe')).toEqual({
-      version: '0.2.1',
-      package: null,
-    });
+    const { market } = on({ [DISCOVERY]: doc(named), [LATEST]: doc(data) });
+    expect(await market.latest('probe')).toEqual({ version: '0.2.1', package: null });
   });
 
   it.each([
-    [
-      'no markets field',
-      'no_market',
-      serving({ [DISCOVERY]: doc({ platform: 'https://p.test' }) }),
-    ],
-    ['no discovery document', 'no_discovery', serving({})],
+    ['no markets field', 'no_market', { [DISCOVERY]: doc({ platform: 'https://p.test' }) }],
+    ['no discovery document', 'no_discovery', {}],
     [
       'a market answering 503',
       'market_failed',
-      serving({ [DISCOVERY]: doc(named), [LATEST]: doc({}, 503) }),
+      { [DISCOVERY]: doc(named), [LATEST]: doc({}, 503) },
+    ],
+    ['a route miss (a 404 not the market', 'market_failed', { [DISCOVERY]: doc(named) }],
+    [
+      'a v13 host (no /api/market)',
+      'market_failed',
+      {
+        [DISCOVERY]: doc(named),
+        'https://market.test/api/v1/extensions/probe/latest': doc(entry),
+      },
     ],
     [
-      'a market that cannot be reached',
+      'no connection',
       'market_unreachable',
-      serving({ [DISCOVERY]: doc(named), [LATEST]: new Error('offline') }),
+      {
+        [DISCOVERY]: doc(named),
+        [LATEST]: new Error('offline'),
+      },
     ],
-  ])(
-    'answers null on %s and keeps the first reason, %s, printing nothing',
-    async (_n, code, get) => {
-      const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-      const market = openMarket('next.agentage.io', get);
-      expect(await market.latest('probe')).toBeNull();
-      expect(await market.latest('fixture')).toBeNull();
-      expect(market.down()).toMatchObject({ code });
-      expect(warn).not.toHaveBeenCalled();
-    }
-  );
+  ])('answers null on %s and keeps the first reason, %s, printing nothing', async (_n, code, r) => {
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { market } = on(r);
+    expect(await market.latest('probe')).toBeNull();
+    expect(await market.latest('fixture')).toBeNull();
+    expect(market.down()).toMatchObject({ code });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a silent market says market not reachable and why', async () => {
+    const { market } = on({ [DISCOVERY]: doc(named), [LATEST]: doc({}, 503) });
+    await market.latest('probe');
+    expect(market.down()?.message).toBe(`market not reachable: ${LATEST} answered 503`);
+  });
 
   it.each([
     ['a foreign package', { version: '1.0.0', package: '@evil/probe' }],
     ['another id', { version: '1.0.0', package: '@agentage/extension-other' }],
     ['a URL as the package', { version: '1.0.0', package: 'https://evil.test/p.tgz' }],
     ['a missing package', { version: '1.0.0' }],
-    ['a range *', { version: '*', package: '@agentage/extension-probe' }],
     ['a range ^1.0.0', { version: '^1.0.0', package: '@agentage/extension-probe' }],
     ['a dist-tag', { version: 'latest', package: '@agentage/extension-probe' }],
-    [
-      'a URL as the version',
-      { version: 'https://evil.test/p.tgz', package: 'agentage-extension-probe' },
-    ],
     ['an empty version', { version: '', package: '@agentage/extension-probe' }],
   ])('refuses %s on one clear line, never a package', async (_name, data) => {
-    const get = serving({ [DISCOVERY]: doc(named), [LATEST]: doc({ data }) });
-    await expect(openMarket('next.agentage.io', get).latest('probe')).rejects.toThrow(
-      /^market answer refused for probe: /
-    );
+    const { market } = on({ [DISCOVERY]: doc(named), [LATEST]: doc({ data }) });
+    await expect(market.latest('probe')).rejects.toThrow(/^market answer refused for probe: /);
   });
 
   it('accepts the unscoped full name', async () => {
     const data = { data: { version: '1.2.3-beta.1', package: 'agentage-extension-probe' } };
-    const get = serving({ [DISCOVERY]: doc(named), [LATEST]: doc(data) });
-    expect((await openMarket('next.agentage.io', get).latest('probe'))?.version).toBe(
-      '1.2.3-beta.1'
-    );
+    const { market } = on({ [DISCOVERY]: doc(named), [LATEST]: doc(data) });
+    expect((await market.latest('probe'))?.version).toBe('1.2.3-beta.1');
   });
 
   it.each(['http://market.test/', 'ftp://market.test/', 'market.test'])(
     'treats the market address %s as no market',
     async (url) => {
-      const get = serving({ [DISCOVERY]: doc({ markets: [url] }) });
-      const market = openMarket('next.agentage.io', get);
+      const { market } = on({ [DISCOVERY]: doc({ markets: [url] }) });
       expect(await market.latest('probe')).toBeNull();
       expect(market.down()).toMatchObject({ code: 'no_market' });
     }
   );
-});
-
-describe('listMarket: extension list --available', () => {
-  const LIST = 'https://market.test/api/market/extensions?limit=200';
-  const row = (id: string, version?: string) => ({
-    id,
-    package: null,
-    ...(version && { version }),
-  });
-
-  it('a market that repeats its cursor stops after MAX_PAGES with a clear message', async () => {
-    const page = () =>
-      doc({ success: true, data: [row('notes', '1.2.0')], meta: { nextCursor: 'same' } });
-    const get = vi.fn(async (url: string) =>
-      url === DISCOVERY ? doc(named) : url.startsWith(LIST) ? page() : doc({}, 404)
-    );
-    await expect(listMarket('next.agentage.io', get)).rejects.toThrow(
-      `the market list has more than ${MAX_PAGES} pages of 200; stopped there`
-    );
-    expect(get).toHaveBeenCalledTimes(MAX_PAGES + 1);
-  });
-
-  it('reads every page by meta.nextCursor; a row without a version asks /latest', async () => {
-    const get = serving({
-      [DISCOVERY]: doc(named),
-      [LIST]: doc({ success: true, data: [row('notes', '1.2.0')], meta: { nextCursor: 'c 2' } }),
-      [`${LIST}&cursor=c%202`]: doc({ success: true, data: [row('probe'), row('gone')] }),
-      [LATEST]: doc(entry),
-    });
-    expect(await listMarket('next.agentage.io', get)).toEqual({
-      offered: [
-        { id: 'notes', version: '1.2.0' },
-        { id: 'probe', version: '0.3.0' },
-      ],
-      skipped: [{ id: 'gone', reason: 'the market has no version of it' }],
-    });
-  });
-
-  it('a row whose /latest fails or answers a bad entry is skipped with its reason; the rest list', async () => {
-    const bad = { data: { id: 'evil', version: '1.0.0', package: 'left-pad' } };
-    const get = vi.fn(
-      serving({
-        [DISCOVERY]: doc(named),
-        [LIST]: doc({ success: true, data: [row('notes', '1.2.0'), row('probe'), row('evil')] }),
-        [LATEST]: doc({}, 503),
-        'https://market.test/api/market/extensions/evil/latest': doc(bad),
-      })
-    );
-    expect(await listMarket('next.agentage.io', get)).toEqual({
-      offered: [{ id: 'notes', version: '1.2.0' }],
-      skipped: [
-        { id: 'probe', reason: `${LATEST} answered 503` },
-        {
-          id: 'evil',
-          reason:
-            'market answer refused for evil: package "left-pad" is not an extension of that id',
-        },
-      ],
-    });
-    expect(get.mock.calls.filter(([url]) => url === DISCOVERY)).toHaveLength(1);
-  });
-
-  it('a list call that fails fails the listing', async () => {
-    const get = serving({ [DISCOVERY]: doc(named), [LIST]: doc({}, 502) });
-    await expect(listMarket('next.agentage.io', get)).rejects.toMatchObject({
-      code: 'market_failed',
-      message: `${LIST} answered 502`,
-    });
-  });
-
-  it('no market: it throws, so the command fails', async () => {
-    await expect(listMarket('next.agentage.io', serving({}))).rejects.toMatchObject({
-      code: 'no_discovery',
-    });
-  });
 });

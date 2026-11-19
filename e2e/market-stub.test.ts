@@ -1,6 +1,6 @@
 /**
- * @offline - `extension list --available` against a loopback market: the one-image host serves
- * /api/market/extensions, a v13 market only /api/v1/extensions; the cli lists both.
+ * @offline - `extension list --available` against a loopback market at /api/market/extensions;
+ * a v13 market (only /api/v1/extensions) is not reachable: an empty list, exit 0.
  */
 import { createServer, type Server } from 'node:http';
 import { type AddressInfo } from 'node:net';
@@ -30,21 +30,29 @@ const startMarket = async (prefix: string): Promise<{ fqdn: string; server: Serv
 
 test.beforeAll(assertCliBuilt);
 
-for (const [host, prefix] of <[string, string][]>[
-  ['a one-image host', '/api/market'],
-  ['a v13 market', '/api/v1'],
-]) {
-  test(`extension list --available lists ${host} (${prefix}/extensions) @offline`, async () => {
-    const { fqdn, server } = await startMarket(prefix);
-    const machine = createCliMachine(stubEnv({ fqdn } as StubSite));
-    try {
-      const result = await machine.exec(['extension', 'list', '--available', '--json']);
-      expect(result.code, result.stderr).toBe(0);
-      expect(result.stdout).toContain('"probe"');
-      expect(result.stdout).toContain('"0.2.0"');
-    } finally {
-      machine.cleanup();
-      await new Promise((done) => server.close(done));
-    }
-  });
-}
+test('extension list --available lists a market at /api/market/extensions @offline', async () => {
+  const { fqdn, server } = await startMarket('/api/market');
+  const machine = createCliMachine(stubEnv({ fqdn } as StubSite));
+  try {
+    const result = await machine.exec(['extension', 'list', '--available', '--json']);
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stdout).toContain('"probe"');
+    expect(result.stdout).toContain('"0.2.0"');
+  } finally {
+    machine.cleanup();
+    await new Promise((done) => server.close(done));
+  }
+});
+
+test('a v13 market (only /api/v1/extensions) is not reachable: empty, exit 0 @offline', async () => {
+  const { fqdn, server } = await startMarket('/api/v1');
+  const machine = createCliMachine(stubEnv({ fqdn } as StubSite));
+  try {
+    const result = await machine.exec(['extension', 'list', '--available']);
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stderr).toMatch(/^market not reachable: .*answered 404/);
+  } finally {
+    machine.cleanup();
+    await new Promise((done) => server.close(done));
+  }
+});

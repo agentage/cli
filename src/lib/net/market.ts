@@ -1,17 +1,20 @@
+import type { CoreClient, CoreReason, Fetch, Listing } from '@agentage/extension/core';
 import { isRecord } from '../fs/json-file.js';
-import { CliError, messageOf } from '../json-output.js';
-import { cliFetch } from './fetch.js';
+import { CliError } from '../json-output.js';
+import { cliFetch, headedFetch } from './fetch.js';
 import {
   answered,
-  isTimeout,
   marketError,
+  noSiteMarket,
+  type MarketCode,
   noDiscovery,
   noMarket,
   notTheDocument,
   unreached,
 } from './market-error.js';
 import { links, siteFqdn } from './origins.js';
-import { routeCall } from './route-base.js';
+
+export type { Listing, Offered, Skipped } from '@agentage/extension/core';
 
 type Get = (url: string) => Promise<Response>;
 
@@ -28,40 +31,32 @@ export interface Market {
   down: () => CliError | null;
 }
 
-const TIMEOUT_MS = 5_000;
+// The market list, or why it is empty: a silent market never fails a list.
+export interface MarketListing extends Listing {
+  down: CliError | null;
+}
 
-const EXACT = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
+export interface MarketDeps {
+  // The discovery read of the site.
+  get: Get;
+  // The core client's fetch: it keeps the client's signal.
+  fetch: Fetch;
+  // One bound for each market call, all its requests together.
+  timeoutMs: number;
+}
 
-const timed: Get = (url) => cliFetch(url, {}, { timeoutMs: TIMEOUT_MS });
+const DISCOVERY_TIMEOUT_MS = 5_000;
+// An install or a list in a terminal: the client's 2 s default suits a page, not npm work.
+const MARKET_TIMEOUT_MS = 10_000;
+
+const timed: Get = (url) => cliFetch(url, {}, { timeoutMs: DISCOVERY_TIMEOUT_MS });
+
+const DEFAULTS: MarketDeps = { get: timed, fetch: headedFetch, timeoutMs: MARKET_TIMEOUT_MS };
 
 const fetched = (get: Get, url: string): Promise<Response> =>
   get(url).catch((err: unknown) => {
-    throw unreached(url, err, TIMEOUT_MS);
+    throw unreached(url, err, DISCOVERY_TIMEOUT_MS);
   });
-
-const bodyOf = (res: Response, url: string): Promise<unknown> =>
-  res.json().catch((err: unknown) => {
-    throw isTimeout(err) ? unreached(url, err, TIMEOUT_MS) : answered(url, res.status, 'no JSON');
-  });
-
-// Every market answers 404 NOT_FOUND for an unknown id and for a route it lacks alike.
-const anyNotFound = (res: Response): Promise<boolean> => Promise.resolve(res.status === 404);
-
-// `/api/market/extensions` (one-image host) first, else the v13 `/api/v1/extensions`.
-const json = async (get: Get, origin: string, path: string) => {
-  const bases = {
-    primary: `${origin}/api/market/extensions`,
-    fallback: `${origin}/api/v1/extensions`,
-  };
-  const at = { url: '' };
-  const call = (url: string) => fetched(get, (at.url = url));
-  const res = await routeCall(bases, path, call, anyNotFound);
-  const url = at.url;
-  if (res.status === 404) return null;
-  if (!res.ok) throw answered(url, res.status);
-  const body = await bodyOf(res, url);
-  return isRecord(body) ? body : null;
-};
 
 // Only the site's own 404 means it has none. A redirect or a page that is no JSON object (a
 // network's sign-in page) is not the site's answer; another status is a failure.
@@ -91,100 +86,54 @@ const marketUrl = async (fqdn: string, get: Get): Promise<string> => {
   return url.origin;
 };
 
-// An answer is trusted only when it names this id's own package and one exact version.
-const accept = (id: string, { version, package: pkg }: Record<string, unknown>): Latest => {
-  const refuse = (why: string) => new Error(`market answer refused for ${id}: ${why}`);
-  if (typeof version !== 'string' || !EXACT.test(version))
-    throw refuse(`version ${JSON.stringify(version)} is not an exact version`);
-  if (pkg !== null && pkg !== `@agentage/extension-${id}` && pkg !== `agentage-extension-${id}`)
-    throw refuse(`package ${JSON.stringify(pkg)} is not an extension of that id`);
-  return { version, package: pkg };
+// The client calls url() on each call: one discovery read for each client.
+const once = <T>(make: () => Promise<T>): (() => Promise<T>) => {
+  let made: Promise<T> | undefined;
+  return () => (made ??= make());
 };
 
-// Never throws for a missing or silent market: it answers null and `down` keeps the first reason.
-export const openMarket = (fqdn: string = siteFqdn(), get: Get = timed, known?: string): Market => {
-  let base: Promise<string> | undefined = known === undefined ? undefined : Promise.resolve(known);
+const CODES = { unreachable: 'market_unreachable', timeout: 'market_timeout' } as const;
+
+const textOf = (down: CoreReason): string =>
+  down.detail.startsWith(down.message) ? down.detail : `${down.message}: ${down.detail}`;
+
+// The client's reason as the cli's error; a site with no market (the npm fallback) stays itself.
+export const marketDownError = (down: CoreReason): CliError => {
+  const { cause } = down;
+  if (cause instanceof CliError)
+    return noSiteMarket(cause)
+      ? cause
+      : marketError(cause.code as MarketCode, `${down.message}: ${cause.message}`);
+  const code = down.code === 'unreachable' || down.code === 'timeout' ? CODES[down.code] : null;
+  return marketError(code ?? 'market_failed', textOf(down));
+};
+
+// Loaded on the first market call: a cold start never loads the kit's logs client.
+const clientOf = async (fqdn: string, deps: MarketDeps): Promise<CoreClient> => {
+  const { coreUrlOf, createCoreClient } = await import('@agentage/extension/core');
+  // The core address of the env wins; else the market the site's discovery names.
+  const url = coreUrlOf(process.env) ?? once(() => marketUrl(fqdn, deps.get));
+  return createCoreClient({ url, timeoutMs: deps.timeoutMs, fetch: deps.fetch });
+};
+
+// Null for a silent market (`down` keeps the first reason); a refused answer throws, never installed.
+export const openMarket = (fqdn: string = siteFqdn(), deps: Partial<MarketDeps> = {}): Market => {
+  const client = once(() => clientOf(fqdn, { ...DEFAULTS, ...deps }));
   let failure: CliError | null = null;
   const latest = async (id: string): Promise<Latest | null> => {
-    let data: unknown;
-    try {
-      base ??= marketUrl(fqdn, get);
-      const path = `/${encodeURIComponent(id)}/latest`;
-      data = (await json(get, await base, path))?.['data'];
-    } catch (err) {
-      failure ??= err instanceof CliError ? err : marketError('market_failed', messageOf(err));
-      return null;
-    }
-    return isRecord(data) ? accept(id, data) : null;
+    const { data, down } = await (await client()).market.latest(id);
+    if (down?.code === 'refused') throw marketError('market_failed', textOf(down));
+    if (down) failure ??= marketDownError(down);
+    return data && { version: data.version, package: data.package };
   };
   return { latest, down: () => failure };
 };
 
-export interface Offered {
-  id: string;
-  version: string;
-}
-
-const PAGE = 200;
-// /latest calls in flight at once while listing.
-const AT_ONCE = 8;
-
-// A market that repeats its cursor would page for ever; past this the listing stops.
-export const MAX_PAGES = 20;
-
-// Every row of the market list, page after page while `meta.nextCursor` names one.
-const pages = async (get: Get, base: string, cursor?: string, page = 1): Promise<unknown[]> => {
-  if (page > MAX_PAGES)
-    throw marketError(
-      'market_failed',
-      `the market list has more than ${MAX_PAGES} pages of ${PAGE}; stopped there`
-    );
-  const query = `?limit=${PAGE}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
-  const body = await json(get, base, query);
-  const data = Array.isArray(body?.['data']) ? body['data'] : [];
-  const meta = body?.['meta'];
-  const next = isRecord(meta) && typeof meta['nextCursor'] === 'string' ? meta['nextCursor'] : '';
-  return next && data.length > 0 ? [...data, ...(await pages(get, base, next, page + 1))] : data;
-};
-
-export interface Skipped {
-  id: string;
-  reason: string;
-}
-
-export interface Listing {
-  offered: Offered[];
-  skipped: Skipped[];
-}
-
-// A row without an exact version (the market of today lists none) asks /latest for it.
-const offered = async (row: unknown, market: Market): Promise<Offered | Skipped | null> => {
-  if (!isRecord(row) || typeof row['id'] !== 'string') return null;
-  const id = row['id'];
-  if (typeof row['version'] === 'string' && EXACT.test(row['version']))
-    return { id, version: row['version'] };
-  try {
-    const version = (await market.latest(id))?.version;
-    const down = market.down();
-    if (down) return { id, reason: down.message };
-    return version ? { id, version } : { id, reason: 'the market has no version of it' };
-  } catch (err) {
-    return { id, reason: messageOf(err) };
-  }
-};
-
-// `extension list --available`: each listed id with its newest version. Only a failed list call
-// fails it; a row that cannot be read is skipped with its reason.
-export const listMarket = async (fqdn: string = siteFqdn(), get: Get = timed): Promise<Listing> => {
-  const base = await marketUrl(fqdn, get);
-  const rows = await pages(get, base);
-  const found: (Offered | Skipped | null)[] = [];
-  for (let i = 0; i < rows.length; i += AT_ONCE) {
-    const batch = rows.slice(i, i + AT_ONCE);
-    found.push(...(await Promise.all(batch.map((r) => offered(r, openMarket(fqdn, get, base))))));
-  }
-  const listing: Listing = { offered: [], skipped: [] };
-  for (const row of found)
-    if (row) 'version' in row ? listing.offered.push(row) : listing.skipped.push(row);
-  return listing;
+// `extension list --available`: each listed id with its newest version, or why there is none.
+export const listMarket = async (
+  fqdn: string = siteFqdn(),
+  deps: Partial<MarketDeps> = {}
+): Promise<MarketListing> => {
+  const { data, down } = await (await clientOf(fqdn, { ...DEFAULTS, ...deps })).market.list();
+  return { ...data, down: down && marketDownError(down) };
 };

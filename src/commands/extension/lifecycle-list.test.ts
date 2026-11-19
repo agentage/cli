@@ -1,12 +1,17 @@
 import { tmpdir } from 'node:os';
 import { describe, expect, vi } from 'vitest';
 import { CliError, WithMeta } from '../../lib/json-output.js';
-import { type Listing, type Market } from '../../lib/net/market.js';
+import { type Market, type MarketListing } from '../../lib/net/market.js';
 import { output, test } from '../../test/config-dir.js';
 import { fakeHost, marketRow } from '../../test/host.js';
 import { runList, runUpdate, table } from './lifecycle-list.js';
 
 const NO_MARKET = new CliError('no_market', 'agentage.io has no extension market');
+
+const SILENT = new CliError(
+  'market_unreachable',
+  'market not reachable: cannot reach http://127.0.0.1:9'
+);
 
 const UNREACHABLE = new CliError('market_unreachable', 'cannot reach https://agentage.io');
 
@@ -17,7 +22,11 @@ const market = (latest: Record<string, string>, down: CliError | null = null): M
 
 const listDeps = (rows = [marketRow('probe', '0.6.2')], latest: Record<string, string> = {}) => {
   const fake = fakeHost(rows);
-  const listing: Listing = { offered: [{ id: 'notes', version: '1.2.0' }], skipped: [] };
+  const listing: MarketListing = {
+    offered: [{ id: 'notes', version: '1.2.0' }],
+    skipped: [],
+    down: null,
+  };
   const available = vi.fn(async () => listing);
   const npmNewest = vi.fn(async (id: string): Promise<string> =>
     id === 'probe' ? '0.7.0' : '1.0.0'
@@ -59,24 +68,40 @@ describe('extension list', () => {
     expect((await output(() => runList({}, deps))).lines).toEqual(['no extensions']);
   });
 
-  test('--available reads the market, not the daemon; a silent market fails', async () => {
+  test('--available reads the market, not the daemon', async () => {
     const { deps, host } = listDeps();
     const run = await output(() => runList({ available: true }, deps));
     expect(run.lines).toEqual(['ID     VERSION', 'notes  1.2.0']);
     expect(host.list).not.toHaveBeenCalled();
-    deps.available.mockRejectedValueOnce(NO_MARKET);
-    const down = await output(() => runList({ available: true }, deps));
-    expect(down).toMatchObject({ code: 'no_market', error: NO_MARKET.message });
-    deps.available.mockResolvedValueOnce({ offered: [], skipped: [] });
+    deps.available.mockResolvedValueOnce({ offered: [], skipped: [], down: null });
     expect((await output(() => runList({ available: true }, deps))).lines).toEqual([
       'the market lists nothing',
     ]);
   });
 
+  test.each([SILENT, NO_MARKET])(
+    '--available on a silent market (%s): one stderr line, an empty list, exit 0',
+    async (down) => {
+      const { deps } = listDeps();
+      deps.available.mockResolvedValueOnce({ offered: [], skipped: [], down });
+      let got: unknown;
+      const run = await output(async () => (got = await runList({ available: true }, deps)));
+      expect(run.code).toBeNull();
+      expect(run.lines).toEqual([]);
+      expect(run.stderr).toBe(down.message);
+      const meta = { skipped: [], down: { code: down.code, message: down.message } };
+      expect(got).toEqual(new WithMeta([], meta));
+    }
+  );
+
   test('--available lists the rows it could read; the skipped ones go to stderr and meta', async () => {
     const { deps } = listDeps();
-    const skipped = [{ id: 'bad', reason: 'https://m/api/v1/extensions/bad/latest answered 503' }];
-    deps.available.mockResolvedValueOnce({ offered: [{ id: 'notes', version: '1.2.0' }], skipped });
+    const skipped = [{ id: 'bad', reason: 'https://m/bad/latest answered 503' }];
+    deps.available.mockResolvedValueOnce({
+      offered: [{ id: 'notes', version: '1.2.0' }],
+      skipped,
+      down: null,
+    });
     let got: unknown;
     const run = await output(async () => (got = await runList({ available: true }, deps)));
     expect(run.code).toBeNull();
