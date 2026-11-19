@@ -1,6 +1,6 @@
 /**
- * @offline - the shell the daemon serves is the bundled kit's (0.20.2): rendered in Chromium,
- * the nav foot holds the Inbox bell, as on the deployed app host.
+ * @offline - the daemon serves the shell package of @agentage/apphost (shell-dashboard 0.3.1): rendered
+ * in Chromium, the page names that version and the nav foot holds the Inbox bell.
  */
 import { createServer } from 'node:net';
 import { expect, test } from '@playwright/test';
@@ -31,10 +31,11 @@ test.afterAll(async () => {
   machine.cleanup();
 });
 
-test('the daemon serves the kit 0.20.2 shell: the Inbox bell sits in the nav foot @offline', async ({
+test('the daemon serves shell 0.3.1: the Inbox bell sits in the nav foot @offline', async ({
   page,
 }) => {
   await page.goto(`${url}/`);
+  await expect(page.locator('meta[name="agentage-shell"]')).toHaveAttribute('content', '0.3.1');
   const bell = page.locator('.foot [data-region="notices"] button.inboxbtn');
   await expect(bell).toBeVisible();
   await expect(bell).toHaveAttribute('aria-label', /^Inbox/);
