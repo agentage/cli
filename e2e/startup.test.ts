@@ -12,6 +12,7 @@ import { expect, test } from '@playwright/test';
 import { assertCliBuilt, CLI_BIN } from './helpers.js';
 
 const HEAVY = [
+  /@agentage\/apphost\/dist\//,
   /@agentage\/extension\/dist\/host\//,
   /@agentage\/extension\/dist\/core-client\//,
   /\/node_modules\/express\//,
@@ -55,7 +56,7 @@ test('--version and --help load no kit host, express or PGlite @offline', () => 
   }
 });
 
-test('the hook sees the kit host when something does load it @offline', () => {
-  const urls = loaded(['--input-type=module', '-e', "await import('@agentage/extension/host')"]);
+test('the hook sees the app host when something does load it @offline', () => {
+  const urls = loaded(['--input-type=module', '-e', "await import('@agentage/apphost')"]);
   expect(urls.some((url) => HEAVY[0]?.test(url))).toBe(true);
 });

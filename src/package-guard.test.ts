@@ -60,14 +60,15 @@ describe('package guard (the core)', () => {
   });
 
   // `import { type X }` still emits `import {}` and loads the module; only `import type` is erased.
-  it('only the daemon run (and its move) loads the kit host; every other import is `import type`', () => {
+  it('only the daemon run (and its move) loads the app host; every other import is `import type`', () => {
     const files = sourceFiles(SRC).map((file) => [file, readFileSync(file, 'utf-8')] as const);
-    const loaders = files.filter(([, text]) => text.includes("import('@agentage/extension/host')"));
+    const loaders = files.filter(([, text]) => text.includes("import('@agentage/apphost')"));
     expect(loaders.map(([file]) => file.slice(SRC.length + 1)).sort()).toEqual([
       'commands/daemon/move.ts',
       'commands/daemon/run.ts',
     ]);
-    const statics = /^(?:import|export)\b(?!\s+type\b)[^;]*?from '@agentage\/extension\/host'/gm;
+    const statics =
+      /^(?:import|export)\b(?!\s+type\b)[^;]*?from '@agentage\/(?:apphost|extension\/host)'/gm;
     for (const [file, text] of files) expect(text.match(statics), file).toBeNull();
   });
 
@@ -82,14 +83,15 @@ describe('package guard (the core)', () => {
     expect(defineExtension(extension)).toBe(extension);
   });
 
-  // express and pglite: the kit daemon; esbuild, postcss and tailwind: the kit's app build for
+  // apphost, express and pglite: the daemon (the app host program); esbuild, postcss and tailwind: the kit's app build for
   // `extension up` (S1.2.3), optional kit peers resolved beside the kit.
-  it('runtime dependencies are the core set plus what the kit daemon and app build run on', () => {
+  it('runtime dependencies are the core set plus what the app host and app build run on', () => {
     const pkg = JSON.parse(readFileSync(PKG, 'utf-8')) as {
       dependencies: Record<string, string>;
       bin: Record<string, string>;
     };
     expect(Object.keys(pkg.dependencies).sort()).toEqual([
+      '@agentage/apphost',
       '@agentage/extension',
       '@electric-sql/pglite',
       '@tailwindcss/postcss',

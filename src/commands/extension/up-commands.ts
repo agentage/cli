@@ -39,7 +39,7 @@ Docker stack up --docker started there (its containers, network and the store's 
 
 const TOKEN_HELP = `
 Prints a token from the dev issuer agentage extension up started for the package in --dir,
-alone on stdout, for calling /api/v1/ and /mcp by hand or from tests. Only up trusts it. Exits 1
+alone on stdout, for calling /api/{id}/ and /mcp by hand or from tests. Only up trusts it. Exits 1
 when the stack on localhost:4281 is not this package's (it names the one that is), or when the
 issuer refuses or does not answer within 5 s. --issuer asks that issuer and skips the check.`;
 
