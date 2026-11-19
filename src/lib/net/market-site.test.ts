@@ -69,7 +69,7 @@ describe('a site and its market, over a real socket: one code per way it fails',
       const url = `http://127.0.0.1:${port}/.well-known/agentage.json`;
       expect(await downOf(`127.0.0.1:${port}`)).toMatchObject({
         code: 'market_unreachable',
-        message: `${url} ${why}: not the discovery document; check the network`,
+        message: `market not reachable: ${url} ${why}: not the discovery document; check the network`,
       });
     }
   });
@@ -88,7 +88,9 @@ describe('a site and its market, over a real socket: one code per way it fails',
     const down = `127.0.0.1:${await closedPort()}`;
     expect(await downOf(down)).toMatchObject({
       code: 'market_unreachable',
-      message: expect.stringMatching(/^cannot reach http:\/\/127.*: connect ECONNREFUSED/),
+      message: expect.stringMatching(
+        /^market not reachable: cannot reach http:\/\/127.*: connect ECONNREFUSED/
+      ),
     });
     const market = openMarket(await withMarket(await closedPort()));
     expect(await market.latest('probe')).toBeNull();

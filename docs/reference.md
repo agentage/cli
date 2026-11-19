@@ -872,7 +872,7 @@ The cli's own codes:
 | `no_market`           | the site's discovery document names no market                                                                                                                                                                          |
 | `market_unreachable`  | the site or its market cannot be reached (refused, no DNS name, offline), or the site answers a redirect or a page that is no JSON object (a network's sign-in page): not the discovery document                       |
 | `market_failed`       | the site or its market answered another 4xx or 5xx, a 404 that is not the market's own, or a body that is not JSON                                                                                                     |
-| `market_timeout`      | the market did not answer in 10 s                                                                                                                                                                                      |
+| `market_timeout`      | the market did not answer in 10 s (the site's discovery document: 5 s)                                                                                                                                                 |
 | `network_unavailable` | another outbound call could not connect; the message names the host and why                                                                                                                                            |
 | `timeout`             | another outbound call did not answer in its time. After an install, the daemon may still run it and shows no row until it ends: the message says so and names `agentage daemon status`, which lists it under `pending` |
 | `permission_denied`   | a file or folder (the config folder, a log) may not be read or written                                                                                                                                                 |
@@ -907,7 +907,7 @@ The daemon's codes (the kit's envelope, and the cli's installer, which runs in t
 | `UNAVAILABLE`                                           | the daemon has no installer (501), the extension is not running, a file of the daemon is locked by another process, other changes ran too long, or the daemon stops (503): try again                     |
 | `INSTALL_FAILED`                                        | npm could not install it; the message holds npm's last lines (502)                                                                                                                                       |
 | `PRIVATE_ENTRY`                                         | the market entry has no npm package (400)                                                                                                                                                                |
-| `MARKET_UNREACHABLE`, `MARKET_FAILED`, `MARKET_TIMEOUT` | the market codes above, from the installer (502), when no version is given                                                                                                                               |
+| `MARKET_UNREACHABLE`, `MARKET_FAILED`, `MARKET_TIMEOUT` | the market codes above, from the installer (502): with no version, or a refused answer                                                                                                                   |
 
 The installer runs in the daemon, so it uses the site the daemon had when it started: to install
 from another site, `AGENTAGE_SITE_FQDN=<site> agentage daemon restart`, then install.
@@ -970,7 +970,7 @@ Otherwise it is `extensions` inside the config directory. The config directory i
 | Variable                     | Purpose                                                                                                 | Default               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------- |
 | `AGENTAGE_SITE_FQDN`         | Target host                                                                                             | `agentage.io`         |
-| `AGENTAGE_CORE_URL`          | The origin of the market, used in place of the one the site's discovery document names                  | unset                 |
+| `AGENTAGE_CORE_URL`          | The origin of the market in place of the one the site's discovery names; the daemon reads it at start   | unset                 |
 | `AGENTAGE_CONFIG_DIR`        | Config and credentials directory (`auth.json`)                                                          | `$HOME/.agentage`     |
 | `AGENTAGE_TOKEN`             | Personal access token for CI and headless machines                                                      | unset                 |
 | `NO_COLOR`                   | Disable colored output (any non-empty value)                                                            | unset                 |

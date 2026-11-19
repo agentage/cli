@@ -5,6 +5,8 @@ import { cliFetch, headedFetch } from './fetch.js';
 import {
   answered,
   marketError,
+  noSiteMarket,
+  type MarketCode,
   noDiscovery,
   noMarket,
   notTheDocument,
@@ -95,9 +97,13 @@ const CODES = { unreachable: 'market_unreachable', timeout: 'market_timeout' } a
 const textOf = (down: CoreReason): string =>
   down.detail.startsWith(down.message) ? down.detail : `${down.message}: ${down.detail}`;
 
-// The client's reason as the cli's error; a discovery error (no_discovery, no_market) stays itself.
+// The client's reason as the cli's error; a site with no market (the npm fallback) stays itself.
 export const marketDownError = (down: CoreReason): CliError => {
-  if (down.cause instanceof CliError) return down.cause;
+  const { cause } = down;
+  if (cause instanceof CliError)
+    return noSiteMarket(cause)
+      ? cause
+      : marketError(cause.code as MarketCode, `${down.message}: ${cause.message}`);
   const code = down.code === 'unreachable' || down.code === 'timeout' ? CODES[down.code] : null;
   return marketError(code ?? 'market_failed', textOf(down));
 };
@@ -110,8 +116,7 @@ const clientOf = async (fqdn: string, deps: MarketDeps): Promise<CoreClient> => 
   return createCoreClient({ url, timeoutMs: deps.timeoutMs, fetch: deps.fetch });
 };
 
-// Never throws for a missing or silent market: null, and `down` keeps the first reason. A
-// refused answer (not an exact version of that id) throws: it is never installed.
+// Null for a silent market (`down` keeps the first reason); a refused answer throws, never installed.
 export const openMarket = (fqdn: string = siteFqdn(), deps: Partial<MarketDeps> = {}): Market => {
   const client = once(() => clientOf(fqdn, { ...DEFAULTS, ...deps }));
   let failure: CliError | null = null;
