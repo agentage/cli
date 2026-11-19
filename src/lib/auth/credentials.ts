@@ -73,10 +73,9 @@ export const jwtPatExpiry = (token: string): string | null => {
   return typeof exp === 'number' ? new Date(exp * 1000).toISOString() : null;
 };
 
-// The issuer origin of a JWT PAT; an opaque PAT has none and reads as auth.<its site>.
 const LOOPBACK = new Set(['localhost', '127.0.0.1']);
 
-// https only; http only on a loopback host, as the cli's own local origins.
+// The issuer origin of a JWT PAT (https, or http on a loopback host); an opaque PAT has none.
 export const jwtPatIssuer = (token: string): string | undefined => {
   const { iss } = jwtPatClaims(token);
   if (typeof iss !== 'string' || !URL.canParse(iss)) return undefined;
