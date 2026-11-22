@@ -4,7 +4,8 @@ import { CliError } from '../../lib/json-output.js';
 import type { ExtensionReleaseOptions, ReleaseDeps } from './release.js';
 import { writeCiCopy } from './release-folders.js';
 import { imagesOf, releaseGuard, type Exec } from './release-guard.js';
-import { fetchTags, git, planRelease, type Planned } from './release-plan.js';
+import { fetchTags, git, planRelease, type Plan, type Planned } from './release-plan.js';
+import { rowsOf, summary, type Row } from './release-summary.js';
 import {
   attach,
   buildImages,
@@ -86,7 +87,7 @@ const npmStep = async (s: Session, run: Exec, dir: string, pkg: ExtensionPackage
   await publish(run, push, pkg, s.secrets['npm']?.['NPM_TOKEN']);
 };
 
-// A released version is never rebuilt: the guard reuses its record, else it builds and attaches.
+// A released version is never rebuilt: the guard reuses its record, else it builds the images.
 const imagesStep = async (s: Session, p: Planned, run: Exec, pkg: ExtensionPackage) => {
   const { parts, oneImage } = imagesOf(pkg);
   const dir = join(s.root, p.rel);
@@ -96,13 +97,10 @@ const imagesStep = async (s: Session, p: Planned, run: Exec, pkg: ExtensionPacka
   );
   const built = decision === 'build';
   step(`guard: ${p.tag} ${built ? 'has no record and no image: build' : 'is released: npm only'}`);
-  if (built) {
-    const names = await buildImages(dir, oneImage, s.deps.tool, committedBut(s));
-    await attach(run, p.tag, s.repo, names, s.sha);
-  }
-  return built;
+  return built ? buildImages(dir, oneImage, s.deps.tool, committedBut(s)) : [];
 };
 
+// The record is the "released" marker: it goes up only after npm has the version.
 const releaseOne = async (s: Session, p: Planned) => {
   const pkg = await prepare(s, p);
   const dir = join(s.root, p.rel);
@@ -110,14 +108,46 @@ const releaseOne = async (s: Session, p: Planned) => {
   const isPrivate = pkg['private'] === true;
   if (!isPrivate) await npmVersion(run);
   await createTag(s, p.tag);
-  const built = await imagesStep(s, p, run, pkg);
+  const records = await imagesStep(s, p, run, pkg);
   await npmStep(s, run, dir, pkg);
-  return { id: p.id, version: p.version, tag: p.tag, built, published: !isPrivate };
+  if (records.length > 0) await attach(run, p.tag, s.repo, records, s.sha);
+  return {
+    id: p.id,
+    version: p.version,
+    tag: p.tag,
+    built: records.length > 0,
+    published: !isPrivate,
+  };
+};
+
+// Every changed extension is tried; its folder then no longer counts as a change for the next build.
+const releaseAll = async (s: Session, plan: Plan) => {
+  const released: Awaited<ReturnType<typeof releaseOne>>[] = [];
+  const rows = rowsOf(plan.refused, 'refused');
+  for (const p of plan.changed) {
+    const row: Row = { id: p.id, version: p.version, result: 'released' };
+    await releaseOne(s, p).then(
+      (r) => void released.push(r),
+      (err: unknown) => Object.assign(row, { result: 'failed', err })
+    );
+    s.written.push(p.rel);
+    rows.push(row);
+  }
+  rows.push(...rowsOf(plan.unchanged, 'unchanged'));
+  summary(rows);
+  return released;
+};
+
+const dryRun = (plan: Plan) => {
+  const tags = plan.changed.map((p) => p.tag).join(', ') || 'nothing';
+  step(`dry run: would release ${tags}; nothing was written, tagged, pushed or published`);
+  summary(rowsOf(plan.refused, 'refused'));
+  return { dryRun: true, changed: plan.changed, unchanged: plan.unchanged.map((f) => f.id) };
 };
 
 // Each extension changed since its last <id>@* tag gets a date version, its tag, images and npm.
 export const runChangedRelease = async (
-  { dir = '.', timeout = 60, dryRun }: ExtensionReleaseOptions,
+  { dir = '.', timeout = 60, dryRun: dry }: ExtensionReleaseOptions,
   deps: ReleaseDeps
 ): Promise<unknown> => {
   const secrets = takeSecrets(deps.env);
@@ -127,14 +157,7 @@ export const runChangedRelease = async (
   await fetchTags(run);
   const now = deps.now?.() ?? new Date();
   const plan = await planRelease({ root: dir, run, sha, repo, now });
-  const unchanged = plan.unchanged.map((f) => f.id);
-  if (dryRun) {
-    const tags = plan.changed.map((p) => p.tag).join(', ') || 'nothing';
-    step(`dry run: would release ${tags}; nothing was written, tagged, pushed or published`);
-    return { dryRun: true, changed: plan.changed, unchanged };
-  }
+  if (dry) return dryRun(plan);
   const s: Session = { root: dir, run, deps, secrets, sha, repo, timeout, written: [] };
-  const released = [];
-  for (const p of plan.changed) released.push(await releaseOne(s, p));
-  return { released, unchanged };
+  return { released: await releaseAll(s, plan), unchanged: plan.unchanged.map((f) => f.id) };
 };

@@ -9,7 +9,12 @@ import { join } from 'node:path';
 import { readManifest } from '@agentage/extension/tool';
 import type { KitTool } from '../commands/extension/kit-tool.js';
 import { execIn, type Exec, type Ran } from '../commands/extension/release-guard.js';
-import type { ReleaseDeps } from '../commands/extension/release.js';
+import {
+  runRelease,
+  type ExtensionReleaseOptions,
+  type ReleaseDeps,
+} from '../commands/extension/release.js';
+import { output } from './config-dir.js';
 
 export type Spec = { private?: boolean; api?: boolean };
 
@@ -74,6 +79,14 @@ export const writeExtension = (repo: Repo, rel: string, id: string, spec: Spec =
   repo.write(join(rel, 'index.js'), `export const id = '${id}';\n`);
 };
 
+// A full checkout of an older commit, as a re-run of that commit's workflow run has.
+export const checkoutAt = (repo: Repo, sha: string): string => {
+  const dir = join(repo.root, `at-${sha.slice(0, 7)}`);
+  execFileSync('git', ['clone', '-q', `file://${repo.origin}`, dir]);
+  execFileSync('git', ['checkout', '-q', sha], { cwd: dir });
+  return dir;
+};
+
 // The CI checkout: a depth-1 clone with no tags, as actions/checkout makes by default.
 export const ciClone = (repo: Repo): string => {
   const dir = join(repo.root, `ci-${Math.random().toString(36).slice(2)}`);
@@ -86,6 +99,7 @@ export interface World {
   refAt?: string;
   refFails?: string;
   downloadFails?: string;
+  npmFails?: string;
 }
 
 const ran = (ok: boolean, text = ''): Ran =>
@@ -104,10 +118,10 @@ const gh = (w: World, args: string[]): Ran => {
   return ran(true);
 };
 
-const npm = (args: string[]): Ran => {
+const npm = (w: World, args: string[]): Ran => {
   if (args[0] === '--version') return ran(true, '11.7.0\n');
   if (args[0] === 'view') return ran(false, 'E404');
-  return ran(true);
+  return w.npmFails ? ran(false, w.npmFails) : ran(true);
 };
 
 // Real git in the folder it runs in; gh, docker and npm from the world.
@@ -118,7 +132,7 @@ export const changedDeps = (w: World, calls: string[], env: NodeJS.ProcessEnv) =
       if (cmd === 'git') return execIn(cwd)(cmd, args, extra);
       calls.push([cmd, ...args].join(' '));
       if (cmd === 'gh') return gh(w, args);
-      if (cmd === 'npm') return npm(args);
+      if (cmd === 'npm') return npm(w, args);
       return ran(false, 'manifest unknown');
     };
   return { exec, tool: async () => kitStub(calls), env, now: () => NOW } satisfies ReleaseDeps;
@@ -145,4 +159,21 @@ const kitStub = (calls: string[]): KitTool => {
     },
   };
   return tool as KitTool;
+};
+
+export const REPO = 'agentage/examples';
+
+type Run = { dir: string; w?: World; opts?: ExtensionReleaseOptions; env?: NodeJS.ProcessEnv };
+
+// One --changed run in `dir`: its printed lines, error, result and every non-git call.
+export const release = async ({ dir, w = {}, opts = {}, env }: Run, tool?: Partial<KitTool>) => {
+  const calls: string[] = [];
+  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+  const deps = changedDeps(w, calls, env ?? { GITHUB_REPOSITORY: REPO, GITHUB_SHA: sha });
+  const kit = tool ? { tool: async () => ({ ...(await deps.tool()), ...tool }) as KitTool } : {};
+  let result: unknown;
+  const printed = await output(async () => {
+    result = await runRelease({ dir, changed: true, ...opts }, { ...deps, ...kit });
+  });
+  return { ...printed, result, calls, sha };
 };

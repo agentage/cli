@@ -8,29 +8,13 @@ import {
   changedDeps,
   ciClone,
   makeRepo,
+  release,
+  REPO,
   writeExtension,
   type Repo,
   type Spec,
-  type World,
 } from '../../test/release-repo.js';
-import type { KitTool } from './kit-tool.js';
-import { runRelease, type ExtensionReleaseOptions } from './release.js';
-
-const REPO = 'agentage/examples';
-
-type Run = { dir: string; w?: World; opts?: ExtensionReleaseOptions; env?: NodeJS.ProcessEnv };
-
-const release = async ({ dir, w = {}, opts = {}, env }: Run, tool?: Partial<KitTool>) => {
-  const calls: string[] = [];
-  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
-  const deps = changedDeps(w, calls, env ?? { GITHUB_REPOSITORY: REPO, GITHUB_SHA: sha });
-  const kit = tool ? { tool: async () => ({ ...(await deps.tool()), ...tool }) as KitTool } : {};
-  let result: unknown;
-  const printed = await output(async () => {
-    result = await runRelease({ dir, changed: true, ...opts }, { ...deps, ...kit });
-  });
-  return { ...printed, result, calls, sha };
-};
+import { runRelease } from './release.js';
 
 // Two extensions released on 2026-11-21 from the first commit; then only probe changes.
 const twoExtensions = (records = true) => {
@@ -75,6 +59,7 @@ describe('extension release --changed: what it releases', () => {
     ]);
     expect(run.calls).toEqual([
       `gh release download fixture@2026.1121.1 -R ${REPO} -p agentage-extension.json -O -`,
+      `gh release download probe@2026.1121.1 -R ${REPO} -p agentage-extension.json -O -`,
     ]);
     expect(status(dir)).toBe('');
     expect(remoteTags(repo)).toBe(tagsBefore);
@@ -87,16 +72,16 @@ describe('extension release --changed: what it releases', () => {
     const run = await release({ dir, w: { records } });
     expect(run.error).toBeNull();
     const tag = 'probe@2026.1122.1';
-    expect(run.calls.filter((c) => !c.startsWith('gh release download fixture'))).toEqual([
+    expect(run.calls.filter((c) => !c.includes('2026.1121.1'))).toEqual([
       'npm --version',
       `gh api repos/${REPO}/git/refs -f ref=refs/tags/${tag} -f sha=${run.sha}`,
       `gh release download ${tag} -R ${REPO} -p agentage-extension.json -O -`,
       'docker manifest inspect ghcr.io/agentage/probe-pages:2026.1122.1',
       'build probe@2026.1122.1',
-      `gh release view ${tag} -R ${REPO}`,
-      `gh release create ${tag} dist/agentage-extension.json --title ${tag} --notes Images by digest: agentage-extension.json --target ${run.sha} -R ${REPO}`,
       'npm view @agentage/extension-probe@2026.1122.1 version',
       'npm publish --access public --provenance --ignore-scripts',
+      `gh release view ${tag} -R ${REPO}`,
+      `gh release create ${tag} dist/agentage-extension.json --title ${tag} --notes Images by digest: agentage-extension.json --target ${run.sha} -R ${REPO}`,
     ]);
     expect(run.lines).toContain('PASS version: probe is 2026.1122.1 in this CI copy only');
     expect(run.lines).toContain(`PASS tag: ${tag} created on ${run.sha}`);
@@ -210,7 +195,7 @@ describe('extension release --changed: the guards', () => {
   test('a tag call that fails for another reason stops the release', async () => {
     const dir = ciClone(oneExtension('extensions/probe', 'probe'));
     const run = await release({ dir, w: { refFails: 'HTTP 403' } });
-    expect(run.error).toBe('FAIL tag: HTTP 403');
+    expect(run.error).toBe('probe: FAIL tag: HTTP 403');
   });
 
   test('a record check that cannot answer stops the release', async () => {
@@ -291,7 +276,7 @@ describe('extension release --changed: an api part', () => {
       throw new Error('dist is not built: run npm run build');
     };
     const run = await release({ dir }, { writeContracts });
-    expect(run.error).toBe('FAIL contracts: dist is not built: run npm run build');
+    expect(run.error).toBe('probe: FAIL contracts: dist is not built: run npm run build');
     expect(run.calls.some((c) => c.startsWith('gh api'))).toBe(false);
   });
 });

@@ -15,14 +15,16 @@ const numbersOf = (version: string): Numbers => version.split('.').map(Number) a
 
 const compare = (a: Numbers, b: Numbers): number => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 
-// The highest `<id>@*` tag by number, never by text: 2027.105.1 is after 2026.1231.9.
-export const lastTag = (id: string, tags: string[]): string | undefined => {
+// The `<id>@*` tags newest first by number, never by text: 2027.105.1 is after 2026.1231.9.
+export const newestTags = (id: string, tags: string[]): string[] => {
   const plain = tags.flatMap((tag) => {
     const version = versionOfTag(id, tag);
     return version ? [{ tag, n: numbersOf(version) }] : [];
   });
-  return plain.sort((a, b) => compare(a.n, b.n)).pop()?.tag;
+  return plain.sort((a, b) => compare(b.n, a.n)).map((p) => p.tag);
 };
+
+export const lastTag = (id: string, tags: string[]): string | undefined => newestTags(id, tags)[0];
 
 // YYYY.MDD of a UTC day: month times 100 plus day, so it never has a leading zero.
 export const dayOf = (now: Date): string =>
