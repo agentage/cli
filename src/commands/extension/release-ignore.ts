@@ -3,16 +3,16 @@ import { join } from 'node:path';
 
 type Rule = { re: RegExp; keep: boolean };
 
-// Files that never release an extension on their own: docs, CI and repo config.
+// Anchored at the folder root: a deeper .md or docs/ may be served by the site or the image.
 export const DEFAULT_IGNORE = [
-  'docs/**',
-  '*.md',
-  '.github/**',
-  '.repo-doctor.yml',
-  '.gitignore',
-  '.prettierrc*',
-  '.editorconfig',
-  'LICENSE',
+  '/*.md',
+  '/docs/**',
+  '/.github/**',
+  '/.repo-doctor.yml',
+  '/.gitignore',
+  '/.prettierrc*',
+  '/.editorconfig',
+  '/LICENSE',
 ];
 
 // What goes into the image always counts, whatever an ignore pattern says.
@@ -75,7 +75,7 @@ export type Sorted = { counted: string[]; ignored: string[] };
 export const sortChanged = async (root: string, rel: string, diff: string): Promise<Sorted> => {
   const rules = await rulesAt(join(root, rel));
   const prefix = rel === '.' ? '' : `${rel}/`;
-  const files = diff.split('\n').filter(Boolean);
+  const files = diff.split('\0').filter(Boolean);
   const local = files.map((f) => f.slice(prefix.length));
   return {
     counted: local.filter((f) => !isIgnored(rules, f)),

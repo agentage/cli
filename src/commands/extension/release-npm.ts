@@ -1,6 +1,6 @@
 import type { ExtensionPackage } from '@agentage/extension/tool';
 import type { Exec } from './release-guard.js';
-import { step } from './release-steps.js';
+import { fail, step } from './release-steps.js';
 
 // The kit refuses unknown keys under `agentage`: the opt-in is a top-level package.json key.
 export const OPT_IN = 'agentagePublishFromPrivateRepo';
@@ -14,7 +14,7 @@ const optedIn = (pkg: ExtensionPackage): boolean => {
 
 const howTo = `set publishConfig.access to "public" and ${OPT_IN} to true to publish it`;
 
-// Default deny: only a repo GitHub names public, or an explicit opt-in, goes to public npm.
+// Only a repo GitHub names public, or an opt-in, goes to npm; no clear answer stops the release.
 export const npmRefusal = async (
   run: Exec,
   repo: string,
@@ -24,7 +24,7 @@ export const npmRefusal = async (
   const answer = read.out.trim();
   if (read.ok && answer === 'false') return undefined;
   if (!read.ok || answer !== 'true')
-    return `cannot read whether ${repo} is private (${read.err || answer || 'no answer'}): npm skipped`;
+    fail(`npm: cannot read whether ${repo} is private (${read.err || answer || 'no answer'})`);
   if (!optedIn(pkg)) return `${repo} is a private repo: npm skipped; ${howTo}`;
   step(`npm: ${repo} is private, ${pkg.name} opts in to public npm`);
   return undefined;

@@ -111,7 +111,7 @@ export const addRelease = (
       )
       .option(
         '--changed',
-        'each extension (root or extensions/*) whose folder changed since its last <id>@* tag; docs, *.md, .github/** and repo config (plus .release-ignore patterns) never trigger a release, package.json, the lock, src/** and Dockerfile* always do; a private repo skips npm unless the package opts in'
+        'each extension (root or extensions/*) whose folder changed since its last <id>@* tag; root docs/**, root *.md, .github/** and repo config (plus .release-ignore patterns) never trigger a release, package.json, the lock, src/** and Dockerfile* always do; a private repo skips npm unless the package opts in'
       )
       .option('--dry-run', 'with --changed: print what it would release, change nothing')
   ).action(release);

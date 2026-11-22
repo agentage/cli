@@ -20,11 +20,10 @@ describe('release ignore patterns', () => {
     expect(globToRegex('a+b.txt').test('aab.txt')).toBe(false);
   });
 
-  it('the defaults ignore docs, markdown, CI and repo config, not code', () => {
+  it('the defaults ignore root docs, markdown, CI and repo config, nothing deeper', () => {
     for (const path of [
       'docs/guide.txt',
       'README.md',
-      'extensions/x/CHANGELOG.md',
       '.github/workflows/release.yml',
       '.repo-doctor.yml',
       '.gitignore',
@@ -33,7 +32,8 @@ describe('release ignore patterns', () => {
       'LICENSE',
     ])
       expect(isIgnored(defaults, path), path).toBe(true);
-    for (const path of ['index.js', 'dist-config.yml', 'scripts/x.sh'])
+    const deeper = ['site/src/content/x.md', 'site/public/README.md', 'sub/docs/a.md', 'a/LICENSE'];
+    for (const path of ['index.js', 'dist-config.yml', 'scripts/x.sh', ...deeper])
       expect(isIgnored(defaults, path), path).toBe(false);
   });
 

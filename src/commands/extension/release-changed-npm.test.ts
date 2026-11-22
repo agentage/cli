@@ -67,15 +67,19 @@ describe('extension release --changed: npm from a private repo', () => {
     expect(run.calls).toContain('npm publish --access public --provenance --ignore-scripts');
   });
 
-  test('a visibility that cannot be read is a refusal of npm (default deny)', async () => {
-    const failed = { visibility: { ok: false, out: '', err: 'HTTP 502' } };
-    expect(await skipped(failed)).toEqual([
-      `AMBER npm: cannot read whether ${REPO} is private (HTTP 502): npm skipped`,
-    ]);
-    expect(await skipped({ visibility: '' })).toEqual([
-      `AMBER npm: cannot read whether ${REPO} is private (no answer): npm skipped`,
-    ]);
-    expect(await skipped({ visibility: 'null' })).toHaveLength(1);
+  test('a visibility that cannot be read fails that extension before its tag: exit 1', async () => {
+    const cases: [World['visibility'], string][] = [
+      [{ ok: false, out: '', err: 'HTTP 502' }, 'HTTP 502'],
+      ['', 'no answer'],
+      ['null', 'null'],
+    ];
+    for (const [visibility, why] of cases) {
+      const run = await release({ dir: publicPackage(), w: { visibility } });
+      expect(run.code).toBe('release_refused');
+      expect(run.error).toBe(`probe: FAIL npm: cannot read whether ${REPO} is private (${why})`);
+      expect(run.calls.filter((c) => c.includes('/git/refs') || c.startsWith('npm'))).toEqual([]);
+      expect(run.lines.at(-1)).toBe('probe  2026.1122.1  failed');
+    }
   });
 
   test('a "private": true package never reads the visibility', async () => {

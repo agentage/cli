@@ -33,6 +33,23 @@ describe('extension release --changed: files that do not release', () => {
     expect(run.calls.some((c) => c.includes('/git/refs'))).toBe(false);
   });
 
+  test('the defaults hold at the folder root only: deeper markdown and docs count', async () => {
+    const deeper = ['site/public/README.md', 'site/src/content/x.md', 'sub/docs/a.md'];
+    const { repo, records } = changedAfterTag('.', ['README.md', 'docs/a.md', ...deeper]);
+    const run = await plan(repo, records);
+    expect(run.lines).toContain(`${CHANGED} ${deeper.join(', ')}: release probe@2026.1122.1`);
+  });
+
+  test('a name with a space and a non-ASCII letter is read exactly', async () => {
+    const quiet = changedAfterTag('.', ['naïve notes.md']);
+    expect((await plan(quiet.repo, quiet.records)).lines).toContain(
+      'PASS unchanged: probe (.) is the same as probe@2026.1121.1; only ignored files changed: naïve notes.md'
+    );
+    const { repo, records } = changedAfterTag('.', ['site/naïve page.md']);
+    const run = await plan(repo, records);
+    expect(run.lines).toContain(`${CHANGED} site/naïve page.md: release probe@2026.1122.1`);
+  });
+
   test('a Dependabot bump of the lock releases: package files always count', async () => {
     const { repo, records } = changedAfterTag('.', ['package-lock.json', '.github/dependabot.yml']);
     const run = await plan(repo, records);

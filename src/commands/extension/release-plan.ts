@@ -57,8 +57,8 @@ type Why = { why?: string; ignored: string[] };
 const whyOf = async (c: PlanInput, f: Folder, tags: string[], last?: string): Promise<Why> => {
   if (!last) return { why: `has no ${f.id}@* tag yet`, ignored: [] };
   const missing = await unrecorded(c, f, tags);
-  // No renames: a move from src/ to docs/ must still list the src/ path.
-  const args = ['diff', '--name-only', '--no-renames', last, c.sha, '--', f.rel];
+  // No renames: a move from src/ to docs/ names the src/ path; -z keeps odd names exact.
+  const args = ['diff', '--name-only', '-z', '--no-renames', last, c.sha, '--', f.rel];
   const { counted, ignored } = await sortChanged(c.root, f.rel, await git(c.run, args, 'changed'));
   if (counted.length > 0) return { why: `differs from ${last} in ${firstFive(counted)}`, ignored };
   // A release that failed after its tag: the next commit releases it with a new N.

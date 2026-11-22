@@ -560,8 +560,9 @@ such tag yet, or when that tag has no `agentage-extension.json` record (a releas
 its tag). Only the folder is read: each extension keeps its own `package-lock.json` there, and a
 change to a shared root file (a root lock, a workflow, a config) does not release anything.
 
-Some files in the folder never release an extension on their own: `docs/**`, `*.md`,
-`.github/**`, `.repo-doctor.yml`, `.gitignore`, `.prettierrc*`, `.editorconfig` and `LICENSE`. A
+Some files at the folder root never release an extension on their own: `/*.md`, `/docs/**`,
+`/.github/**`, `/.repo-doctor.yml`, `/.gitignore`, `/.prettierrc*`, `/.editorconfig` and `/LICENSE`.
+Each is anchored at the root: a deeper `.md` or `docs/` (a blog post a site serves) counts. A
 `.release-ignore` file in the extension folder adds patterns (gitignore style, one per line, `#`
 starts a comment, a pattern with no `/` matches at any depth, the last matching line wins) and a
 `!pattern` line re-includes one. What goes into the image always counts, whatever a pattern says:
@@ -597,7 +598,8 @@ not `"private": true` reads `gh api repos/<owner>/<repo> --jq .private`: only `f
 When the repo is private, npm is skipped unless `package.json` opts in with both
 `publishConfig.access` set to `"public"` and the top-level `"agentagePublishFromPrivateRepo": true`
 (top level: the kit refuses unknown keys under `agentage`); an answer that is not `true` or
-`false`, or a call that fails, also skips npm (default deny). A skip prints one `AMBER npm: ...`
+`false`, or a call that fails, fails that extension before its tag (`FAIL npm: cannot read whether
+<repo> is private`, exit 1); the next run retries with the same `N`. A skip prints one `AMBER npm: ...`
 line, the images and records still go out, the row reads `released, AMBER: npm skipped`,
 `published` is `false` and it alone does not make the exit code non-zero. A re-run of that commit
 resumes the version and reads the visibility again. The release without `--changed` (a `v*` tag)
