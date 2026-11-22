@@ -306,8 +306,11 @@ parts, `create` sets `MIN_EXECUTED` to 1. `MIN_EXECUTED` is the least number of 
 must run. After the first green run, set it to the real count. When `create` cannot find that
 line, it says so and you set it by hand.
 
-`--from <owner/repo>` takes another template repo, and `--from <owner/repo#branch>` one of its
-branches. For any source other than `agentage/extension-template` itself, `create` first prints
+The template is the folder `template/` of the kit repo (`agentage/platform:template`); only that
+folder is copied, with no history. `--from <owner/repo>` takes another template repo at its root
+(`agentage/extension-template` is the old template), `--from <owner/repo#branch>` one of its
+branches, and `:folder` after either one folder of it. For any source other than the kit's
+`template` folder or `agentage/extension-template`, `create` first prints
 that code from that repo will be built and run on this machine, and asks `run it? (y/N)`; with
 `--yes` it does not ask, and with no terminal (or `--json`) it needs `--yes`. After the clone,
 `create` runs `npm ci --ignore-scripts`, builds the package (as `extension build` does) and gives
@@ -316,7 +319,7 @@ the clone, the rename and the parts dropped, no npm and no build. `create` adds 
 folder's `.gitignore` when it is missing, and says so. It ends
 with `url       <the first public route of the api that answers>`.
 
-1. Install git and npm for `create`, which clones the template from GitHub. `build --container`,
+1. Install git and npm for `create`, which clones the kit repo from GitHub. `build --container`,
    `build --push`, `up --docker` and `release` also need Docker and a committed tree.
 2. Inside the extension folder, run `npx agentage extension up`. Use `npx agentage`, not the
    global `agentage`, which can be older than the version the project pins. It builds the
