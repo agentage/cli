@@ -306,7 +306,7 @@ parts, `create` sets `MIN_EXECUTED` to 1. `MIN_EXECUTED` is the least number of 
 must run. After the first green run, set it to the real count. When `create` cannot find that
 line, it says so and you set it by hand.
 
-The template is the folder `template/` of the kit repo (`agentage/platform:template`); only that
+The template is the folder `template/` of the kit repo (`agentage/kit:template`); only that
 folder is copied, with no history. `--from <owner/repo>` takes another template repo at its root
 (`agentage/extension-template` is the old template), `--from <owner/repo#branch>` one of its
 branches, and `:folder` after either one folder of it. For any source other than the kit's

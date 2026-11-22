@@ -57,14 +57,12 @@ const listed = (dir: string): string[] =>
   );
 
 describe('extension create from the kit repo', () => {
-  test('the default is the folder template/ of agentage/platform', async () => {
-    expect(TEMPLATE).toBe('agentage/platform:template');
+  test('the default is the folder template/ of agentage/kit', async () => {
+    expect(TEMPLATE).toBe('agentage/kit:template');
     const printed = await create();
     expect(printed).toMatchObject({ error: null, stderr: '' });
-    expect(asked.at(-1)).toBe('agentage/platform');
-    expect(printed.lines[0]).toBe(
-      ' template  agentage/platform:template (default branch, kit 0.21.0)'
-    );
+    expect(asked.at(-1)).toBe('agentage/kit');
+    expect(printed.lines[0]).toBe(' template  agentage/kit:template (default branch, kit 0.21.0)');
   });
 
   test('only template/ is copied, dot files and modes kept, no kit history', async () => {
@@ -96,14 +94,14 @@ describe('extension create from the kit repo', () => {
     git(join(root, 'kit-work'), 'checkout', '-q', '-b', 'feature/t');
     put(join(root, 'kit-work', 'other'), { ...TEMPLATE_FILES, 'branch.txt': 'b\n' });
     pushKit(root, 'feature/t');
-    const printed = await create('agentage/platform#feature/t:other');
+    const printed = await create('agentage/kit#feature/t:other');
     expect(printed.lines[0]).toMatch(/^ template {2}agentage\/platform:other \(branch feature\/t,/);
     expect(read('branch.txt')).toBe('b\n');
   });
 
   test.for([
-    ['a missing folder', 'agentage/platform:nope'],
-    ['a link', 'agentage/platform:link'],
+    ['a missing folder', 'agentage/kit:nope'],
+    ['a link', 'agentage/kit:link'],
   ])('refuses %s with one line, no folder and no clone left', async ([, from]) => {
     symlinkSync('template', join(root, 'kit-work', 'link'));
     pushKit(root);
