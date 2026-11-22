@@ -6,6 +6,7 @@ import { hostClient, type HostClient } from '../../lib/daemon/host-client.js';
 import { CliError } from '../../lib/json-output.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
 import { confirmed, report, summaryOf, terminalIo, type ConfirmIo } from './lifecycle.js';
+import { OWN_TEMPLATES } from './create-source.js';
 import { ignoreLocal } from './up-local.js';
 import { buildPackage, newerKitLine, npmIn, type Npm, type PackageBuild } from './package-build.js';
 
@@ -92,15 +93,13 @@ export const installCreated = async (
   return { installed, url };
 };
 
-const OWN_TEMPLATE = 'agentage/extension-template';
-
 // Another repo, or a branch of ours, is code nobody reviewed for you: its build script runs here.
 export const trustFrom = async (
   from: string,
   opts: { yes?: boolean },
   io: ConfirmIo = terminalIo()
 ): Promise<void> => {
-  if (from === OWN_TEMPLATE) return;
+  if (OWN_TEMPLATES.includes(from)) return;
   console.error(`template  ${from}: code from that repo will be built and run on this machine`);
   if (opts.yes) return;
   if (!io.isTTY)

@@ -1,21 +1,17 @@
-import { execFile } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { type Command } from 'commander';
 import { addJson, CliError } from '../../lib/json-output.js';
 import { installCreated, trustFrom } from './create-install.js';
+import { clone, fromRefusal, repoRef, TEMPLATE } from './create-source.js';
 import { terminalIo, type ConfirmIo } from './lifecycle.js';
 
-const run = promisify(execFile);
-export const TEMPLATE = 'agentage/extension-template';
+export { TEMPLATE };
 export const PARTS = ['pages', 'ui', 'api', 'mcp', 'worker', 'store', 'cli', 'app'];
 const ROUTED = ['pages', 'ui', 'api', 'mcp'];
 // `_` is a separator here, so `template__echo` is the id too.
 const WORD = /(?<![A-Za-z0-9])template(?![A-Za-z0-9])/g;
 const LOCK = 'package-lock.json';
-// owner/repo, optionally #branch: a git ref that cannot pass for a flag or leave the repo.
-const FROM = /^[\w.-]+\/[\w.-]+(?:#\w[\w./-]*)?$/;
 // What else goes with a dropped part: manifest keys the kit refuses without it, the store's SQL, the contract file of api and mcp.
 const PRUNE: Record<string, { keys?: string[][]; paths?: string[] }> = {
   cli: { keys: [['agentage', 'commands']] },
@@ -44,8 +40,7 @@ const refusal = ({ id, parts, from = TEMPLATE }: ExtensionCreateOptions, kept: s
   if (PARTS.includes(id)) return `id ${id} is a part name: pick another id`;
   if (!kept.some((part) => ROUTED.includes(part)))
     return `an extension needs at least one of ${ROUTED.join(', ')}`;
-  if (!FROM.test(from) || from.includes('..'))
-    return `--from ${from}: owner/repo or owner/repo#branch`;
+  if (fromRefusal(from)) return fromRefusal(from);
   return existsSync(`extension-${id}`)
     ? `extension-${id} exists: pick another id or remove it`
     : '';
@@ -71,6 +66,8 @@ const drop = (dir: string, kept: string[]): void => {
       if (parent) delete parent[path.at(-1) ?? ''];
     }
   }
+  // The new repo is the folder itself: a monorepo path of the template would point into nothing.
+  delete pkg['repository']?.['directory'];
   save(join(dir, 'package.json'), pkg);
 };
 
@@ -94,28 +91,6 @@ const renameLock = (dir: string, id: string): void => {
   const name = `@agentage/extension-${id}`;
   for (const at of [lock, lock['packages']?.['']]) if (at) Object.assign(at, { name });
   save(join(dir, LOCK), lock);
-};
-
-// --from owner/repo[#branch], checked by refusal() first.
-const repoRef = (from: string): { repo: string; ref?: string } => {
-  const [repo = from, ref] = from.split('#');
-  return { repo, ...(ref && { ref }) };
-};
-
-// Bounded, a partial folder removed; git's own first line says why (no repo, no network, no access).
-const clone = async (url: string, from: string, dir: string): Promise<void> => {
-  const { ref } = repoRef(from);
-  const branch = ref ? ['--branch', ref] : [];
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
-  await run('git', ['clone', '-q', '--depth', '1', ...branch, url, dir], {
-    env,
-    timeout: 120_000,
-  }).catch((err: { stderr?: string; message: string }) => {
-    rmSync(dir, { recursive: true, force: true });
-    const why = (err.stderr?.trim() || err.message).split('\n')[0];
-    throw new Error(`cannot clone template ${from}: ${why}`);
-  });
-  rmSync(join(dir, '.git'), { recursive: true, force: true });
 };
 
 const CI = join('.github', 'workflows', 'ci.yml');
@@ -152,15 +127,17 @@ const printNext = (dir: string, from: string, id: string, kept: string[]): void 
   const kit = String(
     json(join(dir, 'package.json'))['dependencies']?.['@agentage/extension'] ?? '?'
   );
-  const { repo, ref } = repoRef(from);
+  const { repo, ref, folder } = repoRef(from);
   const branch = ref ? `branch ${ref}` : 'default branch';
-  console.log(` template  ${repo} (${branch}, kit ${kit.replace(/^[\^~]/, '')})`);
+  console.log(
+    ` template  ${repo}${folder ? `:${folder}` : ''} (${branch}, kit ${kit.replace(/^[\^~]/, '')})`
+  );
   console.log(` kept      ${kept.join(', ')}`);
   console.log(` id        ${id}  ·  host ${id}.next.agentage.io  ·  contract ${id}.mcpc.json`);
   console.log(` next      cd ${dir} && agentage extension up`);
 };
 
-// Clones the template's default branch (or the #branch of --from) into ./extension-<id> as a new working copy, no history;
+// Clones the template's default branch (or the #branch of --from; only its :folder) into ./extension-<id>, no history;
 // then installs its dependencies, builds it and (unless --no-install) gives it to the daemon.
 export const runExtensionCreate = async (
   opts: ExtensionCreateOptions,
@@ -188,7 +165,10 @@ export const addCreate = (group: Command, create: (o: ExtensionCreateOptions) =>
       .description('Create ./extension-<id> from the extension template with the parts named')
       .argument('<id>', 'the extension id, also its host and contract name')
       .argument('[parts...]', `parts to keep (default: all eight): ${PARTS.join(', ')}`)
-      .option('--from <owner/repo[#branch]>', `the template repo (default: ${TEMPLATE})`)
+      .option(
+        '--from <owner/repo[#branch][:folder]>',
+        `the template repo and folder (default: ${TEMPLATE})`
+      )
       .option('--no-install', 'build the folder, but do not give it to the daemon')
       .option('--yes', 'run code from another --from repo or branch without asking')
   ).action(

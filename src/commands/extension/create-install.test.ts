@@ -136,12 +136,15 @@ describe('extension create --from another repo or a branch', () => {
   const NOTICE = (from: string) =>
     `template  ${from}: code from that repo will be built and run on this machine`;
 
-  test('the template itself asks nothing', async () => {
-    const quiet = await output(() => trustFrom('agentage/extension-template', {}, io(false).io));
-    expect(quiet).toMatchObject({ error: null, stderr: '' });
-  });
+  test.for(['agentage/platform:template', 'agentage/extension-template'])(
+    'the template itself asks nothing: %s',
+    async (from) => {
+      const quiet = await output(() => trustFrom(from, {}, io(false).io));
+      expect(quiet).toMatchObject({ error: null, stderr: '' });
+    }
+  );
 
-  test.for(['acme/ext', 'agentage/extension-template#feature/x'])(
+  test.for(['acme/ext', 'agentage/extension-template#feature/x', 'agentage/platform:packages'])(
     '%s with no terminal needs --yes, --no-install or not',
     async (from) => {
       const refused = await output(() => trustFrom(from, {}, io(false).io));

@@ -88,7 +88,9 @@ const scaffoldOnly = async (dir: string, install: boolean) => {
   return { installed: null, url: null };
 };
 
-const create = (id: string, parts: string[] = [], from?: string) =>
+// The old repo with the template at its root; create-kit.test.ts has the kit's template/ folder.
+const OLD = 'agentage/extension-template';
+const create = (id: string, parts: string[] = [], from = OLD) =>
   output(() => runExtensionCreate({ id, parts, from }, () => url, scaffoldOnly, YES));
 const read = (path: string) => readFileSync(join(root, 'extension-market', path), 'utf8');
 const manifest = () => JSON.parse(read('package.json')) as typeof MANIFEST;
@@ -96,7 +98,7 @@ const manifest = () => JSON.parse(read('package.json')) as typeof MANIFEST;
 describe('extension create', () => {
   test('--json answers with the id, folder, template and kept parts; a bad id has the code invalid_argument', async () => {
     const result = await runExtensionCreate(
-      { id: 'market', parts: ['api'], json: true, install: false },
+      { id: 'market', parts: ['api'], from: OLD, json: true, install: false },
       () => url,
       scaffoldOnly
     );
@@ -292,14 +294,22 @@ describe('extension create', () => {
     expect(existsSync(join(root, `extension-${id}`))).toBe(false);
   });
 
-  test.for(['../../x', 'a/b#--upload-pack=x', 'a/b#x/../y', 'a/b#'])(
-    'refuses a --from %s that is not owner/repo[#branch]',
-    async (from) => {
-      expect((await create('market', [], from)).error).toBe(
-        `--from ${from}: owner/repo or owner/repo#branch`
-      );
-    }
-  );
+  test.for([
+    '../../x',
+    'a/b#--upload-pack=x',
+    'a/b#x/../y',
+    'a/b#',
+    'a/b:../x',
+    'a/b:/x',
+    'a/b:-x',
+    'a/b:x:y',
+    'a/b:x/',
+    'a/b:x/..',
+  ])('refuses a --from %s that is not owner/repo[#branch][:folder]', async (from) => {
+    expect((await create('market', [], from)).error).toBe(
+      `--from ${from}: owner/repo, owner/repo#branch, either with :folder`
+    );
+  });
 
   test('--from owner/repo#branch clones that branch of the repo', async () => {
     const repo = url.replace('file://', '');

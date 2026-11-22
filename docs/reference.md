@@ -437,6 +437,25 @@ removes, settings in `installation.json` and `settings.json`) 0.51 does not see.
 first with `agentage daemon stop`, then install 0.51; 0.51 has no daemon and would leave this one
 running on its port.
 
+## extension create
+
+```bash
+agentage extension create <id> [part...] [--from <owner/repo[#branch][:folder]>] [--no-install] [--yes]
+```
+
+Makes `./extension-<id>` from a template, with no git history (the author guide, `docs/extensions.md`
+"Run it locally", has the parts and the steps after the clone). `--from` names the template:
+
+| `--from`                                        | Takes                                                                                      |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| not given                                       | `agentage/platform:template`, the folder `template/` of the kit repo                       |
+| `owner/repo`                                    | the root of that repo's default branch (`agentage/extension-template` is the old template) |
+| `owner/repo#branch`                             | the root of that branch                                                                    |
+| `owner/repo:folder`, `owner/repo#branch:folder` | only that folder (dot files included); a missing folder or a link is refused               |
+
+The clone is shallow; only the folder is kept. A source other than the kit's `template` folder or
+`agentage/extension-template` asks `run it? (y/N)` first (`--yes` does not ask).
+
 ## extension doctor
 
 ```bash
