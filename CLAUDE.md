@@ -39,7 +39,8 @@ Each row names the doc first, then the code that proves it. Read the doc before 
 - Profiles, states, the plan, short names, the profile file: `docs/profiles.md`;
   `src/core/installer/`, `src/core/loader/states.ts`.
 - Writing an extension, `ctx`, peers, author commands, `extension create`, run it locally:
-  `docs/extensions.md`; `src/extension.ts`, `src/core/loader/`, `src/commands/extension/create.ts`,
+  `docs/extensions.md`; `src/extension.ts`, `src/core/loader/`, `src/commands/extension/create.ts`
+  (the template source: `create-source.ts`),
   `up.ts`.
 - e2e scenarios: `e2e/core/README.md`. Test fixtures: `fixtures/README.md`.
 - CI jobs and coverage floors (no doc): `.github/workflows/ci.yml`, `vitest.config.ts`.
