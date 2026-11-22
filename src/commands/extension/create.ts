@@ -66,6 +66,8 @@ const drop = (dir: string, kept: string[]): void => {
       if (parent) delete parent[path.at(-1) ?? ''];
     }
   }
+  // The new repo is the folder itself: a monorepo path of the template would point into nothing.
+  delete pkg['repository']?.['directory'];
   save(join(dir, 'package.json'), pkg);
 };
 

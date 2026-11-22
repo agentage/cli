@@ -1,7 +1,8 @@
 import { execFile } from 'node:child_process';
-import { lstatSync, renameSync, rmSync } from 'node:fs';
+import { lstatSync, mkdtempSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { holdSignals } from '../../core/loader/dispose.js';
 
 const run = promisify(execFile);
 // The kit repo holds the template in its folder template/; the old repo held it at its root.
@@ -44,19 +45,37 @@ const takeFolder = (into: string, folder: string, from: string, dir: string): vo
   renameSync(join(into, folder), dir);
 };
 
-// With :folder the clone goes beside the new folder (a rename across disks fails); only that folder stays.
+// No link at all (the kit's template has none); walked by hand, as a recursive readdir follows links in a loop.
+const refuseLinks = (dir: string, from: string): void => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isSymbolicLink()) throw new Error(`template ${from}: a symbolic link ${path}`);
+    if (entry.isDirectory()) refuseLinks(path, from);
+  }
+};
+
+// Removes only what this run made; also the Ctrl-C path, so it never throws.
+export const removeOwn = (path: string): void => rmSync(path, { recursive: true, force: true });
+
+// A fresh name beside the new folder (a rename across disks fails), so no folder of yours is reused.
+const cloneFolder = (dir: string, folder?: string): string =>
+  folder ? mkdtempSync(`.${dir}.clone-`) : dir;
+
+// With :folder only that folder stays; a signal during the clone removes this run's folders, then exits as it would.
 export const clone = async (url: string, from: string, dir: string): Promise<void> => {
   const { folder } = repoRef(from);
-  const into = folder ? `.${dir}.clone` : dir;
-  rmSync(into, { recursive: true, force: true });
+  const into = cloneFolder(dir, folder);
+  const release = holdSignals(async () => [into, dir].forEach(removeOwn));
   try {
     await gitClone(url, from, into);
     if (folder) takeFolder(into, folder, from, dir);
+    removeOwn(join(dir, '.git'));
+    refuseLinks(dir, from);
   } catch (err) {
-    rmSync(dir, { recursive: true, force: true });
+    removeOwn(dir);
     throw err;
   } finally {
-    if (folder) rmSync(into, { recursive: true, force: true });
+    release();
+    if (folder) removeOwn(into);
   }
-  rmSync(join(dir, '.git'), { recursive: true, force: true });
 };
