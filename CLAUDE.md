@@ -16,13 +16,13 @@ not repeat them here.
 | e2e, live tier      | `npm run test:e2e -- --grep @smoke` (`AGENTAGE_SITE_FQDN` = target; CI: dispatch `e2e.yml`)   |
 | Pack smoke          | `scripts/pack-smoke.sh`, `scripts/update-smoke.sh` (reads npm) on a packed tarball (`ci.yml`) |
 | Mutation check      | `node scripts/mutate.mjs [ids]`; it edits `src`, so never run it beside verify                |
-| Release             | dispatch `prepare-release.yml`; `release.yml` publishes on the merge (see README "Release")   |
+| Release             | dispatch `prepare-release.yml`; `release.yml` publishes on the merge (see `docs/release.md`)  |
 
 ## Where facts live
 
 Each row names the doc first, then the code that proves it. Read the doc before `src/`.
 
-- Install, sign-in, command list, config dir: `README.md`; `src/program.ts`, `src/lib/fs/config.ts`.
+- Install, sign-in, command list: `README.md`; config dir: `docs/reference.md` "Files"; `src/program.ts`, `src/lib/fs/config.ts`.
 - `setup`, `status`, `update`: `docs/reference.md` sections of those names; `src/commands/auth/`,
   `status/`, `update/`, `extension/setup.ts`.
 - The lifecycle (C1: install, list, update, disable, enable, configure, remove) and the move from
