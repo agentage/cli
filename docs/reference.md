@@ -558,7 +558,20 @@ extension is changed when a file in its folder differs from its last `<id>@*` ta
 number, not the push range, so a run the concurrency group dropped is caught up), when it has no
 such tag yet, or when that tag has no `agentage-extension.json` record (a release that failed after
 its tag). Only the folder is read: each extension keeps its own `package-lock.json` there, and a
-change to a shared root file (a root lock, a workflow, a config) does not release anything. When
+change to a shared root file (a root lock, a workflow, a config) does not release anything.
+
+Some files in the folder never release an extension on their own: `docs/**`, `*.md`,
+`.github/**`, `.repo-doctor.yml`, `.gitignore`, `.prettierrc*`, `.editorconfig` and `LICENSE`. A
+`.release-ignore` file in the extension folder adds patterns (gitignore style, one per line, `#`
+starts a comment, a pattern with no `/` matches at any depth, the last matching line wins) and a
+`!pattern` line re-includes one. What goes into the image always counts, whatever a pattern says:
+`package.json`, `package-lock.json`, `src/**` and `Dockerfile*` at the folder root (so a
+Dependabot bump of the lock releases). A rename counts as two paths. An extension is changed only
+when at least one changed file counts; the `changed:` line names the first 5 of them (`in a.js,
+b.js`), and the `unchanged:` line names the ignored files when only those changed (`only ignored
+files changed: README.md`). `--dry-run` prints the same lines.
+
+When
 the last tag is on this commit (a re-run), that version is resumed. An extension is refused (a
 `FAIL history:` line) when the commit of its last tag is not an ancestor of this commit: a re-run
 of an older run never gives older code a higher version. It is refused (`FAIL stuck:`, naming the
@@ -573,11 +586,25 @@ that UTC day. The version and `repository` (the releasing repo, which the
 The build allows only those files to differ from `HEAD`. Then the tag `<id>@<version>` is created
 on the commit (a tag on another commit is refused), before the build, so a failed build uses up its
 `N`. The guard and images are as above; npm is published before the records are attached, so a
-version with a record is on npm (a private package skips npm). When npm fails, no record goes up:
+version with a record is on npm, unless npm was skipped (a private package, or a private repo, see
+below). When npm fails, no record goes up:
 a re-run of that commit is refused by the guard (images pushed, no record), and the next commit
 takes a new `N`. The release is created with `--target <commit>`. Every changed extension is tried:
-one that fails or is refused does not stop the others. The run ends with one table (`id`,
-`version`, `result`: `released`, `failed`, `refused` or `unchanged`) and exits 1 when any failed
+one that fails or is refused does not stop the others.
+
+A private repo never puts its source on public npm by accident. Before the tag, a package that is
+not `"private": true` reads `gh api repos/<owner>/<repo> --jq .private`: only `false` publishes.
+When the repo is private, npm is skipped unless `package.json` opts in with both
+`publishConfig.access` set to `"public"` and the top-level `"agentagePublishFromPrivateRepo": true`
+(top level: the kit refuses unknown keys under `agentage`); an answer that is not `true` or
+`false`, or a call that fails, also skips npm (default deny). A skip prints one `AMBER npm: ...`
+line, the images and records still go out, the row reads `released, AMBER: npm skipped`,
+`published` is `false` and it alone does not make the exit code non-zero. A re-run of that commit
+resumes the version and reads the visibility again. The release without `--changed` (a `v*` tag)
+has no such check.
+
+The run ends with one table (`id`,
+`version`, `result`: `released`, `released, AMBER: npm skipped`, `failed`, `refused` or `unchanged`) and exits 1 when any failed
 or was refused; the error names each one as `<id>: FAIL ...` and keeps the code of the first. `--dry-run` prints the plan and writes, tags, pushes and publishes nothing (a refused extension
 still exits 1); without
 `--changed` it is refused with `invalid_argument` (exit 1).

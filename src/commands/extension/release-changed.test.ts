@@ -54,7 +54,7 @@ describe('extension release --changed: what it releases', () => {
     expect(run.lines).toEqual([
       `PASS master: ${run.sha} is on master`,
       'PASS unchanged: fixture (extensions/fixture) is the same as fixture@2026.1121.1',
-      'PASS changed: probe (extensions/probe) differs from probe@2026.1121.1: release probe@2026.1122.1',
+      'PASS changed: probe (extensions/probe) differs from probe@2026.1121.1 in index.js: release probe@2026.1122.1',
       'PASS dry run: would release probe@2026.1122.1; nothing was written, tagged, pushed or published',
     ]);
     expect(run.calls).toEqual([
@@ -73,6 +73,7 @@ describe('extension release --changed: what it releases', () => {
     expect(run.error).toBeNull();
     const tag = 'probe@2026.1122.1';
     expect(run.calls.filter((c) => !c.includes('2026.1121.1'))).toEqual([
+      `gh api repos/${REPO} --jq .private`,
       'npm --version',
       `gh api repos/${REPO}/git/refs -f ref=refs/tags/${tag} -f sha=${run.sha}`,
       `gh release download ${tag} -R ${REPO} -p agentage-extension.json -O -`,
@@ -119,7 +120,7 @@ describe('extension release --changed: what it releases', () => {
     repo.commit('readme only');
     const run = await release({ dir: ciClone(repo), w: { records }, opts: { dryRun: true } });
     expect(run.lines).toContain(
-      'PASS changed: probe (extensions/probe) differs from probe@2026.1121.1: release probe@2026.1122.1'
+      'PASS changed: probe (extensions/probe) differs from probe@2026.1121.1 in index.js: release probe@2026.1122.1'
     );
   });
 
@@ -140,7 +141,7 @@ describe('extension release --changed: what it releases', () => {
     const run = await release({ dir });
     expect(run.error).toBeNull();
     expect(run.lines[1]).toBe(
-      'PASS changed: root (.) differs from root@2026.1121.1: release root@2026.1122.1'
+      'PASS changed: root (.) differs from root@2026.1121.1 in index.js: release root@2026.1122.1'
     );
     expect(run.lines).toContain('PASS npm: private package, not published');
     expect(run.calls.some((c) => c.startsWith('npm'))).toBe(false);

@@ -68,7 +68,7 @@ describe('extension release --changed: tags with no record', () => {
     const run = await release({ dir: ciClone(failedTags(2)), opts: { dryRun: true } });
     expect(run.error).toBeNull();
     expect(run.lines).toContain(
-      'PASS changed: probe (extensions/probe) differs from probe@2026.1122.2: release probe@2026.1122.3'
+      'PASS changed: probe (extensions/probe) differs from probe@2026.1122.2 in index.js: release probe@2026.1122.3'
     );
   });
 

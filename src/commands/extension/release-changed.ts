@@ -4,6 +4,7 @@ import { CliError } from '../../lib/json-output.js';
 import type { ExtensionReleaseOptions, ReleaseDeps } from './release.js';
 import { writeCiCopy } from './release-folders.js';
 import { imagesOf, releaseGuard, type Exec } from './release-guard.js';
+import { amber, npmRefusal } from './release-npm.js';
 import { fetchTags, git, planRelease, type Plan, type Planned } from './release-plan.js';
 import { rowsOf, summary, type Row } from './release-summary.js';
 import {
@@ -81,8 +82,11 @@ const prepare = async (s: Session, p: Planned): Promise<ExtensionPackage> => {
   return pkg;
 };
 
-const npmStep = async (s: Session, run: Exec, dir: string, pkg: ExtensionPackage) => {
+type Npm = { dir: string; pkg: ExtensionPackage; refusal?: string };
+
+const npmStep = async (s: Session, run: Exec, { dir, pkg, refusal }: Npm) => {
   if (pkg['private'] === true) return step('npm: private package, not published');
+  if (refusal) return amber(`npm: ${refusal}`);
   const push = scoped(s.deps.exec(dir, PUBLISH_SECONDS), s.secrets);
   await publish(run, push, pkg, s.secrets['npm']?.['NPM_TOKEN']);
 };
@@ -101,22 +105,24 @@ const imagesStep = async (s: Session, p: Planned, run: Exec, pkg: ExtensionPacka
 };
 
 // The record is the "released" marker: it goes up only after npm has the version.
-const releaseOne = async (s: Session, p: Planned) => {
+const releaseOne = async (s: Session, p: Planned, row: Row) => {
   const pkg = await prepare(s, p);
   const dir = join(s.root, p.rel);
   const run = scoped(s.deps.exec(dir, s.timeout), s.secrets);
   const isPrivate = pkg['private'] === true;
-  if (!isPrivate) await npmVersion(run);
+  const refusal = isPrivate ? undefined : await npmRefusal(run, s.repo, pkg);
+  if (refusal) row.result = 'released, AMBER: npm skipped';
+  if (!isPrivate && !refusal) await npmVersion(run);
   await createTag(s, p.tag);
   const records = await imagesStep(s, p, run, pkg);
-  await npmStep(s, run, dir, pkg);
+  await npmStep(s, run, { dir, pkg, refusal });
   if (records.length > 0) await attach(run, p.tag, s.repo, records, s.sha);
   return {
     id: p.id,
     version: p.version,
     tag: p.tag,
     built: records.length > 0,
-    published: !isPrivate,
+    published: !isPrivate && !refusal,
   };
 };
 
@@ -126,7 +132,7 @@ const releaseAll = async (s: Session, plan: Plan) => {
   const rows = rowsOf(plan.refused, 'refused');
   for (const p of plan.changed) {
     const row: Row = { id: p.id, version: p.version, result: 'released' };
-    await releaseOne(s, p).then(
+    await releaseOne(s, p, row).then(
       (r) => void released.push(r),
       (err: unknown) => Object.assign(row, { result: 'failed', err })
     );

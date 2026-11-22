@@ -1,5 +1,6 @@
 import { dateVersion, lastTag, newestTags, tagOf } from './release-date.js';
 import { extensionFolders, type Folder } from './release-folders.js';
+import { firstFive, sortChanged } from './release-ignore.js';
 import { RECORD, type Exec } from './release-guard.js';
 import { fail, step } from './release-steps.js';
 
@@ -50,15 +51,24 @@ const unrecorded = async (c: PlanInput, f: Folder, tags: string[]): Promise<stri
   return missing;
 };
 
+type Why = { why?: string; ignored: string[] };
+
 // From the last tag, not the push range: a run the concurrency group dropped is caught up here.
-const whyOf = async (c: PlanInput, f: Folder, tags: string[], last?: string) => {
-  if (!last) return `has no ${f.id}@* tag yet`;
+const whyOf = async (c: PlanInput, f: Folder, tags: string[], last?: string): Promise<Why> => {
+  if (!last) return { why: `has no ${f.id}@* tag yet`, ignored: [] };
   const missing = await unrecorded(c, f, tags);
-  const diff = await git(c.run, ['diff', '--name-only', last, c.sha, '--', f.rel], 'changed');
-  if (diff.trim()) return `differs from ${last}`;
+  // No renames: a move from src/ to docs/ must still list the src/ path.
+  const args = ['diff', '--name-only', '--no-renames', last, c.sha, '--', f.rel];
+  const { counted, ignored } = await sortChanged(c.root, f.rel, await git(c.run, args, 'changed'));
+  if (counted.length > 0) return { why: `differs from ${last} in ${firstFive(counted)}`, ignored };
   // A release that failed after its tag: the next commit releases it with a new N.
-  if (missing[0] === last) return `equals ${last}, which has no record`;
-  return undefined;
+  if (missing[0] === last) return { why: `equals ${last}, which has no record`, ignored };
+  return { ignored };
+};
+
+const sameAs = (f: Folder, last: string | undefined, ignored: string[]): void => {
+  const only = ignored.length > 0 ? `; only ignored files changed: ${firstFive(ignored)}` : '';
+  step(`unchanged: ${f.id} (${f.rel}) is the same as ${String(last)}${only}`);
 };
 
 // A re-run of an old commit must not give older code a higher version than its last tag.
@@ -82,9 +92,9 @@ const planOne = async (c: PlanInput, f: Folder): Promise<Planned | undefined> =>
   if (last && at === c.sha)
     return planned(f, last.slice(f.id.length + 1), `${last} is on this commit: resume it`);
   if (last) await inHistory(c, last, at);
-  const why = await whyOf(c, f, tags, last);
+  const { why, ignored } = await whyOf(c, f, tags, last);
   if (why) return planned(f, dateVersion(f.id, tags, c.now), why);
-  step(`unchanged: ${f.id} (${f.rel}) is the same as ${String(last)}`);
+  sameAs(f, last, ignored);
   return undefined;
 };
 

@@ -100,10 +100,15 @@ export interface World {
   refFails?: string;
   downloadFails?: string;
   npmFails?: string;
+  /** What `gh api repos/<repo> --jq .private` answers (default: false); a Ran to fail it. */
+  visibility?: string | Ran;
 }
 
 const ran = (ok: boolean, text = ''): Ran =>
   ok ? { ok, out: text, err: '' } : { ok, out: '', err: text };
+
+const visibilityOf = ({ visibility = 'false' }: World): Ran =>
+  typeof visibility === 'string' ? ran(true, `${visibility}\n`) : visibility;
 
 const gh = (w: World, args: string[]): Ran => {
   const call = args.join(' ');
@@ -113,6 +118,7 @@ const gh = (w: World, args: string[]): Ran => {
     return commit ? ran(true, JSON.stringify({ commit })) : ran(false, 'release not found');
   }
   if (call.startsWith('release view')) return ran(false, 'release not found');
+  if (call === `api repos/${REPO} --jq .private`) return visibilityOf(w);
   if (args[0] === 'api' && args.includes('--jq')) return ran(true, `${w.refAt ?? ''}\n`);
   if (args[0] === 'api' && w.refFails) return ran(false, w.refFails);
   return ran(true);
