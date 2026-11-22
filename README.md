@@ -50,7 +50,7 @@ personal access token: `AGENTAGE_TOKEN=aga_... agentage status`.
 You need git and network. Run these in an empty folder:
 
 ```bash
-agentage extension create my-ext --yes --no-install
+agentage extension create my-ext
 cd extension-my-ext
 npm ci
 npm run verify
@@ -60,16 +60,22 @@ git init -b master && git add -A && git commit -m "feat: my-ext extension"
 
 `create` copies the template from `agentage/kit:template` and writes your id into every file. In
 the folder, use `npx agentage`: it runs the cli version that the folder pins. The guide of the new
-folder is its own `README.md`.
+folder is its own `README.md`. `check` may end with an `update available` line when the cli that
+runs it is older than the newest on npm.
 
-Two commands change the local daemon of your machine. `npx agentage extension up` runs the folder
-on the daemon and reloads each change. `agentage extension install ./extension-my-ext` installs
-it there. `create` without `--no-install` also installs it.
+`create` builds the folder and gives it to the local daemon, so it runs at once. Add `--no-install`
+to only create the files: CI and agents always do. Two more commands change the local daemon:
+`npx agentage extension up` runs the folder there and reloads each change, and
+`agentage extension install ./extension-my-ext` installs it there.
 
 ## How an extension is released
 
-Push the repo to GitHub. Each merge to master is a release: the `release.yml` of the extension
-runs `agentage extension release --changed`. A changed extension gets a date version
+Push the repo to GitHub. A release runs in CI in one of two modes:
+
+- A repo with one or several extensions: each merge to master runs `agentage extension release --changed`. This is what a new repo from `create` does.
+- A repo with one extension can instead release by a pushed tag `v<version>`: `agentage extension release`.
+
+With `--changed`, a changed extension gets a date version
 `YYYY.MDD.N` (for example `2026.1122.1`), the tag `<id>@<version>`, its images and its records on
 the GitHub release. A change only in a root `*.md` file, `docs/` or `.github/` releases nothing.
 A `.release-ignore` file adds more patterns. The new package is private: it goes to npm only when

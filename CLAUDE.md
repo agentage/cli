@@ -125,11 +125,11 @@ Drives the built `dist/cli.js` as a subprocess. Tiers are tags in the test title
   auth and account routes; `e2e/registry/` npm serving `fixtures/`). `@p0` is the hermetic
   `setup --no-browser` sign-in round trip, also `@offline`.
 - `@smoke`: read-only against a live target; nothing signs in or writes.
-- The agentage/e2e cli tier (`_e2e-cli.yml`, `--project=cli --grep @smoke`) runs on the packed
+- The cli tier of the shared end-to-end gate (in a private repo) (`_e2e-cli.yml`, `--project=cli --grep @smoke`) runs on the packed
   cli: on every PR (`e2e.yml`, not required) and before each publish (`release.yml`, blocking).
   `scripts/candidate-registry.mjs` serves the tarball as npm `latest` on loopback. The tier reads
   prod, so a prod outage blocks a publish. A cli change that the tier pins (a help line, a renamed
-  command) needs its agentage/e2e test first, version-gated on the release that changes it.
+  command) needs its gate test first, version-gated on the release that changes it.
 
 ## Conventions
 

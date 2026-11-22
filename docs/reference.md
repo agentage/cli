@@ -520,8 +520,8 @@ every image by digest; `extension release` runs this. `--registry <host/owner>` 
 ## extension release
 
 ```bash
-agentage extension release                # in release.yml, on a v* tag push
-agentage extension release --changed      # in release.yml, on a push to master
+agentage extension release                # one extension: in release.yml, on a v* tag push
+agentage extension release --changed      # one or several: in release.yml, on a merge to master
 agentage extension release --changed --dry-run  # what it would release; changes nothing
 ```
 
