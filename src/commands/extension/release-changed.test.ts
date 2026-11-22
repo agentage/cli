@@ -112,6 +112,32 @@ describe('extension release --changed: what it releases', () => {
     });
   });
 
+  test('nothing changed: exit 0, nothing released, no tag, build or npm call', async () => {
+    const repo = makeRepo();
+    writeExtension(repo, 'extensions/probe', 'probe');
+    writeExtension(repo, 'extensions/fixture', 'fixture');
+    const first = repo.commit('two extensions');
+    repo.tag('probe@2026.1121.1');
+    repo.tag('fixture@2026.1121.1');
+    const records = { 'probe@2026.1121.1': first, 'fixture@2026.1121.1': first };
+    repo.write('README.md', 'only the readme\n');
+    repo.commit('readme');
+    const run = await release({ dir: ciClone(repo), w: { records } });
+    expect(run.error).toBeNull();
+    expect(run.result).toEqual({ released: [], unchanged: ['fixture', 'probe'] });
+    expect(run.calls.every((c) => c.startsWith('gh release download'))).toBe(true);
+  });
+
+  test('a dropped run is caught up: a later commit that changes only the README releases probe', async () => {
+    const { repo, records } = twoExtensions();
+    repo.write('README.md', 'a later commit, outside both folders\n');
+    repo.commit('readme only');
+    const run = await release({ dir: ciClone(repo), w: { records }, opts: { dryRun: true } });
+    expect(run.lines).toContain(
+      'PASS changed: probe (extensions/probe) differs from probe@2026.1121.1: release probe@2026.1122.1'
+    );
+  });
+
   test('an extension with no <id>@* tag yet is changed', async () => {
     const dir = ciClone(oneExtension('extensions/probe', 'probe'));
     const run = await release({ dir, opts: { dryRun: true } });

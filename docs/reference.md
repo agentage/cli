@@ -548,7 +548,7 @@ The build allows only those files to differ from `HEAD`. Then the tag `<id>@<ver
 on the commit (a tag on another commit is refused), before the build, so a failed build uses up its
 `N`. The guard, images, records and npm are as above; the release is created with `--target
 <commit>`. `--dry-run` prints the plan and writes, tags, pushes and publishes nothing; without
-`--changed` it is a usage error.
+`--changed` it is refused with `invalid_argument` (exit 1).
 
 ## extension up, down and token
 
