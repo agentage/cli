@@ -502,6 +502,8 @@ every image by digest; `extension release` runs this. `--registry <host/owner>` 
 
 ```bash
 agentage extension release                # in release.yml, on a v* tag push
+agentage extension release --changed      # in release.yml, on a push to master
+agentage extension release --changed --dry-run  # what it would release; changes nothing
 ```
 
 What an extension's `release.yml` runs after `npm ci` and `npm run verify`, one `PASS <step>:` line
@@ -528,6 +530,25 @@ When the direct publish is not authorized, or `NPM_TOKEN` is set and the name is
 stage publish` instead. `GH_TOKEN` (or `GITHUB_TOKEN`) goes only to `gh` and `NPM_TOKEN` only to
 npm; both leave the environment first, so the image build and npm lifecycle scripts never see
 them. A package with `"private": true` skips npm entirely (no `npm --version`, `view` or `publish`) and prints `PASS npm: private package, not published`. Needs git, `docker` and the `gh` CLI, and npm only for a package that is not private. Needs `docker login` to the registry first.
+
+`--changed` is the release of a repo where a merge to master is the release. Run it from the repo
+root: the extensions are each `extensions/<name>` with an `agentage` package, or the root package
+when there is none. It reads `GITHUB_REPOSITORY` and `GITHUB_SHA` (default: `HEAD`), refuses a
+commit not on `origin/master`, then fetches the tags (a default shallow checkout has none). An
+extension is changed when a file in its folder differs from its last `<id>@*` tag (the highest by
+number, not the push range, so a run the concurrency group dropped is caught up), when it has no
+such tag yet, or when that tag has no `agentage-extension.json` record (a release that failed after
+its tag). When the last tag is on this commit (a re-run), that version is resumed. A changed
+extension gets the date version `YYYY.MDD.N`: the UTC year, then month times 100 plus day (5
+January is `105`, 22 November `1122`), and `N` one more than the highest `N` tagged for that id
+that UTC day. The version and `repository` (the releasing repo, which the
+`org.opencontainers.image.source` label and npm provenance read) go into `package.json`, its
+`package-lock.json` and the contracts `check --write` writes, in the CI copy only: never committed.
+The build allows only those files to differ from `HEAD`. Then the tag `<id>@<version>` is created
+on the commit (a tag on another commit is refused), before the build, so a failed build uses up its
+`N`. The guard, images, records and npm are as above; the release is created with `--target
+<commit>`. `--dry-run` prints the plan and writes, tags, pushes and publishes nothing; without
+`--changed` it is a usage error.
 
 ## extension up, down and token
 
@@ -915,20 +936,20 @@ from another site, `AGENTAGE_SITE_FQDN=<site> agentage daemon restart`, then ins
 A usage error (an unknown flag, a missing argument) exits 2 with no object; with `--json` it
 exits 1 with the error object, code `usage`, and the usage line on stderr.
 
-| Command                                               | `data`                                                                                              |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `setup`                                               | `{ extensions: [...] }`, the rows as `extension doctor` has them                                    |
-| `extension install`, `disable`, `enable`, `configure` | the daemon's row `{ id, version, source, state, enabled, error? }`                                  |
-| `extension list`                                      | the daemon's rows; a folder row has `source: "folder"` and `path`                                   |
-| `extension list --available`                          | `[{ id, version }]` from the market; `meta.skipped` is `[{ id, reason }]`; `meta.down` when silent  |
-| `extension update`                                    | `[{ id, from, to, updated }]`                                                                       |
-| `extension remove`                                    | `{ id, purged }`                                                                                    |
-| `update`                                              | `{ installed, status, latest, updated }`                                                            |
-| `extension create`                                    | `{ id, dir, from, kept, installed, url }`                                                           |
-| `extension build`                                     | `{ dir, built, contracts, conforms }`; the kit's result for images                                  |
-| `extension release`                                   | `{ id, version, tag, built, published }`                                                            |
-| `extension up`, `down`                                | `up`: `{ id, version, url, port, stoppedBy }` (`--docker`: `{ lines }`); `down`: `{ local, lines }` |
-| `extension token`                                     | `{ token }`; nothing else is printed                                                                |
+| Command                                               | `data`                                                                                                                              |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `setup`                                               | `{ extensions: [...] }`, the rows as `extension doctor` has them                                                                    |
+| `extension install`, `disable`, `enable`, `configure` | the daemon's row `{ id, version, source, state, enabled, error? }`                                                                  |
+| `extension list`                                      | the daemon's rows; a folder row has `source: "folder"` and `path`                                                                   |
+| `extension list --available`                          | `[{ id, version }]` from the market; `meta.skipped` is `[{ id, reason }]`; `meta.down` when silent                                  |
+| `extension update`                                    | `[{ id, from, to, updated }]`                                                                                                       |
+| `extension remove`                                    | `{ id, purged }`                                                                                                                    |
+| `update`                                              | `{ installed, status, latest, updated }`                                                                                            |
+| `extension create`                                    | `{ id, dir, from, kept, installed, url }`                                                                                           |
+| `extension build`                                     | `{ dir, built, contracts, conforms }`; the kit's result for images                                                                  |
+| `extension release`                                   | `{ id, version, tag, built, published }`; `--changed`: `{ released, unchanged }`, with `--dry-run` `{ dryRun, changed, unchanged }` |
+| `extension up`, `down`                                | `up`: `{ id, version, url, port, stoppedBy }` (`--docker`: `{ lines }`); `down`: `{ local, lines }`                                 |
+| `extension token`                                     | `{ token }`; nothing else is printed                                                                                                |
 
 `setup` with `--json` does not open a browser: when it must sign in it needs `--no-browser`, else
 it fails with `confirmation_required`. `extension remove --purge` with `--json` needs `--yes`, else
