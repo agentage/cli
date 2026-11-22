@@ -1,134 +1,39 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { type Command } from 'commander';
 import type { ExtensionPackage } from '@agentage/extension/tool';
 import { addJson, CliError } from '../../lib/json-output.js';
-import { runImageBuild } from './build.js';
 import { loadKitTool, type LoadKitTool } from './kit-tool.js';
+import { runChangedRelease } from './release-changed.js';
+import { execIn, imagesOf, releaseGuard, type Exec } from './release-guard.js';
 import {
-  CONTAINER_RECORD,
-  execIn,
-  imagesOf,
-  PART_SUFFIX,
-  RECORD,
-  releaseGuard,
-} from './release-guard.js';
-import { type Exec } from './release-guard.js';
+  attach,
+  buildImages,
+  fail,
+  idChecks,
+  npmVersion,
+  onMaster,
+  publish,
+  PUBLISH_SECONDS,
+  scoped,
+  step,
+  takeSecrets,
+} from './release-steps.js';
 
-export type ExtensionReleaseOptions = { dir?: string; timeout?: number; json?: boolean };
+export type ExtensionReleaseOptions = {
+  dir?: string;
+  timeout?: number;
+  json?: boolean;
+  changed?: boolean;
+  dryRun?: boolean;
+};
 
 export interface ReleaseDeps {
   exec: (cwd: string, seconds?: number) => Exec;
   tool: LoadKitTool;
   env: NodeJS.ProcessEnv;
+  now?: () => Date;
 }
 
 const defaultDeps: ReleaseDeps = { exec: execIn, tool: loadKitTool, env: process.env };
-
-const step = (line: string): void => console.log(`PASS ${line}`);
-
-const fail = (line: string): never => {
-  throw new CliError('release_refused', `FAIL ${line}`);
-};
-
-// Tokens leave the environment, so docker build and npm lifecycle scripts never see them.
-const takeSecrets = (env: NodeJS.ProcessEnv): Record<string, NodeJS.ProcessEnv> => {
-  const { GH_TOKEN, GITHUB_TOKEN, NPM_TOKEN } = env;
-  for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'NPM_TOKEN']) delete env[name];
-  const gh = GH_TOKEN ?? GITHUB_TOKEN;
-  return { gh: gh ? { GH_TOKEN: gh } : {}, npm: NPM_TOKEN ? { NPM_TOKEN } : {} };
-};
-
-const scoped =
-  (exec: Exec, secrets: Record<string, NodeJS.ProcessEnv>): Exec =>
-  (cmd, args) =>
-    exec(cmd, args, secrets[cmd]);
-
-// Every image is pushed first. The records go up one call each, RECORD last: it is the "done" marker.
-const attach = async (run: Exec, tag: string, repo: string, names: string[]): Promise<void> => {
-  const notes = ['--title', tag, '--notes', `Images by digest: ${names.join(', ')}`];
-  let exists = (await run('gh', ['release', 'view', tag, '-R', repo])).ok;
-  for (const name of names) {
-    const file = join('dist', name);
-    const args = exists ? ['upload', tag, file] : ['create', tag, file, ...notes];
-    const ran = await run('gh', ['release', ...args, '-R', repo]);
-    if (!ran.ok) fail(`record: ${ran.err}`);
-    exists = true;
-  }
-  step(`record: ${names.join(', ')} attached to release ${tag}`);
-};
-
-// The part images (v13 rows, the estate) and the one image (app hosts), all pushed by digest.
-const buildImages = async (dir: string, oneImage: boolean, tool: LoadKitTool) => {
-  await runImageBuild({ push: true, dir }, tool);
-  if (!oneImage) return [RECORD];
-  // The second compile may clean dist/: the part record is kept and written back.
-  const record = await readFile(join(dir, 'dist', RECORD));
-  // The first build checked this HEAD; its own dist/ output must not read as a change.
-  await runImageBuild({ push: true, container: true, dir }, tool, async () => undefined);
-  await writeFile(join(dir, 'dist', RECORD), record);
-  return [CONTAINER_RECORD, RECORD];
-};
-
-// Single quotes on purpose: npm expands ${NPM_TOKEN} itself, the token never lands on disk.
-const tokenConfig = async (token?: string): Promise<string[]> => {
-  if (!token) return [];
-  const file = join(await mkdtemp(join(tmpdir(), 'agentage-npm-')), '.npmrc');
-  await writeFile(file, '//registry.npmjs.org/:_authToken=${NPM_TOKEN}\n');
-  return ['--userconfig', file];
-};
-
-// Only E404 means "not on npm"; a registry that cannot answer stops the release, never publishes.
-const onNpm = async (run: Exec, args: string[], what: string): Promise<boolean> => {
-  const viewed = await run('npm', ['view', ...args]);
-  if (viewed.ok) return viewed.out.trim() !== '';
-  if (!/E404/.test(viewed.err)) fail(`npm: cannot tell whether ${what} is on npm: ${viewed.err}`);
-  return false;
-};
-
-// The upload with provenance signs first: its own bound, longer than the checks.
-const PUBLISH_SECONDS = 300;
-
-// A killed publish may have landed: stop, never stage it again; a re-run reads "already on npm".
-const direct = async (push: Exec, spec: string, flags: string[]): Promise<boolean> => {
-  const published = await push('npm', ['publish', ...flags]);
-  if (/timed out after/.test(published.err))
-    fail(
-      `npm: publish of ${spec} ${published.err}; re-run the release: it reads "already on npm" if the upload landed`
-    );
-  return published.ok;
-};
-
-// OIDC trusted publishing; a new name (NPM_TOKEN set) or an unauthorized direct publish is staged.
-const publish = async (
-  run: Exec,
-  push: Exec,
-  { name, version }: ExtensionPackage,
-  token?: string
-) => {
-  const cfg = await tokenConfig(token);
-  const spec = `${name}@${version}`;
-  if (await onNpm(run, [spec, 'version', ...cfg], spec))
-    return step(`npm: ${spec} is already on npm`);
-  const flags = ['--access', 'public', '--provenance', '--ignore-scripts', ...cfg];
-  const fresh = token !== undefined && !(await onNpm(run, [name, 'name', ...cfg], name));
-  if (!fresh && (await direct(push, spec, flags))) return step(`npm: ${spec} published`);
-  const staged = await push('npm', ['stage', 'publish', ...flags]);
-  if (!staged.ok) fail(`npm: ${staged.err}`);
-  const why = fresh
-    ? 'a new name has no trusted publisher'
-    : 'direct publish not authorized: no validated trusted publisher';
-  step(`npm: ${spec} staged for approval (${why})`);
-};
-
-const npmVersion = async (run: Exec): Promise<void> => {
-  const v = (await run('npm', ['--version'])).out.trim();
-  const [major = 0, minor = 0, patch = 0] = v.split('.').map(Number);
-  if (major * 1e6 + minor * 1e3 + patch < 11_005_001)
-    fail(`npm: npm ${v} cannot publish with OIDC: needs npm >= 11.5.1`);
-  step(`npm: npm ${v}`);
-};
 
 const preflight = async (
   run: Exec,
@@ -137,15 +42,8 @@ const preflight = async (
   sha: string,
   isPrivate: boolean
 ) => {
-  if (pkg.agentage.id === 'template')
-    fail('id: this repo is the starting point for extensions: create one, release that');
-  step(`id: ${pkg.agentage.id} is not the template`);
-  if (imagesOf(pkg).oneImage && PART_SUFFIX.test(pkg.agentage.id))
-    fail(`id: ${pkg.agentage.id} ends in a part name: it would name another extension's image`);
-  const fetched = await run('git', ['fetch', '-q', 'origin', 'master']);
-  if (!fetched.ok || !(await run('git', ['merge-base', '--is-ancestor', sha, 'origin/master'])).ok)
-    fail(`master: ${sha} is not on master${fetched.err ? `: ${fetched.err}` : ''}`);
-  step(`master: ${sha} is on master`);
+  idChecks(pkg);
+  await onMaster(run, sha);
   const v = `v${pkg.version}`;
   if (tag !== v)
     fail(`tag: ${tag} is not ${v}, the package.json version; tag the commit that sets it`);
@@ -185,6 +83,16 @@ export const runExtensionRelease = async (
   return { id, version: pkg.version, tag, built: build, published: !isPrivate };
 };
 
+// --changed: each changed extension of the repo; with no flag: the one package of a v* tag.
+export const runRelease = async (
+  opts: ExtensionReleaseOptions = {},
+  deps: ReleaseDeps = defaultDeps
+): Promise<unknown> => {
+  if (opts.changed) return runChangedRelease(opts, deps);
+  if (opts.dryRun) throw new CliError('invalid_argument', '--dry-run goes with --changed');
+  return runExtensionRelease(opts, deps);
+};
+
 export const addRelease = (
   group: Command,
   release: (opts: ExtensionReleaseOptions) => Promise<void>
@@ -201,5 +109,10 @@ export const addRelease = (
         'bound on each git, GitHub and npm check (default: 60; npm publish: 300)',
         Number
       )
+      .option(
+        '--changed',
+        'each extension (root or extensions/*) whose folder changed since its last <id>@* tag; each keeps its own package-lock.json, shared root files never trigger a release'
+      )
+      .option('--dry-run', 'with --changed: print what it would release, change nothing')
   ).action(release);
 };

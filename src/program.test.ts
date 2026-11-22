@@ -336,6 +336,12 @@ describe('createProgram', () => {
     expect(failing.stderr()).toContain('boom');
   });
 
+  test('extension release --changed --dry-run passes both flags', async () => {
+    const h = makeDeps();
+    expect(await h.exec('extension', 'release', '--changed', '--dry-run')).toBe(0);
+    expect(h.deps.extensionRelease).toHaveBeenLastCalledWith({ changed: true, dryRun: true });
+  });
+
   test.for(['--profile=x', '--dry-run', '--check', '--disconnect'])(
     'setup --latest with %s is a usage error',
     async (other) => {

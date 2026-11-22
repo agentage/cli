@@ -13,7 +13,7 @@ import { readHidden, runConfigure, stdinInput } from './commands/extension/confi
 import { runEnabled, runInstall, runRemove, terminalIo } from './commands/extension/lifecycle.js';
 import { runList, runUpdate as runExtensionUpdate } from './commands/extension/lifecycle-list.js';
 import { loadKitTool } from './commands/extension/kit-tool.js';
-import { runExtensionRelease } from './commands/extension/release.js';
+import { runRelease } from './commands/extension/release.js';
 import { runExtensionSetup } from './commands/extension/setup.js';
 import { runExtensionDown, runExtensionToken, runExtensionUp } from './commands/extension/up.js';
 import { runStatus, statusDeps } from './commands/status/status.js';
@@ -91,7 +91,7 @@ export const defaultDeps: ProgramDeps = {
   extensionCreate: (opts) => runExtensionCreate(opts),
   extensionCheck: (opts) => runExtensionCheck(opts),
   extensionBuild: (opts) => runExtensionBuild(opts),
-  extensionRelease: (opts) => runExtensionRelease(opts),
+  extensionRelease: (opts) => runRelease(opts),
   extensionUp: (opts) => runExtensionUp(opts),
   extensionDown: (opts) => runExtensionDown(opts),
   extensionToken: (opts) => runExtensionToken(opts),
