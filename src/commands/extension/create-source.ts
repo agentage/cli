@@ -6,8 +6,12 @@ import { holdSignals } from '../../core/loader/dispose.js';
 
 const run = promisify(execFile);
 // The kit repo holds the template in its folder template/; the old repo held it at its root.
-export const TEMPLATE = 'agentage/platform:template';
-export const OWN_TEMPLATES = [TEMPLATE, 'agentage/extension-template'];
+export const TEMPLATE = 'agentage/kit:template';
+export const OWN_TEMPLATES = [
+  TEMPLATE,
+  'agentage/platform:template',
+  'agentage/extension-template',
+];
 // owner/repo, then #branch and :folder, each optional: nothing that can pass for a flag or leave the repo.
 const FROM = /^[\w.-]+\/[\w.-]+(?:#\w[\w./-]*)?(?::\w[\w.-]*(?:\/\w[\w.-]*)*)?$/;
 

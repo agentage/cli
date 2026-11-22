@@ -448,7 +448,7 @@ Makes `./extension-<id>` from a template, with no git history (the author guide,
 
 | `--from`                                        | Takes                                                                                      |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| not given                                       | `agentage/platform:template`, the folder `template/` of the kit repo                       |
+| not given                                       | `agentage/kit:template`, the folder `template/` of the kit repo                            |
 | `owner/repo`                                    | the root of that repo's default branch (`agentage/extension-template` is the old template) |
 | `owner/repo#branch`                             | the root of that branch                                                                    |
 | `owner/repo:folder`, `owner/repo#branch:folder` | only that folder (dot files included); a missing folder or a link is refused               |

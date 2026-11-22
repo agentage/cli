@@ -52,7 +52,7 @@ describe('extension create keeps to its own folders', () => {
   });
 
   test.for([
-    ['in the folder', 'template/src', 'agentage/platform:template'],
+    ['in the folder', 'template/src', 'agentage/kit:template'],
     ['at the root', 'src', 'agentage/extension-template'],
   ])('refuses a template with a symbolic link %s, nothing left', async ([, at = '', from]) => {
     mkdirSync(join(root, 'kit-work', at), { recursive: true });

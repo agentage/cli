@@ -136,7 +136,7 @@ describe('extension create --from another repo or a branch', () => {
   const NOTICE = (from: string) =>
     `template  ${from}: code from that repo will be built and run on this machine`;
 
-  test.for(['agentage/platform:template', 'agentage/extension-template'])(
+  test.for(['agentage/kit:template', 'agentage/platform:template', 'agentage/extension-template'])(
     'the template itself asks nothing: %s',
     async (from) => {
       const quiet = await output(() => trustFrom(from, {}, io(false).io));
@@ -144,7 +144,7 @@ describe('extension create --from another repo or a branch', () => {
     }
   );
 
-  test.for(['acme/ext', 'agentage/extension-template#feature/x', 'agentage/platform:packages'])(
+  test.for(['acme/ext', 'agentage/extension-template#feature/x', 'agentage/kit:packages'])(
     '%s with no terminal needs --yes, --no-install or not',
     async (from) => {
       const refused = await output(() => trustFrom(from, {}, io(false).io));
