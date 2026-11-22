@@ -95,7 +95,7 @@ describe('extension create from the kit repo', () => {
     put(join(root, 'kit-work', 'other'), { ...TEMPLATE_FILES, 'branch.txt': 'b\n' });
     pushKit(root, 'feature/t');
     const printed = await create('agentage/kit#feature/t:other');
-    expect(printed.lines[0]).toMatch(/^ template {2}agentage\/platform:other \(branch feature\/t,/);
+    expect(printed.lines[0]).toMatch(/^ template {2}agentage\/kit:other \(branch feature\/t,/);
     expect(read('branch.txt')).toBe('b\n');
   });
 
@@ -114,7 +114,7 @@ describe('extension create from the kit repo', () => {
 
   test('a clone that fails leaves no clone folder', async () => {
     const printed = await create(undefined, () => `file://${root}/none`);
-    expect(printed.error).toMatch(/^cannot clone template agentage\/platform:template: fatal/);
+    expect(printed.error).toMatch(/^cannot clone template agentage\/kit:template: fatal/);
     expect(existsSync(join(root, made))).toBe(false);
     expect(readdirSync(root).sort()).toEqual(['kit-work', 'kit.git']);
   });
