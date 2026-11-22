@@ -101,7 +101,7 @@ export const addRelease = (
     group
       .command('release')
       .description(
-        'Release an extension from its v* tag in CI: guard, images, one image, records, npm package'
+        'Release an extension in CI: from its v* tag, or with --changed each changed one on a merge'
       )
       .option('--dir <path>', 'the extension package folder (default: the current folder)')
       .option(

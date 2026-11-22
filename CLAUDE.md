@@ -16,13 +16,13 @@ not repeat them here.
 | e2e, live tier      | `npm run test:e2e -- --grep @smoke` (`AGENTAGE_SITE_FQDN` = target; CI: dispatch `e2e.yml`)   |
 | Pack smoke          | `scripts/pack-smoke.sh`, `scripts/update-smoke.sh` (reads npm) on a packed tarball (`ci.yml`) |
 | Mutation check      | `node scripts/mutate.mjs [ids]`; it edits `src`, so never run it beside verify                |
-| Release             | dispatch `prepare-release.yml`; `release.yml` publishes on the merge (see README "Release")   |
+| Release             | dispatch `prepare-release.yml`; `release.yml` publishes on the merge (see `docs/release.md`)  |
 
 ## Where facts live
 
 Each row names the doc first, then the code that proves it. Read the doc before `src/`.
 
-- Install, sign-in, command list, config dir: `README.md`; `src/program.ts`, `src/lib/fs/config.ts`.
+- Install, sign-in, command list: `README.md`; config dir: `docs/reference.md` "Files"; `src/program.ts`, `src/lib/fs/config.ts`.
 - `setup`, `status`, `update`: `docs/reference.md` sections of those names; `src/commands/auth/`,
   `status/`, `update/`, `extension/setup.ts`.
 - The lifecycle (C1: install, list, update, disable, enable, configure, remove) and the move from
@@ -125,11 +125,11 @@ Drives the built `dist/cli.js` as a subprocess. Tiers are tags in the test title
   auth and account routes; `e2e/registry/` npm serving `fixtures/`). `@p0` is the hermetic
   `setup --no-browser` sign-in round trip, also `@offline`.
 - `@smoke`: read-only against a live target; nothing signs in or writes.
-- The agentage/e2e cli tier (`_e2e-cli.yml`, `--project=cli --grep @smoke`) runs on the packed
+- The cli tier of the shared end-to-end gate (in a private repo) (`_e2e-cli.yml`, `--project=cli --grep @smoke`) runs on the packed
   cli: on every PR (`e2e.yml`, not required) and before each publish (`release.yml`, blocking).
   `scripts/candidate-registry.mjs` serves the tarball as npm `latest` on loopback. The tier reads
   prod, so a prod outage blocks a publish. A cli change that the tier pins (a help line, a renamed
-  command) needs its agentage/e2e test first, version-gated on the release that changes it.
+  command) needs its gate test first, version-gated on the release that changes it.
 
 ## Conventions
 

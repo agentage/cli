@@ -520,8 +520,8 @@ every image by digest; `extension release` runs this. `--registry <host/owner>` 
 ## extension release
 
 ```bash
-agentage extension release                # in release.yml, on a v* tag push
-agentage extension release --changed      # in release.yml, on a push to master
+agentage extension release                # one extension: in release.yml, on a v* tag push
+agentage extension release --changed      # one or several: in release.yml, on a merge to master
 agentage extension release --changed --dry-run  # what it would release; changes nothing
 ```
 
@@ -1063,3 +1063,34 @@ Otherwise it is `extensions` inside the config directory. The config directory i
 | `AGENTAGE_STARTED_BY`        | `desktop` when the desktop starts the daemon (`startedBy` in `daemon.json`)                             | `cli`                 |
 | `AGENTAGE_SIGN_IN_RETURN`    | `desktop`: the sign-in page ends with the deep link `agentage://signed-in`                              | unset                 |
 | `AGENTAGE_DAEMON_CLOCK_RATE` | Tests only: the test clock of the daemon it starts (`createDaemon({ clockRate })`)                      | unset                 |
+
+## Files
+
+Everything lives in the config directory, `~/.agentage` by default:
+
+| Path                            | What                                                  |
+| ------------------------------- | ----------------------------------------------------- |
+| `~/.agentage/auth.json`         | your sign-in, owner-only                              |
+| `~/.agentage/profile.json`      | the profile: what this account wants                  |
+| `~/.agentage/machine.json`      | this machine's id, name, dev extensions and account   |
+| `~/.agentage/installation.json` | this machine's extension list, written by the daemon  |
+| `~/.agentage/daemon.json`       | the running daemon: pid, port, host token; owner-only |
+| `~/.agentage/extensions/`       | installed extensions, one tree per id and version     |
+| `~/.agentage/state/`            | the last run of each extension                        |
+| `~/.agentage/commands.json`     | cli 0.51's command holders; read, never written       |
+| `~/.agentage/secrets.json`      | extension secrets, owner-only                         |
+| `~/.agentage/data/<id>/`        | what each extension keeps                             |
+| `~/.agentage/logs/`             | `daemon.log` and each extension's log                 |
+
+`status` writes `machine.json` even before you sign in.
+
+To uninstall, run `agentage setup --disconnect`, then `npm uninstall -g @agentage/cli`, then
+delete `~/.agentage`.
+
+### How it works
+
+- `setup` registers a one-off OAuth client and waits for the browser on a localhost callback.
+- Tokens land in `~/.agentage/auth.json` (owner-only) and refresh automatically.
+- `status` checks the session against the account's introspection endpoint.
+- The daemon is the only background process. It starts when a command needs it and runs until
+  `agentage daemon stop`. Nothing installs on a timer.

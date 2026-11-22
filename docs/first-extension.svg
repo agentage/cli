@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 420" width="1400" height="420" font-family="Segoe UI, Ubuntu, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b0f19"/>
+      <stop offset="1" stop-color="#0d1220"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1400" height="420" fill="url(#bg)"/>
+  <text x="700" y="64" text-anchor="middle" font-size="30" font-weight="800" fill="#ffffff">Make your first extension</text>
+  <rect x="610" y="80" width="180" height="4" rx="2" fill="#F59E0B"/>
+  <rect x="41" y="130" width="230" height="180" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
+  <text x="156" y="180" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#58a6ff">CREATE</text>
+  <text x="156" y="214" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">extension create my-ext</text>
+  <text x="156" y="248" text-anchor="middle" font-size="12.5" fill="#9aa4b2">a new repo from</text>
+  <text x="156" y="268" text-anchor="middle" font-size="12.5" fill="#9aa4b2">the kit template</text>
+  <line x1="273" y1="220" x2="311" y2="220" stroke="#8b949e" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="313" y="130" width="230" height="180" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
+  <text x="428" y="180" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#58a6ff">VERIFY</text>
+  <text x="428" y="214" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">npm run verify</text>
+  <text x="428" y="248" text-anchor="middle" font-size="12.5" fill="#9aa4b2">type-check, lint,</text>
+  <text x="428" y="268" text-anchor="middle" font-size="12.5" fill="#9aa4b2">test, build</text>
+  <line x1="545" y1="220" x2="583" y2="220" stroke="#8b949e" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="585" y="130" width="230" height="180" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
+  <text x="700" y="180" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#58a6ff">CHECK</text>
+  <text x="700" y="214" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">agentage extension check</text>
+  <text x="700" y="248" text-anchor="middle" font-size="12.5" fill="#9aa4b2">the six rules</text>
+  <text x="700" y="268" text-anchor="middle" font-size="12.5" fill="#9aa4b2">every build runs</text>
+  <line x1="817" y1="220" x2="855" y2="220" stroke="#8b949e" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="857" y="130" width="230" height="180" rx="13" fill="#11161f" stroke="#2a3140" stroke-width="1"/>
+  <text x="972" y="180" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#b48eff">MERGE</text>
+  <text x="972" y="214" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">git push, then merge</text>
+  <text x="972" y="248" text-anchor="middle" font-size="12.5" fill="#9aa4b2">to master; CI runs</text>
+  <text x="972" y="268" text-anchor="middle" font-size="12.5" fill="#9aa4b2">release.yml</text>
+  <line x1="1089" y1="220" x2="1127" y2="220" stroke="#8b949e" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <rect x="1129" y="130" width="230" height="180" rx="13" fill="#11161f" stroke="#3a3320" stroke-width="1.5"/>
+  <text x="1244" y="180" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="1.5" fill="#F59E0B">RELEASED</text>
+  <text x="1244" y="214" text-anchor="middle" font-size="11.5" font-family="JetBrains Mono, Consolas, monospace" fill="#F59E0B">my-ext@2026.1122.1</text>
+  <text x="1244" y="248" text-anchor="middle" font-size="12.5" fill="#9aa4b2">images and records;</text>
+  <text x="1244" y="268" text-anchor="middle" font-size="12.5" fill="#9aa4b2">npm only on purpose</text>
+  <text x="700" y="372" text-anchor="middle" font-size="13" fill="#8b949e">a merge to master is the release: a date version <tspan font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">YYYY.MDD.N</tspan> and the tag <tspan font-family="JetBrains Mono, Consolas, monospace" fill="#c9d1d9">&lt;id&gt;@&lt;version&gt;</tspan>, nothing to tag by hand</text>
+</svg>
