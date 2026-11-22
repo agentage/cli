@@ -538,7 +538,14 @@ commit not on `origin/master`, then fetches the tags (a default shallow checkout
 extension is changed when a file in its folder differs from its last `<id>@*` tag (the highest by
 number, not the push range, so a run the concurrency group dropped is caught up), when it has no
 such tag yet, or when that tag has no `agentage-extension.json` record (a release that failed after
-its tag). When the last tag is on this commit (a re-run), that version is resumed. A changed
+its tag). Only the folder is read: each extension keeps its own `package-lock.json` there, and a
+change to a shared root file (a root lock, a workflow, a config) does not release anything. When
+the last tag is on this commit (a re-run), that version is resumed. An extension is refused (a
+`FAIL history:` line) when the commit of its last tag is not an ancestor of this commit: a re-run
+of an older run never gives older code a higher version. It is refused (`FAIL stuck:`, naming the
+tags) when its newest 3 tags have no record: a build that always fails stops taking new tags until
+a release of the last tag succeeds or a human removes those tags. A shallow checkout is deepened
+(`--unshallow`) for the ancestor check. A changed
 extension gets the date version `YYYY.MDD.N`: the UTC year, then month times 100 plus day (5
 January is `105`, 22 November `1122`), and `N` one more than the highest `N` tagged for that id
 that UTC day. The version and `repository` (the releasing repo, which the
@@ -546,8 +553,14 @@ that UTC day. The version and `repository` (the releasing repo, which the
 `package-lock.json` and the contracts `check --write` writes, in the CI copy only: never committed.
 The build allows only those files to differ from `HEAD`. Then the tag `<id>@<version>` is created
 on the commit (a tag on another commit is refused), before the build, so a failed build uses up its
-`N`. The guard, images, records and npm are as above; the release is created with `--target
-<commit>`. `--dry-run` prints the plan and writes, tags, pushes and publishes nothing; without
+`N`. The guard and images are as above; npm is published before the records are attached, so a
+version with a record is on npm (a private package skips npm). When npm fails, no record goes up:
+a re-run of that commit is refused by the guard (images pushed, no record), and the next commit
+takes a new `N`. The release is created with `--target <commit>`. Every changed extension is tried:
+one that fails or is refused does not stop the others. The run ends with one table (`id`,
+`version`, `result`: `released`, `failed`, `refused` or `unchanged`) and exits 1 when any failed
+or was refused; the error names each one as `<id>: FAIL ...` and keeps the code of the first. `--dry-run` prints the plan and writes, tags, pushes and publishes nothing (a refused extension
+still exits 1); without
 `--changed` it is refused with `invalid_argument` (exit 1).
 
 ## extension up, down and token

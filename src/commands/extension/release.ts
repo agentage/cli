@@ -111,7 +111,7 @@ export const addRelease = (
       )
       .option(
         '--changed',
-        'each extension (root or extensions/*) changed since its last <id>@* tag'
+        'each extension (root or extensions/*) whose folder changed since its last <id>@* tag; each keeps its own package-lock.json, shared root files never trigger a release'
       )
       .option('--dry-run', 'with --changed: print what it would release, change nothing')
   ).action(release);
