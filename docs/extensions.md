@@ -308,9 +308,9 @@ line, it says so and you set it by hand.
 
 The template is the folder `template/` of the kit repo (`agentage/kit:template`); only that
 folder is copied, with no history. `--from <owner/repo>` takes another template repo at its root
-(`agentage/extension-template` is the old template), `--from <owner/repo#branch>` one of its
+(for example `acme/their-template`), `--from <owner/repo#branch>` one of its
 branches, and `:folder` after either one folder of it. For any source other than the kit's
-`template` folder or `agentage/extension-template`, `create` first prints
+`template` folder, `create` first prints
 that code from that repo will be built and run on this machine, and asks `run it? (y/N)`; with
 `--yes` it does not ask, and with no terminal (or `--json`) it needs `--yes`. After the clone,
 `create` runs `npm ci --ignore-scripts`, builds the package (as `extension build` does) and gives

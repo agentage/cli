@@ -144,7 +144,7 @@ describe('extension create --from another repo or a branch', () => {
     }
   );
 
-  test.for(['acme/ext', 'agentage/extension-template#feature/x', 'agentage/kit:packages'])(
+  test.for(['acme/ext', 'agentage/kit#feature/x', 'agentage/kit:packages'])(
     '%s with no terminal needs --yes, --no-install or not',
     async (from) => {
       const refused = await output(() => trustFrom(from, {}, io(false).io));

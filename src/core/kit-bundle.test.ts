@@ -13,9 +13,9 @@ const apphostJson = createRequire(import.meta.url).resolve('@agentage/apphost/pa
 
 // The desktop and the deployed app host show one shell: the shell package that apphost serves.
 describe('the bundled kit', () => {
-  it('is 0.24.0, and a kit-shaped ^0.24.0 range fits the cli', () => {
-    expect(kitVersion()).toBe('0.24.0');
-    expect(fits({ engine: '^0.24.0', kit: true }, cliGate())).toBe(true);
+  it('is 0.25.0, and a kit-shaped ^0.25.0 range fits the cli', () => {
+    expect(kitVersion()).toBe('0.25.0');
+    expect(fits({ engine: '^0.25.0', kit: true }, cliGate())).toBe(true);
   });
 
   // One kit in the tree: the daemon (apphost) runs the children on the kit the cli bundles.
@@ -33,7 +33,7 @@ describe('the bundled kit', () => {
   });
 });
 
-// `extension check` runs this kit: an extension on engines.agentage ^0.24 passes its stack rule.
+// `extension check` runs this kit: an extension on engines.agentage ^0.25 passes its stack rule.
 describe('the stack rule of the bundled kit', () => {
   const stackOf = async (dir: ConfigDir, engine: string): Promise<string[]> => {
     cpSync(fixture('probe'), dir.at('probe'), { recursive: true });
@@ -45,11 +45,11 @@ describe('the stack rule of the bundled kit', () => {
     return report.problems.filter((p) => p.rule === 'stack').map((p) => p.problem);
   };
 
-  test('passes engines.agentage ^0.24 with kit ^0.24.0', async ({ dir }) => {
-    expect(await stackOf(dir, '^0.24')).toEqual([]);
+  test('passes engines.agentage ^0.25 with kit ^0.25.0', async ({ dir }) => {
+    expect(await stackOf(dir, '^0.25')).toEqual([]);
   });
 
-  test('refuses engines.agentage ^0.25, the next kit minor', async ({ dir }) => {
-    expect(await stackOf(dir, '^0.25')).toContain('kit 0.24.0 is outside engines.agentage ^0.25');
+  test('refuses engines.agentage ^0.26, the next kit minor', async ({ dir }) => {
+    expect(await stackOf(dir, '^0.26')).toContain('kit 0.25.0 is outside engines.agentage ^0.26');
   });
 });
