@@ -446,15 +446,15 @@ agentage extension create <id> [part...] [--from <owner/repo[#branch][:folder]>]
 Makes `./extension-<id>` from a template, with no git history (the author guide, `docs/extensions.md`
 "Run it locally", has the parts and the steps after the clone). `--from` names the template:
 
-| `--from`                                        | Takes                                                                                      |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| not given                                       | `agentage/kit:template`, the folder `template/` of the kit repo                            |
-| `owner/repo`                                    | the root of that repo's default branch (`agentage/extension-template` is the old template) |
-| `owner/repo#branch`                             | the root of that branch                                                                    |
-| `owner/repo:folder`, `owner/repo#branch:folder` | only that folder (dot files included); a missing folder or a link is refused               |
+| `--from`                                        | Takes                                                                        |
+| ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| not given                                       | `agentage/kit:template`, the folder `template/` of the kit repo              |
+| `owner/repo`                                    | the root of that repo's default branch (for example `acme/their-template`)   |
+| `owner/repo#branch`                             | the root of that branch                                                      |
+| `owner/repo:folder`, `owner/repo#branch:folder` | only that folder (dot files included); a missing folder or a link is refused |
 
-The clone is shallow; only the folder is kept. A source other than the kit's `template` folder or
-`agentage/extension-template` asks `run it? (y/N)` first (`--yes` does not ask).
+The clone is shallow; only the folder is kept. A source other than the kit's `template` folder
+asks `run it? (y/N)` first (`--yes` does not ask).
 
 ## extension doctor
 

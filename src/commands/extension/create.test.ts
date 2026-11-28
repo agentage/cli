@@ -89,7 +89,7 @@ const scaffoldOnly = async (dir: string, install: boolean) => {
 };
 
 // The old repo with the template at its root; create-kit.test.ts has the kit's template/ folder.
-const OLD = 'agentage/extension-template';
+const OLD = 'acme/old-template';
 const create = (id: string, parts: string[] = [], from = OLD) =>
   output(() => runExtensionCreate({ id, parts, from }, () => url, scaffoldOnly, YES));
 const read = (path: string) => readFileSync(join(root, 'extension-market', path), 'utf8');
@@ -98,14 +98,14 @@ const manifest = () => JSON.parse(read('package.json')) as typeof MANIFEST;
 describe('extension create', () => {
   test('--json answers with the id, folder, template and kept parts; a bad id has the code invalid_argument', async () => {
     const result = await runExtensionCreate(
-      { id: 'market', parts: ['api'], from: OLD, json: true, install: false },
+      { id: 'market', parts: ['api'], from: OLD, json: true, install: false, yes: true },
       () => url,
       scaffoldOnly
     );
     expect(result).toEqual({
       id: 'market',
       dir: 'extension-market',
-      from: 'agentage/extension-template',
+      from: 'acme/old-template',
       kept: ['api'],
       installed: null,
       url: null,
@@ -119,7 +119,7 @@ describe('extension create', () => {
     const printed = await create('market', ['mcp', 'api']);
     expect(printed.error).toBeNull();
     expect(printed.lines).toEqual([
-      ' template  agentage/extension-template (default branch, kit 0.5.0)',
+      ' template  acme/old-template (default branch, kit 0.5.0)',
       ' kept      mcp, api',
       ' id        market  ·  host market.next.agentage.io  ·  contract market.mcpc.json',
       ' next      cd extension-market && agentage extension up',
@@ -274,7 +274,7 @@ describe('extension create', () => {
     });
     const { error } = await create('market');
     expect(existsSync(join(root, 'extension-market'))).toBe(false);
-    expect(error).toMatch(/^template agentage\/extension-template: ENOENT/);
+    expect(error).toMatch(/^template acme\/old-template: ENOENT/);
   });
 
   test.each([
