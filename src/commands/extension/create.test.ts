@@ -54,7 +54,7 @@ const templateRepo = (root: string): string => {
   put('src/app-lint.test.ts', '// app lint test\n');
   put('migrations/001-ping.sql', 'select 1;\n');
   put('seeds/001-hello.sql', 'select 1;\n');
-  put('template.mcpc.json', '{ "name": "agentage-template", "tool": "template__echo" }\n');
+  put('template.mcpc.json', '{ "name": "agentage-template", "tool": "template_echo" }\n');
   put('openapi.json', '{ "title": "template", "pat": ["template:read"] }\n');
   put('CLAUDE.md', '# extension-template\nhost `template.next.agentage.io`, templates stay\n');
   put('package-lock.json', JSON.stringify(LOCK, null, 2));
@@ -209,7 +209,7 @@ describe('extension create', () => {
       name: '@agentage/extension-market',
       agentage: { id: 'market' },
     });
-    expect(read('market.mcpc.json')).toContain('"agentage-market", "tool": "market__echo"');
+    expect(read('market.mcpc.json')).toContain('"agentage-market", "tool": "market_echo"');
     expect(existsSync(join(root, 'extension-market/template.mcpc.json'))).toBe(false);
     expect(read('openapi.json')).toBe('{ "title": "market", "pat": ["market:read"] }\n');
     expect(read('CLAUDE.md')).toBe(

@@ -9,7 +9,7 @@ import { terminalIo, type ConfirmIo } from './lifecycle.js';
 export { TEMPLATE };
 export const PARTS = ['pages', 'ui', 'api', 'mcp', 'worker', 'store', 'cli', 'app'];
 const ROUTED = ['pages', 'ui', 'api', 'mcp'];
-// `_` is a separator here, so `template__echo` is the id too.
+// `_` is a separator here, so `template_echo` is the id too.
 const WORD = /(?<![A-Za-z0-9])template(?![A-Za-z0-9])/g;
 const LOCK = 'package-lock.json';
 // What else goes with a dropped part: manifest keys the kit refuses without it, the store's SQL, the contract file of api and mcp.
